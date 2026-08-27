@@ -52,6 +52,10 @@ Planer ↔ Benutzer
 - Der Planer versteht Problem, Quellen und Optionen und führt den Dialog mit
   dem Benutzer.
 - Der Planungs-Umsetzer materialisiert nur die freigegebenen Entscheidungen.
+  Der freigegebene Plan ist zunächst ein Laufartefakt, keine Vorgabe für ein
+  neues Dokument: Er entscheidet anhand des Plans und der vorhandenen
+  Repository-Struktur, welche bestehende Planungs- oder Architekturdokumentation
+  tatsächlich geändert werden muss.
 - Der Planungs-Reviewer vergleicht freigegebenen Plan, tatsächliche Doku und
   tatsächlichen `bd`-Graphen.
 - Der Benutzer entscheidet fachliche oder architektonische Fragen und gibt den
@@ -97,7 +101,7 @@ Die erste nutzbare Version bietet diese Befehle:
 | --- | --- |
 | `ki-dev init` | Repository für `bd`, Ralphex und `ki-dev` einrichten |
 | `ki-dev doctor` | Versionen, Anmeldung, Git-Zustand und Konfiguration prüfen |
-| `ki-dev plan "<Ziel>"` | Planning-Vorgang erstellen und interaktiv vollständig ausführen |
+| `ki-dev plan "<Ziel>"` | vollständigen Planning-Workflow erstellen und ausführen: Planning-Bead, interaktiver Planer, Benutzerfreigabe, Materialisierung, Review und `bd`-Graph |
 | `ki-dev ready` | ausführbare Arbeit aus `bd` in menschlich lesbarer Form anzeigen |
 | `ki-dev run [<id>]` | einen expliziten oder den nächsten ready-Vorgang ausführen |
 | `ki-dev run --loop` | Vorgänge nacheinander ausführen, bis nichts ready ist oder ein Gate stoppt |
@@ -255,8 +259,9 @@ Vor `y` wird nichts materialisiert. Nach der Freigabe:
 
 1. speichert `ki-dev` den freigegebenen Plan als Übergabeartefakt des Laufs;
 2. startet es den Planungs-Umsetzer;
-3. dieser ändert die vereinbarte Planungsdokumentation und erzeugt die
-   Implementation-Vorgänge samt Abhängigkeiten;
+3. dieser bestimmt aus Plan und vorhandener Repository-Struktur, ob und welche
+   bestehende Planungs- oder Architekturdokumentation geändert werden muss,
+   und erzeugt die Implementation-Vorgänge samt Abhängigkeiten;
 4. alle erzeugten Wurzelvorgänge hängen zunächst vom Planning-Vorgang ab und
    können deshalb noch nicht versehentlich anlaufen;
 5. der Planungs-Reviewer vergleicht Plan, Doku und `bd`-Graph;
@@ -315,7 +320,10 @@ Oder der autonome Arbeitsmodus:
 ki-dev run --loop
 ```
 
-Die interne Reihenfolge für jeden Vorgang ist fest:
+Die interne Reihenfolge für jeden Vorgang ist fest. Für Implementation ist der
+erzeugte Ein-Vorgang-Plan ein Ralphex-Ausführungsplan; er ist ausdrücklich
+nicht die Ralphex-eigene Planungsphase (`ralphex --plan`). Diese wird im
+normalen `ki-dev`-Ablauf nicht verwendet:
 
 ```text
 bd ready --json
@@ -509,9 +517,20 @@ Push/Deployment                    verboten
 ```
 
 Die erste Version setzt das durch eine Kombination aus isoliertem Worktree,
-phasenbezogener Pfad-Allowlist und einer Diff-Prüfung vor Integration durch.
-Eine unerlaubte Dateiänderung wird nicht integriert. Der ursprüngliche
-Arbeitsbaum wird niemals automatisch zurückgesetzt oder überschrieben.
+technisch getrennten Mounts und einer Diff-Prüfung vor Integration durch. Für
+Planning erhält der gestartete Prozess den Produktcode nur read-only, einen
+konfigurierten Doku-Bereich sowie den `bd`-Bereich read-write; Laufzustand
+bleibt ausschließlich beim Orchestrator. Beispiel: `src/` und `tests/` sind
+read-only, `docs/` und `.beads/` read-write. Die Pfad-Konfiguration erzwingt
+diese Mount-Grenze, ohne vorwegzunehmen, welche Dokumente der
+Planungs-Umsetzer ändern wird. Der Reviewer und das Diff-Gate prüfen
+anschließend, dass die Änderungen innerhalb des Doku-Bereichs begründet sind.
+Änderungen am `bd`-Bestand erfolgen ausschließlich über die `bd`-CLI;
+direkter Dateizugriff auf `.beads/` ist trotz benötigter Schreibberechtigung
+nicht Teil des Agentenvertrags. Die Mount-Grenze und das Diff-Gate sind
+deterministische Kontrollen; der Reviewer prüft danach KI-basiert die
+inhaltliche Begründung. Der ursprüngliche Arbeitsbaum wird niemals automatisch
+zurückgesetzt oder überschrieben.
 
 Vor jedem schreibenden Lauf gelten diese Gates:
 
@@ -535,13 +554,11 @@ Nach Erfolg:
 ### Phase 0 – externe Verträge festnageln
 
 - unterstützte Mindestversionen von `bd` und Ralphex festlegen;
-- JSON-Schemas der benötigten `bd`-Ausgaben mit Fixtures erfassen;
-- `create`, Label, Abhängigkeit, `ready`, `claim`, `show` und `close` gegen die
-  unterstützte `bd`-Version als Integrationstest ausführen;
-- Ralphex-Verhalten für `--worktree`, `--branch`, Planpfad, Exitcodes,
-  Planverschiebung und Wiederaufnahme in einem Toy-Repository prüfen;
-- entscheiden und testen, wie mehrere Ein-Vorgang-Läufe sicher auf demselben
-  Ausgangsbranch aufbauen.
+- JSON-Schemas und Integrationstests nur für `bd ready`, `show`, `claim`,
+  `create`, `dep` und `close` erfassen;
+- Ralphex ausschließlich für die V1-Schnittstellen in einem Toy-Repository
+  prüfen: Plan-Datei ausführen, Worktree/Branch, Exitstatus und
+  Reviewabschluss.
 
 Ergebnis: eine kleine Kompatibilitätsmatrix, die auch `doctor` verwendet.
 
@@ -581,7 +598,9 @@ Arbeitsgegenstand nicht.
 - Korrekturschleife und Sackgassenerkennung implementieren;
 - getrennte Dokumentations- und Agentenrichtlinien aus den Rollen-Prompts
   referenzieren und im Review anwenden;
-- Pfad-Allowlist und Integrationsprüfung für Planungsdoku erzwingen.
+- die technische Mount-Grenze für Planung erzwingen: Produktcode read-only,
+  konfigurierter Doku-Bereich und `bd` read-write; Diff-Prüfung und
+  Reviewer-Gate als zweite Sicherung ergänzen.
 
 Abnahme: Das VPS-Beispiel erzeugt aus einem Planning-Vorgang eine geprüfte
 Architekturdoku und drei korrekt abhängige Implementation-Vorgänge, ohne
