@@ -1,584 +1,706 @@
-Ja. Ich würde den Arbeitsablauf jetzt so umbauen, dass **du nicht mehr der laufende Reviewer jedes Diffs bist**, sondern nur noch an wenigen Stellen Entscheidungen triffst. Der Planer und ein eigener Reviewer-Agent übernehmen genau die Rolle, die du bisher interaktiv ausgeübt hast.
+# Umsetzungsplan: KI-Dev-Arbeitsweise
 
-Der wichtigste Punkt vor allem anderen: Der derzeitige `zustand.md`-Plan ist für das neue Ziel tatsächlich zu breit. Er verlangt vor Schritt 5 noch einen vollständigen normativen Testabgleich und führt später eine vollständige Dokumentationskohärenzprüfung vor Go-live auf.   Gleichzeitig ist der eigentliche fachliche Go-live-Maßstab schon viel enger angelegt: vollständiger Vorgangsweg, Audit, Beziehungen, gemeinsame Lesesicht, dünner Schreibweg und echter End-to-End-Fall; Renderer und weitere Facharten sind ausdrücklich nicht erforderlich.  Auch die Produktspezifikation nennt als nächsten sachlichen Meilenstein einen vollständigen echten Vorgangslebenslauf. 
+## 1. Ergebnis
 
-# Zielbild des neuen Arbeitsablaufs
+Es entsteht ein lokales Kommandozeilenwerkzeug namens `ki-dev`. Ein Entwickler
+startet es im Wurzelverzeichnis eines Git-Repositories. Es verbindet drei
+Bausteine:
+
+1. `bd` speichert Vorgänge, Abhängigkeiten, Prioritäten und Zustände dauerhaft.
+2. Ralphex führt freigegebene Implementierungspläne aus, testet, reviewed und
+   committet sie.
+3. `ki-dev` wählt genau einen Vorgang aus, weist ihn fest zu und startet den
+   richtigen Workflow.
+
+`ki-dev` ist keine zusätzliche Projektmanagement-Datenbank und keine fachliche
+Prüfschicht. Fachliche Wahrheit bleibt in der Projektdokumentation; der
+Arbeitszustand bleibt in `bd`; Git bleibt die Wahrheit für Quelltext und
+Commits.
 
 ```text
-EINMALIG
-Arbeitsumgebung + Agentenregeln einrichten
-        ↓
-neuen Go-live-Schnitt in zustand.md festhalten
-        ↓
-Planer erzeugt bd-Graph
-        ↓
-DU prüfst nur den Graphen                    ← Tor 1
-        ↓
+bd ready
+   ↓
+ki-dev wählt und bindet genau eine Bead-ID
+   ↓
+workflow:planning        workflow:implementation
+Planer ↔ Benutzer        Ralphex-Umsetzung
+Planungs-Umsetzer        Tests
+Planungs-Reviewer        Reviews und Korrekturen
+Doku + bd-Graph          Commit
+   ↓                         ↓
+Vorgang schließen        Vorgang schließen
+   ↓
+erst jetzt wieder bd ready
+```
 
-FÜR DIE UMSETZUNG
-Orchestrator
-    ↓
+## 2. Rollen und Arbeitsarten
+
+Es gibt zwei Arbeitsarten, aber mehrere Rollen.
+
+### Planung
+
+```text
+Planer ↔ Benutzer
+→ freigegebener Plan
+→ Planungs-Umsetzer
+→ Planungsdokumentation und bd-Graph
+→ Planungs-Reviewer
+→ bei Mängeln zurück zum Planungs-Umsetzer
+→ Planning-Vorgang schließen
+```
+
+- Der Planer versteht Problem, Quellen und Optionen und führt den Dialog mit
+  dem Benutzer.
+- Der Planungs-Umsetzer materialisiert nur die freigegebenen Entscheidungen.
+- Der Planungs-Reviewer vergleicht freigegebenen Plan, tatsächliche Doku und
+  tatsächlichen `bd`-Graphen.
+- Der Benutzer entscheidet fachliche oder architektonische Fragen und gibt den
+  Plan frei.
+
+### Umsetzung
+
+```text
 Umsetzer
-    ↓
-Tests
-    ↓
-Reviewer-Agent
-    ├─ PASS       → Task abschließen
-    ├─ CHANGES    → zurück zum Umsetzer
-    └─ ESCALATE   → nur dann zu dir
-        ↓
-nächster bd-ready-Task
-
-        ↓
-kritischer Gesamtlauf + echter E2E
-        ↓
-DU prüfst Go-live-Freigabe                   ← Tor 2
-        ↓
-GO-LIVE
-
-DANACH
-konkrete aufgeschobene Tests/Doku
-+ tatsächlicher Nutzungsbedarf
-→ neuer Planungsdurchlauf
+→ Tests
+→ Reviewer
+→ Korrekturen
+→ abschließende Prüfung
+→ Commit
 ```
 
-**Deine normale Arbeit verschiebt sich damit von „Diff für Diff korrigieren“ zu „Graph einmal richtig schneiden“.** Ein Satz wie „das ist nicht ganz richtig“ sollte im normalen Ablauf vom Reviewer-Agenten kommen, nicht mehr von dir.
+Ralphex stellt diesen Zyklus bereits bereit. `ki-dev` erzeugt dafür aus genau
+einem `bd`-Vorgang einen ausführbaren Ralphex-Plan und übernimmt anschließend
+Integration und Zustandswechsel.
 
----
+### Orchestrator
 
-# Phase 0 – neue Arbeitsumgebung einmalig einrichten
+Der Orchestrator ist deterministisch und trifft keine Fachentscheidungen. Er
+erzwingt Auswahl, Rollenfolge, Schreibgrenzen, Wiederholungen, Zustandswechsel
+und Abbruchbedingungen.
 
-Das würde ich **vor der nächsten Pages-PM-Planungssitzung** erledigen.
-
-## 0.1 Vier Rollen fest definieren
-
-| Rolle            | Aufgabe                                                           | Darf entscheiden?                                 |
-| ---------------- | ----------------------------------------------------------------- | ------------------------------------------------- |
-| **Planer**       | Quellen lesen, Arbeit zerlegen, Abhängigkeiten bauen              | nein, nur aus bestehenden Entscheidungen ableiten |
-| **Umsetzer**     | genau einen freigegebenen Task umsetzen                           | nein                                              |
-| **Reviewer**     | Diff gegen Task + maßgebliche Quellen prüfen                      | nein                                              |
-| **Orchestrator** | Tasks auswählen, Schleife steuern, Prüfungen ausführen, schließen | nein                                              |
-
-Du bist außerhalb dieser Schleife die **Entscheidungsinstanz für echte offene Fragen**.
-
-Das ist wichtig: Der Reviewer soll nicht einfach ein zweiter Entwickler sein. Er soll gezielt nach dem Problem suchen, das dich bisher zum Eingreifen zwang:
+Leitregel:
 
 ```text
-Ist zwar technisch plausibel,
-aber nicht genau das beschlossene Modell.
+Prompt:
+Denken, Interpretation, Qualitätsurteil und Formulierung
 
-Ist funktional richtig,
-dupliziert aber eine bestehende Regel.
-
-Test ist grün,
-weist aber nicht die normative Aussage nach.
-
-Kommentar ist wahr,
-macht die Migration aber wieder zur zweiten Spezifikation.
-
-Diff löst den Task,
-ändert nebenbei aber ein anderes Modellstück.
+Orchestrator:
+Ablauf, aktuelle Bead-ID, Schreibrechte, Zustände, Gates,
+Wiederholungsgrenzen, Commit-/Integrationsprüfung und close
 ```
 
-Gerade dein Beispiel mit der Migrationsprosa gehört in diesen Prüfvertrag.
+## 3. Öffentliche Befehlsoberfläche
 
-## 0.2 Einen einzigen Agentenvertrag im Repository
+Die erste nutzbare Version bietet diese Befehle:
 
-Nicht dieselben Regeln in fünf Agentenaufforderungen kopieren.
+| Befehl | Wirkung |
+| --- | --- |
+| `ki-dev init` | Repository für `bd`, Ralphex und `ki-dev` einrichten |
+| `ki-dev doctor` | Versionen, Anmeldung, Git-Zustand und Konfiguration prüfen |
+| `ki-dev plan "<Ziel>"` | Planning-Vorgang erstellen und interaktiv vollständig ausführen |
+| `ki-dev ready` | ausführbare Arbeit aus `bd` in menschlich lesbarer Form anzeigen |
+| `ki-dev run [<id>]` | einen expliziten oder den nächsten ready-Vorgang ausführen |
+| `ki-dev run --loop` | Vorgänge nacheinander ausführen, bis nichts ready ist oder ein Gate stoppt |
+| `ki-dev status` | aktiven Lauf, Phase, Bead, Branch und nächste Aktion anzeigen |
+| `ki-dev resume [<id>]` | unterbrochenen oder eskalierten Lauf an seiner gespeicherten Phase fortsetzen |
+| `ki-dev logs [<id>]` | Orchestrator- und Ralphex-Protokoll eines Laufs anzeigen |
 
-Der automatisch gelesene Agentenvertrag sollte sehr kurz enthalten:
+`Ctrl-C` stoppt den gestarteten Kindprozess kontrolliert. Der Vorgang wird
+nicht geschlossen; `ki-dev status` zeigt danach `ki-dev resume` als nächste
+Aktion.
+
+Nicht Teil der ersten Version sind ein Web-UI, parallele Ausführung, Push,
+Pull-Request-Erstellung, Deployment und ein allgemeiner Workflow-Designer.
+
+## 4. Einrichtung und erste Verwendung
+
+### 4.1 Voraussetzungen installieren
+
+Die dokumentierte macOS-Referenzstrecke lautet:
+
+```bash
+brew install beads
+
+mkdir -p ~/.local/bin
+curl -fsSL \
+  https://raw.githubusercontent.com/umputun/ralphex/master/scripts/ralphex-dk.sh \
+  -o ~/.local/bin/ralphex
+chmod +x ~/.local/bin/ralphex
+```
+
+`~/.local/bin` muss im `PATH` liegen. Der Ralphex-Wrapper benötigt eine laufende
+Docker-Installation. Zusätzlich muss mindestens ein von Ralphex unterstützter
+Coding-Agent angemeldet sein, zuerst Codex oder Claude Code; dessen lokale
+Anmeldedaten werden vom Wrapper in den Container übernommen.
+
+Für die Entwicklung dieses Repositories soll es nach dem ersten Scaffold diese
+Befehle geben:
+
+```bash
+make build
+./bin/ki-dev --help
+make test
+make install
+```
+
+Ein Release soll später ein einzelnes `ki-dev`-Binary bereitstellen. Ein
+Homebrew-Tap ist erst nach dem ersten stabilen Release erforderlich.
+
+### 4.2 Zielprojekt initialisieren
+
+```bash
+cd /pfad/zum/projekt
+ki-dev init --executor=codex
+ki-dev doctor
+```
+
+`ki-dev init` ist idempotent und führt nachvollziehbar aus:
+
+1. Git-Repository und Wurzelverzeichnis erkennen.
+2. Vorhandene Konfiguration feststellen und geplante Änderungen anzeigen.
+3. Falls nötig `bd init --quiet` ausführen.
+4. Die passende Agentenintegration von `bd` einrichten.
+5. Falls nötig `ralphex --init` ausführen.
+6. `.ki-dev/config.toml`, lokale Prompts und Laufverzeichnisse anlegen.
+7. Ralphex so konfigurieren, dass `ki-dev` den Lebenszyklus der generierten
+   Ein-Vorgang-Pläne verwaltet.
+8. Einen klar abgegrenzten Agentenvertrag in die vorhandene Agentendokumentation
+   einfügen oder aktualisieren.
+9. Abschließend automatisch `ki-dev doctor` ausführen.
+
+Globale Abhängigkeiten installiert `ki-dev init` nicht stillschweigend. Fehlt
+etwas, nennt es den genauen Installations- oder Anmeldebefehl und beendet sich
+ohne halbfertigen Lauf.
+
+Zielstruktur im Projekt:
 
 ```text
-Quellenrang:
-product_spec.de.md
-system_design.de.md
-development_guidelines.de.md
-zustand.md
-bd-Task
-
-Nicht erneut aufrollen:
-→ zustand.md §7
-
-Bei Konflikt:
-→ nicht selbst entscheiden
-→ ESCALATE
-
-Taskgrenze:
-→ keine angrenzende Verbesserung ohne Taskgrund
-
-Kommentare:
-→ development_guidelines.de.md §1.5
-
-Eine Regel, eine Implementierung:
-→ development_guidelines.de.md §§2–3
-
-Tests:
-→ beweisen Akzeptanzkriterium, nicht bloß grünen Lauf erzeugen
-
-Dokumentation:
-→ keine unabhängige zweite Festlegung
+.beads/                     dauerhafter bd-Arbeitsgraph
+.ralphex/                   projektspezifische Ralphex-Konfiguration
+.ki-dev/config.toml         deterministische ki-dev-Konfiguration
+.ki-dev/prompts/            Rollenverträge
+.ki-dev/runs/               lokale Laufzustände und generierte Pläne
+AGENTS.md oder CLAUDE.md    kurzer, verwalteter Agentenvertrag
 ```
 
-`zustand.md` enthält die bestehenden Nicht-wieder-aufrollen-Regeln bereits ausdrücklich.  Der Agentenvertrag sollte sie daher **nicht neu fachlich formulieren**, sondern auf diese maßgebliche Stelle verweisen.
+Laufdateien und temporäre Ralphex-Pläne werden ignoriert. Konfiguration und
+bewusst angepasste Prompts werden versioniert.
 
-## 0.3 Ein festes Task-Schema
+### 4.3 Was `doctor` beweist
 
-Jeder umsetzbare `bd`-Task sollte dieselbe Form haben:
+`ki-dev doctor` prüft mindestens:
+
+- unterstützte Versionen von `bd`, Ralphex, Git und gewähltem Agenten;
+- erfolgreiche Agentenanmeldung, soweit die jeweilige CLI dies lokal prüfen
+  kann;
+- vorhandenes `bd`-Repository und lesbares JSON von `bd ready --json`;
+- gültige Ralphex-Konfiguration und erreichbaren Executor;
+- eindeutige Projektwurzel und beschreibbare Laufverzeichnisse;
+- keinen widersprüchlichen aktiven `ki-dev`-Lauf;
+- konfigurierte Schreibgrenzen und vorhandene Promptdateien.
+
+Die Ausgabe endet mit einer eindeutigen nächsten Aktion:
+
+```text
+READY: ki-dev plan "<Ziel>"
+```
+
+oder beispielsweise:
+
+```text
+NOT READY: Ralphex fehlt
+Installieren: siehe Abschnitt 4.1
+Danach:       ki-dev doctor
+```
+
+## 5. Dev-User-UX-Story
+
+### 5.1 Neue Arbeit planen
+
+Der Entwickler startet nur mit einem Ziel:
+
+```bash
+ki-dev plan "VPS-Service mit reproduzierbarem Deployment"
+```
+
+`ki-dev` erzeugt intern einen normalen `bd`-Task mit einem Workflow-Label:
+
+```bash
+bd create \
+  "VPS-Service mit reproduzierbarem Deployment planen" \
+  -t task \
+  -p 2 \
+  --labels workflow:planning \
+  --json
+bd update <planning-id> --claim --json
+```
+
+`planning` wird zunächst als Label und nicht als eigener `bd`-Typ modelliert.
+Damit bleibt die Integration mit den dokumentierten Standardtypen von `bd`
+portabel.
+
+Danach beginnt im selben Terminal die starke interaktive Planung:
+
+```text
+ki-dev: Planning bd-a1b2
+Planer: Welche Betriebsumgebung und welche Ausfallgrenze gelten?
+Benutzer: ...
+Planer: Ich sehe zwei tragfähige Varianten ...
+...
+Planer: Zusammenfassung der getroffenen Entscheidungen ...
+Plan freigeben? [y/N]
+```
+
+Vor `y` wird nichts materialisiert. Nach der Freigabe:
+
+1. speichert `ki-dev` den freigegebenen Plan als Übergabeartefakt des Laufs;
+2. startet es den Planungs-Umsetzer;
+3. dieser ändert die vereinbarte Planungsdokumentation und erzeugt die
+   Implementation-Vorgänge samt Abhängigkeiten;
+4. alle erzeugten Wurzelvorgänge hängen zunächst vom Planning-Vorgang ab und
+   können deshalb noch nicht versehentlich anlaufen;
+5. der Planungs-Reviewer vergleicht Plan, Doku und `bd`-Graph;
+6. bei `CHANGES` geht es automatisch zurück zum Planungs-Umsetzer;
+7. bei `ESCALATE` stoppt der Lauf mit einer konkreten Frage;
+8. bei `PASS` werden die Dokuänderungen integriert und der Planning-Vorgang
+   geschlossen.
+
+Die typischen internen `bd`-Operationen sind:
+
+```bash
+bd create "VPS-Grundstruktur umsetzen" \
+  -t task --labels workflow:implementation --json
+bd create "VPS-Deployment umsetzen" \
+  -t task --labels workflow:implementation --json
+bd create "VPS-E2E-Test ergänzen" \
+  -t task --labels workflow:implementation --json
+
+bd dep add <deployment-id> <grundstruktur-id>
+bd dep add <e2e-id> <deployment-id>
+bd dep add <grundstruktur-id> <planning-id>
+```
+
+Nach Erfolg sieht der Entwickler nur die Zusammenfassung:
+
+```text
+PASS bd-a1b2
+Dokumentation: docs/architecture/vps.md
+Neue Vorgänge: bd-b200, bd-b201, bd-b202
+Planning-Vorgang geschlossen
+Nächste Aktion: ki-dev ready
+```
+
+### 5.2 Geplante Arbeit ausführen
+
+```bash
+ki-dev ready
+```
+
+zeigt beispielsweise:
+
+```text
+READY
+bd-b200  P2  implementation  VPS-Grundstruktur umsetzen
+```
+
+Ein einzelner kontrollierter Lauf:
+
+```bash
+ki-dev run bd-b200
+```
+
+Oder der autonome Arbeitsmodus:
+
+```bash
+ki-dev run --loop
+```
+
+Die interne Reihenfolge für jeden Vorgang ist fest:
+
+```text
+bd ready --json
+→ Kandidat deterministisch auswählen
+→ Bereitschaft erneut prüfen und atomar claimen
+→ ID in .ki-dev/runs festschreiben
+→ bd show <id> --json
+→ Workflow-Label lesen
+→ Ein-Vorgang-Ralphex-Plan erzeugen
+→ Ralphex in isoliertem Worktree/Branch starten
+→ Tests und Reviews durch Ralphex
+→ Ergebnis per Fast-forward in den Ausgangsbranch integrieren
+→ Commit und sauberer Arbeitsbaum prüfen
+→ bd close <id> --reason "..." --json
+→ erst danach erneut bd ready --json
+```
+
+Der erzeugte Ralphex-Plan enthält genau einen `bd`-Vorgang:
+
+```markdown
+# Plan: bd-b200 VPS-Grundstruktur umsetzen
+
+## Context
+Vollständige Beschreibung und maßgebliche Quellen aus bd-b200.
+
+## Validation Commands
+- `gezielter-testbefehl`
+- `notwendiger-gesamtbefehl`
+
+### Task 1: bd-b200 VPS-Grundstruktur umsetzen
+- [ ] Akzeptanzkriterium 1
+- [ ] Akzeptanzkriterium 2
+```
+
+Der geplante Adapteraufruf ist sinngemäß:
+
+```bash
+ralphex \
+  --codex \
+  --worktree \
+  --branch=ki-dev/bd-b200 \
+  .ki-dev/ralphex/plans/bd-b200.md
+```
+
+Die genaue Flag-Kompatibilität wird gegen die im Projekt unterstützte
+Ralphex-Version getestet und in `ki-dev doctor` abgesichert. `ki-dev` pusht
+nichts. Nach erfolgreichem Ralphex-Lauf wird nur per Fast-forward integriert.
+Ist das nicht möglich, bleibt der Vorgang offen und der Benutzer erhält eine
+konkrete Integrations-Eskalation.
+
+### 5.3 Unterbrechung oder Eskalation
+
+Beispiel:
+
+```text
+ESCALATE bd-b200
+Phase: REVIEW
+Grund: Die Quellen legen nicht fest, ob fehlende Secrets Start oder Deploy
+       blockieren sollen.
+Nächste Aktion: ki-dev resume bd-b200
+```
+
+Der Benutzer ergänzt die Entscheidung in der maßgeblichen Dokumentation oder
+beantwortet sie im fortgesetzten Planning-Gate und führt aus:
+
+```bash
+ki-dev resume bd-b200
+```
+
+`resume` liest nicht erneut `bd ready`. Es verwendet dieselbe Bead-ID, denselben
+Lauf und die gespeicherte Phase.
+
+## 6. Dauerhaftes Daten- und Zustandsmodell
+
+### `bd` bleibt die Arbeitswahrheit
+
+Die erste Version verwendet normale `bd`-Typen und Workflow-Labels:
+
+```text
+type: task | bug | feature | epic | decision
+label: workflow:planning | workflow:implementation
+```
+
+Fehlt ein Workflow-Label, gilt ein ausführbarer Bug, Task oder Feature-Vorgang
+als `workflow:implementation`. Mehrere widersprüchliche Workflow-Labels sind ein
+Konfigurationsfehler und werden nicht geraten.
+
+Jeder Implementation-Vorgang soll enthalten:
 
 ```text
 Ziel
-Go-live-Klasse: PRE | POST
-
 Maßgebliche Quellen
-- genaue Abschnitte / Regelkennungen
-
-Warum vor Go-live?
-- Schaden beim Aufschieben
-
 Umfang
-- was dieser Diff tun soll
-
-Nicht Teil dieses Tasks
-- explizite Grenzen
-
+Nicht Teil dieses Vorgangs
 Akzeptanzkriterien
-- beobachtbar / testbar
-
 Prüfbefehle
-- gezielte Tests
-- nötige Gesamtprüfungen
-
 Reviewer prüft besonders
-- bekannte Fehlerrichtung dieses Tasks
-
 Eskalation wenn
-- Quelle widersprüchlich
-- neue Fachentscheidung nötig
-- Taskgrenze überschritten werden müsste
 ```
 
-Das ist wesentlich wirksamer als lange Aufgabenprosa.
+### Lokaler Laufzustand ist klein
 
-**Wichtig:** Ein Umsetzungstask sollte nicht „eine normative Aussage“ bedeuten. Das war für den Testabdeckungsabgleich sinnvoll. Für Umsetzung ist die bessere Größe:
-
-> **ein kohärenter, einzeln prüfbarer Diff mit einem klaren Grund.**
-
-Sonst erzeugst du zu viele winzige Änderungen und neue Koordinationsarbeit.
-
----
-
-# Phase 1 – `zustand.md` einmal auf das neue Go-live-Ziel bringen
-
-**Das passiert vor der Übertragung nach `bd`.**
-
-Ich würde dort keine neue große Planung hineinschreiben. Es braucht nur eine neue Steuerregel:
-
-> **Erster Go-live:** Pages PM ist für einen Einzelbenutzer zur dauerhaften Verwaltung echter Projekte und Vorgänge benutzbar. Vorher werden alle bekannten Änderungen abgeschlossen, deren spätere Umsetzung den produktiven Bestand grundlegend umformen oder eine größere Datenmigration verlangen würde. Zusätzliche Testtiefe, Dokumentationsverbesserungen und additive Funktionen dürfen nach Go-live folgen, soweit dadurch keine bekannte strukturelle Bestandsumwandlung aufgeschoben wird.
-
-Danach werden die bestehenden Abschnitte **nicht entfernt**, sondern jeweils geteilt:
-
-| Bereich        | **Vor Go-live**                                                                    | **Nach Go-live**                                                             |
-| -------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Audit/P-010    | Umsetzung + kritischer Nachweis abschließen                                        | restlicher systematischer Abdeckungsabgleich, risikoarme Randfälle           |
-| Hierarchie     | `parent_id` vollständig durch Objektgraph ersetzen; alle Dateninvarianten erhalten | zusätzliche Graph-/Diagnosetests und Komfortabfragen                         |
-| Ein-Schreiber  | minimale verbindliche Semantik + technischer Mechanismus + Nebenläufigkeitstest    | weitere Robustheits-/Diagnosetests                                           |
-| Lebensläufe    | bekannte Rückwege, Wiederaufnahme, Regel 20, `finished_at`, Abschlussfälle         | weniger riskante Matrix-/Randfälle                                           |
-| `pm.objects`   | kleinste P-011-Sicht für den echten Vorgangsweg                                    | Erweiterung bei weiteren Facharten                                           |
-| `write-sql.sh` | vorgesehener realer Einzelbenutzer-Schreibweg                                      | Komfortwerkzeuge/API                                                         |
-| Dokumentation  | **keine falsche Aussage**, Installation und realer Gebrauch verständlich           | sprachliche Verfeinerung, zusätzliche Beispiele, vertiefter Kohärenzabgleich |
-| Tests          | kritische Invarianten + bestehende Suite grün + E2E                                | systematischer Restabgleich aller testbaren Normsätze                        |
-| E2E            | vollständiger echter Vorgangsfall                                                  | weitere reale Lebensläufe                                                    |
-
-Die Hierarchie bleibt zwingend vor Go-live: `issues.parent_id` soll ausdrücklich verschwinden und Hierarchie, Kardinalität, Selbstbezug und Zyklusfreiheit sollen über den gemeinsamen Objektgraphen laufen; Regel 20 und Eposregeln müssen dabei erhalten bleiben. 
-
-Das ist genau die Art Änderung, die du **nicht nach produktiven Daten** verschieben solltest.
-
----
-
-# Phase 2 – eine einzige interaktive Planungssitzung
-
-Erst jetzt kommt der starke Planer-Agent.
-
-Sein Auftrag ist nicht:
-
-> „Mach Schritt 5.“
-
-sondern ungefähr:
+`.ki-dev/runs/<run-id>/state.json` speichert nur Orchestrierungszustand:
 
 ```text
-Lies zustand.md vollständig sowie die dort genannten maßgeblichen
-Abschnitte aus product_spec.de.md, system_design.de.md und
-development_guidelines.de.md.
-
-Überführe die offene Arbeitsfolge in einen bd-Arbeitsgraphen.
-
-Regeln:
-1. Trenne innerhalb jedes Bereichs PRE-Go-live und POST-Go-live.
-2. PRE enthält nur Arbeit, deren Aufschub
-   - produktive Daten strukturell gefährdet,
-   - eine bekannte spätere Bestandsumwandlung verursacht,
-   - den realen Einzelbenutzer-Vorgangsweg verhindert,
-   - oder für dessen sichere Freigabe zwingend nötig ist.
-3. Konkrete bereits bekannte POST-Restarbeit darf als blockierte Arbeit
-   erhalten bleiben.
-4. Vage spätere Funktionen bleiben in zustand.md, nicht in bd.
-5. Offene Entscheidungen werden eigene HUMAN-Tasks.
-6. Kein Umsetzungstask darf eine noch offene Entscheidung voraussetzen.
-7. Jeder Umsetzungstask verwendet das festgelegte Task-Schema.
-8. Abhängigkeiten so setzen, dass bd ready ausschließlich tatsächlich
-   ausführbare Tasks liefert.
-9. Nichts implementieren.
+run_id
+bead_id
+workflow
+phase
+attempt
+base_branch und base_commit
+work_branch
+ralphex_plan und progress_log
+letztes Ergebnis
 ```
 
-### Was in `bd` kommt
+Taskbeschreibung und Status werden nicht dupliziert; sie werden aus `bd`
+gelesen. Fachentscheidungen werden nicht nur im Laufzustand aufbewahrt, sondern
+vom Planungs-Umsetzer in die vorgesehene Projektdokumentation übertragen.
 
-Ich würde gegenüber dem früheren Vorschlag leicht unterscheiden:
+Pro Repository darf die erste Version nur einen schreibenden Lauf gleichzeitig
+haben. Eine atomare Lockdatei verhindert einen zweiten Orchestrator.
 
-**Ja:** alle bereits **konkret bekannten** Arbeiten der gegenwärtigen Bereiche dürfen in den Graphen.
+## 7. Deterministische Zustandsautomaten
 
-**Nein:** nicht der gesamte ferne Nach-Go-live-Fahrplan.
-
-Also etwa:
+### Dispatcher
 
 ```text
-Go-live
-├── Audit PRE
-├── Hierarchie PRE
-├── Ein-Schreiber PRE
-├── Lebenslauf PRE
-├── pm.objects PRE
-├── write-sql PRE
-├── Doku PRE
-├── kritische Prüfung
-└── E2E
-
-Go-live abgeschlossen
-├─blocks→ Audit POST – konkret bekannte Resttests
-├─blocks→ Hierarchie POST – konkret bekannte Resttests
-├─blocks→ Doku POST – konkret bekannte Restprüfung
-└─blocks→ ...
-
-NICHT JETZT IN bd:
-Renderer
-Sprint
-beliebige weitere Facharten
-allgemeine Parameterschicht
-zweite Installation
+IDLE
+→ SELECT
+→ CLAIM
+→ DISPATCH
+   ├─ workflow:planning       → PLAN_INTERACTIVE
+   └─ workflow:implementation → IMPLEMENT_PREPARE
+→ CLOSE
+→ IDLE oder SELECT bei --loop
 ```
 
-Diese Dinge gehören weiterhin zum späteren Horizont. `zustand.md` sagt heute bereits: erst eigene Nutzung, dann Renderer; Sprint, weitere Facharten, Parameter und Fremdinstallationslösung folgen aus tatsächlichem Bedarf. 
+Nach `CLAIM` bleibt die Bead-ID unveränderlich. Während eines laufenden
+Workflows darf `bd ready` nur zur Anzeige, niemals zur Neuauswahl verwendet
+werden.
 
-## Dein erstes und wichtigstes Tor
-
-Danach schaust **du nur auf den Graphen**, nicht auf Code:
+### Planning-Workflow
 
 ```text
-bd list
-bd ready
-Abhängigkeitsgraph
+PLAN_INTERACTIVE
+→ HUMAN_APPROVAL
+→ MATERIALIZE
+→ REVIEW
+   ├─ PASS     → INTEGRATE → CLOSE
+   ├─ CHANGES  → MATERIALIZE
+   └─ ESCALATE → PAUSED
 ```
 
-Dabei stellst du nur fünf Fragen:
+Nach zwei erfolglosen Runden derselben Beanstandung wird deterministisch
+eskaliert. Der Reviewer darf nur Abweichungen vom freigegebenen Plan, von
+maßgeblichen Quellen oder von überprüfbaren Vollständigkeitskriterien melden.
+
+### Implementation-Workflow
 
 ```text
-Ist etwas vor Go-live, das gefahrlos danach könnte?
-
-Ist etwas nach Go-live, das produktive Daten später umbauen würde?
-
-Hat ein Task eine versteckte Entscheidung?
-
-Ist ein Task so groß, dass sein Diff nicht mehr als Einheit prüfbar wäre?
-
-Kann ein Umsetzer anhand dieses Tasks objektiv wissen, wann er fertig ist?
+IMPLEMENT_PREPARE
+→ RALPHEX_EXECUTE
+→ RALPHEX_REVIEW
+→ VERIFY_RESULT
+→ FAST_FORWARD_INTEGRATE
+→ CLOSE
 ```
 
-Wenn das stimmt, darf der Ausführungslauf beginnen.
+Fehler, Zeitlimit, Rate-Limit ohne erfolgreiche Wiederaufnahme, Review-Sackgasse
+oder Integrationskonflikt führen zu `PAUSED`, niemals zu `close`.
 
----
+## 8. Schreibgrenzen und Git-Sicherheit
 
-# Phase 3 – der autonome Standardlauf
-
-Ab jetzt solltest du **normalerweise gar nichts tun**.
+### Planung
 
 ```text
-1. Orchestrator nimmt genau einen ready-Task.
-
-2. Umsetzer liest:
-   - Task
-   - ausdrücklich genannte Quellen
-   - betroffenen Quelltext
-
-3. Umsetzer erstellt den kleinsten vollständigen Diff.
-
-4. Gezielte Tests laufen.
-
-5. Reviewer erhält:
-   - Task
-   - maßgebliche Quellen
-   - Diff
-   - Testergebnisse
-
-6. Reviewer antwortet genau mit:
-
-   PASS
-
-   oder
-
-   CHANGES
-   - konkrete Abweichung
-   - verletztes Akzeptanzkriterium / Quelle
-   - kleinste nötige Korrektur
-
-   oder
-
-   ESCALATE
-   - welche Entscheidung nicht aus den Quellen ableitbar ist
-
-7. Bei CHANGES:
-   automatisch zurück zum Umsetzer.
-
-8. Bei PASS:
-   nötige Bereichsprüfungen laufen,
-   Commit,
-   Task schließen,
-   nächster ready-Task.
+Produktcode          read-only
+Planungsdokumente    read-write gemäß konfigurierter Pfade
+bd-Graph             read-write
+Laufzustand          nur durch Orchestrator
 ```
 
-Der Reviewer darf **keine Geschmacksverbesserungen** verlangen.
-
-Also nicht:
-
-> „Ich würde außerdem …“
-
-sondern nur:
-
-> „Akzeptanzkriterium 3 ist nicht erfüllt, weil …“
-
-Das beseitigt einen großen Teil der Endlosschleifen zwischen Agenten.
-
-## Automatische Schleife begrenzen
-
-Nach beispielsweise **zwei erfolglosen Korrekturrunden derselben Beanstandung** sollte nicht Runde drei erfunden werden.
-
-Dann:
+### Umsetzung
 
 ```text
-ESCALATE: Reviewer und Umsetzer konvergieren nicht.
+Code, Tests und betroffene Doku   read-write im isolierten Worktree
+andere Worktrees                   kein Zugriff
+bd-Status und close                nur durch Orchestrator
+Push/Deployment                    verboten
 ```
 
-Das ist ein guter Einsatz deiner Aufmerksamkeit: ein echter schwieriger Fall statt 20 normale Diffs.
+Die erste Version setzt das durch eine Kombination aus isoliertem Worktree,
+phasenbezogener Pfad-Allowlist und einer Diff-Prüfung vor Integration durch.
+Eine unerlaubte Dateiänderung wird nicht integriert. Der ursprüngliche
+Arbeitsbaum wird niemals automatisch zurückgesetzt oder überschrieben.
 
----
+Vor jedem schreibenden Lauf gelten diese Gates:
 
-# Phase 4 – harte Eskalationsregeln
+- Ausgangsbranch und Ausgangscommit sind gespeichert;
+- Arbeitsbaum ist sauber oder der Lauf verweigert den Start;
+- kein zweiter `ki-dev`-Lauf hält das Repository-Lock;
+- die ausgewählte Bead ist offen, unblocked und eindeutig;
+- `doctor` hat keine inkompatible Toolversion festgestellt.
 
-Der Orchestrator soll dich **nur** rufen, wenn mindestens eines davon eintritt:
+Nach Erfolg:
 
-| Eskalationsgrund                                   | Beispiel                                               |
-| -------------------------------------------------- | ------------------------------------------------------ |
-| normative Quellen widersprechen sich               | Produktregel sagt A, Systementwurf setzt B voraus      |
-| eine neue Fach-/Architekturentscheidung wird nötig | Lockmechanismus zeigt unbehandelten Semantikfall       |
-| Umsetzung müsste den Taskumfang verlassen          | Hierarchietask verlangt unerwartet neues Projektmodell |
-| bestehende Entscheidung müsste geändert werden     | Übergangsmatrix reicht technisch nicht                 |
-| Reviewer und Umsetzer konvergieren nicht           | gleiche Beanstandung bleibt nach Korrekturen           |
-| unerwartete spätere Datenmigration entsteht        | PRE/POST-Einstufung war falsch                         |
-| Tests zeigen einen bereits vorhandenen Widerspruch | kein lokaler Fehler des Tasks                          |
+- mindestens ein erwarteter Commit existiert, außer ein dokumentierter
+  No-op-Fall wurde reviewed;
+- vorgeschriebene Prüfungen sind grün;
+- der erlaubte Diff-Umfang ist eingehalten;
+- Integration ist Fast-forward;
+- erst dann wird der `bd`-Vorgang geschlossen.
 
-**Nicht eskalieren:**
+## 9. Umsetzungsphasen für dieses Repository
+
+### Phase 0 – externe Verträge festnageln
+
+- unterstützte Mindestversionen von `bd` und Ralphex festlegen;
+- JSON-Schemas der benötigten `bd`-Ausgaben mit Fixtures erfassen;
+- `create`, Label, Abhängigkeit, `ready`, `claim`, `show` und `close` gegen die
+  unterstützte `bd`-Version als Integrationstest ausführen;
+- Ralphex-Verhalten für `--worktree`, `--branch`, Planpfad, Exitcodes,
+  Planverschiebung und Wiederaufnahme in einem Toy-Repository prüfen;
+- entscheiden und testen, wie mehrere Ein-Vorgang-Läufe sicher auf demselben
+  Ausgangsbranch aufbauen.
+
+Ergebnis: eine kleine Kompatibilitätsmatrix, die auch `doctor` verwendet.
+
+### Phase 1 – CLI-Scaffold, `init` und `doctor`
+
+- ausführbares `ki-dev`-Binary, Argumentparser und strukturierte Fehler bauen;
+- Konfigurationsformat und Projektwurzel-Erkennung implementieren;
+- `make build`, `make test` und `make install` bereitstellen;
+- idempotentes `init` einschließlich Vorschau vorhandener Dateien bauen;
+- `doctor` mit hilfreichen Reparaturbefehlen umsetzen;
+- Unit-Tests mit simulierten Toolausgaben ergänzen.
+
+Abnahme: Ein frisches Git-Repository wird mit der in Abschnitt 4 gezeigten
+Befehlsfolge vollständig eingerichtet oder mit einer eindeutigen
+Reparaturanweisung verlassen.
+
+### Phase 2 – `bd`-Adapter und Dispatcher
+
+- alle `bd`-Aufrufe zentral kapseln und JSON strikt auswerten;
+- Workflow-Labels und Default auf Implementation implementieren;
+- deterministische Auswahl nach Priorität, Erstellungszeit und ID festlegen;
+- Race beim Claim erkennen und mit dem nächsten Kandidaten fortfahren;
+- Run-Lock, `state.json`, `ready`, `status`, `logs` und `resume` bauen;
+- beweisen, dass nach Auswahl keine neue Bead-ID verwendet wird.
+
+Abnahme: Ein Fixture-Graph mit blockierten und ready Vorgängen wird in stabiler
+Reihenfolge verarbeitet; Graphänderungen während des Laufs wechseln den
+Arbeitsgegenstand nicht.
+
+### Phase 3 – Planning-Workflow
+
+- interaktiven Planer-Adapter mit gespeichertem Freigabe-Gate bauen;
+- Übergabeformat zwischen Planer und Planungs-Umsetzer definieren;
+- Planungs-Umsetzer für Doku und `bd`-Graph starten;
+- neu erzeugte Vorgänge bis zum Abschluss an die Planning-Bead binden;
+- Reviewer-Vertrag `PASS | CHANGES | ESCALATE` strikt parsen;
+- Korrekturschleife und Sackgassenerkennung implementieren;
+- getrennte Dokumentations- und Agentenrichtlinien aus den Rollen-Prompts
+  referenzieren und im Review anwenden;
+- Pfad-Allowlist und Integrationsprüfung für Planungsdoku erzwingen.
+
+Abnahme: Das VPS-Beispiel erzeugt aus einem Planning-Vorgang eine geprüfte
+Architekturdoku und drei korrekt abhängige Implementation-Vorgänge, ohne
+Produktcode zu verändern.
+
+### Phase 4 – Ralphex-Implementation-Adapter
+
+- `bd`-Task-Schema validieren und in einen Ein-Vorgang-Ralphex-Plan rendern;
+- Ralphex mit projektspezifischen Prompts, Branch und Worktree starten;
+- Ausgabe, Exitcode, Fortschritt, Commits und Reviewabschluss erfassen;
+- erfolgreichen Branch ausschließlich per Fast-forward integrieren;
+- erst nach Integration `bd close` ausführen;
+- `Ctrl-C`, Toolfehler und erneuten Start korrekt behandeln.
+
+Abnahme: Ein kleiner echter Codevorgang wird implementiert, getestet, reviewed,
+committet, integriert und genau einmal geschlossen.
+
+### Phase 5 – Härtung der Orchestrierung
+
+- Schreibgrenzen und verbotene Pfade mit Negativtests absichern;
+- Timeouts, Rate-Limits und wiederholte identische Reviews behandeln;
+- atomare Zustandsübergänge und Crash-Recovery testen;
+- `run --loop` bis `NO_READY`, `PAUSED` oder `ESCALATE` umsetzen;
+- keine automatischen Push-, Merge-Conflict- oder Reset-Aktionen zulassen.
+
+Abnahme: Prozessabbruch in jeder Phase lässt einen verständlichen,
+wiederaufnehmbaren Zustand zurück und schließt keinen unvollständigen Vorgang.
+
+### Phase 6 – echte Ende-zu-Ende-Nutzung
+
+- ein Fixture-Projekt automatisch initialisieren;
+- darin einen Planning-Workflow mit Benutzerfreigabe simulieren;
+- erzeugte Implementation-Vorgänge der Reihe nach durch Ralphex ausführen;
+- Abhängigkeiten, Commits, Doku, Tests, Resume und Abschlusszustände prüfen;
+- anschließend dieses Repository selbst mit `ki-dev` weiterentwickeln;
+- Installations-, Betriebs- und Fehlerdokumentation aus der tatsächlichen
+  Nutzung korrigieren.
+
+Abnahme: Die vollständige Befehlsfolge aus Abschnitt 10 funktioniert ohne
+manuelle `bd`- oder Ralphex-Zustandsreparatur.
+
+## 10. Vollständige Abnahmestrecke
+
+```bash
+# einmalig auf dem Rechner
+brew install beads
+mkdir -p ~/.local/bin
+curl -fsSL \
+  https://raw.githubusercontent.com/umputun/ralphex/master/scripts/ralphex-dk.sh \
+  -o ~/.local/bin/ralphex
+chmod +x ~/.local/bin/ralphex
+
+# einmalig im Zielprojekt
+cd /pfad/zum/projekt
+ki-dev init --executor=codex
+ki-dev doctor
+
+# neue Arbeit
+ki-dev plan "VPS-Service mit reproduzierbarem Deployment"
+
+# Ergebnis ansehen
+ki-dev ready
+ki-dev status
+
+# einen Vorgang kontrolliert ausführen
+ki-dev run bd-b200
+
+# verbleibende ausführbare Arbeit autonom fortsetzen
+ki-dev run --loop
+
+# bei Unterbrechung oder Entscheidungsbedarf
+ki-dev status
+ki-dev logs bd-b200
+ki-dev resume bd-b200
+```
+
+Erwartetes Endergebnis:
 
 ```text
-Test muss ergänzt werden
-kleiner SQL-Fehler
-Kommentar verletzt §1.5
-unnötige Duplikation
-Namens-/Strukturfehler
-Diff ist größer als nötig
-bestehender Test muss angepasst werden
+Planning-Bead:             closed
+Implementation-Beads:     closed oder fachlich blockiert
+Abhängigkeiten:            eingehalten
+Planungsdokumentation:     integriert
+Code und Tests:            integriert und grün
+Reviews:                   bestanden
+Commits:                   vorhanden und den Beads zuordenbar
+Push/Deployment:           nicht automatisch ausgeführt
+Aktiver ki-dev-Lauf:       keiner
 ```
 
-Dafür ist der Reviewer da.
+## 11. Bewusste Nicht-Ziele
 
----
+In der ersten Version werden nicht gebaut:
 
-# Phase 5 – konkrete Reihenfolge bis Go-live
+- eine Pages-PM-artige Prüfschicht;
+- eine zweite Aufgaben- oder Spezifikationsdatenbank;
+- ein `implements`-Metamodell;
+- allgemeine Spec-/Graph-Validierung über die für den Ablauf nötigen
+  Konsistenzprüfungen hinaus;
+- beliebige Dokumenttypen, ADR-/KEP-Generatoren oder weitere Workflow-Typen;
+- parallele Multi-Agent-Integration;
+- automatischer Push, Pull Request, Release oder Deployment;
+- Übernahme beliebiger alter Chat-Sitzungen.
 
-Unter dem neuen Schnitt würde ich den ausführbaren Pfad so kurz machen:
+Nach realer Nutzung kann als erstes optionales Feature folgen:
 
-```text
-G0  Audit/P-010-Nacharbeiten schließen
-    nur noch kritische normative Lücken
-
- ↓
-
-G1  Vorgangshierarchie → object_relations
-    parent_id weg
-    allgemeine Graphregeln
-    Vorgangsregeln erhalten
-
- ↓
-
-G2  zentrale Ein-Schreiber-Regel
-    minimaler Mechanismus
-    sofortige Abweisung
-    kritischer Nebenläufigkeitstest
-
- ↓
-
-G3  Vorgangslebenslauf fertig
-    ready → clarification
-    in_review → in_progress
-    discarded → clarification
-    finished_at
-    Regel-20-Fälle
-
- ↓
-
-G4  minimales pm.objects
-
- ↓
-
-G5  minimales write-sql.sh
-
- ↓
-
-G6  Go-live-Doku
-    nur:
-    - keine falschen Aussagen
-    - tatsächlicher Einzelbenutzerweg
-    - betroffene Sprachfassungen kohärent
-    - automatische Prüfungen grün
-
- ↓
-
-G7  Freigabelauf
-    vorhandene Gesamttests
-    kritische neue Tests
-    Referenzen
-    Sprachstruktur
-
- ↓
-
-G8  echter vollständiger Vorgangslebenslauf
-
- ↓
-
-GO-LIVE
+```bash
+ki-dev session <session-id>
 ```
 
-Der bestehende E2E-Meilenstein eignet sich dafür sehr gut: Projekt wählen, Vorgang anlegen, Pflichtschwellen durchlaufen, `depends_on` tatsächlich sperren und später freigeben, Kindvorgang verwenden, Elternabschluss prüfen, fehlgeschlagene Übergänge ohne Zustands-/Verlaufsänderung bestätigen und die Gegenstände über die gemeinsame Sicht finden. 
+Es übernimmt einen bereits freigegebenen Plan und startet direkt mit
+Planungs-Umsetzer und Planungs-Reviewer. Diese Erweiterung darf den Kernvertrag
+„eine Bead-ID pro Lauf“ nicht ändern.
 
-Das ist ein viel besseres **Go-live-Abnahmekriterium** als „jede normative Aussage besitzt bereits ihren maximalen Test“.
+## 12. Referenzierte externe Schnittstellen
 
----
+- Beads-Dokumentation: <https://github.com/gastownhall/beads>
+- Ralphex-Dokumentation: <https://github.com/umputun/ralphex>
 
-# Phase 6 – dein zweites Tor: Go-live
-
-Hier würde ich dich noch **bewusst** im Ablauf lassen.
-
-Der Orchestrator liefert nur:
-
-```text
-PRE-Go-live Tasks:       alle geschlossen
-offene HUMAN-Entscheide: keine
-Gesamtlauf:              grün
-Dokumentationsprüfungen: grün
-E2E:                     grün
-POST-Go-live Tasks:      blockiert / nicht freigaberelevant
-Arbeitsbaum:             sauber
-```
-
-Du musst dann **nicht alle Diffs nochmals lesen**.
-
-Du prüfst nur:
-
-1. Ist das tatsächlich der vereinbarte Einzelbenutzer-Go-live?
-2. Gibt es irgendeine bekannte strukturelle Änderung, die jetzt schon produktive Daten betreffen würde?
-3. Ist der echte E2E-Fall überzeugend durchgelaufen?
-
-Dann Go-live.
-
----
-
-# Phase 7 – unmittelbar danach
-
-Der erste produktive Pages-PM-Vorgang sollte dann möglichst **die weitere Pages-PM-Arbeit selbst** sein. Das ist ohnehin der bestehende Plan nach Go-live. 
-
-Danach würde ich einen neuen Planerlauf machen:
-
-```text
-reale Nutzung seit Go-live lesen
-+
-konkrete POST-Tasks aus dem alten Graphen
-+
-Fehler/Umständlichkeiten aus echter Verwendung
-        ↓
-neuer Prioritätsgraph
-```
-
-Die Reihenfolge sollte dann ungefähr sein:
-
-| Vorrang    | Nach Go-live                                                            |
-| ---------- | ----------------------------------------------------------------------- |
-| **P0**     | tatsächliche Daten-/Betriebsfehler aus der Nutzung                      |
-| **P1**     | aufgeschobene Integritäts-/Normtests mit noch relevantem Risiko         |
-| **P1**     | falsche oder hinderliche Dokumentation                                  |
-| **P2**     | restliche Testtiefe und Doku-Härtung                                    |
-| **P2**     | Renderer                                                                |
-| **danach** | Verantwortung/P-004 bzw. weitere Fachfunktion nach tatsächlichem Bedarf |
-| **später** | Sprint, weitere Facharten, Parameter, zweite Installation               |
-
-Damit werden auch die ersten Monate nicht zu einem zweiten großen „MVP fertigbauen“, sondern zu **beobachtungsgetriebener Härtung**.
-
----
-
-# Was sich für dich praktisch ändert
-
-Der bisherige Ablauf war ungefähr:
-
-```text
-Agent setzt um
-→ du liest Diff
-→ du findest konzeptionelle Abweichung
-→ Agent korrigiert
-→ du liest wieder
-→ nächster Diff
-```
-
-Der neue:
-
-```text
-DU:
-einmal Go-live-Schnitt festlegen
-
-PLANER:
-Graph erzeugen
-
-DU:
-Graph prüfen
-
-ORCHESTRATOR:
-Umsetzer ↔ Reviewer
-Umsetzer ↔ Reviewer
-Umsetzer ↔ Reviewer
-...
-
-DU:
-nur echte Entscheidungen / Sackgassen
-
-ORCHESTRATOR:
-E2E + Freigabebericht
-
-DU:
-Go-live
-```
-
-**Das ist für Pages PM wahrscheinlich der entscheidende Produktivitätsgewinn.** Nicht ein „stärkerer Umsetzungsagent“, sondern dass der starke Agent, den du bisher als laufende Kontrollinstanz benutzt hast, eine **explizite Reviewer-Rolle mit festen Kriterien** bekommt und du selbst aus dieser Schleife herauskommst.
-
-Ich würde daher in dieser Reihenfolge fortfahren:
-
-**1. neue Agentenumgebung einrichten → 2. `zustand.md` einmal auf den neuen Go-live-Schnitt bringen → 3. Planer erzeugt `bd` → 4. du prüfst den Graphen → 5. erster autonomer Lauf zunächst mit G0/Audit als Probe → 6. wenn der sauber durchläuft, G1–G8 ohne laufende Diff-Prüfung durch dich.**
-
-Das gibt dir gleichzeitig einen Sicherheitsmechanismus: Der erste autonome Lauf ist der fast abgeschlossene Audit-Schritt und nicht sofort der große Hierarchieumbau.
-
----
-
+Beide Werkzeuge entwickeln sich weiter. Deshalb sind konkrete Fremdflags in
+diesem Plan Zielannahmen, die Phase 0 mit gepinnten Versionen bestätigt. Die
+öffentliche `ki-dev`-Befehlsoberfläche soll davon stabil bleiben.
