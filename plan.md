@@ -117,6 +117,38 @@ Der Snapshot ist ein reiner Schreibeingang für `plan.md`. Er erzeugt keine
 ausschließlich in der späteren vollständigen Planning-Materialisierung
 (`MATERIALIZE`).
 
+### Session-Handoff: Fortsetzung in einer neuen Planning-Sitzung
+
+Ein `SESSION_HANDOFF` ist ein eigener Vorgang. Er ist weder die kontrollierte
+Planfortschreibung nach `plan.md` noch die vollständige Planning-Materialisierung
+(`MATERIALIZE`). Die kontrollierte Planfortschreibung sichert einen
+Zwischenstand in `plan.md`; die Materialisierung überträgt den freigegebenen
+Gesamtplan in die Projektdokumentation und den `bd`-Graphen; der
+`SESSION_HANDOFF` verschiebt nur die weitere Denkarbeit in eine neue
+Planning-Sitzung.
+
+Relevant wird er erst, wenn der Mensch oder eine unterstützende
+Größenbegrenzung erkennt, dass die laufende Planning-Sitzung für weiteres
+zuverlässiges Denken zu groß geworden ist. Er erfolgt nicht zwingend nach einer
+festen Anzahl von Turns; konkrete Größen- oder Token-Grenzen legt dieser Plan
+nicht fest.
+
+Zweck ist ausschließlich, das Planning in einer neuen Planning-Sitzung
+fortsetzen zu können. Das Sachthema wird dadurch nicht abgeschlossen; eine
+spätere Erkenntnis darf denselben Sachbereich weiter ergänzen oder korrigieren.
+
+Ein technischer Session-Fork, ein Klon oder eine executor-spezifische
+Sitzungsfortsetzung ist keine Architekturvoraussetzung. Als zu prüfendes
+einfaches Modell kann ein frischer Übergabe-Agent den bisherigen
+Planning-Kontext chronologisch auswerten und daraus eine flache
+Fortsetzungsübergabe für eine neue Planning-Sitzung erzeugen. Das Rohtranskript
+kann als Rückfallquelle erhalten bleiben.
+
+Ein `SESSION_HANDOFF` erzeugt keine endgültigen `bd`-Vorgänge, Untervorgänge
+oder Abhängigkeiten. Die neue Planning-Sitzung setzt das Planning auf Grundlage
+der Übergabe fort; spätere kontrollierte Planfortschreibungen und die spätere
+vollständige Planning-Materialisierung bleiben davon unabhängige Vorgänge.
+
 ### Umsetzung
 
 ```text
@@ -948,7 +980,9 @@ In der ersten Version werden nicht gebaut:
 - beliebige Dokumenttypen, ADR-/KEP-Generatoren oder weitere Workflow-Typen;
 - parallele Multi-Agent-Integration;
 - automatischer Push, Pull Request, Release oder Deployment;
-- Übernahme beliebiger alter Chat-Sitzungen.
+- Übernahme beliebiger alter oder externer Chat-Sitzungen; der
+  `SESSION_HANDOFF` nach Abschnitt 2 setzt nur die eigene, zu groß gewordene
+  Planning-Sitzung fort und schließt das Sachthema nicht ab.
 - adaptive Modellwahl anhand von Aufgabeninhalt, Diff-Größe oder
   Agentenurteil;
 - automatische Kostenoptimierung oder Modellwahl über die statische Profil-
