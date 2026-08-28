@@ -183,13 +183,18 @@ Kontroller-Zustand ist rekonstruierbar aus
 
 ### Session-Handoff: Fortsetzung in einer neuen Planning-Sitzung
 
-Ein `SESSION_HANDOFF` ist ein eigener Vorgang. Er ist weder die kontrollierte
+`SESSION_HANDOFF` ist eine eigene persistierte Orchestrator-Phase desselben
+bereits laufenden Planning-Workflows und derselben Planning-Bead. Er ist kein
+eigener `bd`-Vorgang und kein neuer fachlicher Planning-Vorgang; er erzeugt
+keine neue Planning-Bead. Er ist außerdem weder die kontrollierte
 Planfortschreibung nach `plan.md` noch die vollständige Planning-Materialisierung
 (`MATERIALIZE`). Die kontrollierte Planfortschreibung sichert einen
 Zwischenstand in `plan.md`; die Materialisierung überträgt den freigegebenen
 Gesamtplan in die Projektdokumentation und den `bd`-Graphen; der
 `SESSION_HANDOFF` verschiebt nur die weitere Denkarbeit in eine neue
-Planning-Sitzung.
+Planning-Sitzung. Während des Handoffs gilt `state.json.phase = SESSION_HANDOFF`,
+sodass ein Abbruch bzw. `resume` eindeutig an dieser Phase desselben Laufs
+anknüpft.
 
 Relevant wird er erst, wenn der Mensch oder eine unterstützende
 Größenbegrenzung erkennt, dass die laufende Planning-Sitzung für weiteres
@@ -653,21 +658,39 @@ letztes Ergebnis
 ```
 
 Für einen laufenden `CONTROLLED_WRITE` bleibt der Kontroller-Zustand über alle
-Schreibschnitte und Korrekturschleifen hinweg zusammenhängend. Der Laufzustand
-hält dafür zusätzlich:
+Schreibschnitte und Korrekturschleifen hinweg zusammenhängend. `state.json`
+bleibt auch dafür der kleine persistierte Orchestrierungszustand und hält nur
+den für die Orchestrierung nötigen Bezug bzw. Zustand:
 
 ```text
-freigegebener Planning-Snapshot dieses CONTROLLED_WRITE
+Bezug auf den gespeicherten freigegebenen Planning-Snapshot dieses CONTROLLED_WRITE
 aktiver Schreibschnitt mit seinem begrenzten Schreibauftrag
 zuständiger plan_writer des aktiven Schreibschnitts
-bisherige Schreibschnitt-Ergebnisse des laufenden CONTROLLED_WRITE
 ```
 
-Aus diesen Angaben zusammen mit dem aktuellen geprüften `plan.md` ist der
-Kontroller-Zustand vollständig rekonstruierbar; eine executor-spezifische
-Sitzungsfortsetzung ist dafür nicht nötig. Innerhalb eines Schreibschnitts
-übernimmt bei `CHANGES` derselbe `plan_writer` erneut; jeder neue Schreibschnitt
-beginnt mit einem frischen `plan_writer`.
+Phase und Wiederaufnahme bleiben über das bereits vorhandene Feld `phase`
+abgedeckt; ein neues Feld oder Schema entsteht dafür nicht.
+
+Der freigegebene Planning-Snapshot selbst und die bisherigen
+Schreibschnitt-Ergebnisse des laufenden `CONTROLLED_WRITE` sind demgegenüber
+gespeicherte Laufartefakte bzw. Laufdaten und müssen nicht als Inhalt von
+`state.json` dargestellt werden. Die Rekonstruktion greift auf sie als
+gespeicherte Grundlagen zu; ob sie in einer oder mehreren Dateien und unter
+welchem Namen abgelegt werden, legt dieser Abschnitt nicht fest.
+
+Aus dem Orchestrierungszustand in `state.json`, diesen gespeicherten Grundlagen
+und dem aktuellen geprüften `plan.md` ist der vollständige logische
+Kontroller-Zustand rekonstruierbar; insbesondere bleiben aktiver Schreibschnitt,
+zuständiger `plan_writer`, Phase und Wiederaufnahme eindeutig bestimmbar. Eine
+executor-spezifische Sitzungsfortsetzung ist dafür nicht nötig. Innerhalb eines
+Schreibschnitts übernimmt bei `CHANGES` derselbe `plan_writer` erneut; jeder
+neue Schreibschnitt beginnt mit einem frischen `plan_writer`.
+
+Während eines `SESSION_HANDOFF` ist im selben `state.json` desselben Laufs
+`phase = SESSION_HANDOFF` persistiert. Dadurch bleibt eine Wiederaufnahme über
+`ki-dev resume` eindeutig an dieser Phase möglich. Dafür entsteht keine neue
+Zustandsdatei und kein neues Schema; es genügt das bereits vorhandene Feld
+`phase`.
 
 Taskbeschreibung und Status werden nicht dupliziert; sie werden aus `bd`
 gelesen. Fachentscheidungen werden nicht nur im Laufzustand aufbewahrt: Ein
@@ -719,7 +742,8 @@ PLAN_INTERACTIVE
    │                    ├─ nächster TASK nötig → frischer plan_writer
    │                    └─ CONTROLLED_WRITE abgeschlossen → PLAN_INTERACTIVE
    ├─ Mensch oder unterstützendes Größenbegrenzungssignal erkennt zu große Sitzung
-   │     → SESSION_HANDOFF → neue Planning-Sitzung → PLAN_INTERACTIVE
+   │     → SESSION_HANDOFF (persistierte Phase, state.json.phase = SESSION_HANDOFF)
+   │       → neue Planning-Sitzung → PLAN_INTERACTIVE
    └─ Plan ausreichend fertig → HUMAN_APPROVAL
 HUMAN_APPROVAL
 → MATERIALIZE
@@ -753,16 +777,22 @@ Snapshot, aktuellem geprüften `plan.md` und den bisherigen Schreibschnitt-
 Ergebnissen rekonstruierbar. Endgültige `bd`-Vorgänge, Untervorgänge und
 Abhängigkeiten entstehen erst in `MATERIALIZE`.
 
-Der `SESSION_HANDOFF` (Abschnitt 2) ist der andere aus `PLAN_INTERACTIVE`
-herausführende Übergang neben `HUMAN_APPROVAL`. Er wird ausgelöst, wenn der
-Mensch oder ein unterstützendes Größenbegrenzungssignal erkennt, dass die
-laufende Planning-Sitzung für zuverlässiges weiteres Denken zu groß geworden
-ist; eine feste Größen-, Token- oder Turn-Schwelle legt dieser Plan dafür nicht
-fest. Die Rolle `session_handoff` erzeugt eine Fortsetzungsübergabe; das
-Planning wird danach in einer neuen Planning-Sitzung für dieselbe Planning-Bead
-wieder in `PLAN_INTERACTIVE` aufgenommen. Ein technischer Session-Fork ist keine
-Voraussetzung, und `SESSION_HANDOFF` erzeugt keine endgültigen `bd`-Vorgänge,
-Untervorgänge oder Abhängigkeiten.
+`SESSION_HANDOFF` (Abschnitt 2) ist selbst eine echte persistierte
+Orchestrator-Phase desselben Planning-Workflows und derselben Planning-Bead,
+kein eigener `bd`-Vorgang und kein neuer fachlicher Planning-Vorgang. Aus
+`PLAN_INTERACTIVE` kann bei angefordertem Handoff in die persistierte Phase
+`SESSION_HANDOFF` gewechselt werden; nach erfolgreichem Handoff wechselt der
+Workflow mit einer neuen Planning-Sitzung zurück nach `PLAN_INTERACTIVE`. Der
+Wechsel in diese Phase erfolgt, wenn der Mensch oder ein unterstützendes
+Größenbegrenzungssignal erkennt, dass die laufende Planning-Sitzung für
+zuverlässiges weiteres Denken zu groß geworden ist; eine feste Größen-, Token-
+oder Turn-Schwelle legt dieser Plan dafür nicht fest. Solange diese Phase läuft,
+ist `state.json.phase = SESSION_HANDOFF` persistiert, sodass ein Abbruch bzw.
+`resume` eindeutig hier wieder anknüpft. Die Rolle `session_handoff` erzeugt eine
+Fortsetzungsübergabe; das Planning wird danach in einer neuen Planning-Sitzung
+für dieselbe Planning-Bead wieder in `PLAN_INTERACTIVE` aufgenommen. Ein
+technischer Session-Fork ist keine Voraussetzung, und `SESSION_HANDOFF` erzeugt
+keine endgültigen `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten.
 
 Nach zwei erfolglosen Runden derselben Beanstandung wird deterministisch
 eskaliert. Der Reviewer darf nur Abweichungen vom freigegebenen Plan, von
@@ -1055,8 +1085,9 @@ Arbeitsgegenstand nicht.
   eingefrorenen Eingang gebundenen `CONTROLLED_WRITE` zu verändern;
 - die `WRITE`-Freigaberegel strikt von `HUMAN_APPROVAL` und `MATERIALIZE`
   getrennt halten: die Bestätigung einer Planerausgabe für einen Snapshot ist
-  keine Gesamtplan-Freigabe; der Snapshot schreibt nur `plan.md` und erzeugt
-  keine `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten;
+  keine Gesamtplan-Freigabe; der Snapshot ist reiner Schreibeingang, der
+  `CONTROLLED_WRITE` schreibt nur `plan.md`, und dabei entstehen keine
+  endgültigen `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten;
 - den `CONTROLLED_WRITE`-Lebenszyklus umsetzen: der `plan_write_controller`
   (Profil `control`, nicht-interaktiv) bestimmt je Schreibschnitt einen
   begrenzten `TASK` aus Snapshot und aktuellem geprüften `plan.md`, bei weiteren
@@ -1072,11 +1103,17 @@ Arbeitsgegenstand nicht.
   Sitzungsfortsetzung;
 - die Rückeskalation des `plan_write_controller` zu Planning bei fehlender
   fachlicher oder architektonischer Entscheidung umsetzen;
-- den `SESSION_HANDOFF` als eigenen Planning-Vorgang innerhalb von
-  `PLAN_INTERACTIVE` umsetzen (Vertrag siehe Abschnitt 2): ausgelöst durch den
-  Menschen oder durch das Signal einer unterstützenden Größenbegrenzung; `ki-dev`
-  legt dafür keine konkrete feste Größen-, Token- oder Turn-Schwelle fest, ein
-  unterstützendes Größenbegrenzungssignal bleibt zulässig;
+- den `SESSION_HANDOFF` als persistierte Orchestrator-Phase desselben
+  Planning-Workflows und derselben Planning-Bead umsetzen (Vertrag siehe
+  Abschnitt 2), nicht als neue Planning-Bead und nicht als neuen fachlichen
+  Planning-Vorgang: ausgelöst durch den Menschen oder durch das Signal einer
+  unterstützenden Größenbegrenzung; `ki-dev` legt dafür keine konkrete feste
+  Größen-, Token- oder Turn-Schwelle fest, ein unterstützendes
+  Größenbegrenzungssignal bleibt zulässig;
+- während dieser Phase `state.json.phase = SESSION_HANDOFF` desselben Laufs
+  persistieren, sodass ein Abbruch bzw. `ki-dev resume` eindeutig bei
+  `SESSION_HANDOFF` wiederaufnimmt; dafür keine neue Zustandsdatei und kein
+  neues Schema einführen, sondern das bestehende Feld `phase` verwenden;
 - dabei die eigene nicht-interaktive Rolle `session_handoff` (Profil `control`)
   über den `ki-dev`-eigenen Agent-Adapter starten und die nötige Profil-/
   Override-Auflösung gemäß dem allgemeinen Rollenvertrag durchführen;
@@ -1109,10 +1146,11 @@ erzeugen. Erst nach der menschlichen Freigabe des Gesamtplans erzeugt
 korrekt abhängige Implementation-Vorgänge, ohne Produktcode zu verändern.
 
 Abnahme (WRITE-/Snapshot-Vertrag): Im VPS-Beispiel werden beide `WRITE`-Fälle
-geprüft. Fall 1: Eine `WRITE`-Eingabe ohne neuen Inhalt bestätigt die
-unmittelbar vorherige Planerausgabe; daraufhin entsteht genau ein
-unveränderlicher Snapshot, der an den `plan_write_controller` übergeben wird und
-den `CONTROLLED_WRITE` auslöst. Fall 2: Eine `WRITE`-Eingabe mit neuem Inhalt
+geprüft. Fall 1: Eine `WRITE`-Eingabe ohne neuen Inhalt löst die kontrollierte
+Planfortschreibung aus und bestätigt die unmittelbar vorherige Planerausgabe;
+daraufhin entsteht gemäß Freigaberegel genau ein unveränderlicher Snapshot, der
+dem `plan_write_controller` als eingefrorener Schreibeingang des
+`CONTROLLED_WRITE` übergeben wird. Fall 2: Eine `WRITE`-Eingabe mit neuem Inhalt
 erzeugt zunächst keinen Snapshot; erst nach einer weiteren sichtbaren
 Planerausgabe, die den Inhalt verarbeitet, und deren ausdrücklicher menschlicher
 Bestätigung entstehen Snapshot und anschließend `CONTROLLED_WRITE`. In beiden
@@ -1242,17 +1280,21 @@ In der ersten Version werden nicht gebaut:
   Agentenurteil;
 - automatische Kostenoptimierung oder Modellwahl über die statische Profil-
   und Rollenkonfiguration sowie explizite Lauf-Overrides hinaus;
-- Unterstützung für mehr als zwei Executor-Arten in der ersten Version;
-- eine allgemeine Nachrichtenserialisierung der Planning-Kommunikation als Teil
-  des Kernentwurfs;
+- Unterstützung für mehr als zwei Executor-Arten in der ersten Version.
+
+Nicht zum erforderlichen V1-Kernentwurf gehören dagegen:
+
+- eine allgemeine Nachrichtenserialisierung der Planning-Kommunikation;
 - eine allgemeine Architektur zur Trennung oder Behandlung zusätzlicher
   Ausgabearten neben den eigentlichen Planerausgaben, etwa grammatischer
   Rückmeldungen.
 
-Diese beiden zuletzt genannten Nicht-Ziele ändern nichts an den bereits
-beschlossenen konkreten Verträgen für Planning-Snapshot, `CONTROLLED_WRITE`,
-`SESSION_HANDOFF` und `MATERIALIZE`. Solche Erweiterungen können nach Go-live
-behandelt werden.
+V1 muss diese beiden Punkte weder spezifizieren noch allgemein lösen. Das
+verbietet nicht, dass eine konkrete Umsetzung technisch bereits etwas
+Entsprechendes nutzt. Sie ändern nichts an den bereits beschlossenen konkreten
+Verträgen für Planning-Snapshot, `CONTROLLED_WRITE`, `SESSION_HANDOFF` und
+`MATERIALIZE`. Solche allgemeinen Erweiterungen können nach Go-live behandelt
+werden.
 
 Nach realer Nutzung kann als erstes optionales Feature folgen:
 
