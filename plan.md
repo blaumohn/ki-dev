@@ -658,33 +658,29 @@ letztes Ergebnis
 ```
 
 Für einen laufenden `CONTROLLED_WRITE` bleibt der Kontroller-Zustand über alle
-Schreibschnitte und Korrekturschleifen hinweg zusammenhängend. `state.json`
-bleibt auch dafür der kleine persistierte Orchestrierungszustand und hält nur
-den für die Orchestrierung nötigen Bezug bzw. Zustand:
+Schreibschnitte und Korrekturschleifen hinweg zusammenhängend. Der vollständige
+logische Kontroller-Zustand ist ohne executor-spezifische Sitzungsfortsetzung
+rekonstruierbar aus
 
 ```text
-Bezug auf den gespeicherten freigegebenen Planning-Snapshot dieses CONTROLLED_WRITE
-aktiver Schreibschnitt mit seinem begrenzten Schreibauftrag
-zuständiger plan_writer des aktiven Schreibschnitts
+gespeicherter freigegebener Planning-Snapshot
++ aktuelles geprüftes plan.md
++ bisherige Ergebnisse des laufenden CONTROLLED_WRITE
 ```
 
-Phase und Wiederaufnahme bleiben über das bereits vorhandene Feld `phase`
-abgedeckt; ein neues Feld oder Schema entsteht dafür nicht.
+Planning-Snapshot und bisherige `CONTROLLED_WRITE`-Ergebnisse sind dafür
+gespeicherte Laufartefakte bzw. Laufdaten; ob sie in einer oder mehreren Dateien
+und unter welchem Namen abgelegt werden, legt dieser Plan nicht fest.
 
-Der freigegebene Planning-Snapshot selbst und die bisherigen
-Schreibschnitt-Ergebnisse des laufenden `CONTROLLED_WRITE` sind demgegenüber
-gespeicherte Laufartefakte bzw. Laufdaten und müssen nicht als Inhalt von
-`state.json` dargestellt werden. Die Rekonstruktion greift auf sie als
-gespeicherte Grundlagen zu; ob sie in einer oder mehreren Dateien und unter
-welchem Namen abgelegt werden, legt dieser Abschnitt nicht fest.
-
-Aus dem Orchestrierungszustand in `state.json`, diesen gespeicherten Grundlagen
-und dem aktuellen geprüften `plan.md` ist der vollständige logische
-Kontroller-Zustand rekonstruierbar; insbesondere bleiben aktiver Schreibschnitt,
-zuständiger `plan_writer`, Phase und Wiederaufnahme eindeutig bestimmbar. Eine
-executor-spezifische Sitzungsfortsetzung ist dafür nicht nötig. Innerhalb eines
-Schreibschnitts übernimmt bei `CHANGES` derselbe `plan_writer` erneut; jeder
-neue Schreibschnitt beginnt mit einem frischen `plan_writer`.
+Davon getrennt bleibt `state.json` der kleine persistierte
+Orchestrierungszustand, der die Wiederaufnahme des Laufs ermöglicht. Bei
+Wiederaufnahme muss der Orchestrator daraus eindeutig erkennen, in welcher Phase
+und gegebenenfalls welchem aktiven Schreibschnitt der Lauf steht und ob für
+`CHANGES` derselbe `plan_writer` wiederzuverwenden ist. Wie diese Bezüge
+innerhalb des bestehenden Laufzustands technisch dargestellt werden, legt dieser
+Plan hier nicht fest. Innerhalb eines Schreibschnitts übernimmt bei `CHANGES`
+derselbe `plan_writer` erneut; jeder neue Schreibschnitt beginnt mit einem
+frischen `plan_writer`.
 
 Während eines `SESSION_HANDOFF` ist im selben `state.json` desselben Laufs
 `phase = SESSION_HANDOFF` persistiert. Dadurch bleibt eine Wiederaufnahme über
