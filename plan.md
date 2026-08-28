@@ -715,6 +715,8 @@ PLAN_INTERACTIVE
    │              └─ PASS_STEP         → Schreibschnitt beendet
    │                    ├─ nächster TASK nötig → frischer plan_writer
    │                    └─ CONTROLLED_WRITE abgeschlossen → PLAN_INTERACTIVE
+   ├─ Mensch oder unterstützendes Größenbegrenzungssignal erkennt zu große Sitzung
+   │     → SESSION_HANDOFF → neue Planning-Sitzung → PLAN_INTERACTIVE
    └─ Plan ausreichend fertig → HUMAN_APPROVAL
 HUMAN_APPROVAL
 → MATERIALIZE
@@ -747,6 +749,17 @@ Der Kontroller-Zustand ist ohne executor-spezifische Sitzungsfortsetzung aus
 Snapshot, aktuellem geprüften `plan.md` und den bisherigen Schreibschnitt-
 Ergebnissen rekonstruierbar. Endgültige `bd`-Vorgänge, Untervorgänge und
 Abhängigkeiten entstehen erst in `MATERIALIZE`.
+
+Der `SESSION_HANDOFF` (Abschnitt 2) ist der andere aus `PLAN_INTERACTIVE`
+herausführende Übergang neben `HUMAN_APPROVAL`. Er wird ausgelöst, wenn der
+Mensch oder ein unterstützendes Größenbegrenzungssignal erkennt, dass die
+laufende Planning-Sitzung für zuverlässiges weiteres Denken zu groß geworden
+ist; eine feste Größen-, Token- oder Turn-Schwelle legt dieser Plan dafür nicht
+fest. Die Rolle `session_handoff` erzeugt eine Fortsetzungsübergabe; das
+Planning wird danach in einer neuen Planning-Sitzung für dieselbe Planning-Bead
+wieder in `PLAN_INTERACTIVE` aufgenommen. Ein technischer Session-Fork ist keine
+Voraussetzung, und `SESSION_HANDOFF` erzeugt keine endgültigen `bd`-Vorgänge,
+Untervorgänge oder Abhängigkeiten.
 
 Nach zwei erfolglosen Runden derselben Beanstandung wird deterministisch
 eskaliert. Der Reviewer darf nur Abweichungen vom freigegebenen Plan, von
@@ -1012,6 +1025,35 @@ Arbeitsgegenstand nicht.
   (`plan_write_controller`, `plan_writer`, Planungs-Umsetzer, Planungs-Reviewer;
   `session_handoff` gemäß Abschnitt 2) mit Profil-, Override-
   und Mount-Parametern bauen;
+- die menschliche `WRITE`-Eingabe im Planer-Adapter als Auslöser der
+  kontrollierten Planfortschreibung erkennen und dabei `WRITE` mit neuem
+  Planungsinhalt von `WRITE` ohne neuen Planungsinhalt (nur Zustimmung oder
+  Freigabe der unmittelbar vorherigen Planerausgabe) unterscheiden; diese
+  fachliche Unterscheidung trifft der interaktive Planer, der Orchestrator
+  erzwingt nur die daraus folgende Reihenfolge;
+- die Freigaberegel vor jeder Snapshot-Erzeugung umsetzen: bei `WRITE` ohne
+  neuen Inhalt gilt die unmittelbar vorherige Planerausgabe als bestätigt; bei
+  `WRITE` mit neuem Inhalt verlangt der Orchestrator zuerst eine weitere
+  sichtbare Planerausgabe, die diesen Inhalt verarbeitet, und danach eine
+  ausdrückliche menschliche Bestätigung dieser Ausgabe;
+- die Snapshot-Sperre erzwingen: solange neuer Inhalt einer `WRITE`-Eingabe noch
+  nicht in einer vom Menschen bestätigten Planerausgabe verarbeitet ist, wird
+  weder ein Snapshot erzeugt noch ein `CONTROLLED_WRITE` gestartet;
+- aus dem so freigegebenen Planning-Kontext einen für diesen `CONTROLLED_WRITE`
+  unveränderlichen Snapshot erzeugen und ihn fest an diesen `CONTROLLED_WRITE`
+  binden; als zu prüfendes einfaches V1-Modell kann der Planning-Kontext die
+  Folge der Planerausgaben der bewusst kleinen Planning-Sitzung bis zur
+  bestätigten Ausgabe sein (Abschnitt 2); dieses Modell wird in Phase 3 geprüft,
+  aber nicht als einziges Snapshot-Modell für V1 festgelegt; eine konkrete
+  technische Snapshot-Darstellung oder Datei-/JSON-Struktur legt Phase 3 nicht
+  fest;
+- den erzeugten Snapshot als reinen Schreibeingang an den `plan_write_controller`
+  übergeben; die Planning-Sitzung darf danach weiterlaufen, ohne den an seinen
+  eingefrorenen Eingang gebundenen `CONTROLLED_WRITE` zu verändern;
+- die `WRITE`-Freigaberegel strikt von `HUMAN_APPROVAL` und `MATERIALIZE`
+  getrennt halten: die Bestätigung einer Planerausgabe für einen Snapshot ist
+  keine Gesamtplan-Freigabe; der Snapshot schreibt nur `plan.md` und erzeugt
+  keine `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten;
 - den `CONTROLLED_WRITE`-Lebenszyklus umsetzen: der `plan_write_controller`
   (Profil `control`, nicht-interaktiv) bestimmt je Schreibschnitt einen
   begrenzten `TASK` aus Snapshot und aktuellem geprüften `plan.md`, bei weiteren
@@ -1060,6 +1102,19 @@ nach `plan.md`, ohne `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten zu
 erzeugen. Erst nach der menschlichen Freigabe des Gesamtplans erzeugt
 `MATERIALIZE` aus dem Planning-Vorgang eine geprüfte Architekturdoku und drei
 korrekt abhängige Implementation-Vorgänge, ohne Produktcode zu verändern.
+
+Abnahme (WRITE-/Snapshot-Vertrag): Im VPS-Beispiel werden beide `WRITE`-Fälle
+geprüft. Fall 1: Eine `WRITE`-Eingabe ohne neuen Inhalt bestätigt die
+unmittelbar vorherige Planerausgabe; daraufhin entsteht genau ein
+unveränderlicher Snapshot, der an den `plan_write_controller` übergeben wird und
+den `CONTROLLED_WRITE` auslöst. Fall 2: Eine `WRITE`-Eingabe mit neuem Inhalt
+erzeugt zunächst keinen Snapshot; erst nach einer weiteren sichtbaren
+Planerausgabe, die den Inhalt verarbeitet, und deren ausdrücklicher menschlicher
+Bestätigung entstehen Snapshot und anschließend `CONTROLLED_WRITE`. In beiden
+Fällen läuft die Planning-Sitzung danach weiter, der Snapshot bleibt unverändert
+an seinen `CONTROLLED_WRITE` gebunden, und es entstehen keine `bd`-Vorgänge,
+Untervorgänge oder Abhängigkeiten; die `WRITE`-Bestätigung wird nicht als
+`HUMAN_APPROVAL` gewertet.
 
 Abnahme (Session-Handoff): Im selben VPS-Beispiel wird eine absichtlich zu groß
 gewordene Planning-Sitzung über einen `SESSION_HANDOFF` fortgesetzt. Die Rolle
