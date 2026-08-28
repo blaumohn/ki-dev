@@ -7,8 +7,8 @@ startet es im Wurzelverzeichnis eines Git-Repositories. Es verbindet drei
 Bausteine:
 
 1. `bd` speichert Vorgänge, Abhängigkeiten, Prioritäten und Zustände dauerhaft.
-2. Ralphex führt freigegebene Implementierungspläne aus, testet, reviewed und
-   committet sie.
+2. Ralphex führt freigegebene Implementierungspläne in getrennten Task- und
+   Review-Läufen aus, testet, reviewed und committet sie.
 3. `ki-dev` wählt genau einen Vorgang aus, weist ihn fest zu und startet den
    richtigen Workflow.
 
@@ -23,10 +23,10 @@ bd ready
 ki-dev wählt und bindet genau eine Bead-ID
    ↓
 workflow:planning        workflow:implementation
-Planer ↔ Benutzer        Ralphex-Umsetzung
-Planungs-Umsetzer        Tests
-Planungs-Reviewer        Reviews und Korrekturen
-Doku + bd-Graph          Commit
+Planer ↔ Benutzer        Ralphex Task-Ausführung
+Planungs-Umsetzer        Ralphex Review
+Planungs-Reviewer        Tests, Korrekturen, Commit
+Doku + bd-Graph
    ↓                         ↓
 Vorgang schließen        Vorgang schließen
    ↓
@@ -64,17 +64,17 @@ Planer ↔ Benutzer
 ### Umsetzung
 
 ```text
-Umsetzer
+Ralphex Task-Ausführung
 → Tests
-→ Reviewer
+→ Ralphex Review
 → Korrekturen
 → abschließende Prüfung
 → Commit
 ```
 
-Ralphex stellt diesen Zyklus bereits bereit. `ki-dev` erzeugt dafür aus genau
-einem `bd`-Vorgang einen ausführbaren Ralphex-Plan und übernimmt anschließend
-Integration und Zustandswechsel.
+`ki-dev` erzeugt dafür aus genau einem `bd`-Vorgang einen ausführbaren
+Ralphex-Plan, startet Task-Ausführung und Review getrennt auf demselben
+Arbeitszweig und übernimmt anschließend Integration und Zustandswechsel.
 
 ### Orchestrator
 
@@ -133,8 +133,8 @@ chmod +x ~/.local/bin/ralphex
 ```
 
 `~/.local/bin` muss im `PATH` liegen. Der Ralphex-Wrapper benötigt eine laufende
-Docker-Installation. Zusätzlich muss mindestens ein von Ralphex unterstützter
-Coding-Agent angemeldet sein, zuerst Codex oder Claude Code; dessen lokale
+Docker-Installation. Zusätzlich müssen Claude Code und Codex für die in den
+Rollen referenzierten Executor-Arten angemeldet sein; deren lokale
 Anmeldedaten werden vom Wrapper in den Container übernommen.
 
 Für die Entwicklung dieses Repositories soll es nach dem ersten Scaffold diese
@@ -154,7 +154,7 @@ Homebrew-Tap ist erst nach dem ersten stabilen Release erforderlich.
 
 ```bash
 cd /pfad/zum/projekt
-ki-dev init --executor=codex
+ki-dev init
 ki-dev doctor
 ```
 
@@ -165,7 +165,8 @@ ki-dev doctor
 3. Falls nötig `bd init --quiet` ausführen.
 4. Die passende Agentenintegration von `bd` einrichten.
 5. Falls nötig `ralphex --init` ausführen.
-6. `.ki-dev/config.toml`, lokale Prompts und Laufverzeichnisse anlegen.
+6. `.ki-dev/config.toml` mit Modellprofilen, Rollenzuordnung und optionalen
+   Rollen-Overrides, lokale Prompts und Laufverzeichnisse anlegen.
 7. Ralphex so konfigurieren, dass `ki-dev` den Lebenszyklus der generierten
    Ein-Vorgang-Pläne verwaltet.
 8. Einen klar abgegrenzten Agentenvertrag in die vorhandene Agentendokumentation
@@ -194,14 +195,20 @@ bewusst angepasste Prompts werden versioniert.
 
 `ki-dev doctor` prüft mindestens:
 
-- unterstützte Versionen von `bd`, Ralphex, Git und gewähltem Agenten;
-- erfolgreiche Agentenanmeldung, soweit die jeweilige CLI dies lokal prüfen
-  kann;
+- unterstützte Versionen von `bd`, Ralphex, Git und aller referenzierten
+  Executor;
+- erfolgreiche Anmeldung für jeden in `[executors]` referenzierten Eintrag,
+  soweit die jeweilige CLI dies lokal prüfen kann;
 - vorhandenes `bd`-Repository und lesbares JSON von `bd ready --json`;
 - gültige Ralphex-Konfiguration und erreichbaren Executor;
 - eindeutige Projektwurzel und beschreibbare Laufverzeichnisse;
 - keinen widersprüchlichen aktiven `ki-dev`-Lauf;
-- konfigurierte Schreibgrenzen und vorhandene Promptdateien.
+- konfigurierte Schreibgrenzen und vorhandene Promptdateien;
+- jede Rolle eine vollständige, beim zugeordneten Executor verfügbare
+  Modell-/Effort-Angabe hat;
+- Umsetzer und Reviewer derselben Phase haben verschiedene Executor;
+- alle Gate-Rollen sind explizit gesetzt und werden nicht über Fallbacks
+  aufgelöst.
 
 Die Ausgabe endet mit einer eindeutigen nächsten Aktion:
 
@@ -333,8 +340,10 @@ bd ready --json
 → bd show <id> --json
 → Workflow-Label lesen
 → Ein-Vorgang-Ralphex-Plan erzeugen
-→ Ralphex in isoliertem Worktree/Branch starten
-→ Tests und Reviews durch Ralphex
+→ Ralphex `--tasks-only` in isoliertem Worktree/Branch mit dem `work`-Profil starten
+→ Ausführungsnachweis prüfen
+→ Ralphex `--review` im selben Worktree gegen gespeicherten base_commit mit dem `control`-Profil starten
+→ Kontroll-Ausführungsnachweis prüfen
 → Ergebnis per Fast-forward in den Ausgangsbranch integrieren
 → Commit und sauberer Arbeitsbaum prüfen
 → bd close <id> --reason "..." --json
@@ -358,21 +367,32 @@ Vollständige Beschreibung und maßgebliche Quellen aus bd-b200.
 - [ ] Akzeptanzkriterium 2
 ```
 
-Der geplante Adapteraufruf ist sinngemäß:
+Die folgenden Aufrufe zeigen die aus der Beispielkonfiguration aufgelösten
+Parameter; der Adapter verdrahtet Modell- oder Effort-Werte nicht, sondern
+leitet sie aus Konfiguration und Overrides ab:
 
 ```bash
 ralphex \
-  --codex \
+  --tasks-only \
+  --task-model=sonnet:high \
   --worktree \
   --branch=ki-dev/bd-b200 \
+  .ki-dev/ralphex/plans/bd-b200.md
+
+ralphex \
+  --codex \
+  --review \
+  --review-model=sol:high \
+  --base-ref=<base_commit> \
   .ki-dev/ralphex/plans/bd-b200.md
 ```
 
 Die genaue Flag-Kompatibilität wird gegen die im Projekt unterstützte
 Ralphex-Version getestet und in `ki-dev doctor` abgesichert. `ki-dev` pusht
-nichts. Nach erfolgreichem Ralphex-Lauf wird nur per Fast-forward integriert.
-Ist das nicht möglich, bleibt der Vorgang offen und der Benutzer erhält eine
-konkrete Integrations-Eskalation.
+nichts. Der Review-Lauf startet im vom Task-Lauf erzeugten Worktree und nutzt
+den für den Lauf gespeicherten `base_commit`. Nach beiden erfolgreichen Läufen
+wird nur per Fast-forward integriert. Ist das nicht möglich, bleibt der
+Vorgang offen und der Benutzer erhält eine konkrete Integrations-Eskalation.
 
 ### 5.3 Unterbrechung oder Eskalation
 
@@ -433,10 +453,15 @@ run_id
 bead_id
 workflow
 phase
+role
 attempt
 base_branch und base_commit
 work_branch
 ralphex_plan und progress_log
+configured_executor und configured_model
+configured_effort
+observed_executor und observed_model
+observed_effort
 letztes Ergebnis
 ```
 
@@ -493,8 +518,14 @@ IMPLEMENT_PREPARE
 → CLOSE
 ```
 
-Fehler, Zeitlimit, Rate-Limit ohne erfolgreiche Wiederaufnahme, Review-Sackgasse
-oder Integrationskonflikt führen zu `PAUSED`, niemals zu `close`.
+Ausführung und Review sind getrennte Ralphex-Läufe auf demselben isolierten
+Arbeitszweig. Dadurch können Implementierer und Reviewer verschiedene
+Executor verwenden. Ein KI-Rollenergebnis gilt erst nach erfolgreicher Prüfung
+des Executor-Vertrags als angenommen. Eine beobachtete Abweichung bei einer
+Gate-Rolle macht ihr Ergebnis ungültig und führt zu `PAUSED`; Integration und
+`close` bleiben verboten. Fehler, Zeitlimit, Rate-Limit ohne erfolgreiche
+Wiederaufnahme, Review-Sackgasse oder Integrationskonflikt führen ebenfalls zu
+`PAUSED`, niemals zu `close`.
 
 ## 8. Schreibgrenzen und Git-Sicherheit
 
@@ -549,7 +580,119 @@ Nach Erfolg:
 - Integration ist Fast-forward;
 - erst dann wird der `bd`-Vorgang geschlossen.
 
-## 9. Umsetzungsphasen für dieses Repository
+## 9. Executor- und Modellzuordnung
+
+### 9.1 Grundsatz
+
+`ki-dev` löst für jede Agentenrolle in `.ki-dev/config.toml` ein konkretes
+Modellprofil auf. Ein Profil enthält Executor, Modell und Effort. Diese
+Zuordnung ist deterministisch. Agenten dürfen sie nicht verändern.
+
+Leitregel in Ergänzung zu Abschnitt 2:
+
+```text
+Prompt:
+Denken, Interpretation, Qualitätsurteil und Formulierung
+
+Orchestrator:
+Ablauf, aktuelle Bead-ID, Schreibrechte, Zustände, Gates,
+Executor- und Modellwahl, Commit-/Integrationsprüfung und close
+```
+
+### 9.2 Modellprofile, Rollen und Overrides
+
+Benannte Modellprofile sind bereits konkrete Zuordnungen, keine zusätzliche
+Tier-Logik. Rollen verweisen auf ein Profil. Ein optionaler Rollen-Override
+und anschließend ein einmaliger Lauf-Override können Werte ersetzen. Danach
+muss eine vollständige, verfügbare Kombination aus Executor, Modell und Effort
+vorliegen; andernfalls bricht `ki-dev` vor dem Rollenstart mit einem
+Konfigurationsfehler ab. Fallbacks, Warnungen oder das Verwerfen eines Teils
+der Modellangabe gelten nicht als gültige Auflösung.
+
+```toml
+[models.work]
+executor = "claude"
+model    = "sonnet"
+effort   = "high"
+
+[models.control]
+executor = "codex"
+model    = "sol"
+effort   = "high"
+
+[roles]
+planner           = "control"
+plan_materializer = "work"
+plan_reviewer     = "control"
+implementer       = "work"
+impl_reviewer     = "control"
+
+[role_overrides.impl_reviewer]
+effort = "xhigh"
+```
+
+Der Adapter leitet die versionierte Rollenangabe über Profil und mögliche
+Overrides in die jeweilige CLI-Schnittstelle ab. `ki-dev doctor` prüft die
+vollständige Abbildbarkeit gegen die gepinnten Executor- und Ralphex-Versionen.
+
+### 9.3 Rollenzuordnung und Invarianten
+
+| Rolle | Phase | Ausführung |
+| --- | --- | --- |
+| Planer | `PLAN_INTERACTIVE` | `ki-dev`-Agentenadapter |
+| Planungs-Umsetzer | `MATERIALIZE` | `ki-dev`-Agentenadapter |
+| Planungs-Reviewer | `REVIEW` | `ki-dev`-Agentenadapter |
+| Implementierer | `RALPHEX_EXECUTE` | Ralphex `--tasks-only` |
+| Implementation-Reviewer | `RALPHEX_REVIEW` | Ralphex `--review` |
+
+`ki-dev doctor` und der Orchestrator erzwingen:
+
+- Planungs-Umsetzer und Planungs-Reviewer verwenden verschiedene Executor.
+- Implementierer und Implementation-Reviewer verwenden verschiedene Executor.
+- Jedes in `[roles]` verwendete Modellprofil existiert.
+- Profil und Rollen-Override ergeben eine vollständige und verfügbare
+  Zuordnung.
+- Lokale Ralphex-Einstellungen dürfen die von `ki-dev` bestimmte Zuordnung
+  nicht überschreiben.
+- Kein gestarteter Agent erhält Schreibzugriff auf die Executor- oder
+  Modellkonfiguration.
+
+Der Implementierungs- und Review-Lauf verwenden denselben isolierten
+Arbeitszweig. Der Implementierungslauf erzeugt den Worktree; der Review-Lauf
+startet anschließend darin und prüft gegen den gespeicherten `base_commit`.
+
+### 9.4 Lauf-Override und Laufzeitprüfung
+
+Ein Lauf darf eine Rollenangabe ausdrücklich überschreiben, etwa:
+
+```bash
+ki-dev run bd-i103 --role-model implementer=codex:sol:high
+```
+
+Die Auflösung lautet: Modellprofil → Rollen-Override → Lauf-Override →
+Executor, Modell und Effort. Der Lauf-Override verändert `config.toml` nicht
+und muss dieselben Verfügbarkeits- und Invariantenprüfungen bestehen. Eine
+automatische Modellwahl oder Hochstufung gibt es in V1 nicht.
+
+Jeder Rollenstart erzeugt einen strukturierten Ausführungsnachweis mit
+mindestens `role`, `attempt`, `configured_executor`, `configured_model`,
+`configured_effort`, `observed_executor`, `observed_model` und
+`observed_effort`. Soweit der jeweilige Executor diese Angaben zuverlässig
+bereitstellt, vergleicht der Adapter Soll- und Ist-Werte, bevor er das
+Rollenergebnis akzeptiert.
+
+Für jede konfigurierte Angabe legt der gepinnte Executor-Vertrag fest, ob sie
+zur Laufzeit verlässlich beobachtbar ist. Nur solche Angaben werden zur
+Soll-/Ist-Prüfung herangezogen. Ist eine laut Executor-Vertrag erforderliche
+Beobachtung nicht verfügbar, wird das Rollenergebnis nicht akzeptiert und der
+Lauf geht nach `PAUSED`.
+
+Weichen beobachteter Executor, Modell oder Effort von der aufgelösten
+Konfiguration ab, wird das Ergebnis nicht akzeptiert und der Lauf geht nach
+`PAUSED`. Welche Angaben je Executor zuverlässig beobachtbar sind, ist Teil des
+gepinnten Executor-Vertrags aus Phase 0.
+
+## 10. Umsetzungsphasen für dieses Repository
 
 ### Phase 0 – externe Verträge festnageln
 
@@ -559,6 +702,9 @@ Nach Erfolg:
 - Ralphex ausschließlich für die V1-Schnittstellen in einem Toy-Repository
   prüfen: Plan-Datei ausführen, Worktree/Branch, Exitstatus und
   Reviewabschluss.
+- Verhalten der gepinnten Ralphex-Version für getrennte Ausführungs- und
+  Review-Läufe, Modell-/Effort-Angaben, `--wait` und das Format der
+  Laufzeitidentität festhalten.
 
 Ergebnis: eine kleine Kompatibilitätsmatrix, die auch `doctor` verwendet.
 
@@ -570,6 +716,7 @@ Ergebnis: eine kleine Kompatibilitätsmatrix, die auch `doctor` verwendet.
 - idempotentes `init` einschließlich Vorschau vorhandener Dateien bauen;
 - `doctor` mit hilfreichen Reparaturbefehlen umsetzen;
 - Unit-Tests mit simulierten Toolausgaben ergänzen.
+- Konfigurationsschema und `doctor`-Prüfungen der Executor-Invarianten bauen.
 
 Abnahme: Ein frisches Git-Repository wird mit der in Abschnitt 4 gezeigten
 Befehlsfolge vollständig eingerichtet oder mit einer eindeutigen
@@ -598,6 +745,9 @@ Arbeitsgegenstand nicht.
 - Korrekturschleife und Sackgassenerkennung implementieren;
 - getrennte Dokumentations- und Agentenrichtlinien aus den Rollen-Prompts
   referenzieren und im Review anwenden;
+- den `ki-dev`-eigenen Agent-Adapter für einen interaktiven und drei
+  nicht-interaktive Rollenstarts mit Profil-, Override- und Mount-Parametern
+  bauen;
 - die technische Mount-Grenze für Planung erzwingen: Produktcode read-only,
   konfigurierter Doku-Bereich und `bd` read-write; Diff-Prüfung und
   Reviewer-Gate als zweite Sicherung ergänzen.
@@ -614,6 +764,10 @@ Produktcode zu verändern.
 - erfolgreichen Branch ausschließlich per Fast-forward integrieren;
 - erst nach Integration `bd close` ausführen;
 - `Ctrl-C`, Toolfehler und erneuten Start korrekt behandeln.
+- Ausführung und Review als getrennte Ralphex-Läufe auf demselben Arbeitszweig
+  starten, Modellangaben übergeben und Laufzeitidentitäten auswerten;
+- die Profile und Overrides in Modellparameter, Ausführungsnachweis und
+  Laufzeitprüfung auflösen.
 
 Abnahme: Ein kleiner echter Codevorgang wird implementiert, getestet, reviewed,
 committet, integriert und genau einmal geschlossen.
@@ -625,6 +779,9 @@ committet, integriert und genau einmal geschlossen.
 - atomare Zustandsübergänge und Crash-Recovery testen;
 - `run --loop` bis `NO_READY`, `PAUSED` oder `ESCALATE` umsetzen;
 - keine automatischen Push-, Merge-Conflict- oder Reset-Aktionen zulassen.
+- Negativtests für ungültige Profilauflösungen, nicht beobachtbare
+  `control`-Identitäten und widersprüchliche lokale Ralphex-Einstellungen
+  ergänzen.
 
 Abnahme: Prozessabbruch in jeder Phase lässt einen verständlichen,
 wiederaufnehmbaren Zustand zurück und schließt keinen unvollständigen Vorgang.
@@ -639,10 +796,10 @@ wiederaufnehmbaren Zustand zurück und schließt keinen unvollständigen Vorgang
 - Installations-, Betriebs- und Fehlerdokumentation aus der tatsächlichen
   Nutzung korrigieren.
 
-Abnahme: Die vollständige Befehlsfolge aus Abschnitt 10 funktioniert ohne
+Abnahme: Die vollständige Befehlsfolge aus Abschnitt 11 funktioniert ohne
 manuelle `bd`- oder Ralphex-Zustandsreparatur.
 
-## 10. Vollständige Abnahmestrecke
+## 11. Vollständige Abnahmestrecke
 
 ```bash
 # einmalig auf dem Rechner
@@ -655,7 +812,7 @@ chmod +x ~/.local/bin/ralphex
 
 # einmalig im Zielprojekt
 cd /pfad/zum/projekt
-ki-dev init --executor=codex
+ki-dev init
 ki-dev doctor
 
 # neue Arbeit
@@ -691,7 +848,7 @@ Push/Deployment:           nicht automatisch ausgeführt
 Aktiver ki-dev-Lauf:       keiner
 ```
 
-## 11. Bewusste Nicht-Ziele
+## 12. Bewusste Nicht-Ziele
 
 In der ersten Version werden nicht gebaut:
 
@@ -704,6 +861,11 @@ In der ersten Version werden nicht gebaut:
 - parallele Multi-Agent-Integration;
 - automatischer Push, Pull Request, Release oder Deployment;
 - Übernahme beliebiger alter Chat-Sitzungen.
+- adaptive Modellwahl anhand von Aufgabeninhalt, Diff-Größe oder
+  Agentenurteil;
+- automatische Kostenoptimierung oder Modellwahl über die statische Profil-
+  und Rollenkonfiguration sowie explizite Lauf-Overrides hinaus;
+- Unterstützung für mehr als zwei Executor-Arten in der ersten Version.
 
 Nach realer Nutzung kann als erstes optionales Feature folgen:
 
@@ -715,7 +877,7 @@ Es übernimmt einen bereits freigegebenen Plan und startet direkt mit
 Planungs-Umsetzer und Planungs-Reviewer. Diese Erweiterung darf den Kernvertrag
 „eine Bead-ID pro Lauf“ nicht ändern.
 
-## 12. Referenzierte externe Schnittstellen
+## 13. Referenzierte externe Schnittstellen
 
 - Beads-Dokumentation: <https://github.com/gastownhall/beads>
 - Ralphex-Dokumentation: <https://github.com/umputun/ralphex>
