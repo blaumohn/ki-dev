@@ -40,9 +40,13 @@ Es gibt zwei Arbeitsarten, aber mehrere Rollen.
 ### Planung
 
 Planung ist ein bewusst kleiner, menschlich überprüfbarer Mensch-Planer-Dialog.
-Ein ausreichend geklärter Zwischenstand kann bereits während derselben
-Planning-Sitzung kontrolliert nach `plan.md` fortgeschrieben werden, ohne dass
-die Sitzung oder das betreffende Sachthema damit abgeschlossen wäre.
+Ein ausreichend geklärter Zwischenstand darf während derselben Planning-Sitzung
+kontrolliert nach `plan.md` fortgeschrieben werden. Das schließt weder die
+Sitzung noch das betreffende Sachthema ab; eine spätere Erkenntnis darf
+denselben Sachbereich erneut ergänzen oder korrigieren. Eine solche
+Zwischenfortschreibung erzeugt noch keine endgültigen `bd`-Vorgänge,
+Untervorgänge oder Abhängigkeiten und bleibt damit klar von der späteren
+vollständigen Planning-Materialisierung getrennt.
 
 ```text
 Planer ↔ Benutzer
@@ -61,12 +65,6 @@ Planer ↔ Benutzer
 - Der Planer versteht Problem, Quellen und Optionen und führt den Dialog mit
   dem Benutzer. Seine Ausgaben bleiben klein genug, dass der Benutzer sie
   vollständig prüfen kann.
-- Die kontrollierte Planfortschreibung hält einen geklärten Zwischenstand in
-  `plan.md` fest. Sie erzeugt noch keine endgültigen `bd`-Vorgänge,
-  Untervorgänge oder Abhängigkeiten. Eine spätere Erkenntnis darf denselben
-  Sachbereich durch eine weitere kontrollierte Fortschreibung ergänzen oder
-  korrigieren. Sie ist deshalb von der späteren vollständigen
-  Planning-Materialisierung zu unterscheiden.
 - Der Planungs-Umsetzer materialisiert nur die freigegebenen Entscheidungen.
   Der freigegebene Plan ist zunächst ein Laufartefakt, keine Vorgabe für ein
   neues Dokument: Er entscheidet anhand des Plans und der vorhandenen
@@ -282,16 +280,10 @@ Planer: Zusammenfassung der getroffenen Entscheidungen ...
 Plan freigeben? [y/N]
 ```
 
-Ein ausreichend geklärter Zwischenstand darf während derselben
-Planning-Sitzung kontrolliert nach `plan.md` fortgeschrieben werden. Das
-schließt weder die Planning-Sitzung noch das betreffende Sachthema ab und
-erzeugt noch keine endgültigen `bd`-Vorgänge, Untervorgänge oder
-Abhängigkeiten. Eine spätere Erkenntnis darf denselben Sachbereich durch eine
-weitere kontrollierte Fortschreibung ergänzen oder korrigieren.
-
-Die vollständige Planning-Materialisierung ist davon zu unterscheiden. Sie
-erzeugt aus dem freigegebenen Plan die Planungsdokumentation und die konkreten
-`bd`-Vorgänge. Vor `y` wird nichts materialisiert. Nach der Freigabe:
+Ein ausreichend geklärter Zwischenstand darf dabei nach `plan.md`
+fortgeschrieben werden, ohne die Planning-Sitzung zu beenden. Die Freigabe mit
+`y` gilt dagegen der vollständigen Planning-Materialisierung. Vor `y` wird
+nichts materialisiert. Nach der Freigabe:
 
 1. speichert `ki-dev` den freigegebenen Plan als Übergabeartefakt des Laufs;
 2. startet es den Planungs-Umsetzer;
@@ -495,8 +487,11 @@ letztes Ergebnis
 ```
 
 Taskbeschreibung und Status werden nicht dupliziert; sie werden aus `bd`
-gelesen. Fachentscheidungen werden nicht nur im Laufzustand aufbewahrt, sondern
-vom Planungs-Umsetzer in die vorgesehene Projektdokumentation übertragen.
+gelesen. Fachentscheidungen werden nicht nur im Laufzustand aufbewahrt: Ein
+ausreichend geklärter Zwischenstand wird bereits während `PLAN_INTERACTIVE`
+kontrolliert nach `plan.md` fortgeschrieben; der ausreichend fertige Gesamtplan
+wird anschließend vom Planungs-Umsetzer in die vorgesehene Projektdokumentation
+übertragen.
 
 Pro Repository darf die erste Version nur einen schreibenden Lauf gleichzeitig
 haben. Eine atomare Lockdatei verhindert einen zweiten Orchestrator.
@@ -534,11 +529,9 @@ HUMAN_APPROVAL
    └─ ESCALATE → PAUSED
 ```
 
-Die kontrollierte Planfortschreibung bleibt innerhalb von `PLAN_INTERACTIVE`.
-Sie schreibt nur `plan.md`, beendet die Planning-Sitzung nicht und erzeugt
-keine endgültigen `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten; diese
-entstehen erst in `MATERIALIZE`. Derselbe Sachbereich darf im weiteren Verlauf
-der Sitzung erneut fortgeschrieben werden.
+Die kontrollierte Planfortschreibung bleibt innerhalb von `PLAN_INTERACTIVE`
+und schreibt nur `plan.md`. Endgültige `bd`-Vorgänge, Untervorgänge und
+Abhängigkeiten entstehen erst in `MATERIALIZE`.
 
 Nach zwei erfolglosen Runden derselben Beanstandung wird deterministisch
 eskaliert. Der Reviewer darf nur Abweichungen vom freigegebenen Plan, von
@@ -573,9 +566,8 @@ bd-Graph             read-write
 Laufzustand          nur durch Orchestrator
 ```
 
-Die kontrollierte Planfortschreibung während der Planning-Sitzung nutzt
-dieselben Grenzen, schreibt darin aber nur `plan.md`. Der `bd`-Graph wird erst
-in `MATERIALIZE` geschrieben.
+Die kontrollierte Planfortschreibung nutzt dieselben Grenzen, schreibt darin
+aber nur `plan.md`.
 
 ### Umsetzung
 
