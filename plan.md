@@ -39,8 +39,17 @@ Es gibt zwei Arbeitsarten, aber mehrere Rollen.
 
 ### Planung
 
+Planung ist ein bewusst kleiner, menschlich überprüfbarer Mensch-Planer-Dialog.
+Ein ausreichend geklärter Zwischenstand kann bereits während derselben
+Planning-Sitzung kontrolliert nach `plan.md` fortgeschrieben werden, ohne dass
+die Sitzung oder das betreffende Sachthema damit abgeschlossen wäre.
+
 ```text
 Planer ↔ Benutzer
+→ ausreichend geklärter Zwischenstand
+→ kontrollierte Planfortschreibung in plan.md
+→ zurück in denselben Mensch-Planer-Dialog
+...
 → freigegebener Plan
 → Planungs-Umsetzer
 → Planungsdokumentation und bd-Graph
@@ -50,7 +59,14 @@ Planer ↔ Benutzer
 ```
 
 - Der Planer versteht Problem, Quellen und Optionen und führt den Dialog mit
-  dem Benutzer.
+  dem Benutzer. Seine Ausgaben bleiben klein genug, dass der Benutzer sie
+  vollständig prüfen kann.
+- Die kontrollierte Planfortschreibung hält einen geklärten Zwischenstand in
+  `plan.md` fest. Sie erzeugt noch keine endgültigen `bd`-Vorgänge,
+  Untervorgänge oder Abhängigkeiten. Eine spätere Erkenntnis darf denselben
+  Sachbereich durch eine weitere kontrollierte Fortschreibung ergänzen oder
+  korrigieren. Sie ist deshalb von der späteren vollständigen
+  Planning-Materialisierung zu unterscheiden.
 - Der Planungs-Umsetzer materialisiert nur die freigegebenen Entscheidungen.
   Der freigegebene Plan ist zunächst ein Laufartefakt, keine Vorgabe für ein
   neues Dokument: Er entscheidet anhand des Plans und der vorhandenen
@@ -197,18 +213,17 @@ bewusst angepasste Prompts werden versioniert.
 
 - unterstützte Versionen von `bd`, Ralphex, Git und aller referenzierten
   Executor;
-- erfolgreiche Anmeldung für jeden in `[executors]` referenzierten Eintrag,
-  soweit die jeweilige CLI dies lokal prüfen kann;
+- erfolgreiche Anmeldung für jeden über Modellprofile und Rollen-Overrides
+  referenzierten Executor, soweit die jeweilige CLI dies lokal prüfen kann;
 - vorhandenes `bd`-Repository und lesbares JSON von `bd ready --json`;
 - gültige Ralphex-Konfiguration und erreichbaren Executor;
 - eindeutige Projektwurzel und beschreibbare Laufverzeichnisse;
 - keinen widersprüchlichen aktiven `ki-dev`-Lauf;
 - konfigurierte Schreibgrenzen und vorhandene Promptdateien;
-- jede Rolle eine vollständige, beim zugeordneten Executor verfügbare
-  Modell-/Effort-Angabe hat;
-- Umsetzer und Reviewer derselben Phase haben verschiedene Executor;
-- alle Gate-Rollen sind explizit gesetzt und werden nicht über Fallbacks
-  aufgelöst.
+- jedes verwendete Modellprofil existiert;
+- Profil und Rollen-Override ergeben eine vollständige und verfügbare
+  Executor-/Modell-/Effort-Zuordnung;
+- Umsetzer und jeweilige Kontrollrolle verwenden verschiedene Executor.
 
 Die Ausgabe endet mit einer eindeutigen nächsten Aktion:
 
@@ -250,19 +265,33 @@ bd update <planning-id> --claim --json
 Damit bleibt die Integration mit den dokumentierten Standardtypen von `bd`
 portabel.
 
-Danach beginnt im selben Terminal die starke interaktive Planung:
+Danach beginnt im selben Terminal die starke interaktive Planung. Der Dialog
+bleibt bewusst klein: Jede Planerausgabe bleibt so kurz, dass der Benutzer sie
+vollständig prüfen kann.
 
 ```text
 ki-dev: Planning bd-a1b2
 Planer: Welche Betriebsumgebung und welche Ausfallgrenze gelten?
 Benutzer: ...
 Planer: Ich sehe zwei tragfähige Varianten ...
+ki-dev: Zwischenstand kontrolliert nach plan.md fortgeschrieben
+        Planning-Sitzung läuft weiter
+Planer: Offen ist noch das Secrets-Handling ...
 ...
 Planer: Zusammenfassung der getroffenen Entscheidungen ...
 Plan freigeben? [y/N]
 ```
 
-Vor `y` wird nichts materialisiert. Nach der Freigabe:
+Ein ausreichend geklärter Zwischenstand darf während derselben
+Planning-Sitzung kontrolliert nach `plan.md` fortgeschrieben werden. Das
+schließt weder die Planning-Sitzung noch das betreffende Sachthema ab und
+erzeugt noch keine endgültigen `bd`-Vorgänge, Untervorgänge oder
+Abhängigkeiten. Eine spätere Erkenntnis darf denselben Sachbereich durch eine
+weitere kontrollierte Fortschreibung ergänzen oder korrigieren.
+
+Die vollständige Planning-Materialisierung ist davon zu unterscheiden. Sie
+erzeugt aus dem freigegebenen Plan die Planungsdokumentation und die konkreten
+`bd`-Vorgänge. Vor `y` wird nichts materialisiert. Nach der Freigabe:
 
 1. speichert `ki-dev` den freigegebenen Plan als Übergabeartefakt des Laufs;
 2. startet es den Planungs-Umsetzer;
@@ -495,13 +524,21 @@ werden.
 
 ```text
 PLAN_INTERACTIVE
-→ HUMAN_APPROVAL
+   ├─ kontrollierte Planfortschreibung → PLAN_INTERACTIVE
+   └─ Plan ausreichend fertig          → HUMAN_APPROVAL
+HUMAN_APPROVAL
 → MATERIALIZE
 → REVIEW
    ├─ PASS     → INTEGRATE → CLOSE
    ├─ CHANGES  → MATERIALIZE
    └─ ESCALATE → PAUSED
 ```
+
+Die kontrollierte Planfortschreibung bleibt innerhalb von `PLAN_INTERACTIVE`.
+Sie schreibt nur `plan.md`, beendet die Planning-Sitzung nicht und erzeugt
+keine endgültigen `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten; diese
+entstehen erst in `MATERIALIZE`. Derselbe Sachbereich darf im weiteren Verlauf
+der Sitzung erneut fortgeschrieben werden.
 
 Nach zwei erfolglosen Runden derselben Beanstandung wird deterministisch
 eskaliert. Der Reviewer darf nur Abweichungen vom freigegebenen Plan, von
@@ -521,11 +558,9 @@ IMPLEMENT_PREPARE
 Ausführung und Review sind getrennte Ralphex-Läufe auf demselben isolierten
 Arbeitszweig. Dadurch können Implementierer und Reviewer verschiedene
 Executor verwenden. Ein KI-Rollenergebnis gilt erst nach erfolgreicher Prüfung
-des Executor-Vertrags als angenommen. Eine beobachtete Abweichung bei einer
-Gate-Rolle macht ihr Ergebnis ungültig und führt zu `PAUSED`; Integration und
-`close` bleiben verboten. Fehler, Zeitlimit, Rate-Limit ohne erfolgreiche
-Wiederaufnahme, Review-Sackgasse oder Integrationskonflikt führen ebenfalls zu
-`PAUSED`, niemals zu `close`.
+des Executor-Vertrags nach Abschnitt 9.4 als angenommen. Fehler, Zeitlimit,
+Rate-Limit ohne erfolgreiche Wiederaufnahme, Review-Sackgasse oder
+Integrationskonflikt führen zu `PAUSED`, niemals zu `close`.
 
 ## 8. Schreibgrenzen und Git-Sicherheit
 
@@ -537,6 +572,10 @@ Planungsdokumente    read-write gemäß konfigurierter Pfade
 bd-Graph             read-write
 Laufzustand          nur durch Orchestrator
 ```
+
+Die kontrollierte Planfortschreibung während der Planning-Sitzung nutzt
+dieselben Grenzen, schreibt darin aber nur `plan.md`. Der `bd`-Graph wird erst
+in `MATERIALIZE` geschrieben.
 
 ### Umsetzung
 
