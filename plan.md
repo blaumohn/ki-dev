@@ -1191,8 +1191,8 @@ In der ersten Version werden nicht gebaut:
 
 Diese beiden zuletzt genannten Nicht-Ziele ändern nichts an den bereits
 beschlossenen konkreten Verträgen für Planning-Snapshot, `CONTROLLED_WRITE`,
-`SESSION_HANDOFF` und `MATERIALIZE`. Solche Erweiterungen werden erst nach realer
-Nutzung bzw. nach Go-live behandelt.
+`SESSION_HANDOFF` und `MATERIALIZE`. Solche Erweiterungen können nach Go-live
+behandelt werden.
 
 Nach realer Nutzung kann als erstes optionales Feature folgen:
 
