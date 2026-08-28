@@ -75,6 +75,48 @@ Planer ↔ Benutzer
 - Der Benutzer entscheidet fachliche oder architektonische Fragen und gibt den
   Plan frei.
 
+### Kontrollierte Planfortschreibung: Freigabe und Snapshot
+
+Eine kontrollierte Planfortschreibung arbeitet nicht auf dem fortlaufend
+veränderlichen Gespräch, sondern auf einem eingefrorenen **Snapshot** des dafür
+freigegebenen Planning-Kontexts. Die Planning-Sitzung darf während der Kontroll-
+und Schreibschleife weiterlaufen; die konkrete Schreibschleife bleibt trotzdem
+an ihren unveränderlichen Eingang gebunden.
+
+Für V1 kann als zu prüfendes einfaches Modell die Folge der Planerausgaben der
+bewusst kleinen Planning-Sitzung als Planning-Kontext dieses Snapshots dienen.
+Der Schreibkontroller erhält diesen gesamten Kontext, nicht nur die letzte
+Entscheidung, und muss weiterhin geltende frühere Entscheidungen berücksichtigen,
+damit die Fortschreibung keine Regression erzeugt.
+
+Ausgelöst wird eine Fortschreibung durch eine menschliche `WRITE`-Eingabe im
+Planungsdialog:
+
+- Enthält die `WRITE`-Eingabe **keinen neuen Planungsinhalt**, sondern nur
+  Zustimmung oder Freigabe, gilt die unmittelbar vorherige Planerausgabe als
+  bestätigt und der Snapshot wird daraus erzeugt.
+- Enthält die `WRITE`-Eingabe **neuen Planungsinhalt**, gelangt dieser nicht
+  unmittelbar in den Snapshot. Der Planer muss ihn zuerst in einer weiteren
+  sichtbaren Planerausgabe verarbeiten; erst nach menschlicher Bestätigung
+  dieser Ausgabe wird der Snapshot erzeugt.
+
+Dadurch bleiben zwei Prüfungen getrennt:
+
+1. Der Mensch prüft, ob der Planer den Dialogstand richtig erfasst hat.
+2. Der Schreibkontroller prüft auf dem Snapshot, ob der bestätigte Stand für die
+   konkrete Schreibarbeit an `plan.md` ausreichend bestimmt ist.
+
+Fehlt für die verlangte Fortschreibung eine notwendige fachliche oder
+architektonische Entscheidung, darf der Schreibkontroller sie nicht selbst
+treffen; die Runde eskaliert zurück zu Planning. Nach der Klärung kann aus dem
+normalen menschlich geprüften Planning-Dialog erneut eine Freigabe entstehen;
+eine automatische neue `WRITE`-Eingabe entsteht dadurch nicht.
+
+Der Snapshot ist ein reiner Schreibeingang für `plan.md`. Er erzeugt keine
+`bd`-Vorgänge, Untervorgänge oder Abhängigkeiten; diese entstehen weiterhin
+ausschließlich in der späteren vollständigen Planning-Materialisierung
+(`MATERIALIZE`).
+
 ### Umsetzung
 
 ```text
@@ -271,8 +313,10 @@ vollständig prüfen kann.
 ki-dev: Planning bd-a1b2
 Planer: Welche Betriebsumgebung und welche Ausfallgrenze gelten?
 Benutzer: ...
-Planer: Ich sehe zwei tragfähige Varianten ...
-ki-dev: Zwischenstand kontrolliert nach plan.md fortgeschrieben
+Planer: Ich empfehle Variante B, weil ...
+Benutzer: Einverstanden, bitte so festhalten.
+ki-dev: WRITE ohne neuen Inhalt, vorherige Planerausgabe bestätigt
+        Snapshot erzeugt, Zwischenstand kontrolliert nach plan.md fortgeschrieben
         Planning-Sitzung läuft weiter
 Planer: Offen ist noch das Secrets-Handling ...
 ...
@@ -488,10 +532,10 @@ letztes Ergebnis
 
 Taskbeschreibung und Status werden nicht dupliziert; sie werden aus `bd`
 gelesen. Fachentscheidungen werden nicht nur im Laufzustand aufbewahrt: Ein
-ausreichend geklärter Zwischenstand wird bereits während `PLAN_INTERACTIVE`
-kontrolliert nach `plan.md` fortgeschrieben; der ausreichend fertige Gesamtplan
-wird anschließend vom Planungs-Umsetzer in die vorgesehene Projektdokumentation
-übertragen.
+ausreichend geklärter Zwischenstand kann bereits während `PLAN_INTERACTIVE`
+kontrolliert nach `plan.md` fortgeschrieben werden; erst die spätere
+vollständige Planning-Materialisierung überträgt den ausreichend fertigen und
+freigegebenen Gesamtplan in die vorgesehene Projektdokumentation.
 
 Pro Repository darf die erste Version nur einen schreibenden Lauf gleichzeitig
 haben. Eine atomare Lockdatei verhindert einen zweiten Orchestrator.
@@ -519,8 +563,14 @@ werden.
 
 ```text
 PLAN_INTERACTIVE
-   ├─ kontrollierte Planfortschreibung → PLAN_INTERACTIVE
-   └─ Plan ausreichend fertig          → HUMAN_APPROVAL
+   ├─ WRITE ohne neuen Planungsinhalt
+   │     → vorherige Planerausgabe bestätigt → Snapshot
+   ├─ WRITE mit neuem Planungsinhalt
+   │     → weitere sichtbare Planerausgabe → menschliche Bestätigung → Snapshot
+   ├─ Snapshot → Schreibkontrolle
+   │     ├─ ausreichend bestimmt → plan.md fortschreiben → PLAN_INTERACTIVE
+   │     └─ Entscheidung fehlt    → zurück zu Planning     → PLAN_INTERACTIVE
+   └─ Plan ausreichend fertig → HUMAN_APPROVAL
 HUMAN_APPROVAL
 → MATERIALIZE
 → REVIEW
@@ -530,8 +580,15 @@ HUMAN_APPROVAL
 ```
 
 Die kontrollierte Planfortschreibung bleibt innerhalb von `PLAN_INTERACTIVE`
-und schreibt nur `plan.md`. Endgültige `bd`-Vorgänge, Untervorgänge und
-Abhängigkeiten entstehen erst in `MATERIALIZE`.
+und schreibt nur `plan.md`. Sie arbeitet auf einem eingefrorenen Snapshot des
+freigegebenen Planning-Kontexts (Abschnitt 2) und wird durch eine menschliche
+`WRITE`-Eingabe ausgelöst. Neuer Planungsinhalt in dieser Eingabe muss der
+Planer erst in einer vom Menschen bestätigten Ausgabe verarbeiten, bevor der
+Snapshot entsteht. Der Schreibkontroller prüft danach den Snapshot auf
+ausreichende Bestimmtheit und eskaliert bei fehlender fachlicher oder
+architektonischer Entscheidung zurück in den Planungsdialog, ohne sie selbst zu
+treffen. Endgültige `bd`-Vorgänge, Untervorgänge und Abhängigkeiten entstehen
+erst in `MATERIALIZE`.
 
 Nach zwei erfolglosen Runden derselben Beanstandung wird deterministisch
 eskaliert. Der Reviewer darf nur Abweichungen vom freigegebenen Plan, von
