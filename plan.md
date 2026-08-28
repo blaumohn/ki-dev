@@ -117,6 +117,64 @@ Der Snapshot ist ein reiner Schreibeingang für `plan.md`. Er erzeugt keine
 ausschließlich in der späteren vollständigen Planning-Materialisierung
 (`MATERIALIZE`).
 
+### CONTROLLED_WRITE: Lebenszyklus und rekonstruierbarer Laufzustand
+
+Die konkrete Kontroll- und Schreibschleife auf einem Snapshot heißt
+`CONTROLLED_WRITE`. Der Schreibkontroller (`plan_write_controller`) ist dafür
+ein eigener nicht-interaktiver Agentenlauf mit Profil `control`; der Schreibagent
+(`plan_writer`) läuft mit Profil `work`.
+
+Ein `CONTROLLED_WRITE` besitzt über alle seine Schreibschnitte und
+Korrekturschleifen hinweg einen logisch zusammenhängenden Kontroller-Zustand.
+Der Schreibkontroller prüft am Snapshot, ob der freigegebene Planning-Stand
+fachlich und architektonisch ausreichend bestimmt ist. Den konkreten begrenzten
+Schreibauftrag bestimmt er dagegen nicht aus dem Snapshot allein, sondern
+zugleich aus dem aktuellen geprüften Stand von `plan.md`; bei weiteren
+Schreibschnitten kommen die bisherigen `CONTROLLED_WRITE`-Ergebnisse hinzu:
+
+```text
+gespeicherter Planning-Snapshot
+        +
+aktuelles geprüftes plan.md
+        +
+bei späteren Schritten: bisherige CONTROLLED_WRITE-Ergebnisse
+        ↓
+plan_write_controller
+        ↓
+nächster begrenzter TASK
+```
+
+So bestimmt der Schreibkontroller den ersten begrenzten `TASK` und ebenso jeden
+weiteren nach `PASS_STEP`; das vermeidet Regressionen sowie bereits erledigte
+oder unnötige Änderungen. Für jeden neuen Schreibschnitt startet ein frischer
+`plan_writer`. Innerhalb desselben Schreibschnitts bleibt bei normalen
+`CHANGES` derselbe Schreibagent zuständig:
+
+```text
+TASK
+→ Schreibagent
+→ RESULT
+→ Schreibkontroller
+   ├─ CHANGES   → derselbe Schreibagent
+   └─ PASS_STEP → Schreibschnitt beendet
+```
+
+Erst nach `PASS_STEP` bestimmt der Schreibkontroller den nächsten begrenzten
+Schreibauftrag; dafür startet ein frischer `plan_writer`. Sind keine weiteren
+Schreibaufträge nötig, ist der `CONTROLLED_WRITE` abgeschlossen und der
+Planungsdialog läuft weiter. Fehlt eine notwendige fachliche oder
+architektonische Entscheidung, eskaliert der Schreibkontroller zurück zu
+Planning, statt sie selbst zu treffen.
+
+Die Korrektheit von `CONTROLLED_WRITE` hängt nicht von einer
+executor-spezifischen Sitzungsfortsetzung ab; ein technischer Session-Fork ist
+keine Architekturvoraussetzung. Der für eine Fortsetzung nötige
+Kontroller-Zustand ist rekonstruierbar aus
+
+- dem gespeicherten freigegebenen Planning-Snapshot,
+- dem aktuellen geprüften Planungsdokument und
+- den bisherigen Ergebnissen des laufenden `CONTROLLED_WRITE`.
+
 ### Session-Handoff: Fortsetzung in einer neuen Planning-Sitzung
 
 Ein `SESSION_HANDOFF` ist ein eigener Vorgang. Er ist weder die kontrollierte
@@ -565,6 +623,23 @@ observed_effort
 letztes Ergebnis
 ```
 
+Für einen laufenden `CONTROLLED_WRITE` bleibt der Kontroller-Zustand über alle
+Schreibschnitte und Korrekturschleifen hinweg zusammenhängend. Der Laufzustand
+hält dafür zusätzlich:
+
+```text
+freigegebener Planning-Snapshot dieses CONTROLLED_WRITE
+aktiver Schreibschnitt mit seinem begrenzten Schreibauftrag
+zuständiger plan_writer des aktiven Schreibschnitts
+bisherige Schreibschnitt-Ergebnisse des laufenden CONTROLLED_WRITE
+```
+
+Aus diesen Angaben zusammen mit dem aktuellen geprüften `plan.md` ist der
+Kontroller-Zustand vollständig rekonstruierbar; eine executor-spezifische
+Sitzungsfortsetzung ist dafür nicht nötig. Innerhalb eines Schreibschnitts
+übernimmt bei `CHANGES` derselbe `plan_writer` erneut; jeder neue Schreibschnitt
+beginnt mit einem frischen `plan_writer`.
+
 Taskbeschreibung und Status werden nicht dupliziert; sie werden aus `bd`
 gelesen. Fachentscheidungen werden nicht nur im Laufzustand aufbewahrt: Ein
 ausreichend geklärter Zwischenstand kann bereits während `PLAN_INTERACTIVE`
@@ -602,9 +677,17 @@ PLAN_INTERACTIVE
    │     → vorherige Planerausgabe bestätigt → Snapshot
    ├─ WRITE mit neuem Planungsinhalt
    │     → weitere sichtbare Planerausgabe → menschliche Bestätigung → Snapshot
-   ├─ Snapshot → Schreibkontrolle
-   │     ├─ ausreichend bestimmt → plan.md fortschreiben → PLAN_INTERACTIVE
-   │     └─ Entscheidung fehlt    → zurück zu Planning     → PLAN_INTERACTIVE
+   ├─ Snapshot → CONTROLLED_WRITE
+   │     Schreibkontroller prüft Snapshot auf ausreichende Bestimmtheit
+   │     ├─ Entscheidung fehlt → Eskalation zurück zu Planning → PLAN_INTERACTIVE
+   │     └─ ausreichend bestimmt → Schreibkontroller bestimmt begrenzten TASK
+   │           aus Snapshot + geprüftem plan.md (+ bisherige CONTROLLED_WRITE-Ergebnisse)
+   │           → frischer plan_writer → RESULT → Schreibkontroller
+   │              ├─ CHANGES          → derselbe plan_writer
+   │              ├─ Entscheidung fehlt → Eskalation zurück zu Planning → PLAN_INTERACTIVE
+   │              └─ PASS_STEP         → Schreibschnitt beendet
+   │                    ├─ nächster TASK nötig → frischer plan_writer
+   │                    └─ CONTROLLED_WRITE abgeschlossen → PLAN_INTERACTIVE
    └─ Plan ausreichend fertig → HUMAN_APPROVAL
 HUMAN_APPROVAL
 → MATERIALIZE
@@ -614,16 +697,29 @@ HUMAN_APPROVAL
    └─ ESCALATE → PAUSED
 ```
 
-Die kontrollierte Planfortschreibung bleibt innerhalb von `PLAN_INTERACTIVE`
-und schreibt nur `plan.md`. Sie arbeitet auf einem eingefrorenen Snapshot des
-freigegebenen Planning-Kontexts (Abschnitt 2) und wird durch eine menschliche
-`WRITE`-Eingabe ausgelöst. Neuer Planungsinhalt in dieser Eingabe muss der
-Planer erst in einer vom Menschen bestätigten Ausgabe verarbeiten, bevor der
-Snapshot entsteht. Der Schreibkontroller prüft danach den Snapshot auf
-ausreichende Bestimmtheit und eskaliert bei fehlender fachlicher oder
-architektonischer Entscheidung zurück in den Planungsdialog, ohne sie selbst zu
-treffen. Endgültige `bd`-Vorgänge, Untervorgänge und Abhängigkeiten entstehen
-erst in `MATERIALIZE`.
+Die kontrollierte Planfortschreibung (`CONTROLLED_WRITE`) bleibt innerhalb von
+`PLAN_INTERACTIVE` und schreibt nur `plan.md`. Sie arbeitet auf einem
+eingefrorenen Snapshot des freigegebenen Planning-Kontexts (Abschnitt 2) und
+wird durch eine menschliche `WRITE`-Eingabe ausgelöst. Neuer Planungsinhalt in
+dieser Eingabe muss der Planer erst in einer vom Menschen bestätigten Ausgabe
+verarbeiten, bevor der Snapshot entsteht. Der Schreibkontroller
+(`plan_write_controller`) prüft danach den Snapshot auf ausreichende
+Bestimmtheit und eskaliert bei fehlender fachlicher oder architektonischer
+Entscheidung zurück in den Planungsdialog, ohne sie selbst zu treffen.
+
+Ein `CONTROLLED_WRITE` hält über alle Schreibschnitte und `CHANGES`-Schleifen
+hinweg einen zusammenhängenden Kontroller-Zustand (Abschnitt 2). Die Prüfung auf
+ausreichende Bestimmtheit bleibt auf den Snapshot bezogen; den begrenzten `TASK`
+je Schreibschnitt bestimmt der Schreibkontroller dagegen aus dem Snapshot und
+dem aktuellen geprüften `plan.md`, bei weiteren Schreibschnitten zusätzlich aus
+den bisherigen `CONTROLLED_WRITE`-Ergebnissen. Dafür startet ein frischer
+`plan_writer`. Innerhalb eines Schreibschnitts übernimmt bei `CHANGES` derselbe
+`plan_writer`; erst nach `PASS_STEP` bestimmt der Schreibkontroller den nächsten
+`TASK` oder schließt den `CONTROLLED_WRITE` ab.
+Der Kontroller-Zustand ist ohne executor-spezifische Sitzungsfortsetzung aus
+Snapshot, aktuellem geprüften `plan.md` und den bisherigen Schreibschnitt-
+Ergebnissen rekonstruierbar. Endgültige `bd`-Vorgänge, Untervorgänge und
+Abhängigkeiten entstehen erst in `MATERIALIZE`.
 
 Nach zwei erfolglosen Runden derselben Beanstandung wird deterministisch
 eskaliert. Der Reviewer darf nur Abweichungen vom freigegebenen Plan, von
@@ -879,9 +975,26 @@ Arbeitsgegenstand nicht.
 - Korrekturschleife und Sackgassenerkennung implementieren;
 - getrennte Dokumentations- und Agentenrichtlinien aus den Rollen-Prompts
   referenzieren und im Review anwenden;
-- den `ki-dev`-eigenen Agent-Adapter für einen interaktiven und drei
-  nicht-interaktive Rollenstarts mit Profil-, Override- und Mount-Parametern
-  bauen;
+- den `ki-dev`-eigenen Agent-Adapter für den einen interaktiven Planerstart und
+  die nicht-interaktiven Planning-Rollenstarts aus Abschnitt 9.3
+  (`plan_write_controller`, `plan_writer`, Planungs-Umsetzer, Planungs-Reviewer;
+  `session_handoff` gemäß bereits abgenommenem Vertrag) mit Profil-, Override-
+  und Mount-Parametern bauen;
+- den `CONTROLLED_WRITE`-Lebenszyklus umsetzen: der `plan_write_controller`
+  (Profil `control`, nicht-interaktiv) bestimmt je Schreibschnitt einen
+  begrenzten `TASK` aus Snapshot und aktuellem geprüften `plan.md`, bei weiteren
+  Schreibschnitten zusätzlich aus den bisherigen `CONTROLLED_WRITE`-Ergebnissen;
+  pro Schreibschnitt startet ein frischer `plan_writer`
+  (Profil `work`); innerhalb eines Schreibschnitts übernimmt bei `CHANGES`
+  derselbe `plan_writer`; erst nach `PASS_STEP` folgt der nächste `TASK` oder
+  der Abschluss des `CONTROLLED_WRITE`;
+- den über alle Schreibschnitte und Korrekturschleifen zusammenhängenden
+  Kontroller-Zustand allein aus freigegebenem Planning-Snapshot, aktuellem
+  geprüften `plan.md` und den bisherigen Ergebnissen des laufenden
+  `CONTROLLED_WRITE` rekonstruierbar halten, ohne executor-spezifische
+  Sitzungsfortsetzung;
+- die Rückeskalation des `plan_write_controller` zu Planning bei fehlender
+  fachlicher oder architektonischer Entscheidung umsetzen;
 - die technische Mount-Grenze für Planung erzwingen: Produktcode read-only,
   konfigurierter Doku-Bereich und `bd` read-write; Diff-Prüfung und
   Reviewer-Gate als zweite Sicherung ergänzen.
