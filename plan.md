@@ -51,12 +51,14 @@ vollständigen Planning-Materialisierung getrennt.
 ```text
 Planer ↔ Benutzer
 → ausreichend geklärter Zwischenstand
-→ kontrollierte Planfortschreibung in plan.md
+→ kontrollierte Planfortschreibung in plan.md (CONTROLLED_WRITE)
 → zurück in denselben Mensch-Planer-Dialog
 ...
-→ freigegebener Plan
-→ Planungs-Umsetzer
-→ Planungsdokumentation und bd-Graph
+→ Gesamtplan ausreichend fertig
+→ menschliche Freigabe des Gesamtplans
+→ vollständige Planning-Materialisierung (MATERIALIZE)
+→ Planungs-Umsetzer: Projektdokumentation sowie bd-Vorgänge,
+  Untervorgänge und Abhängigkeiten
 → Planungs-Reviewer
 → bei Mängeln zurück zum Planungs-Umsetzer
 → Planning-Vorgang schließen
@@ -65,15 +67,19 @@ Planer ↔ Benutzer
 - Der Planer versteht Problem, Quellen und Optionen und führt den Dialog mit
   dem Benutzer. Seine Ausgaben bleiben klein genug, dass der Benutzer sie
   vollständig prüfen kann.
-- Der Planungs-Umsetzer materialisiert nur die freigegebenen Entscheidungen.
-  Der freigegebene Plan ist zunächst ein Laufartefakt, keine Vorgabe für ein
-  neues Dokument: Er entscheidet anhand des Plans und der vorhandenen
-  Repository-Struktur, welche bestehende Planungs- oder Architekturdokumentation
-  tatsächlich geändert werden muss.
+- Der Planungs-Umsetzer wird erst nach der menschlichen Freigabe des ausreichend
+  fertigen Gesamtplans tätig (`MATERIALIZE`). Er überführt diesen freigegebenen
+  Gesamtplan in die erforderliche konsistente Projektdokumentation und erzeugt
+  die nötigen `bd`-Vorgänge, Untervorgänge und Abhängigkeiten. Der freigegebene
+  Plan ist dabei zunächst ein Laufartefakt, keine Vorgabe für ein neues Dokument:
+  Er entscheidet anhand des Plans und der vorhandenen Repository-Struktur, welche
+  bestehende Planungs- oder Architekturdokumentation tatsächlich geändert werden
+  muss.
 - Der Planungs-Reviewer vergleicht freigegebenen Plan, tatsächliche Doku und
   tatsächlichen `bd`-Graphen.
-- Der Benutzer entscheidet fachliche oder architektonische Fragen und gibt den
-  Plan frei.
+- Der Benutzer entscheidet fachliche oder architektonische Fragen, bestätigt im
+  Planungsdialog die Zwischenstände der kontrollierten Planfortschreibung und
+  gibt am Ende den ausreichend fertigen Gesamtplan für die Materialisierung frei.
 
 ### Kontrollierte Planfortschreibung: Freigabe und Snapshot
 
@@ -206,6 +212,25 @@ Ein `SESSION_HANDOFF` erzeugt keine endgültigen `bd`-Vorgänge, Untervorgänge
 oder Abhängigkeiten. Die neue Planning-Sitzung setzt das Planning auf Grundlage
 der Übergabe fort; spätere kontrollierte Planfortschreibungen und die spätere
 vollständige Planning-Materialisierung bleiben davon unabhängige Vorgänge.
+
+### Vollständige Planning-Materialisierung (MATERIALIZE)
+
+`MATERIALIZE` ist ein eigener Vorgang und weder `CONTROLLED_WRITE` noch
+`SESSION_HANDOFF`. Er beginnt erst, wenn der Gesamtplan ausreichend fertig und
+vom Menschen freigegeben ist. „Bereit für eine kontrollierte Planfortschreibung“
+bedeutet ausdrücklich nicht „bereit für `MATERIALIZE`“.
+
+`MATERIALIZE` überführt den freigegebenen Gesamtplan in die erforderliche
+konsistente Projektdokumentation und in konkrete `bd`-Umsetzungsarbeit. Dabei
+entstehen – anders als bei `CONTROLLED_WRITE` und `SESSION_HANDOFF` – die
+nötigen `bd`-Vorgänge, Untervorgänge und Abhängigkeiten. Anschließend prüft der
+bestehende Planungs-Reviewer das Ergebnis gegen freigegebenen Plan, tatsächliche
+Doku und tatsächlichen `bd`-Graphen; bei Mängeln geht es zurück an den
+Planungs-Umsetzer.
+
+Vor der menschlichen Freigabe des Gesamtplans wird nichts materialisiert. Die
+während der Sitzung nach `plan.md` fortgeschriebenen Zwischenstände ersetzen
+diese Freigabe nicht; `MATERIALIZE` beginnt erst nach ihr.
 
 ### Umsetzung
 
@@ -414,7 +439,7 @@ ki-dev: WRITE ohne neuen Inhalt, vorherige Planerausgabe bestätigt
 Planer: Offen ist noch das Secrets-Handling ...
 ...
 Planer: Zusammenfassung der getroffenen Entscheidungen ...
-Plan freigeben? [y/N]
+Gesamtplan freigeben und materialisieren? [y/N]
 ```
 
 Ein ausreichend geklärter Zwischenstand darf dabei nach `plan.md`
@@ -426,7 +451,8 @@ nichts materialisiert. Nach der Freigabe:
 2. startet es den Planungs-Umsetzer;
 3. dieser bestimmt aus Plan und vorhandener Repository-Struktur, ob und welche
    bestehende Planungs- oder Architekturdokumentation geändert werden muss,
-   und erzeugt die Implementation-Vorgänge samt Abhängigkeiten;
+   und erzeugt die Implementation-Vorgänge mit ihren Untervorgängen und
+   Abhängigkeiten;
 4. alle erzeugten Wurzelvorgänge hängen zunächst vom Planning-Vorgang ab und
    können deshalb noch nicht versehentlich anlaufen;
 5. der Planungs-Reviewer vergleicht Plan, Doku und `bd`-Graph;
@@ -645,7 +671,8 @@ gelesen. Fachentscheidungen werden nicht nur im Laufzustand aufbewahrt: Ein
 ausreichend geklärter Zwischenstand kann bereits während `PLAN_INTERACTIVE`
 kontrolliert nach `plan.md` fortgeschrieben werden; erst die spätere
 vollständige Planning-Materialisierung überträgt den ausreichend fertigen und
-freigegebenen Gesamtplan in die vorgesehene Projektdokumentation.
+freigegebenen Gesamtplan in die vorgesehene Projektdokumentation und den
+`bd`-Graphen.
 
 Pro Repository darf die erste Version nur einen schreibenden Lauf gleichzeitig
 haben. Eine atomare Lockdatei verhindert einen zweiten Orchestrator.
@@ -967,9 +994,14 @@ Arbeitsgegenstand nicht.
 
 ### Phase 3 – Planning-Workflow
 
-- interaktiven Planer-Adapter mit gespeichertem Freigabe-Gate bauen;
-- Übergabeformat zwischen Planer und Planungs-Umsetzer definieren;
-- Planungs-Umsetzer für Doku und `bd`-Graph starten;
+- interaktiven Planer-Adapter mit gespeichertem Gesamtplan-Freigabe-Gate
+  (`HUMAN_APPROVAL`) bauen; dieses Gate ist von der `WRITE`-Auslösung der
+  kontrollierten Planfortschreibung getrennt;
+- Übergabeformat des freigegebenen Gesamtplans zwischen Planer und
+  Planungs-Umsetzer definieren;
+- `MATERIALIZE` erst nach `HUMAN_APPROVAL` starten: der Planungs-Umsetzer
+  überführt den freigegebenen Gesamtplan in die betroffene Projektdokumentation
+  und erzeugt die `bd`-Vorgänge, Untervorgänge und Abhängigkeiten;
 - neu erzeugte Vorgänge bis zum Abschluss an die Planning-Bead binden;
 - Reviewer-Vertrag `PASS | CHANGES | ESCALATE` strikt parsen;
 - Korrekturschleife und Sackgassenerkennung implementieren;
@@ -995,13 +1027,49 @@ Arbeitsgegenstand nicht.
   Sitzungsfortsetzung;
 - die Rückeskalation des `plan_write_controller` zu Planning bei fehlender
   fachlicher oder architektonischer Entscheidung umsetzen;
+- den `SESSION_HANDOFF` als eigenen Planning-Vorgang innerhalb von
+  `PLAN_INTERACTIVE` umsetzen (Vertrag siehe Abschnitt 2): ausgelöst durch den
+  Menschen oder durch das Signal einer unterstützenden Größenbegrenzung; `ki-dev`
+  legt dafür keine feste Schwelle und keine automatische Grenze fest;
+- dabei die eigene nicht-interaktive Rolle `session_handoff` (Profil `control`)
+  über den `ki-dev`-eigenen Agent-Adapter starten und die nötige Profil-/
+  Override-Auflösung gemäß dem allgemeinen Rollenvertrag durchführen;
+- der Übergabe-Agent wertet den bisherigen Planning-Kontext der zu groß
+  gewordenen Sitzung chronologisch aus und erzeugt daraus eine flache
+  Fortsetzungsübergabe für eine neue Planning-Sitzung; das Rohtranskript bleibt
+  als Rückfallquelle erhalten;
+- `ki-dev` führt die zu groß gewordene Sitzung nicht weiter als regulären
+  Planning-Kontext fort und setzt das Planning über `SESSION_HANDOFF` in einer
+  neuen Planning-Sitzung für dieselbe Planning-Bead fort; die
+  Fortsetzungsübergabe ist die reguläre Grundlage dieser neuen Sitzung, das
+  Rohtranskript bleibt Rückfallquelle;
+- die Korrektheit dieses Übergangs nicht von einem technischen Session-Fork,
+  einem Klon oder einer executor-spezifischen Sitzungsfortsetzung abhängig
+  machen;
+- sicherstellen, dass `SESSION_HANDOFF` keine Projektdokumentation und keine
+  endgültigen `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten erzeugt; spätere
+  kontrollierte Planfortschreibungen und die spätere `MATERIALIZE` bleiben davon
+  unabhängige Vorgänge;
 - die technische Mount-Grenze für Planung erzwingen: Produktcode read-only,
   konfigurierter Doku-Bereich und `bd` read-write; Diff-Prüfung und
   Reviewer-Gate als zweite Sicherung ergänzen.
 
-Abnahme: Das VPS-Beispiel erzeugt aus einem Planning-Vorgang eine geprüfte
-Architekturdoku und drei korrekt abhängige Implementation-Vorgänge, ohne
-Produktcode zu verändern.
+Abnahme: Im VPS-Beispiel schreibt mindestens eine kontrollierte
+Planfortschreibung während der laufenden Planning-Sitzung einen Zwischenstand
+nach `plan.md`, ohne `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten zu
+erzeugen. Erst nach der menschlichen Freigabe des Gesamtplans erzeugt
+`MATERIALIZE` aus dem Planning-Vorgang eine geprüfte Architekturdoku und drei
+korrekt abhängige Implementation-Vorgänge, ohne Produktcode zu verändern.
+
+Abnahme (Session-Handoff): Im selben VPS-Beispiel wird eine absichtlich zu groß
+gewordene Planning-Sitzung über einen `SESSION_HANDOFF` fortgesetzt. Die Rolle
+`session_handoff` erzeugt aus dem bisherigen Planning-Kontext eine
+Fortsetzungsübergabe; eine neue Planning-Sitzung für dieselbe Planning-Bead
+nimmt das Sachthema regulär auf deren Grundlage wieder auf; das Rohtranskript
+bleibt als Rückfallquelle verfügbar. Danach ist zum selben Sachthema mindestens
+eine weitere kontrollierte Planfortschreibung nach `plan.md` möglich – ohne
+technischen Session-Fork und ohne dass `SESSION_HANDOFF` `bd`-Vorgänge,
+Untervorgänge oder Abhängigkeiten erzeugt.
 
 ### Phase 4 – Ralphex-Implementation-Adapter
 
@@ -1114,7 +1182,17 @@ In der ersten Version werden nicht gebaut:
   Agentenurteil;
 - automatische Kostenoptimierung oder Modellwahl über die statische Profil-
   und Rollenkonfiguration sowie explizite Lauf-Overrides hinaus;
-- Unterstützung für mehr als zwei Executor-Arten in der ersten Version.
+- Unterstützung für mehr als zwei Executor-Arten in der ersten Version;
+- eine allgemeine Nachrichtenserialisierung der Planning-Kommunikation als Teil
+  des Kernentwurfs;
+- eine allgemeine Architektur zur Trennung oder Behandlung zusätzlicher
+  Ausgabearten neben den eigentlichen Planerausgaben, etwa grammatischer
+  Rückmeldungen.
+
+Diese beiden zuletzt genannten Nicht-Ziele ändern nichts an den bereits
+beschlossenen konkreten Verträgen für Planning-Snapshot, `CONTROLLED_WRITE`,
+`SESSION_HANDOFF` und `MATERIALIZE`. Solche Erweiterungen werden erst nach realer
+Nutzung bzw. nach Go-live behandelt.
 
 Nach realer Nutzung kann als erstes optionales Feature folgen:
 
