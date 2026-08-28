@@ -112,11 +112,15 @@ Dadurch bleiben zwei Prüfungen getrennt:
 2. Der Schreibkontroller prüft auf dem Snapshot, ob der bestätigte Stand für die
    konkrete Schreibarbeit an `plan.md` ausreichend bestimmt ist.
 
-Fehlt für die verlangte Fortschreibung eine notwendige fachliche oder
-architektonische Entscheidung, darf der Schreibkontroller sie nicht selbst
-treffen; die Runde eskaliert zurück zu Planning. Nach der Klärung kann aus dem
-normalen menschlich geprüften Planning-Dialog erneut eine Freigabe entstehen;
-eine automatische neue `WRITE`-Eingabe entsteht dadurch nicht.
+Ergibt bereits diese Snapshot-Prüfung, dass eine notwendige fachliche oder
+architektonische Entscheidung fehlt, darf der Schreibkontroller sie nicht selbst
+treffen. Zu diesem Zeitpunkt läuft der `CONTROLLED_WRITE` bereits
+(Snapshot → `CONTROLLED_WRITE` → `plan_write_controller` prüft); daher gilt auch
+hier der weiter unten beschriebene Entscheidungs-Lebenszyklus: `NEEDS_DECISION`
+löst aus, dass der Orchestrator die offene Frage samt Bindung an denselben
+`CONTROLLED_WRITE` persistiert und in `WAITING_FOR_DECISION` übergeht; nach
+`DECISION_PROVIDED` wird derselbe `CONTROLLED_WRITE` fortgesetzt. Eine
+automatische neue `WRITE`-Eingabe entsteht dadurch nicht.
 
 Der Snapshot ist ein reiner Schreibeingang für `plan.md`. Er erzeugt keine
 `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten; diese entstehen weiterhin
@@ -129,6 +133,13 @@ Die konkrete Kontroll- und Schreibschleife auf einem Snapshot heißt
 `CONTROLLED_WRITE`. Der Schreibkontroller (`plan_write_controller`) ist dafür
 ein eigener nicht-interaktiver Agentenlauf mit Profil `control`; der Schreibagent
 (`plan_writer`) läuft mit Profil `work`.
+
+Die Verantwortungsgrenze bleibt dabei klar getrennt: Planning bzw. der Mensch
+entscheidet, **was** gelten soll; der `plan_write_controller` entscheidet, **wie**
+die daraus nötige Schreibarbeit in begrenzte `TASK`s zerlegt wird; der
+`plan_writer` führt jeweils genau den erhaltenen `TASK` aus. Planning darf
+insbesondere keinen Writer-`TASK`, keinen Schreibumfang und keine Anzahl der
+Schreibschnitte für einen `CONTROLLED_WRITE` vorgeben.
 
 Ein `CONTROLLED_WRITE` besitzt über alle seine Schreibschnitte und
 Korrekturschleifen hinweg einen logisch zusammenhängenden Kontroller-Zustand.
@@ -161,25 +172,123 @@ TASK
 → Schreibagent
 → RESULT
 → Schreibkontroller
-   ├─ CHANGES   → derselbe Schreibagent
-   └─ PASS_STEP → Schreibschnitt beendet
+   ├─ CHANGES         → derselbe Schreibagent
+   ├─ NEEDS_DECISION  → derselbe CONTROLLED_WRITE wartet
+   │                    (Entscheidungsunterbrechung, siehe unten)
+   └─ PASS_STEP       → nur der aktuelle Schreibschnitt beendet
 ```
 
+`PASS_STEP` beendet ausschließlich den aktuellen Schreibschnitt, nicht den
+gesamten `CONTROLLED_WRITE`. `PASS_STEP` ist unzulässig, solange eine bekannte,
+innerhalb des aktuellen Schreibschnitts behebbare Abweichung besteht; eine solche
+Abweichung führt zu `CHANGES` an denselben Schreibagenten.
+
 Erst nach `PASS_STEP` bestimmt der Schreibkontroller den nächsten begrenzten
-Schreibauftrag; dafür startet ein frischer `plan_writer`. Sind keine weiteren
-Schreibaufträge nötig, ist der `CONTROLLED_WRITE` abgeschlossen und der
-Planungsdialog läuft weiter. Fehlt eine notwendige fachliche oder
-architektonische Entscheidung, eskaliert der Schreibkontroller zurück zu
-Planning, statt sie selbst zu treffen.
+Schreibauftrag; dafür startet ein frischer `plan_writer`. Erscheinen keine
+weiteren Schreibschnitte nötig, ist der `CONTROLLED_WRITE` damit noch **nicht**
+abgeschlossen. Stattdessen startet innerhalb desselben `CONTROLLED_WRITE` ein
+frischer `plan_write_controller`-Lauf als `CONTROLLER_FINAL_CHECK`.
+
+Dieser Lauf verwendet keine executor-spezifische Sitzungsfortsetzung, sondern
+rekonstruiert den vollständigen Prüfzustand aus den persistierten Eingaben und
+Ergebnissen dieses `CONTROLLED_WRITE` sowie dem aktuellen `plan.md`:
+
+```text
+gespeicherter Planning-Snapshot
+        +
+bisherige TASK-/RESULT-/PASS_STEP-Ergebnisse dieses CONTROLLED_WRITE
+        +
+aktuelles plan.md
+        ↓
+frischer plan_write_controller-Lauf = CONTROLLER_FINAL_CHECK
+        ├─ PASS
+        │     → CONTROLLED_WRITE abgeschlossen
+        ├─ behebbare Abweichung
+        │     → denselben CONTROLLED_WRITE fortsetzen
+        │     → plan_write_controller bestimmt nächsten begrenzten TASK
+        │     → frischer plan_writer
+        └─ fehlende Entscheidung
+              → NEEDS_DECISION
+              → WAITING_FOR_DECISION (persistiert; kein plan_writer)
+              → DECISION_PROVIDED
+              → denselben CONTROLLED_WRITE fortsetzen
+```
+
+Erst `CONTROLLER_FINAL_CHECK → PASS` schließt den `CONTROLLED_WRITE` ab; danach
+läuft der Planungsdialog weiter. Erkennt `CONTROLLER_FINAL_CHECK` eine innerhalb
+des `CONTROLLED_WRITE` behebbare Abweichung, wird derselbe `CONTROLLED_WRITE`
+fortgesetzt: Der `plan_write_controller` dieses Abschluss-Laufs bestimmt zuerst
+den nächsten begrenzten `TASK`, und erst dafür startet ein frischer
+`plan_writer`. Erkennt er eine fehlende fachliche oder architektonische
+Entscheidung, gilt `NEEDS_DECISION`: der Schreibkontroller trifft sie nicht
+selbst, sondern der `CONTROLLED_WRITE` geht in die unten beschriebene
+Entscheidungsunterbrechung.
 
 Die Korrektheit von `CONTROLLED_WRITE` hängt nicht von einer
 executor-spezifischen Sitzungsfortsetzung ab; ein technischer Session-Fork ist
-keine Architekturvoraussetzung. Der für eine Fortsetzung nötige
-Kontroller-Zustand ist rekonstruierbar aus
+keine Architekturvoraussetzung. Das gilt für jeden Schreibschnitt ebenso wie für
+den `CONTROLLER_FINAL_CHECK`. Der für eine Fortsetzung oder für den
+`CONTROLLER_FINAL_CHECK` nötige Kontroller-Zustand ist rekonstruierbar aus
 
 - dem gespeicherten freigegebenen Planning-Snapshot,
 - dem aktuellen geprüften Planungsdokument und
 - den bisherigen Ergebnissen des laufenden `CONTROLLED_WRITE`.
+
+### CONTROLLED_WRITE: Entscheidungsunterbrechung und Wiederaufnahme
+
+Fehlt für die verlangte Fortschreibung eine notwendige fachliche oder
+architektonische Entscheidung, trifft der Schreibkontroller sie nicht selbst. Er
+meldet stattdessen das Ergebnis `NEEDS_DECISION`. `NEEDS_DECISION` ist ein
+Ereignis und kein persistierter Zustand: Es benennt die offene Frage und ist
+fest an genau den laufenden `CONTROLLED_WRITE` gebunden, in dem es entstanden
+ist. Dabei ist es gleichgültig, ob es aus einem normalen Schreibschnitt oder aus
+dem `CONTROLLER_FINAL_CHECK` stammt.
+
+```text
+CONTROLLED_WRITE
++ NEEDS_DECISION
+→ offene Frage und Bindung an den laufenden CONTROLLED_WRITE persistieren
+→ WAITING_FOR_DECISION
+```
+
+`WAITING_FOR_DECISION` ist der persistierte Zustand dieses `CONTROLLED_WRITE`.
+Er hält fest, dass der `CONTROLLED_WRITE` nicht abgeschlossen ist, sondern an
+seinem logisch richtigen Punkt – dem Schreibschnitt oder dem
+`CONTROLLER_FINAL_CHECK`, in dem `NEEDS_DECISION` entstand – auf eine
+Entscheidung wartet. Solange `WAITING_FOR_DECISION` gilt, wird kein
+`plan_writer` gestartet; die Runde eskaliert zurück in den Planungsdialog, damit
+dort die offene Frage geklärt wird.
+
+Die Klärung entsteht aus dem normalen menschlich geprüften Planning-Dialog. Sie
+wird dem wartenden `CONTROLLED_WRITE` als Ereignis `DECISION_PROVIDED`
+zugeführt; die bereitgestellte Entscheidung ist der Inhalt dieses Ereignisses.
+Eine automatische neue `WRITE`-Eingabe entsteht dadurch nicht.
+
+```text
+WAITING_FOR_DECISION
++ DECISION_PROVIDED
+→ bereitgestellte Entscheidung an genau diesen CONTROLLED_WRITE binden
+→ denselben CONTROLLED_WRITE fortsetzen
+```
+
+Der Orchestrator muss die offene Frage, den zugehörigen `CONTROLLED_WRITE` und
+die dazu bereitgestellte Entscheidung eindeutig einander zuordnen können.
+`DECISION_PROVIDED` erzeugt keinen neuen `CONTROLLED_WRITE`, sondern setzt den
+bestehenden an dem Punkt fort, an dem `NEEDS_DECISION` entstand:
+
+- Stammt `NEEDS_DECISION` aus einem normalen Schreibschnitt, bestimmt der
+  `plan_write_controller` mit der bereitgestellten Entscheidung den nächsten
+  begrenzten `TASK`; erst dafür startet ein frischer `plan_writer`.
+- Stammt `NEEDS_DECISION` aus dem `CONTROLLER_FINAL_CHECK`, wird der
+  `CONTROLLER_FINAL_CHECK` desselben `CONTROLLED_WRITE` mit der bereitgestellten
+  Entscheidung erneut ausgeführt.
+
+Wie schon für die Schreibschnitte und den `CONTROLLER_FINAL_CHECK` ist auch
+diese Wiederaufnahme nicht von einer executor-spezifischen Sitzungsfortsetzung
+abhängig. Der nötige Kontroller-Zustand wird aus dem gespeicherten
+Planning-Snapshot, dem aktuellen geprüften `plan.md`, den bisherigen Ergebnissen
+des laufenden `CONTROLLED_WRITE` und der nun bereitgestellten Entscheidung
+rekonstruiert.
 
 ### Session-Handoff: Fortsetzung in einer neuen Planning-Sitzung
 
@@ -672,15 +781,48 @@ Planning-Snapshot und bisherige `CONTROLLED_WRITE`-Ergebnisse sind dafür
 gespeicherte Laufartefakte bzw. Laufdaten; ob sie in einer oder mehreren Dateien
 und unter welchem Namen abgelegt werden, legt dieser Plan nicht fest.
 
+Derselbe rekonstruierbare Prüfzustand trägt auch den abschließenden
+`CONTROLLER_FINAL_CHECK`. Dieser ist ein frischer `plan_write_controller`-Lauf
+innerhalb desselben `CONTROLLED_WRITE`, verwendet keine executor-spezifische
+Sitzungsfortsetzung und rekonstruiert seinen Zustand allein aus den persistierten
+Eingaben und Ergebnissen dieses `CONTROLLED_WRITE` sowie dem aktuellen `plan.md`.
+
 Davon getrennt bleibt `state.json` der kleine persistierte
 Orchestrierungszustand, der die Wiederaufnahme des Laufs ermöglicht. Bei
 Wiederaufnahme muss der Orchestrator daraus eindeutig erkennen, in welcher Phase
-und gegebenenfalls welchem aktiven Schreibschnitt der Lauf steht und ob für
-`CHANGES` derselbe `plan_writer` wiederzuverwenden ist. Wie diese Bezüge
-innerhalb des bestehenden Laufzustands technisch dargestellt werden, legt dieser
-Plan hier nicht fest. Innerhalb eines Schreibschnitts übernimmt bei `CHANGES`
-derselbe `plan_writer` erneut; jeder neue Schreibschnitt beginnt mit einem
-frischen `plan_writer`.
+und gegebenenfalls welchem aktiven Schreibschnitt der Lauf steht, ob ein
+laufender `CONTROLLED_WRITE` gerade in einem Schreibschnitt oder im
+abschließenden `CONTROLLER_FINAL_CHECK` ist und ob für `CHANGES` derselbe
+`plan_writer` wiederzuverwenden ist. Wie diese Bezüge innerhalb des bestehenden
+Laufzustands technisch dargestellt werden, legt dieser Plan hier nicht fest.
+Innerhalb eines Schreibschnitts übernimmt bei `CHANGES` derselbe `plan_writer`
+erneut; jeder neue Schreibschnitt beginnt mit einem frischen `plan_writer`, und
+der abschließende `CONTROLLER_FINAL_CHECK` beginnt mit einem frischen
+`plan_write_controller`-Lauf. `PASS_STEP` schließt dabei nur den aktuellen
+Schreibschnitt ab; erst `CONTROLLER_FINAL_CHECK → PASS` schließt den gesamten
+`CONTROLLED_WRITE` ab.
+
+Meldet ein `plan_write_controller`-Lauf – aus einem Schreibschnitt oder aus dem
+`CONTROLLER_FINAL_CHECK` – das Ergebnis `NEEDS_DECISION`, ist der
+`CONTROLLED_WRITE` nicht abgeschlossen, sondern persistiert im Zustand
+`WAITING_FOR_DECISION` (Abschnitt 2). `NEEDS_DECISION` ist dabei das
+Ergebnis-Ereignis dieses Laufs, nicht der Wartezustand. Persistiert werden die
+offene Frage, ihre feste Bindung an genau diesen `CONTROLLED_WRITE` und der
+Punkt, an dem er fortzusetzen ist (Schreibschnitt oder `CONTROLLER_FINAL_CHECK`).
+Solange `WAITING_FOR_DECISION` gilt, startet der Orchestrator keinen
+`plan_writer`.
+
+Die Wiederaufnahme erfolgt über das Ereignis `DECISION_PROVIDED`, dessen Inhalt
+die bereitgestellte Entscheidung ist. Der Orchestrator ordnet offene Frage,
+zugehörigen `CONTROLLED_WRITE` und bereitgestellte Entscheidung eindeutig
+einander zu, bindet die Entscheidung an genau diesen `CONTROLLED_WRITE` und setzt
+ihn an seinem gespeicherten Punkt fort, ohne einen neuen `CONTROLLED_WRITE` zu
+erzeugen. Wie diese Bezüge im bestehenden Laufzustand technisch dargestellt
+werden, legt dieser Plan nicht fest; ein neues Schema entsteht dafür nicht. Auch
+diese Fortsetzung verlangt keine executor-spezifische Sitzungsfortsetzung: Der
+nötige Kontroller-Zustand ergibt sich aus Planning-Snapshot, aktuellem geprüften
+`plan.md`, den bisherigen Ergebnissen des laufenden `CONTROLLED_WRITE` und der
+bereitgestellten Entscheidung.
 
 Während eines `SESSION_HANDOFF` ist im selben `state.json` desselben Laufs
 `phase = SESSION_HANDOFF` persistiert. Dadurch bleibt eine Wiederaufnahme über
@@ -700,6 +842,24 @@ Pro Repository darf die erste Version nur einen schreibenden Lauf gleichzeitig
 haben. Eine atomare Lockdatei verhindert einen zweiten Orchestrator.
 
 ## 7. Deterministische Zustandsautomaten
+
+### Allgemeiner Übergangsvertrag
+
+Alle folgenden Automaten folgen demselben Übergangsvertrag:
+
+```text
+Zustand
++ Ereignis
++ Bedingung
+→ Aktion
+→ Folgezustand
+```
+
+- Zustand beschreibt, wo der Ablauf steht.
+- Ereignis löst die Prüfung eines Übergangs aus.
+- Die Bedingung entscheidet, ob der Übergang zulässig ist.
+- Die Aktion führt die beim Übergang erforderliche Wirkung aus.
+- Eine Aktion kann ihrerseits ein später verarbeitetes Ereignis erzeugen.
 
 ### Dispatcher
 
@@ -728,15 +888,46 @@ PLAN_INTERACTIVE
    │     → weitere sichtbare Planerausgabe → menschliche Bestätigung → Snapshot
    ├─ Snapshot → CONTROLLED_WRITE
    │     Schreibkontroller prüft Snapshot auf ausreichende Bestimmtheit
-   │     ├─ Entscheidung fehlt → Eskalation zurück zu Planning → PLAN_INTERACTIVE
+   │     ├─ NEEDS_DECISION (fehlende fachliche/architektonische Entscheidung)
+   │        → offene Frage + Bindung an diesen CONTROLLED_WRITE persistieren
+   │        → WAITING_FOR_DECISION (persistiert; kein plan_writer;
+   │           Eskalation zurück zu Planning → PLAN_INTERACTIVE)
+   │        → DECISION_PROVIDED (bereitgestellte Entscheidung = Ereignisinhalt)
+   │           → denselben CONTROLLED_WRITE fortsetzen, kein neuer CONTROLLED_WRITE
+   │           → plan_write_controller nimmt die Bestimmtheitsprüfung wieder auf
    │     └─ ausreichend bestimmt → Schreibkontroller bestimmt begrenzten TASK
    │           aus Snapshot + geprüftem plan.md (+ bisherige CONTROLLED_WRITE-Ergebnisse)
    │           → frischer plan_writer → RESULT → Schreibkontroller
    │              ├─ CHANGES          → derselbe plan_writer
-   │              ├─ Entscheidung fehlt → Eskalation zurück zu Planning → PLAN_INTERACTIVE
-   │              └─ PASS_STEP         → Schreibschnitt beendet
-   │                    ├─ nächster TASK nötig → frischer plan_writer
-   │                    └─ CONTROLLED_WRITE abgeschlossen → PLAN_INTERACTIVE
+   │              ├─ NEEDS_DECISION (fehlende fachliche/architektonische Entscheidung)
+   │                 → offene Frage + Bindung an diesen CONTROLLED_WRITE persistieren
+   │                 → WAITING_FOR_DECISION (persistiert; kein plan_writer;
+   │                    Eskalation zurück zu Planning → PLAN_INTERACTIVE)
+   │                 → DECISION_PROVIDED (bereitgestellte Entscheidung = Ereignisinhalt)
+   │                    → denselben CONTROLLED_WRITE fortsetzen, kein neuer CONTROLLED_WRITE
+   │                    → plan_write_controller bestimmt mit der Entscheidung nächsten TASK
+   │                    → frischer plan_writer
+   │              └─ PASS_STEP  (nur der aktuelle Schreibschnitt beendet;
+   │                 unzulässig bei bekannter, im Schnitt behebbarer Abweichung)
+   │                    ├─ weiterer Schreibschnitt nötig → frischer plan_writer
+   │                    └─ kein weiterer Schreibschnitt nötig
+   │                          → frischer plan_write_controller-Lauf = CONTROLLER_FINAL_CHECK
+   │                            (Prüfzustand rekonstruiert aus persistierten
+   │                             CONTROLLED_WRITE-Eingaben/-Ergebnissen + aktuellem plan.md;
+   │                             keine executor-spezifische Sitzungsfortsetzung)
+   │                            ├─ PASS
+   │                            │     → CONTROLLED_WRITE abgeschlossen → PLAN_INTERACTIVE
+   │                            ├─ behebbare Abweichung
+   │                            │     → CONTROLLED_WRITE fortsetzen
+   │                            │     → plan_write_controller bestimmt nächsten begrenzten TASK
+   │                            │     → frischer plan_writer
+   │                            └─ NEEDS_DECISION (fehlende fachliche/architektonische Entscheidung)
+   │                                  → offene Frage + Bindung an diesen CONTROLLED_WRITE persistieren
+   │                                  → WAITING_FOR_DECISION (persistiert; kein plan_writer;
+   │                                     Eskalation zurück zu Planning → PLAN_INTERACTIVE)
+   │                                  → DECISION_PROVIDED (bereitgestellte Entscheidung = Ereignisinhalt)
+   │                                     → denselben CONTROLLED_WRITE fortsetzen, kein neuer CONTROLLED_WRITE
+   │                                     → CONTROLLER_FINAL_CHECK erneut ausführen
    ├─ Mensch oder unterstützendes Größenbegrenzungssignal erkennt zu große Sitzung
    │     → SESSION_HANDOFF (persistierte Phase, state.json.phase = SESSION_HANDOFF)
    │       → neue Planning-Sitzung → PLAN_INTERACTIVE
@@ -756,8 +947,10 @@ wird durch eine menschliche `WRITE`-Eingabe ausgelöst. Neuer Planungsinhalt in
 dieser Eingabe muss der Planer erst in einer vom Menschen bestätigten Ausgabe
 verarbeiten, bevor der Snapshot entsteht. Der Schreibkontroller
 (`plan_write_controller`) prüft danach den Snapshot auf ausreichende
-Bestimmtheit und eskaliert bei fehlender fachlicher oder architektonischer
-Entscheidung zurück in den Planungsdialog, ohne sie selbst zu treffen.
+Bestimmtheit. Fehlt dabei eine notwendige fachliche oder architektonische
+Entscheidung, trifft er sie nicht selbst; der `CONTROLLED_WRITE` läuft zu diesem
+Zeitpunkt bereits, weshalb der Entscheidungs-Lebenszyklus (`NEEDS_DECISION` →
+`WAITING_FOR_DECISION` → `DECISION_PROVIDED`) desselben `CONTROLLED_WRITE` greift.
 
 Ein `CONTROLLED_WRITE` hält über alle Schreibschnitte und `CHANGES`-Schleifen
 hinweg einen zusammenhängenden Kontroller-Zustand (Abschnitt 2). Die Prüfung auf
@@ -766,12 +959,46 @@ je Schreibschnitt bestimmt der Schreibkontroller dagegen aus dem Snapshot und
 dem aktuellen geprüften `plan.md`, bei weiteren Schreibschnitten zusätzlich aus
 den bisherigen `CONTROLLED_WRITE`-Ergebnissen. Dafür startet ein frischer
 `plan_writer`. Innerhalb eines Schreibschnitts übernimmt bei `CHANGES` derselbe
-`plan_writer`; erst nach `PASS_STEP` bestimmt der Schreibkontroller den nächsten
-`TASK` oder schließt den `CONTROLLED_WRITE` ab.
+`plan_writer`.
+
+`PASS_STEP` beendet nur den aktuellen Schreibschnitt und ist unzulässig, solange
+eine bekannte, innerhalb dieses Schreibschnitts behebbare Abweichung besteht.
+Erst nach `PASS_STEP` bestimmt der Schreibkontroller den nächsten `TASK`.
+Erscheinen keine weiteren Schreibschnitte nötig, ist der `CONTROLLED_WRITE` noch
+nicht abgeschlossen: Innerhalb desselben `CONTROLLED_WRITE` startet dann ein
+frischer `plan_write_controller`-Lauf als `CONTROLLER_FINAL_CHECK`, der seinen
+Prüfzustand ohne executor-spezifische Sitzungsfortsetzung aus den persistierten
+Eingaben und Ergebnissen dieses `CONTROLLED_WRITE` und dem aktuellen `plan.md`
+rekonstruiert. Erst `CONTROLLER_FINAL_CHECK → PASS` schließt den
+`CONTROLLED_WRITE` ab. Erkennt der `CONTROLLER_FINAL_CHECK` eine innerhalb des
+`CONTROLLED_WRITE` behebbare Abweichung, wird derselbe `CONTROLLED_WRITE`
+fortgesetzt: Der `plan_write_controller` bestimmt zuerst den nächsten begrenzten
+`TASK`, und erst dafür startet ein frischer `plan_writer`. Erkennt er eine
+fehlende fachliche oder architektonische Entscheidung, gilt `NEEDS_DECISION`.
+
+`NEEDS_DECISION` – gleich ob aus einem normalen Schreibschnitt oder aus dem
+`CONTROLLER_FINAL_CHECK` – ist das Ergebnis-Ereignis des
+`plan_write_controller`-Laufs, nicht der persistierte Wartezustand. Es benennt
+die offene Frage und ist fest an genau den laufenden `CONTROLLED_WRITE`
+gebunden. Daraufhin persistiert der Orchestrator den Zustand
+`WAITING_FOR_DECISION` (offene Frage, Bindung an diesen `CONTROLLED_WRITE`,
+Fortsetzungspunkt) und eskaliert die Runde zurück nach `PLAN_INTERACTIVE`;
+solange `WAITING_FOR_DECISION` gilt, wird kein `plan_writer` gestartet. Die
+Klärung aus dem Planungsdialog wird als Ereignis `DECISION_PROVIDED` mit der
+bereitgestellten Entscheidung als Inhalt zugeführt. Der Orchestrator ordnet
+offene Frage, `CONTROLLED_WRITE` und Entscheidung eindeutig einander zu, bindet
+die Entscheidung an genau diesen `CONTROLLED_WRITE` und setzt ihn ohne neuen
+`CONTROLLED_WRITE` an seinem Fortsetzungspunkt fort: aus einem Schreibschnitt
+bestimmt der `plan_write_controller` mit der Entscheidung den nächsten `TASK`
+für einen frischen `plan_writer`; aus dem `CONTROLLER_FINAL_CHECK` wird dieser
+mit der Entscheidung erneut ausgeführt. Eine executor-spezifische
+Sitzungsfortsetzung ist dafür keine Voraussetzung (Abschnitt 2).
+
 Der Kontroller-Zustand ist ohne executor-spezifische Sitzungsfortsetzung aus
 Snapshot, aktuellem geprüften `plan.md` und den bisherigen Schreibschnitt-
-Ergebnissen rekonstruierbar. Endgültige `bd`-Vorgänge, Untervorgänge und
-Abhängigkeiten entstehen erst in `MATERIALIZE`.
+Ergebnissen rekonstruierbar; das gilt auch für den `CONTROLLER_FINAL_CHECK` und
+für die Wiederaufnahme nach `DECISION_PROVIDED`. Endgültige `bd`-Vorgänge,
+Untervorgänge und Abhängigkeiten entstehen erst in `MATERIALIZE`.
 
 `SESSION_HANDOFF` (Abschnitt 2) ist selbst eine echte persistierte
 Orchestrator-Phase desselben Planning-Workflows und derselben Planning-Bead,
@@ -1090,8 +1317,21 @@ Arbeitsgegenstand nicht.
   Schreibschnitten zusätzlich aus den bisherigen `CONTROLLED_WRITE`-Ergebnissen;
   pro Schreibschnitt startet ein frischer `plan_writer`
   (Profil `work`); innerhalb eines Schreibschnitts übernimmt bei `CHANGES`
-  derselbe `plan_writer`; erst nach `PASS_STEP` folgt der nächste `TASK` oder
-  der Abschluss des `CONTROLLED_WRITE`;
+  derselbe `plan_writer`; erst nach `PASS_STEP` folgt der nächste `TASK` oder,
+  wenn keine weiteren Schreibschnitte nötig erscheinen, der
+  `CONTROLLER_FINAL_CHECK`;
+- Prompt und Orchestrator auf denselben `CONTROLLED_WRITE`-Controller-Vertrag
+  verpflichten und ihn beidseitig durchsetzen: eine bekannte, im aktuellen
+  Schreibschnitt behebbare Abweichung führt zu `CHANGES` an denselben
+  `plan_writer`; eine fehlende fachliche oder architektonische Entscheidung
+  führt zu `NEEDS_DECISION`, die der `plan_write_controller` nicht selbst
+  trifft; `PASS_STEP` ist nur zulässig, wenn keine bekannte Restabweichung des
+  aktuellen Schreibschnitts offen ist; der `CONTROLLED_WRITE` gilt ausschließlich
+  über `CONTROLLER_FINAL_CHECK → PASS` als abgeschlossen; strukturell ungültige
+  `plan_write_controller`-Ergebnisse (unbekanntes Ergebnis, `PASS_STEP` trotz
+  gemeldeter Restabweichung, `NEEDS_DECISION` ohne benannte offene Frage,
+  behaupteter Abschluss ohne `CONTROLLER_FINAL_CHECK → PASS`) weist der
+  Orchestrator, soweit prüfbar, zurück und akzeptiert das Rollenergebnis nicht;
 - den über alle Schreibschnitte und Korrekturschleifen zusammenhängenden
   Kontroller-Zustand allein aus freigegebenem Planning-Snapshot, aktuellem
   geprüften `plan.md` und den bisherigen Ergebnissen des laufenden
