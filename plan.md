@@ -194,19 +194,22 @@ Planning-Sitzung.
 Relevant wird er erst, wenn der Mensch oder eine unterstützende
 Größenbegrenzung erkennt, dass die laufende Planning-Sitzung für weiteres
 zuverlässiges Denken zu groß geworden ist. Er erfolgt nicht zwingend nach einer
-festen Anzahl von Turns; konkrete Größen- oder Token-Grenzen legt dieser Plan
-nicht fest.
+festen Anzahl von Turns; eine konkrete feste Größen-, Token- oder Turn-Schwelle
+ist nicht beschlossen. Ein unterstützendes Größenbegrenzungssignal bleibt
+ausdrücklich zulässig.
 
 Zweck ist ausschließlich, das Planning in einer neuen Planning-Sitzung
 fortsetzen zu können. Das Sachthema wird dadurch nicht abgeschlossen; eine
 spätere Erkenntnis darf denselben Sachbereich weiter ergänzen oder korrigieren.
 
 Ein technischer Session-Fork, ein Klon oder eine executor-spezifische
-Sitzungsfortsetzung ist keine Architekturvoraussetzung. Als zu prüfendes
-einfaches Modell kann ein frischer Übergabe-Agent den bisherigen
-Planning-Kontext chronologisch auswerten und daraus eine flache
-Fortsetzungsübergabe für eine neue Planning-Sitzung erzeugen. Das Rohtranskript
-kann als Rückfallquelle erhalten bleiben.
+Sitzungsfortsetzung ist keine Architekturvoraussetzung. Der `SESSION_HANDOFF`
+wird von einer eigenen nicht-interaktiven Agentenrolle `session_handoff` mit
+Profil `control` ausgeführt. Ihre Aufgabe ist ausschließlich, den bisherigen
+Planning-Kontext chronologisch auszuwerten und daraus die Fortsetzungsübergabe
+für eine neue Planning-Sitzung zu erzeugen. Das Rohtranskript **kann** als
+Rückfallquelle erhalten bleiben; seine Aufbewahrung ist keine Pflicht des
+Kernvertrags.
 
 Ein `SESSION_HANDOFF` erzeugt keine endgültigen `bd`-Vorgänge, Untervorgänge
 oder Abhängigkeiten. Die neue Planning-Sitzung setzt das Planning auf Grundlage
@@ -1072,19 +1075,21 @@ Arbeitsgegenstand nicht.
 - den `SESSION_HANDOFF` als eigenen Planning-Vorgang innerhalb von
   `PLAN_INTERACTIVE` umsetzen (Vertrag siehe Abschnitt 2): ausgelöst durch den
   Menschen oder durch das Signal einer unterstützenden Größenbegrenzung; `ki-dev`
-  legt dafür keine feste Schwelle und keine automatische Grenze fest;
+  legt dafür keine konkrete feste Größen-, Token- oder Turn-Schwelle fest, ein
+  unterstützendes Größenbegrenzungssignal bleibt zulässig;
 - dabei die eigene nicht-interaktive Rolle `session_handoff` (Profil `control`)
   über den `ki-dev`-eigenen Agent-Adapter starten und die nötige Profil-/
   Override-Auflösung gemäß dem allgemeinen Rollenvertrag durchführen;
 - der Übergabe-Agent wertet den bisherigen Planning-Kontext der zu groß
   gewordenen Sitzung chronologisch aus und erzeugt daraus eine flache
-  Fortsetzungsübergabe für eine neue Planning-Sitzung; das Rohtranskript bleibt
-  als Rückfallquelle erhalten;
+  Fortsetzungsübergabe für eine neue Planning-Sitzung; ein Rohtranskript kann als
+  Rückfallquelle erhalten bleiben, ohne dass der Kernvertrag seine Aufbewahrung
+  verlangt;
 - `ki-dev` führt die zu groß gewordene Sitzung nicht weiter als regulären
   Planning-Kontext fort und setzt das Planning über `SESSION_HANDOFF` in einer
   neuen Planning-Sitzung für dieselbe Planning-Bead fort; die
-  Fortsetzungsübergabe ist die reguläre Grundlage dieser neuen Sitzung, das
-  Rohtranskript bleibt Rückfallquelle;
+  Fortsetzungsübergabe ist die reguläre Grundlage dieser neuen Sitzung, ein
+  etwaig erhaltenes Rohtranskript dient höchstens als Rückfallquelle;
 - die Korrektheit dieses Übergangs nicht von einem technischen Session-Fork,
   einem Klon oder einer executor-spezifischen Sitzungsfortsetzung abhängig
   machen;
@@ -1120,8 +1125,8 @@ Abnahme (Session-Handoff): Im selben VPS-Beispiel wird eine absichtlich zu groß
 gewordene Planning-Sitzung über einen `SESSION_HANDOFF` fortgesetzt. Die Rolle
 `session_handoff` erzeugt aus dem bisherigen Planning-Kontext eine
 Fortsetzungsübergabe; eine neue Planning-Sitzung für dieselbe Planning-Bead
-nimmt das Sachthema regulär auf deren Grundlage wieder auf; das Rohtranskript
-bleibt als Rückfallquelle verfügbar. Danach ist zum selben Sachthema mindestens
+nimmt das Sachthema regulär auf deren Grundlage wieder auf. Ein Rohtranskript
+muss dafür nicht aufbewahrt werden. Danach ist zum selben Sachthema mindestens
 eine weitere kontrollierte Planfortschreibung nach `plan.md` möglich – ohne
 technischen Session-Fork und ohne dass `SESSION_HANDOFF` `bd`-Vorgänge,
 Untervorgänge oder Abhängigkeiten erzeugt.
