@@ -295,7 +295,10 @@ bewusst angepasste Prompts werden versioniert.
 - jedes verwendete Modellprofil existiert;
 - Profil und Rollen-Override ergeben eine vollständige und verfügbare
   Executor-/Modell-/Effort-Zuordnung;
-- Umsetzer und jeweilige Kontrollrolle verwenden verschiedene Executor.
+- die beschlossenen echten Umsetzer-/Reviewer-Paare (Planungs-Umsetzer/
+  Planungs-Reviewer sowie Implementierer/Implementation-Reviewer) verwenden
+  jeweils verschiedene Executor; für `plan_write_controller` und `plan_writer`
+  (`CONTROLLED_WRITE`) wird keine Executor-Trennung verlangt.
 
 Die Ausgabe endet mit einer eindeutigen nächsten Aktion:
 
@@ -741,11 +744,14 @@ model    = "sol"
 effort   = "high"
 
 [roles]
-planner           = "control"
-plan_materializer = "work"
-plan_reviewer     = "control"
-implementer       = "work"
-impl_reviewer     = "control"
+planner               = "control"
+plan_write_controller = "control"
+plan_writer           = "work"
+session_handoff       = "control"
+plan_materializer     = "work"
+plan_reviewer         = "control"
+implementer           = "work"
+impl_reviewer         = "control"
 
 [role_overrides.impl_reviewer]
 effort = "xhigh"
@@ -760,6 +766,9 @@ vollständige Abbildbarkeit gegen die gepinnten Executor- und Ralphex-Versionen.
 | Rolle | Phase | Ausführung |
 | --- | --- | --- |
 | Planer | `PLAN_INTERACTIVE` | `ki-dev`-Agentenadapter |
+| Schreibkontroller (`plan_write_controller`) | `PLAN_INTERACTIVE`, kontrollierte Planfortschreibung | `ki-dev`-Agentenadapter |
+| Schreibagent (`plan_writer`) | `PLAN_INTERACTIVE`, kontrollierte Planfortschreibung | `ki-dev`-Agentenadapter |
+| Übergabe-Agent (`session_handoff`) | `SESSION_HANDOFF` | `ki-dev`-Agentenadapter |
 | Planungs-Umsetzer | `MATERIALIZE` | `ki-dev`-Agentenadapter |
 | Planungs-Reviewer | `REVIEW` | `ki-dev`-Agentenadapter |
 | Implementierer | `RALPHEX_EXECUTE` | Ralphex `--tasks-only` |
@@ -769,6 +778,11 @@ vollständige Abbildbarkeit gegen die gepinnten Executor- und Ralphex-Versionen.
 
 - Planungs-Umsetzer und Planungs-Reviewer verwenden verschiedene Executor.
 - Implementierer und Implementation-Reviewer verwenden verschiedene Executor.
+- Die Pflicht zur Executor-Trennung gilt ausschließlich für diese beiden
+  beschlossenen echten Umsetzer-/Reviewer-Paare. Für `plan_write_controller`
+  und `plan_writer` (`CONTROLLED_WRITE`) wird in V1 keine Executor-Trennung
+  verlangt; verschiedene Modellprofile `control` und `work` allein bedeuten
+  nicht automatisch verschiedene Executor.
 - Jedes in `[roles]` verwendete Modellprofil existiert.
 - Profil und Rollen-Override ergeben eine vollständige und verfügbare
   Zuordnung.
