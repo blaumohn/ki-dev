@@ -978,7 +978,7 @@ Arbeitsgegenstand nicht.
 - den `ki-dev`-eigenen Agent-Adapter für den einen interaktiven Planerstart und
   die nicht-interaktiven Planning-Rollenstarts aus Abschnitt 9.3
   (`plan_write_controller`, `plan_writer`, Planungs-Umsetzer, Planungs-Reviewer;
-  `session_handoff` gemäß bereits abgenommenem Vertrag) mit Profil-, Override-
+  `session_handoff` gemäß Abschnitt 2) mit Profil-, Override-
   und Mount-Parametern bauen;
 - den `CONTROLLED_WRITE`-Lebenszyklus umsetzen: der `plan_write_controller`
   (Profil `control`, nicht-interaktiv) bestimmt je Schreibschnitt einen
