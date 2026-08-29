@@ -1319,7 +1319,10 @@ Arbeitsgegenstand nicht.
   (Profil `work`); innerhalb eines Schreibschnitts übernimmt bei `CHANGES`
   derselbe `plan_writer`; erst nach `PASS_STEP` folgt der nächste `TASK` oder,
   wenn keine weiteren Schreibschnitte nötig erscheinen, der
-  `CONTROLLER_FINAL_CHECK`;
+  `CONTROLLER_FINAL_CHECK` als frischer `plan_write_controller`-Lauf innerhalb
+  desselben `CONTROLLED_WRITE`, ohne executor-spezifische Sitzungsfortsetzung;
+  der Prüfzustand wird dabei aus den persistierten Eingaben und Ergebnissen
+  dieses `CONTROLLED_WRITE` sowie dem aktuellen `plan.md` rekonstruiert;
 - Prompt und Orchestrator auf denselben `CONTROLLED_WRITE`-Controller-Vertrag
   verpflichten und ihn beidseitig durchsetzen: eine bekannte, im aktuellen
   Schreibschnitt behebbare Abweichung führt zu `CHANGES` an denselben
