@@ -33,6 +33,25 @@ Vorgang schließen        Vorgang schließen
 erst jetzt wieder bd ready
 ```
 
+### Normativer Vertrag: Entwurfsdokument, Rollen-Prompts, Orchestrator
+
+`design-notes.de.md` ist die normative Quelle des fachlich-architektonischen
+Soll-Zustands für `ki-dev`. Was dieses Dokument als Anforderung, Ablaufvertrag
+oder Invariante festhält, gilt; Rollen-Prompts und Orchestrator sind ihm
+nachgeordnet und leiten sich daraus ab. Die drei Ebenen bilden einen gemeinsamen
+Vertrag und sind zusammen zu lesen:
+
+1. **Entwurfsdokument (`design-notes.de.md`)** gibt den fachlich-architektonischen
+   Soll-Zustand bzw. die Anforderungen vor. Hier wird festgelegt, *was* gelten
+   soll.
+2. **Rollen-Prompts** (`.ki-dev/prompts/`) sind Anweisungen für ihre jeweilige
+   Rolle und müssen diesen Vertrag befolgen. Sie schärfen ihn für die einzelne
+   Rolle aus, definieren ihn aber nicht unabhängig neu und weichen nicht von ihm
+   ab.
+3. **Der deterministische Orchestrator** setzt denselben Vertrag technisch um und
+   erzwingt ihn, soweit seine Regeln strukturell prüfbar sind – etwa Auswahl,
+   Rollenfolge, Schreibgrenzen, Zustandswechsel, Gates und Wiederholungsgrenzen.
+
 ## 2. Rollen und Arbeitsarten
 
 Es gibt zwei Arbeitsarten, aber mehrere Rollen.
@@ -41,7 +60,7 @@ Es gibt zwei Arbeitsarten, aber mehrere Rollen.
 
 Planung ist ein bewusst kleiner, menschlich überprüfbarer Mensch-Planer-Dialog.
 Ein ausreichend geklärter Zwischenstand darf während derselben Planning-Sitzung
-kontrolliert nach `plan.md` fortgeschrieben werden. Das schließt weder die
+kontrolliert nach `design-notes.de.md` fortgeschrieben werden. Das schließt weder die
 Sitzung noch das betreffende Sachthema ab; eine spätere Erkenntnis darf
 denselben Sachbereich erneut ergänzen oder korrigieren. Eine solche
 Zwischenfortschreibung erzeugt noch keine endgültigen `bd`-Vorgänge,
@@ -51,7 +70,7 @@ vollständigen Planning-Materialisierung getrennt.
 ```text
 Planer ↔ Benutzer
 → ausreichend geklärter Zwischenstand
-→ kontrollierte Planfortschreibung in plan.md (CONTROLLED_WRITE)
+→ kontrollierte Planfortschreibung in design-notes.de.md (CONTROLLED_WRITE)
 → zurück in denselben Mensch-Planer-Dialog
 ...
 → Gesamtplan ausreichend fertig
@@ -110,7 +129,7 @@ Dadurch bleiben zwei Prüfungen getrennt:
 
 1. Der Mensch prüft, ob der Planer den Dialogstand richtig erfasst hat.
 2. Der Schreibkontroller prüft auf dem Snapshot, ob der bestätigte Stand für die
-   konkrete Schreibarbeit an `plan.md` ausreichend bestimmt ist.
+   konkrete Schreibarbeit an `design-notes.de.md` ausreichend bestimmt ist.
 
 Ergibt bereits diese Snapshot-Prüfung, dass eine notwendige fachliche oder
 architektonische Entscheidung fehlt, darf der Schreibkontroller sie nicht selbst
@@ -122,7 +141,7 @@ löst aus, dass der Orchestrator die offene Frage samt Bindung an denselben
 `DECISION_PROVIDED` wird derselbe `CONTROLLED_WRITE` fortgesetzt. Eine
 automatische neue `WRITE`-Eingabe entsteht dadurch nicht.
 
-Der Snapshot ist ein reiner Schreibeingang für `plan.md`. Er erzeugt keine
+Der Snapshot ist ein reiner Schreibeingang für `design-notes.de.md`. Er erzeugt keine
 `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten; diese entstehen weiterhin
 ausschließlich in der späteren vollständigen Planning-Materialisierung
 (`MATERIALIZE`).
@@ -146,13 +165,13 @@ Korrekturschleifen hinweg einen logisch zusammenhängenden Kontroller-Zustand.
 Der Schreibkontroller prüft am Snapshot, ob der freigegebene Planning-Stand
 fachlich und architektonisch ausreichend bestimmt ist. Den konkreten begrenzten
 Schreibauftrag bestimmt er dagegen nicht aus dem Snapshot allein, sondern
-zugleich aus dem aktuellen geprüften Stand von `plan.md`; bei weiteren
+zugleich aus dem aktuellen geprüften Stand von `design-notes.de.md`; bei weiteren
 Schreibschnitten kommen die bisherigen `CONTROLLED_WRITE`-Ergebnisse hinzu:
 
 ```text
 gespeicherter Planning-Snapshot
         +
-aktuelles geprüftes plan.md
+aktuelles geprüftes design-notes.de.md
         +
 bei späteren Schritten: bisherige CONTROLLED_WRITE-Ergebnisse
         ↓
@@ -191,14 +210,14 @@ frischer `plan_write_controller`-Lauf als `CONTROLLER_FINAL_CHECK`.
 
 Dieser Lauf verwendet keine executor-spezifische Sitzungsfortsetzung, sondern
 rekonstruiert den vollständigen Prüfzustand aus den persistierten Eingaben und
-Ergebnissen dieses `CONTROLLED_WRITE` sowie dem aktuellen `plan.md`:
+Ergebnissen dieses `CONTROLLED_WRITE` sowie dem aktuellen `design-notes.de.md`:
 
 ```text
 gespeicherter Planning-Snapshot
         +
 bisherige TASK-/RESULT-/PASS_STEP-Ergebnisse dieses CONTROLLED_WRITE
         +
-aktuelles plan.md
+aktuelles design-notes.de.md
         ↓
 frischer plan_write_controller-Lauf = CONTROLLER_FINAL_CHECK
         ├─ PASS
@@ -286,7 +305,7 @@ bestehenden an dem Punkt fort, an dem `NEEDS_DECISION` entstand:
 Wie schon für die Schreibschnitte und den `CONTROLLER_FINAL_CHECK` ist auch
 diese Wiederaufnahme nicht von einer executor-spezifischen Sitzungsfortsetzung
 abhängig. Der nötige Kontroller-Zustand wird aus dem gespeicherten
-Planning-Snapshot, dem aktuellen geprüften `plan.md`, den bisherigen Ergebnissen
+Planning-Snapshot, dem aktuellen geprüften `design-notes.de.md`, den bisherigen Ergebnissen
 des laufenden `CONTROLLED_WRITE` und der nun bereitgestellten Entscheidung
 rekonstruiert.
 
@@ -296,9 +315,9 @@ rekonstruiert.
 bereits laufenden Planning-Workflows und derselben Planning-Bead. Er ist kein
 eigener `bd`-Vorgang und kein neuer fachlicher Planning-Vorgang; er erzeugt
 keine neue Planning-Bead. Er ist außerdem weder die kontrollierte
-Planfortschreibung nach `plan.md` noch die vollständige Planning-Materialisierung
+Planfortschreibung nach `design-notes.de.md` noch die vollständige Planning-Materialisierung
 (`MATERIALIZE`). Die kontrollierte Planfortschreibung sichert einen
-Zwischenstand in `plan.md`; die Materialisierung überträgt den freigegebenen
+Zwischenstand in `design-notes.de.md`; die Materialisierung überträgt den freigegebenen
 Gesamtplan in die Projektdokumentation und den `bd`-Graphen; der
 `SESSION_HANDOFF` verschiebt nur die weitere Denkarbeit in eine neue
 Planning-Sitzung. Während des Handoffs gilt `state.json.phase = SESSION_HANDOFF`,
@@ -346,7 +365,7 @@ Doku und tatsächlichen `bd`-Graphen; bei Mängeln geht es zurück an den
 Planungs-Umsetzer.
 
 Vor der menschlichen Freigabe des Gesamtplans wird nichts materialisiert. Die
-während der Sitzung nach `plan.md` fortgeschriebenen Zwischenstände ersetzen
+während der Sitzung nach `design-notes.de.md` fortgeschriebenen Zwischenstände ersetzen
 diese Freigabe nicht; `MATERIALIZE` beginnt erst nach ihr.
 
 ### Umsetzung
@@ -368,7 +387,10 @@ Arbeitszweig und übernimmt anschließend Integration und Zustandswechsel.
 
 Der Orchestrator ist deterministisch und trifft keine Fachentscheidungen. Er
 erzwingt Auswahl, Rollenfolge, Schreibgrenzen, Wiederholungen, Zustandswechsel
-und Abbruchbedingungen.
+und Abbruchbedingungen. Damit setzt er den in Abschnitt 1 beschriebenen
+normativen Vertrag technisch um und erzwingt ihn, soweit seine Regeln strukturell
+prüfbar sind; den fachlich-architektonischen Soll-Zustand selbst gibt weiterhin
+`design-notes.de.md` vor, und die Rollen-Prompts folgen ihm.
 
 Leitregel:
 
@@ -551,7 +573,7 @@ Benutzer: ...
 Planer: Ich empfehle Variante B, weil ...
 Benutzer: Einverstanden, bitte so festhalten.
 ki-dev: WRITE ohne neuen Inhalt, vorherige Planerausgabe bestätigt
-        Snapshot erzeugt, Zwischenstand kontrolliert nach plan.md fortgeschrieben
+        Snapshot erzeugt, Zwischenstand kontrolliert nach design-notes.de.md fortgeschrieben
         Planning-Sitzung läuft weiter
 Planer: Offen ist noch das Secrets-Handling ...
 ...
@@ -559,7 +581,7 @@ Planer: Zusammenfassung der getroffenen Entscheidungen ...
 Gesamtplan freigeben und materialisieren? [y/N]
 ```
 
-Ein ausreichend geklärter Zwischenstand darf dabei nach `plan.md`
+Ein ausreichend geklärter Zwischenstand darf dabei nach `design-notes.de.md`
 fortgeschrieben werden, ohne die Planning-Sitzung zu beenden. Die Freigabe mit
 `y` gilt dagegen der vollständigen Planning-Materialisierung. Vor `y` wird
 nichts materialisiert. Nach der Freigabe:
@@ -773,7 +795,7 @@ rekonstruierbar aus
 
 ```text
 gespeicherter freigegebener Planning-Snapshot
-+ aktuelles geprüftes plan.md
++ aktuelles geprüftes design-notes.de.md
 + bisherige Ergebnisse des laufenden CONTROLLED_WRITE
 ```
 
@@ -785,7 +807,7 @@ Derselbe rekonstruierbare Prüfzustand trägt auch den abschließenden
 `CONTROLLER_FINAL_CHECK`. Dieser ist ein frischer `plan_write_controller`-Lauf
 innerhalb desselben `CONTROLLED_WRITE`, verwendet keine executor-spezifische
 Sitzungsfortsetzung und rekonstruiert seinen Zustand allein aus den persistierten
-Eingaben und Ergebnissen dieses `CONTROLLED_WRITE` sowie dem aktuellen `plan.md`.
+Eingaben und Ergebnissen dieses `CONTROLLED_WRITE` sowie dem aktuellen `design-notes.de.md`.
 
 Davon getrennt bleibt `state.json` der kleine persistierte
 Orchestrierungszustand, der die Wiederaufnahme des Laufs ermöglicht. Bei
@@ -821,7 +843,7 @@ erzeugen. Wie diese Bezüge im bestehenden Laufzustand technisch dargestellt
 werden, legt dieser Plan nicht fest; ein neues Schema entsteht dafür nicht. Auch
 diese Fortsetzung verlangt keine executor-spezifische Sitzungsfortsetzung: Der
 nötige Kontroller-Zustand ergibt sich aus Planning-Snapshot, aktuellem geprüften
-`plan.md`, den bisherigen Ergebnissen des laufenden `CONTROLLED_WRITE` und der
+`design-notes.de.md`, den bisherigen Ergebnissen des laufenden `CONTROLLED_WRITE` und der
 bereitgestellten Entscheidung.
 
 Während eines `SESSION_HANDOFF` ist im selben `state.json` desselben Laufs
@@ -833,7 +855,7 @@ Zustandsdatei und kein neues Schema; es genügt das bereits vorhandene Feld
 Taskbeschreibung und Status werden nicht dupliziert; sie werden aus `bd`
 gelesen. Fachentscheidungen werden nicht nur im Laufzustand aufbewahrt: Ein
 ausreichend geklärter Zwischenstand kann bereits während `PLAN_INTERACTIVE`
-kontrolliert nach `plan.md` fortgeschrieben werden; erst die spätere
+kontrolliert nach `design-notes.de.md` fortgeschrieben werden; erst die spätere
 vollständige Planning-Materialisierung überträgt den ausreichend fertigen und
 freigegebenen Gesamtplan in die vorgesehene Projektdokumentation und den
 `bd`-Graphen.
@@ -896,7 +918,7 @@ PLAN_INTERACTIVE
    │           → denselben CONTROLLED_WRITE fortsetzen, kein neuer CONTROLLED_WRITE
    │           → plan_write_controller nimmt die Bestimmtheitsprüfung wieder auf
    │     └─ ausreichend bestimmt → Schreibkontroller bestimmt begrenzten TASK
-   │           aus Snapshot + geprüftem plan.md (+ bisherige CONTROLLED_WRITE-Ergebnisse)
+   │           aus Snapshot + geprüftem design-notes.de.md (+ bisherige CONTROLLED_WRITE-Ergebnisse)
    │           → frischer plan_writer → RESULT → Schreibkontroller
    │              ├─ CHANGES          → derselbe plan_writer
    │              ├─ NEEDS_DECISION (fehlende fachliche/architektonische Entscheidung)
@@ -913,7 +935,7 @@ PLAN_INTERACTIVE
    │                    └─ kein weiterer Schreibschnitt nötig
    │                          → frischer plan_write_controller-Lauf = CONTROLLER_FINAL_CHECK
    │                            (Prüfzustand rekonstruiert aus persistierten
-   │                             CONTROLLED_WRITE-Eingaben/-Ergebnissen + aktuellem plan.md;
+   │                             CONTROLLED_WRITE-Eingaben/-Ergebnissen + aktuellem design-notes.de.md;
    │                             keine executor-spezifische Sitzungsfortsetzung)
    │                            ├─ PASS
    │                            │     → CONTROLLED_WRITE abgeschlossen → PLAN_INTERACTIVE
@@ -941,7 +963,7 @@ HUMAN_APPROVAL
 ```
 
 Die kontrollierte Planfortschreibung (`CONTROLLED_WRITE`) bleibt innerhalb von
-`PLAN_INTERACTIVE` und schreibt nur `plan.md`. Sie arbeitet auf einem
+`PLAN_INTERACTIVE` und schreibt nur `design-notes.de.md`. Sie arbeitet auf einem
 eingefrorenen Snapshot des freigegebenen Planning-Kontexts (Abschnitt 2) und
 wird durch eine menschliche `WRITE`-Eingabe ausgelöst. Neuer Planungsinhalt in
 dieser Eingabe muss der Planer erst in einer vom Menschen bestätigten Ausgabe
@@ -956,7 +978,7 @@ Ein `CONTROLLED_WRITE` hält über alle Schreibschnitte und `CHANGES`-Schleifen
 hinweg einen zusammenhängenden Kontroller-Zustand (Abschnitt 2). Die Prüfung auf
 ausreichende Bestimmtheit bleibt auf den Snapshot bezogen; den begrenzten `TASK`
 je Schreibschnitt bestimmt der Schreibkontroller dagegen aus dem Snapshot und
-dem aktuellen geprüften `plan.md`, bei weiteren Schreibschnitten zusätzlich aus
+dem aktuellen geprüften `design-notes.de.md`, bei weiteren Schreibschnitten zusätzlich aus
 den bisherigen `CONTROLLED_WRITE`-Ergebnissen. Dafür startet ein frischer
 `plan_writer`. Innerhalb eines Schreibschnitts übernimmt bei `CHANGES` derselbe
 `plan_writer`.
@@ -968,7 +990,7 @@ Erscheinen keine weiteren Schreibschnitte nötig, ist der `CONTROLLED_WRITE` noc
 nicht abgeschlossen: Innerhalb desselben `CONTROLLED_WRITE` startet dann ein
 frischer `plan_write_controller`-Lauf als `CONTROLLER_FINAL_CHECK`, der seinen
 Prüfzustand ohne executor-spezifische Sitzungsfortsetzung aus den persistierten
-Eingaben und Ergebnissen dieses `CONTROLLED_WRITE` und dem aktuellen `plan.md`
+Eingaben und Ergebnissen dieses `CONTROLLED_WRITE` und dem aktuellen `design-notes.de.md`
 rekonstruiert. Erst `CONTROLLER_FINAL_CHECK → PASS` schließt den
 `CONTROLLED_WRITE` ab. Erkennt der `CONTROLLER_FINAL_CHECK` eine innerhalb des
 `CONTROLLED_WRITE` behebbare Abweichung, wird derselbe `CONTROLLED_WRITE`
@@ -995,7 +1017,7 @@ mit der Entscheidung erneut ausgeführt. Eine executor-spezifische
 Sitzungsfortsetzung ist dafür keine Voraussetzung (Abschnitt 2).
 
 Der Kontroller-Zustand ist ohne executor-spezifische Sitzungsfortsetzung aus
-Snapshot, aktuellem geprüften `plan.md` und den bisherigen Schreibschnitt-
+Snapshot, aktuellem geprüften `design-notes.de.md` und den bisherigen Schreibschnitt-
 Ergebnissen rekonstruierbar; das gilt auch für den `CONTROLLER_FINAL_CHECK` und
 für die Wiederaufnahme nach `DECISION_PROVIDED`. Endgültige `bd`-Vorgänge,
 Untervorgänge und Abhängigkeiten entstehen erst in `MATERIALIZE`.
@@ -1051,7 +1073,7 @@ Laufzustand          nur durch Orchestrator
 ```
 
 Die kontrollierte Planfortschreibung nutzt dieselben Grenzen, schreibt darin
-aber nur `plan.md`.
+aber nur `design-notes.de.md`.
 
 ### Umsetzung
 
@@ -1309,11 +1331,11 @@ Arbeitsgegenstand nicht.
 - die `WRITE`-Freigaberegel strikt von `HUMAN_APPROVAL` und `MATERIALIZE`
   getrennt halten: die Bestätigung einer Planerausgabe für einen Snapshot ist
   keine Gesamtplan-Freigabe; der Snapshot ist reiner Schreibeingang, der
-  `CONTROLLED_WRITE` schreibt nur `plan.md`, und dabei entstehen keine
+  `CONTROLLED_WRITE` schreibt nur `design-notes.de.md`, und dabei entstehen keine
   endgültigen `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten;
 - den `CONTROLLED_WRITE`-Lebenszyklus umsetzen: der `plan_write_controller`
   (Profil `control`, nicht-interaktiv) bestimmt je Schreibschnitt einen
-  begrenzten `TASK` aus Snapshot und aktuellem geprüften `plan.md`, bei weiteren
+  begrenzten `TASK` aus Snapshot und aktuellem geprüften `design-notes.de.md`, bei weiteren
   Schreibschnitten zusätzlich aus den bisherigen `CONTROLLED_WRITE`-Ergebnissen;
   pro Schreibschnitt startet ein frischer `plan_writer`
   (Profil `work`); innerhalb eines Schreibschnitts übernimmt bei `CHANGES`
@@ -1322,7 +1344,7 @@ Arbeitsgegenstand nicht.
   `CONTROLLER_FINAL_CHECK` als frischer `plan_write_controller`-Lauf innerhalb
   desselben `CONTROLLED_WRITE`, ohne executor-spezifische Sitzungsfortsetzung;
   der Prüfzustand wird dabei aus den persistierten Eingaben und Ergebnissen
-  dieses `CONTROLLED_WRITE` sowie dem aktuellen `plan.md` rekonstruiert;
+  dieses `CONTROLLED_WRITE` sowie dem aktuellen `design-notes.de.md` rekonstruiert;
 - Prompt und Orchestrator auf denselben `CONTROLLED_WRITE`-Controller-Vertrag
   verpflichten und ihn beidseitig durchsetzen: eine bekannte, im aktuellen
   Schreibschnitt behebbare Abweichung führt zu `CHANGES` an denselben
@@ -1337,7 +1359,7 @@ Arbeitsgegenstand nicht.
   Orchestrator, soweit prüfbar, zurück und akzeptiert das Rollenergebnis nicht;
 - den über alle Schreibschnitte und Korrekturschleifen zusammenhängenden
   Kontroller-Zustand allein aus freigegebenem Planning-Snapshot, aktuellem
-  geprüften `plan.md` und den bisherigen Ergebnissen des laufenden
+  geprüften `design-notes.de.md` und den bisherigen Ergebnissen des laufenden
   `CONTROLLED_WRITE` rekonstruierbar halten, ohne executor-spezifische
   Sitzungsfortsetzung;
 - die Entscheidungsunterbrechung desselben `CONTROLLED_WRITE` umsetzen: bei
@@ -1384,7 +1406,7 @@ Arbeitsgegenstand nicht.
 
 Abnahme: Im VPS-Beispiel schreibt mindestens eine kontrollierte
 Planfortschreibung während der laufenden Planning-Sitzung einen Zwischenstand
-nach `plan.md`, ohne `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten zu
+nach `design-notes.de.md`, ohne `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten zu
 erzeugen. Erst nach der menschlichen Freigabe des Gesamtplans erzeugt
 `MATERIALIZE` aus dem Planning-Vorgang eine geprüfte Architekturdoku und drei
 korrekt abhängige Implementation-Vorgänge, ohne Produktcode zu verändern.
@@ -1431,7 +1453,7 @@ gewordene Planning-Sitzung über einen `SESSION_HANDOFF` fortgesetzt. Die Rolle
 Fortsetzungsübergabe; eine neue Planning-Sitzung für dieselbe Planning-Bead
 nimmt das Sachthema regulär auf deren Grundlage wieder auf. Ein Rohtranskript
 muss dafür nicht aufbewahrt werden. Danach ist zum selben Sachthema mindestens
-eine weitere kontrollierte Planfortschreibung nach `plan.md` möglich – ohne
+eine weitere kontrollierte Planfortschreibung nach `design-notes.de.md` möglich – ohne
 technischen Session-Fork und ohne dass `SESSION_HANDOFF` `bd`-Vorgänge,
 Untervorgänge oder Abhängigkeiten erzeugt.
 
