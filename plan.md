@@ -1337,8 +1337,13 @@ Arbeitsgegenstand nicht.
   geprüften `plan.md` und den bisherigen Ergebnissen des laufenden
   `CONTROLLED_WRITE` rekonstruierbar halten, ohne executor-spezifische
   Sitzungsfortsetzung;
-- die Rückeskalation des `plan_write_controller` zu Planning bei fehlender
-  fachlicher oder architektonischer Entscheidung umsetzen;
+- die Entscheidungsunterbrechung desselben `CONTROLLED_WRITE` umsetzen: bei
+  fehlender fachlicher oder architektonischer Entscheidung meldet der
+  `plan_write_controller` `NEEDS_DECISION`; daraufhin persistiert der
+  Orchestrator die offene Frage samt Bindung an diesen `CONTROLLED_WRITE` und
+  geht in `WAITING_FOR_DECISION`; nach `DECISION_PROVIDED` wird derselbe
+  `CONTROLLED_WRITE` am gespeicherten Fortsetzungspunkt wiederaufgenommen.
+  Während `WAITING_FOR_DECISION` darf kein `plan_writer` starten;
 - den `SESSION_HANDOFF` als persistierte Orchestrator-Phase desselben
   Planning-Workflows und derselben Planning-Bead umsetzen (Vertrag siehe
   Abschnitt 2), nicht als neue Planning-Bead und nicht als neuen fachlichen
