@@ -295,6 +295,20 @@ die dazu bereitgestellte Entscheidung eindeutig einander zuordnen können.
 `DECISION_PROVIDED` erzeugt keinen neuen `CONTROLLED_WRITE`, sondern setzt den
 bestehenden an dem Punkt fort, an dem `NEEDS_DECISION` entstand:
 
+Für diese Wiederaufnahme darf eine Planning-Ausgabe strukturiert
+`DECISION_PROVIDED` mit der getroffenen Entscheidung, ihrer Begründung und ihren
+Randbedingungen enthalten. Planning entscheidet damit weiterhin ausschließlich,
+**was** gelten soll. Eine solche Ausgabe darf keinen Writer-`TASK`, keinen
+Schreibumfang und keine Anzahl oder Zerlegung von Schreibschnitten festlegen.
+Aus der bereitgestellten Entscheidung die notwendige Schreibarbeit zu bestimmen,
+bleibt ausschließlich Sache des `plan_write_controller` – wie schon sonst im
+`CONTROLLED_WRITE` aus Entscheidung, Snapshot, aktuellem geprüften
+`design-notes.de.md` und den bisherigen `CONTROLLED_WRITE`-Ergebnissen. Der
+Orchestrator erzwingt diese Rollengrenze, soweit sie strukturell prüfbar ist:
+Eine `DECISION_PROVIDED`-Ausgabe, die bereits Writer-`TASK`s, einen
+Schreibumfang oder Schreibschnitt-Vorgaben enthält, akzeptiert er nicht als
+gültige Rollenübergabe.
+
 - Stammt `NEEDS_DECISION` aus einem normalen Schreibschnitt, bestimmt der
   `plan_write_controller` mit der bereitgestellten Entscheidung den nächsten
   begrenzten `TASK`; erst dafür startet ein frischer `plan_writer`.
@@ -840,7 +854,13 @@ zugehörigen `CONTROLLED_WRITE` und bereitgestellte Entscheidung eindeutig
 einander zu, bindet die Entscheidung an genau diesen `CONTROLLED_WRITE` und setzt
 ihn an seinem gespeicherten Punkt fort, ohne einen neuen `CONTROLLED_WRITE` zu
 erzeugen. Wie diese Bezüge im bestehenden Laufzustand technisch dargestellt
-werden, legt dieser Plan nicht fest; ein neues Schema entsteht dafür nicht. Auch
+werden, legt dieser Plan nicht fest; ein neues Schema entsteht dafür nicht. Der
+Inhalt von `DECISION_PROVIDED` bleibt dabei auf die fachliche oder
+architektonische Entscheidung mit Begründung und Randbedingungen begrenzt; er
+enthält keine Writer-`TASK`s, keinen Schreibumfang und keine
+Schreibschnitt-Zerlegung. Diese bestimmt allein der `plan_write_controller`, und
+der Orchestrator weist eine so überladene Rollenübergabe zurück, soweit das
+strukturell prüfbar ist. Auch
 diese Fortsetzung verlangt keine executor-spezifische Sitzungsfortsetzung: Der
 nötige Kontroller-Zustand ergibt sich aus Planning-Snapshot, aktuellem geprüften
 `design-notes.de.md`, den bisherigen Ergebnissen des laufenden `CONTROLLED_WRITE` und der
@@ -882,6 +902,22 @@ Zustand
 - Die Bedingung entscheidet, ob der Übergang zulässig ist.
 - Die Aktion führt die beim Übergang erforderliche Wirkung aus.
 - Eine Aktion kann ihrerseits ein später verarbeitetes Ereignis erzeugen.
+
+### Umsetzungssprache und Bibliotheksunabhängigkeit
+
+Python ist die vorgesehene erste Umsetzungssprache für `ki-dev`. Diese
+Entscheidung betrifft die konkrete Implementierung. Der in diesem Dokument
+festgelegte Zustands- und Übergangsvertrag – die Zustände, Ereignisse,
+Bedingungen, Aktionen und Folgezustände aller in diesem Abschnitt beschriebenen
+Automaten – gilt davon unabhängig und bleibt insbesondere unabhängig von einer
+bestimmten Python-Zustandsmaschinenbibliothek.
+
+Eine konkrete Python-Zustandsmaschinenbibliothek wird durch diesen Entwurf
+deshalb nicht als Architekturvoraussetzung oder V1-Pflicht festgelegt. Ihre
+Auswahl bleibt eine spätere Implementierungsentscheidung und ist nicht
+Gegenstand dieses Dokuments; der deterministische Orchestrator muss den
+Übergangsvertrag erfüllen, gleich ob er dafür eine solche Bibliothek verwendet
+oder ihn ohne eine solche Bibliothek umsetzt.
 
 ### Dispatcher
 
@@ -950,10 +986,16 @@ PLAN_INTERACTIVE
    │                                  → DECISION_PROVIDED (bereitgestellte Entscheidung = Ereignisinhalt)
    │                                     → denselben CONTROLLED_WRITE fortsetzen, kein neuer CONTROLLED_WRITE
    │                                     → CONTROLLER_FINAL_CHECK erneut ausführen
-   ├─ Mensch oder unterstützendes Größenbegrenzungssignal erkennt zu große Sitzung
-   │     → SESSION_HANDOFF (persistierte Phase, state.json.phase = SESSION_HANDOFF)
-   │       → neue Planning-Sitzung → PLAN_INTERACTIVE
+   ├─ SESSION_HANDOFF_REQUESTED (Mensch oder unterstützendes
+   │     Größenbegrenzungssignal erkennt zu große Sitzung)
+   │     → SESSION_HANDOFF (persistierte Phase desselben Planning-Workflows und
+   │        derselben Planning-Bead, state.json.phase = SESSION_HANDOFF;
+   │        kein neuer bd-Vorgang, kein neuer fachlicher Planning-Vorgang)
    └─ Plan ausreichend fertig → HUMAN_APPROVAL
+SESSION_HANDOFF
+   └─ HANDOFF_SUCCEEDED
+        → Planning in neuer Planning-Sitzung derselben Planning-Bead fortsetzen
+        → PLAN_INTERACTIVE
 HUMAN_APPROVAL
 → MATERIALIZE
 → REVIEW
@@ -1014,7 +1056,14 @@ die Entscheidung an genau diesen `CONTROLLED_WRITE` und setzt ihn ohne neuen
 bestimmt der `plan_write_controller` mit der Entscheidung den nächsten `TASK`
 für einen frischen `plan_writer`; aus dem `CONTROLLER_FINAL_CHECK` wird dieser
 mit der Entscheidung erneut ausgeführt. Eine executor-spezifische
-Sitzungsfortsetzung ist dafür keine Voraussetzung (Abschnitt 2).
+Sitzungsfortsetzung ist dafür keine Voraussetzung (Abschnitt 2). Die
+Planning-Ausgabe für `DECISION_PROVIDED` transportiert dabei nur die fachliche
+oder architektonische Entscheidung mit Begründung und Randbedingungen und legt
+weder Writer-`TASK`s noch Schreibumfang noch Anzahl oder Zerlegung der
+Schreibschnitte fest; der Orchestrator erzwingt diese Rollengrenze, soweit
+strukturell prüfbar, und akzeptiert eine bereits mit Writer-Aufträgen oder
+Schreibschnitt-Vorgaben überladene `DECISION_PROVIDED`-Ausgabe nicht als
+gültige Rollenübergabe.
 
 Der Kontroller-Zustand ist ohne executor-spezifische Sitzungsfortsetzung aus
 Snapshot, aktuellem geprüften `design-notes.de.md` und den bisherigen Schreibschnitt-
@@ -1024,18 +1073,21 @@ Untervorgänge und Abhängigkeiten entstehen erst in `MATERIALIZE`.
 
 `SESSION_HANDOFF` (Abschnitt 2) ist selbst eine echte persistierte
 Orchestrator-Phase desselben Planning-Workflows und derselben Planning-Bead,
-kein eigener `bd`-Vorgang und kein neuer fachlicher Planning-Vorgang. Aus
-`PLAN_INTERACTIVE` kann bei angefordertem Handoff in die persistierte Phase
-`SESSION_HANDOFF` gewechselt werden; nach erfolgreichem Handoff wechselt der
-Workflow mit einer neuen Planning-Sitzung zurück nach `PLAN_INTERACTIVE`. Der
-Wechsel in diese Phase erfolgt, wenn der Mensch oder ein unterstützendes
+kein eigener `bd`-Vorgang und kein neuer fachlicher Planning-Vorgang. Eintritt
+und Abschluss bilden zusammen den zusammenhängenden Lebenszyklus derselben
+persistierten `SESSION_HANDOFF`-Phase: Aus `PLAN_INTERACTIVE` führt das Ereignis
+`SESSION_HANDOFF_REQUESTED` in die persistierte Phase `SESSION_HANDOFF`; aus
+`SESSION_HANDOFF` führt das Ereignis `HANDOFF_SUCCEEDED` mit einer neuen
+Planning-Sitzung derselben Planning-Bead zurück nach `PLAN_INTERACTIVE`.
+`SESSION_HANDOFF_REQUESTED` tritt ein, wenn der Mensch oder ein unterstützendes
 Größenbegrenzungssignal erkennt, dass die laufende Planning-Sitzung für
 zuverlässiges weiteres Denken zu groß geworden ist; eine feste Größen-, Token-
 oder Turn-Schwelle legt dieser Plan dafür nicht fest. Solange diese Phase läuft,
 ist `state.json.phase = SESSION_HANDOFF` persistiert, sodass ein Abbruch bzw.
 `resume` eindeutig hier wieder anknüpft. Die Rolle `session_handoff` erzeugt eine
-Fortsetzungsübergabe; das Planning wird danach in einer neuen Planning-Sitzung
-für dieselbe Planning-Bead wieder in `PLAN_INTERACTIVE` aufgenommen. Ein
+Fortsetzungsübergabe; mit `HANDOFF_SUCCEEDED` wird das Planning danach in einer
+neuen Planning-Sitzung derselben Planning-Bead wieder in `PLAN_INTERACTIVE`
+aufgenommen. Ein
 technischer Session-Fork ist keine Voraussetzung, und `SESSION_HANDOFF` erzeugt
 keine endgültigen `bd`-Vorgänge, Untervorgänge oder Abhängigkeiten.
 
@@ -1368,7 +1420,12 @@ Arbeitsgegenstand nicht.
   Orchestrator die offene Frage samt Bindung an diesen `CONTROLLED_WRITE` und
   geht in `WAITING_FOR_DECISION`; nach `DECISION_PROVIDED` wird derselbe
   `CONTROLLED_WRITE` am gespeicherten Fortsetzungspunkt wiederaufgenommen.
-  Während `WAITING_FOR_DECISION` darf kein `plan_writer` starten;
+  Während `WAITING_FOR_DECISION` darf kein `plan_writer` starten; eine
+  `DECISION_PROVIDED`-Rollenübergabe transportiert nur die Entscheidung mit
+  Begründung und Randbedingungen, und der Orchestrator weist sie zurück, wenn
+  sie bereits Writer-`TASK`s, einen Schreibumfang oder eine
+  Schreibschnitt-Zerlegung vorgibt – die Zerlegung in `TASK`s bestimmt allein
+  der `plan_write_controller`;
 - den `SESSION_HANDOFF` als persistierte Orchestrator-Phase desselben
   Planning-Workflows und derselben Planning-Bead umsetzen (Vertrag siehe
   Abschnitt 2), nicht als neue Planning-Bead und nicht als neuen fachlichen
@@ -1436,7 +1493,11 @@ Abnahme (NEEDS_DECISION im CONTROLLED_WRITE): Im VPS-Beispiel meldet der
 `NEEDS_DECISION`. Das beendet den `CONTROLLED_WRITE` nicht; der Lauf geht in
 `WAITING_FOR_DECISION`, und währenddessen startet kein `plan_writer`. Nach
 `DECISION_PROVIDED` wird genau derselbe `CONTROLLED_WRITE` am gespeicherten
-Fortsetzungspunkt fortgesetzt.
+Fortsetzungspunkt fortgesetzt. Die `DECISION_PROVIDED`-Ausgabe des Planning
+enthält dabei nur Entscheidung, Begründung und Randbedingungen; eine Ausgabe,
+die schon Writer-`TASK`s oder Schreibschnitt-Vorgaben mitbringt, wird vom
+Orchestrator nicht als gültige Rollenübergabe akzeptiert, und den nächsten
+begrenzten `TASK` bestimmt der `plan_write_controller` aus der Entscheidung.
 
 Abnahme (Controller-Ergebnisvertrag im Schreibschnitt): Im VPS-Beispiel wird der
 Ergebnisvertrag eines Schreibschnitts zusammenhängend geprüft. Meldet der
