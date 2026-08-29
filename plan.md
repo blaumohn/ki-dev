@@ -1403,6 +1403,28 @@ an seinen `CONTROLLED_WRITE` gebunden, und es entstehen keine `bd`-Vorgänge,
 Untervorgänge oder Abhängigkeiten; die `WRITE`-Bestätigung wird nicht als
 `HUMAN_APPROVAL` gewertet.
 
+Abnahme (CONTROLLED_WRITE-Abschluss): Im VPS-Beispiel gilt ein `CONTROLLED_WRITE`
+nach dem letzten `PASS_STEP` noch nicht als abgeschlossen. Anschließend startet
+ein frischer `plan_write_controller` als `CONTROLLER_FINAL_CHECK`; erst dessen
+Ergebnis `CONTROLLER_FINAL_CHECK → PASS` beendet den `CONTROLLED_WRITE`. Nach
+diesem `PASS` folgt kein weiterer verpflichtender unabhängiger Review.
+
+Abnahme (NEEDS_DECISION im CONTROLLED_WRITE): Im VPS-Beispiel meldet der
+`plan_write_controller` während eines laufenden `CONTROLLED_WRITE`
+`NEEDS_DECISION`. Das beendet den `CONTROLLED_WRITE` nicht; der Lauf geht in
+`WAITING_FOR_DECISION`, und währenddessen startet kein `plan_writer`. Nach
+`DECISION_PROVIDED` wird genau derselbe `CONTROLLED_WRITE` am gespeicherten
+Fortsetzungspunkt fortgesetzt.
+
+Abnahme (Controller-Ergebnisvertrag im Schreibschnitt): Im VPS-Beispiel wird der
+Ergebnisvertrag eines Schreibschnitts zusammenhängend geprüft. Meldet der
+`plan_write_controller` eine bekannte, innerhalb des aktuellen Schreibschnitts
+behebbare Abweichung, ist das Ergebnis `CHANGES`, und derselbe `plan_writer`
+korrigiert weiter. `PASS_STEP` wird nur angenommen, wenn keine solche bekannte
+Restabweichung mehr besteht. Ein strukturell widersprüchliches
+Controller-Ergebnis, insbesondere `PASS_STEP` zusammen mit einer gemeldeten
+behebbaren Restabweichung, wird vom Orchestrator nicht akzeptiert.
+
 Abnahme (Session-Handoff): Im selben VPS-Beispiel wird eine absichtlich zu groß
 gewordene Planning-Sitzung über einen `SESSION_HANDOFF` fortgesetzt. Die Rolle
 `session_handoff` erzeugt aus dem bisherigen Planning-Kontext eine
