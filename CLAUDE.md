@@ -70,8 +70,20 @@ _Add your build and test commands here_
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+`ki-dev` wird mit `bd` (Vorgangsgraph) und Ralphex (autonome Planausführung
+und Review) gebootstrappt. Normativer Vertrag:
+
+- `design-notes.de.md` – Zielsystem
+- `bootstrap-notes.de.md` – vorübergehender Weg dorthin (Bootstrap-Stufen 0–4,
+  Abschnitte 5–13)
+
+Bootstrap-Stufe 1 materialisiert die Folgestufen als `bd`-Vorgänge; ab Stufe 2
+entstehen Fachart-Schemas (`schemas/ki-dev/`), Fachart-Daten als YAML unter
+`docs/ki-dev/fach/<fachart>/` und die Prüfschicht `ki-dev check`.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Jeder `bd`-Vorgang bekommt genau eine ausführbare Ralphex-Plandatei unter
+  `docs/plans/<bead-id>-<slug>.md`, die die Bead-ID im Namen und im Text nennt.
+- Materialisierungsberichte liegen unter `bootstrap/`.
+- Facharten: `system_spec`, `flow_spec`, `decision`, `guideline`, `test_matrix`.

@@ -39,8 +39,9 @@ nicht raten).
 
 ## Validation Commands
 
-- `pytest tests/test_ki_dev_check.py`
-- `pytest`
+- `pytest` (Testsuite für `ki-dev check`; muss mindestens je einen Test pro
+  der fünf Prüfungen aus `bootstrap-notes.de.md` Abschnitt 9 enthalten und darf
+  nicht mit "no tests collected" enden)
 
 ### Task 1: ki-dev-ablauf-i7n ki-dev check und minimale Nachweispruefung umsetzen
 

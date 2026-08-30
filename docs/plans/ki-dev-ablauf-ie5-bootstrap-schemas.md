@@ -30,7 +30,10 @@ ableitbar sind (NEEDS_DECISION melden, Vorgang offen lassen, nicht raten).
 
 ## Validation Commands
 
-- `python3 -c "import json,glob; [json.load(open(f)) for f in glob.glob('schemas/ki-dev/*.json')]"`
+- `python3 -c "import json; [json.load(open(f'schemas/ki-dev/{n}.json')) for n in ('system_spec','flow_spec','decision','guideline','test_matrix')]"`
+  – prüft explizit alle fünf erwarteten Schema-Dateien (nicht nur ein Glob, das
+  auch bei 0–4 Dateien bestünde) auf syntaktisch gültiges JSON.
+- `test -d docs/ki-dev/fach/system-spec && test -d docs/ki-dev/fach/flow-spec && test -d docs/ki-dev/fach/decision && test -d docs/ki-dev/fach/guideline && test -d docs/ki-dev/fach/test-matrix`
 - `git diff --check`
 
 ### Task 1: ki-dev-ablauf-ie5 Fachart-Schemas umsetzen
