@@ -2,26 +2,19 @@
 
 ## Quellen
 
-* `design-notes.de.md`
-* `bootstrap-design-notes.de.md`
+- `design-notes.de.md`
+- `bootstrap-design-notes.de.md`
 
-## Ziel
+## Validation Commands
 
-Materialisiere aus diesen beiden Dokumenten die nächsten Bootstrap-Schritte in `bd`.
+- `bd ready --json`
+- `bd dep cycles`
+- `git diff --check`
 
-### Task 1
+### Task 1: Bootstrap-Arbeitsgraph materialisieren
 
-* `bd`-Vorgang für Fachart-Schemas anlegen.
-* `bd`-Vorgang für minimale `ki-dev check`-Validierung anlegen.
-* `bd`-Vorgang für die spätere Umwandlung der `*design-notes.de.md` in Fachart-Dokumente anlegen.
-* Die notwendigen Abhängigkeiten zwischen diesen Vorgängen setzen.
-* Für jeden erzeugten Vorgang einen eigenen Ralphex-Plan unter `docs/plans/` anlegen.
-
-Keine Produktumsetzung durchführen. Keine neue Architekturentscheidung treffen.
-
-## Validation
-
-* `bd ready --json`
-* `bd dep cycles`
-* `git diff --check`
-
+- [x] `bd`-Vorgang für Fachart-Schemas anlegen.
+- [x] `bd`-Vorgang für `ki-dev check` anlegen.
+- [x] `bd`-Vorgang für die Fachart-Migration anlegen.
+- [x] Abhängigkeiten setzen.
+- [x] Für jeden Vorgang einen Ralphex-Plan erzeugen.
