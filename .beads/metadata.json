@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "ki_dev_ablauf",
+  "project_id": "beddb0f7-175c-408b-80d0-7a59510fe368"
+}
