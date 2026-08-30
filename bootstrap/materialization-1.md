@@ -38,8 +38,21 @@ git diff --check
 - Der tatsächliche `bd`-Bestand (`bd list --json`) entspricht der obigen
   Tabelle: vier offene Vorgänge in der genannten Abhängigkeitskette.
 
-`bd:ki-dev-ablauf-9407` existiert im Repository noch nicht; er
-entsteht laut `bootstrap-notes.de.md` Abschnitt 11 erst beim nächsten `WRITE`.
-Die eigentliche Einarbeitung (`ki-dev-ablauf-3zh`) ist daher noch nicht
-ausführbar, aber als Vorgang materialisiert und über die Abhängigkeitskette
-korrekt eingereiht.
+## Offene Voraussetzung: Planning-Snapshot
+
+`bd:ki-dev-ablauf-9407` existiert im Repository noch nicht. Laut
+`bootstrap-notes.de.md` Abschnitt 5 (Bootstrap-Stufe 0) gehört diese Datei zu
+den in Stufe 0 einmalig angelegten und committeten Bootstrap-Artefakten;
+Abschnitt 11 (Bootstrap-Stufe 4) setzt voraus, dass der Snapshot bereits bei
+`WRITE` gespeichert wurde und dort nur noch verarbeitet wird. Das Fehlen der
+Datei ist also **kein erwarteter Zwischenzustand**, sondern eine offene
+Stufe-0-Voraussetzung.
+
+Folge für den Arbeitsgraphen: `ki-dev-ablauf-3zh` ist als Vorgang materialisiert
+und über die Abhängigkeitskette korrekt hinter `ki-dev-ablauf-96c` eingereiht,
+darf aber erst gestartet werden, wenn `bd:ki-dev-ablauf-9407`
+nachgeliefert ist. Wird `ki-dev-ablauf-3zh` ohne diese Datei ready, greift die im
+Vorgang hinterlegte Eskalationsbedingung ("`bd:ki-dev-ablauf-9407`
+fehlt"). Vor Abschluss von `ki-dev-ablauf-96c` ist der fehlende Snapshot als
+Stufe-0-Lücke zu schließen oder als Blocker auf `ki-dev-ablauf-3zh` zu
+vermerken.
