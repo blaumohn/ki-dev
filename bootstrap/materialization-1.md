@@ -38,21 +38,22 @@ git diff --check
 - Der tatsächliche `bd`-Bestand (`bd list --json`) entspricht der obigen
   Tabelle: vier offene Vorgänge in der genannten Abhängigkeitskette.
 
-## Offene Voraussetzung: Planning-Snapshot
+## Voraussetzung Planning-Snapshot: nachgeliefert
 
-`bd:ki-dev-ablauf-9407` existiert im Repository noch nicht. Laut
-`bootstrap-notes.de.md` Abschnitt 5 (Bootstrap-Stufe 0) gehört diese Datei zu
-den in Stufe 0 einmalig angelegten und committeten Bootstrap-Artefakten;
+Zum Zeitpunkt dieser Materialisierung fehlte `bd:ki-dev-ablauf-9407`
+noch. Laut `bootstrap-notes.de.md` Abschnitt 5 (Bootstrap-Stufe 0) gehört diese
+Datei zu den in Stufe 0 einmalig angelegten und committeten Bootstrap-Artefakten;
 Abschnitt 11 (Bootstrap-Stufe 4) setzt voraus, dass der Snapshot bereits bei
-`WRITE` gespeichert wurde und dort nur noch verarbeitet wird. Das Fehlen der
-Datei ist also **kein erwarteter Zwischenzustand**, sondern eine offene
-Stufe-0-Voraussetzung.
+`WRITE` gespeichert wurde und dort nur noch verarbeitet wird.
+
+Der Snapshot wurde inzwischen auf diesem Branch nachgeliefert und liegt jetzt
+unter `bd:ki-dev-ablauf-9407` im Repository (nachträglich, nicht
+bereits in Stufe 0 wie in den Notes vorgesehen — eine Prozessabweichung, aber
+kein offener Blocker mehr).
 
 Folge für den Arbeitsgraphen: `ki-dev-ablauf-3zh` ist als Vorgang materialisiert
-und über die Abhängigkeitskette korrekt hinter `ki-dev-ablauf-96c` eingereiht,
-darf aber erst gestartet werden, wenn `bd:ki-dev-ablauf-9407`
-nachgeliefert ist. Wird `ki-dev-ablauf-3zh` ohne diese Datei ready, greift die im
-Vorgang hinterlegte Eskalationsbedingung ("`bd:ki-dev-ablauf-9407`
-fehlt"). Vor Abschluss von `ki-dev-ablauf-96c` ist der fehlende Snapshot als
-Stufe-0-Lücke zu schließen oder als Blocker auf `ki-dev-ablauf-3zh` zu
-vermerken.
+und über die Abhängigkeitskette korrekt hinter `ki-dev-ablauf-96c` eingereiht.
+Die im Vorgang hinterlegte Eskalationsbedingung
+("`bd:ki-dev-ablauf-9407` fehlt") greift nicht mehr, da die Datei
+vorhanden ist; sie ist vor dem Start von `ki-dev-ablauf-3zh` nur noch auf
+inhaltliche Aktualität zu prüfen.
