@@ -38,13 +38,13 @@ ableitbar sind (NEEDS_DECISION melden, Vorgang offen lassen, nicht raten).
 
 ### Task 1: ki-dev-ablauf-ie5 Fachart-Schemas umsetzen
 
-- [ ] Jede der fuenf Facharten (`system_spec`, `flow_spec`, `decision`,
+- [x] Jede der fuenf Facharten (`system_spec`, `flow_spec`, `decision`,
       `guideline`, `test_matrix`) hat ein gueltiges JSON Schema unter
       `schemas/ki-dev/`.
-- [ ] Jedes Schema erzwingt Fachart, Kennung, Titel, Zustand und die
+- [x] Jedes Schema erzwingt Fachart, Kennung, Titel, Zustand und die
       dokumentierten Pflichtfelder (strukturierte Listen, lokale
       Unterkennungen, grundlegende Wertebereiche).
-- [ ] Die Zielverzeichnisse `docs/ki-dev/fach/system-spec/`,
+- [x] Die Zielverzeichnisse `docs/ki-dev/fach/system-spec/`,
       `docs/ki-dev/fach/flow-spec/`, `docs/ki-dev/fach/decision/`,
       `docs/ki-dev/fach/guideline/`, `docs/ki-dev/fach/test-matrix/`
       existieren.
