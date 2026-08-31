@@ -87,3 +87,10 @@ entstehen Fachart-Schemas (`schemas/ki-dev/`), Fachart-Daten als YAML unter
   `docs/plans/<bead-id>-<slug>.md`, die die Bead-ID im Namen und im Text nennt.
 - Materialisierungsberichte liegen unter `bootstrap/`.
 - Facharten: `system_spec`, `flow_spec`, `decision`, `guideline`, `test_matrix`.
+  Fachart-Kennung, `fachart`-Feld und Schema-Dateiname nutzen den Unterstrich
+  (`schemas/ki-dev/system_spec.json`); das zugehörige Datenverzeichnis nutzt den
+  Bindestrich (`docs/ki-dev/fach/system-spec/`).
+- `system_spec`/`flow_spec` dürfen optional eine `requirements`-Liste tragen,
+  `test_matrix`-Einträge verweisen per `requirement: <kennung>#<anforderungs-id>`
+  auf diese Anforderungen (`bootstrap-notes.de.md` Abschnitt 9). Die Existenz-
+  und Verweisprüfung leistet erst `ki-dev check`.

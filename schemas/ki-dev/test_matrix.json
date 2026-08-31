@@ -19,7 +19,7 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "anforderung", "bezug_kennung", "status"],
+        "required": ["id", "requirement", "status"],
         "additionalProperties": false,
         "properties": {
           "id": {
@@ -27,17 +27,21 @@
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
             "description": "Lokale Unterkennung, eindeutig innerhalb dieses Dokuments."
           },
-          "anforderung": { "type": "string", "minLength": 1 },
-          "bezug_kennung": {
+          "requirement": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
-            "description": "Kennung der referenzierten Spezifikation/Anforderung (Existenz wird erst von ki-dev check geprueft)."
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*#[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)*$",
+            "description": "Verweis <kennung>#<anforderungs-id> auf eine Spezifikations-Anforderung (bootstrap-notes.de.md Abschnitt 9). Existenz wird erst von ki-dev check geprueft."
           },
           "status": { "enum": ["offen", "in_arbeit", "erfuellt"] },
-          "test_pfad": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Quelltext-/Testpfad als Beleg, sofern behauptet (Existenz wird erst von ki-dev check geprueft)."
+          "implementation": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "description": "Quelltextpfade als Beleg, sofern behauptet (Existenz wird erst von ki-dev check geprueft)."
+          },
+          "tests": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "description": "Testpfade/-referenzen als Beleg, sofern behauptet (Existenz wird erst von ki-dev check geprueft)."
           }
         }
       }
