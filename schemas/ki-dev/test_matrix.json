@@ -19,7 +19,7 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "requirement", "status"],
+        "required": ["id", "requirement"],
         "additionalProperties": false,
         "properties": {
           "id": {
@@ -32,7 +32,6 @@
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*#[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)*$",
             "description": "Verweis <kennung>#<anforderungs-id> auf eine Spezifikations-Anforderung (bootstrap-notes.de.md Abschnitt 9). Existenz wird erst von ki-dev check geprueft."
           },
-          "status": { "enum": ["offen", "in_arbeit", "erfuellt"] },
           "implementation": {
             "type": "array",
             "items": { "type": "string", "minLength": 1 },

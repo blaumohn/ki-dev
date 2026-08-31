@@ -56,7 +56,10 @@
             "description": "Lokale Anforderungskennung, eindeutig innerhalb dieses Dokuments (z. B. CW-01)."
           },
           "text": { "type": "string", "minLength": 1 },
-          "testability": { "type": "string", "minLength": 1 }
+          "testability": {
+            "enum": ["testable"],
+            "description": "Grundlegender Wertebereich; Quelle kennt bisher nur 'testable' (bootstrap-notes.de.md Abschnitt 9). Erweiterung nur per bewusster Entscheidung."
+          }
         }
       }
     }
