@@ -1,0 +1,37 @@
+target-version = "py312"
+line-length = 72
+indent-width = 4
+
+extend-exclude = [
+  ".git",
+  ".venv",
+  "venv",
+  "__pycache__",
+  "vendor",
+  "node_modules",
+  "var",
+]
+
+[lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "UP",
+  "B",
+  "SIM",
+  "C4",
+  "RET",
+  "ARG",
+]
+ignore = []
+
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+  "ARG001",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
