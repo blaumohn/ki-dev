@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# ki-dev commit-msg Hook -- NICHT von Beads verwaltet.
+# Beads verwaltet eigene Hooks ueber "# --- BEGIN BEADS INTEGRATION ---"
+# Marker in anderen Dateien; diese Datei besitzt keinen solchen Marker und
+# wird von Beads nicht angefasst.
+#
+# Prueft die erste Commit-Zeile auf das Format "<Titel> (<Beads-ID>)".
+# Es findet keine Beads-Datenbankabfrage statt.
+set -e
+root=$(git rev-parse --show-toplevel)
+exec python3 "$root/src/ki_dev/commit_msg.py" "$1"
