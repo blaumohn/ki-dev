@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ki-dev.local/schemas/guideline.json",
   "title": "ki-dev Fachart: guideline",
-  "description": "Verbindliche Regel mit Geltungsbereich (bootstrap-notes.de.md Abschnitt 8/10).",
+  "description": "Verbindliche Regel mit Geltungsbereich.",
   "type": "object",
   "required": ["fachart", "kennung", "titel", "zustand", "regel", "begruendung", "geltungsbereich"],
   "additionalProperties": false,

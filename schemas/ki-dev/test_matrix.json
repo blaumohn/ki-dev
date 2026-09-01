@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ki-dev.local/schemas/test_matrix.json",
   "title": "ki-dev Fachart: test_matrix",
-  "description": "Zuordnung Zustandsmaschinen-/Fachanforderungen zu Tests (bootstrap-notes.de.md Abschnitt 8/10).",
+  "description": "Zuordnung Zustandsmaschinen-/Fachanforderungen zu Tests.",
   "type": "object",
   "required": ["fachart", "kennung", "titel", "zustand", "eintraege"],
   "additionalProperties": false,
@@ -30,7 +30,7 @@
           "requirement": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*#[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)*$",
-            "description": "Verweis <kennung>#<anforderungs-id> auf eine Spezifikations-Anforderung (bootstrap-notes.de.md Abschnitt 9). Existenz wird erst von ki-dev check geprueft."
+            "description": "Verweis <kennung>#<anforderungs-id> auf eine Spezifikations-Anforderung. Existenz wird erst von ki-dev check geprueft."
           },
           "implementation": {
             "type": "array",

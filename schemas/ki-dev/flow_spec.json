@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ki-dev.local/schemas/flow_spec.json",
   "title": "ki-dev Fachart: flow_spec",
-  "description": "Zustandsablauf / Prozessfluss (bootstrap-notes.de.md Abschnitt 8/10).",
+  "description": "Zustandsablauf / Prozessfluss.",
   "type": "object",
   "required": ["fachart", "kennung", "titel", "zustand", "beschreibung", "schritte"],
   "additionalProperties": false,
@@ -44,7 +44,7 @@
     },
     "requirements": {
       "type": "array",
-      "description": "Optionale lokale Anforderungen (Anforderungs-/Quelltext-Schnittstelle, bootstrap-notes.de.md Abschnitt 9). Existenz-/Verweispruefung erfolgt in ki-dev check.",
+      "description": "Optionale lokale Anforderungen (Anforderungs-/Quelltext-Schnittstelle). Existenz-/Verweispruefung erfolgt in ki-dev check.",
       "items": {
         "type": "object",
         "required": ["id", "text", "testability"],
@@ -58,7 +58,7 @@
           "text": { "type": "string", "minLength": 1 },
           "testability": {
             "enum": ["testable"],
-            "description": "Grundlegender Wertebereich; Quelle kennt bisher nur 'testable' (bootstrap-notes.de.md Abschnitt 9). Erweiterung nur per bewusster Entscheidung."
+            "description": "Grundlegender Wertebereich; derzeit ist nur 'testable' vorgesehen. Erweiterung nur per bewusster Entscheidung."
           }
         }
       }
