@@ -41,8 +41,11 @@ Basisreferenz -> genau ein Worker-Schritt -> Ergebnisreferenz -> Delta
   Dolt-Commit-Hash; die verkuerzte Anzeige aus `bd vc status` ist als
   Diff-Referenz nicht brauchbar).
 * `bd diff` schreibt bei gleicher Basis und gleichem Ergebnis
-  `No changes between ...` nach stdout (auch mit `--json`); das wird als
-  leerer Delta erkannt.
+  `No changes between FROM_REF and TO_REF` nach stdout (auch mit
+  `--json`) und gibt die angeforderten Referenzen dabei woertlich
+  zurueck. Nur genau diese Meldung fuer genau diese beiden Referenzen
+  gilt als leerer Delta; jede andere Ausgabe – auch eine leere – ist ein
+  `DeltaCommandError`.
 * `.beads/issues.jsonl` ist ein passiver Export und niemals die
   Versionswahrheit.
 

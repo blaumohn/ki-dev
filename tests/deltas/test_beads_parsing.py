@@ -62,11 +62,42 @@ def test_diff_issues_parses_valid_entries(monkeypatch):
     assert [i.change_type for i in issues] == ["added", "modified"]
 
 
-def test_diff_issues_empty_on_no_changes(monkeypatch):
-    monkeypatch.setattr(
-        bc, "_bd", _fixed_bd("No changes between a and b")
-    )
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "No changes between a and b",
+        "No changes between a and b\n",
+        "  No changes between a and b  \n",
+    ],
+)
+def test_diff_issues_empty_on_no_changes(monkeypatch, payload: str):
+    monkeypatch.setattr(bc, "_bd", _fixed_bd(payload))
     assert bc._diff_issues(_REPO, "a", "b") == ()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "No changes between x and y",
+        "No changes between a and c",
+        "No changes between a and b und noch etwas",
+        "No changes between",
+        "No changes between a and b\nNo changes between a and b",
+    ],
+)
+def test_no_change_gilt_nur_fuer_diese_refs(monkeypatch, payload: str):
+    """Die No-change-Meldung gilt nur fuer genau diese Referenzen."""
+    monkeypatch.setattr(bc, "_bd", _fixed_bd(payload))
+    with pytest.raises(DeltaCommandError, match="kein JSON"):
+        bc._diff_issues(_REPO, "a", "b")
+
+
+@pytest.mark.parametrize("payload", ["", "   ", "\n\t \n"])
+def test_diff_issues_rejects_leere_ausgabe(monkeypatch, payload: str):
+    """Leere Ausgabe ist kein leerer Delta, sondern ein Fehler."""
+    monkeypatch.setattr(bc, "_bd", _fixed_bd(payload))
+    with pytest.raises(DeltaCommandError, match="keine Ausgabe"):
+        bc._diff_issues(_REPO, "a", "b")
 
 
 @pytest.mark.parametrize(
@@ -77,6 +108,11 @@ def test_diff_issues_empty_on_no_changes(monkeypatch):
         ("[1, 2]", "kein Objekt"),
         ('[{"IssueID": "x-1"}]', "Pflichtfelder"),
         ('[{"IssueID": 7, "DiffType": "added"}]', "Pflichtfelder"),
+        ('[{"IssueID": "", "DiffType": "added"}]', "Pflichtfelder"),
+        ('[{"IssueID": "  ", "DiffType": "added"}]', "Pflichtfelder"),
+        ('[{"IssueID": "x-1", "DiffType": ""}]', "Pflichtfelder"),
+        ('[{"IssueID": "x-1", "DiffType": " \\t "}]', "Pflichtfelder"),
+        ('[{"IssueID": null, "DiffType": null}]', "Pflichtfelder"),
         ("kaputt", "kein JSON"),
     ],
 )

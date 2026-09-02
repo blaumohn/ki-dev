@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import TypeGuard
 
 from .command import DeltaCommandError, run_command
 from .contract import (
@@ -35,6 +36,16 @@ BD_DIFF_INTERFACE = ("bd", "diff", "FROM_REF", "TO_REF")
 
 _VERSION = re.compile(r"\bbd version (\d+\.\d+\.\d+)")
 _NO_CHANGES = "No changes between"
+
+
+def _no_changes_message(base: str, result: str) -> str:
+    """Genau die No-change-Meldung fuer diese beiden Referenzen.
+
+    ``bd diff`` gibt die angeforderten Referenzen woertlich zurueck.
+    Nur diese exakte Meldung darf als leerer Delta gelten; jede andere
+    Ausgabe bleibt ein Fehler.
+    """
+    return f"{_NO_CHANGES} {base} and {result}"
 
 
 def installed_bd_version(bd: str = "bd") -> str:
@@ -90,8 +101,14 @@ def _diff_issues(
     base: str,
     result: str,
 ) -> tuple[BeadsIssueChange, ...]:
-    out = _bd(repo, "diff", base, result, "--json").strip()
-    if not out or out.startswith(_NO_CHANGES):
+    raw = _bd(repo, "diff", base, result, "--json")
+    out = raw.strip()
+    if not out:
+        raise DeltaCommandError(
+            "bd diff --json lieferte keine Ausgabe fuer "
+            f"{base}..{result}: {raw!r}"
+        )
+    if out == _no_changes_message(base, result):
         return ()
     entries = _load_json(out, "bd diff --json")
     if isinstance(entries, dict) and "error" in entries:
@@ -110,13 +127,16 @@ def _issue_change(entry: object) -> BeadsIssueChange:
         )
     issue_id = entry.get("IssueID")
     change_type = entry.get("DiffType")
-    if not isinstance(issue_id, str) or not isinstance(
-        change_type, str
-    ):
+    if not _filled_text(issue_id) or not _filled_text(change_type):
         raise DeltaCommandError(
             f"bd diff --json Eintrag ohne Pflichtfelder: {entry!r}"
         )
     return BeadsIssueChange(issue_id=issue_id, change_type=change_type)
+
+
+def _filled_text(value: object) -> TypeGuard[str]:
+    """Ein Pflichtfeld ist nur als nichtleerer Text gueltig."""
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _load_json(raw: str, label: str) -> object:
