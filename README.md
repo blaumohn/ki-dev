@@ -23,6 +23,53 @@ Wie setze ich das um? · Ist diese Umsetzung richtig?
 Welche technische Lösung passt? · Trägt die Annahme des Vorgangs noch?
 ```
 
+> **Status: aktive Entwicklung (Bootstrap).**
+> Arbeitsgraph und Entwurfsstand bestehen bereits; der erste ausführbare
+> `ki-dev`-Kern wird derzeit aufgebaut. Das in diesem README beschriebene
+> Zielsystem ist **noch nicht umgesetzt**.
+
+---
+
+## Stand heute
+
+Dieses README erklärt eine Architektur, die bewusst weiter reicht als der
+heutige Umsetzungsstand. Die folgende Grenze gilt für alles Weitere:
+
+**Heute vorhanden:**
+
+```text
+Entwurfs- und Planungsstand   → schriftlich festgehalten
+bd                            → gegenwärtiger Arbeitsgraph
+Git                           → tatsächlicher technischer Bestand
+erster ausführbarer
+Controller↔Worker-Kern        → im Aufbau
+```
+
+**Zielbild, noch nicht umgesetzt:**
+
+```text
+weitergehendes Planning
+Materialisierung von Planungsergebnissen
+regelgeleitete Kontextableitung
+spätere Pages-PM-Integration
+```
+
+Wo der jeweils aktuelle Stand nachzusehen ist:
+
+```text
+README        → verständliche Einordnung des Reifegrads
+Beads / bv    → lebender Arbeitsgraph
+Git           → tatsächlicher technischer Bestand und Verlauf
+```
+
+Der lebende Arbeitsstand wird hier deshalb nicht als Vorgangsliste
+nachgeschrieben. Im geklonten Repository zeigen die vorhandenen `bv`-Ansichten
+den aktuellen Arbeitsgraphen; für eine teilbare statische Ansicht gibt es den
+vorhandenen Weg `bv --pages`.
+
+Die ausführlichere Bootstrap- und Zielrichtungserklärung folgt weiter unten
+unter [Bootstrap und Zielrichtung](#bootstrap-und-zielrichtung).
+
 ---
 
 ## Für wen – und welche Arbeit fehlt
@@ -408,7 +455,8 @@ Bootstrap verwendet vorhandene, einfachere Wahrheiten:
 - `bd` führt den Arbeitsgraphen;
 - Git führt Quelltext und technische Änderungen;
 - kleine Fachdateien halten normative Aussagen vorläufig im Repository;
-- `ki-dev` automatisiert zuerst die Controller↔Worker-Kontrollschleife;
+- `ki-dev` automatisiert als Erstes die Controller↔Worker-Kontrollschleife –
+  genau dieser Kern wird derzeit gebaut;
 - Pages-PM-Integration, vollständiges Planning und weitergehende
   Kontextableitung folgen später.
 
