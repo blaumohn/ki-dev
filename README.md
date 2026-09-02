@@ -1,4 +1,25 @@
+<p align="right">Deutsch | <a href="README.en.md">English</a></p>
+
+---
+
 # ki-dev
+
+<!-- mdman:toc:start -->
+- [ki-dev in 30 Sekunden](#ki-dev-in-30-sekunden)
+- [Stand heute](#stand-heute)
+- [Für wen – und welche Arbeit fehlt](#für-wen--und-welche-arbeit-fehlt)
+- [Vom Hinweis zur erzwungenen Regel](#vom-hinweis-zur-erzwungenen-regel)
+- [Was es bereits gibt](#was-es-bereits-gibt)
+- [Die deterministische Arbeitsumgebung](#die-deterministische-arbeitsumgebung)
+- [Vom Vorgang zum Arbeitskontext](#vom-vorgang-zum-arbeitskontext)
+- [Controller und Worker](#controller-und-worker)
+- [Repository – Pages PM – ki-dev](#repository--pages-pm--ki-dev)
+- [Von Planung zu Projektwissen](#von-planung-zu-projektwissen)
+- [Bootstrap und Zielrichtung](#bootstrap-und-zielrichtung)
+
+---
+<!-- mdman:toc:end -->
+
 
 ## ki-dev in 30 Sekunden
 
