@@ -360,6 +360,13 @@ Zulässige Urteile:
 Das ist schwerer zu übersehen als ein Satz auf Seite 17 eines Rollen-Prompts.
 Die Auswahl hilft beim Urteil; die Maschine prüft die Antwort trotzdem erneut.
 
+Wie fein diese äußere deterministische Steuerung sinnvollerweise sein sollte,
+ist eine offene empirische Entwurfsfrage von `ki-dev`. Zunächst setzt `ki-dev`
+praktisch auf begrenzte, beobachtbare Worker-Schnitte mit anschließender
+erneuter Controller-Steuerung. Ob diese Form gegenüber gröberer Ausführung oder
+einer klassischen Worker→Reviewer-Schleife tatsächlich bessere Ergebnisse
+liefert, soll später vergleichend untersucht werden.
+
 ---
 
 ## Repository – Pages PM – ki-dev
