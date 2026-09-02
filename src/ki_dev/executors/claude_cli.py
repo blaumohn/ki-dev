@@ -11,7 +11,7 @@ from .base import CliAdapter
 from .contract import TurnRequest
 
 # Lokal verifizierter Bezugsstand der dokumentierten CLI-Syntax.
-VERIFIED_CLI_VERSION = "2.1.257"
+VERIFIED_CLI_VERSION = "2.1.258"
 
 
 class ClaudeCliAdapter(CliAdapter):
@@ -26,7 +26,7 @@ class ClaudeCliAdapter(CliAdapter):
 
     def build_argv(self, request: TurnRequest) -> list[str]:
         # Die Claude-CLI kennt ``--effort`` nativ (verifiziert mit
-        # Claude Code 2.1.257; gueltige Stufen dort:
+        # Claude Code 2.1.258; gueltige Stufen dort:
         # low/medium/high/xhigh/max). Die drei Vertragsstufen werden
         # unveraendert durchgereicht.
         return [

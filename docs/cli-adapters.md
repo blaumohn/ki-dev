@@ -73,7 +73,7 @@ Adapterinstanz ueberschreibbar.
 Verwendete CLI: **Claude Code CLI** (`claude`), nachweisbar per
 `claude --version`.
 
-* **Verifizierter Bezugsstand:** Claude Code **2.1.257**
+* **Verifizierter Bezugsstand:** Claude Code **2.1.258**
   (`claude_cli.VERIFIED_CLI_VERSION`, getestet in
   `tests/executors/test_cli_versions.py`).
 
@@ -92,7 +92,7 @@ claude --print --output-format text \
 * `--resume <session_id>` – setzt die vorbereitete Sitzung fort.
 * `--model <model>` – Modellwahl unveraendert aus dem Vertrag.
 * `--effort <stufe>` – nativer Effort-Schalter der Claude-CLI
-  (gueltige Werte in 2.1.257: `low`, `medium`, `high`, `xhigh`,
+  (gueltige Werte in 2.1.258: `low`, `medium`, `high`, `xhigh`,
   `max`). Die drei Vertragsstufen werden unveraendert durchgereicht.
 
 ## CodexCliAdapter
@@ -100,7 +100,7 @@ claude --print --output-format text \
 Verwendete CLI: **OpenAI Codex CLI** (`codex`), nachweisbar per
 `codex --version`.
 
-* **Verifizierter Bezugsstand:** Codex CLI **0.152.0**
+* **Verifizierter Bezugsstand:** Codex CLI **0.152.1**
   (`codex_cli.VERIFIED_CLI_VERSION`, getestet in
   `tests/executors/test_cli_versions.py`).
 

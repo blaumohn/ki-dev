@@ -13,8 +13,8 @@ from plumbum import CommandNotFound, local
 from ki_dev.executors import claude_cli, codex_cli
 
 _CASES = [
-    ("claude", claude_cli.VERIFIED_CLI_VERSION, "2.1.257"),
-    ("codex", codex_cli.VERIFIED_CLI_VERSION, "0.152.0"),
+    ("claude", claude_cli.VERIFIED_CLI_VERSION, "2.1.258"),
+    ("codex", codex_cli.VERIFIED_CLI_VERSION, "0.152.1"),
 ]
 
 

@@ -11,7 +11,7 @@ from .base import CliAdapter
 from .contract import TurnRequest
 
 # Lokal verifizierter Bezugsstand der dokumentierten CLI-Syntax.
-VERIFIED_CLI_VERSION = "0.152.0"
+VERIFIED_CLI_VERSION = "0.152.1"
 
 
 class CodexCliAdapter(CliAdapter):
