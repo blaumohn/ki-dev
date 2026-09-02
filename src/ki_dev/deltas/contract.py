@@ -146,3 +146,67 @@ class CombinedDelta:
     @property
     def is_empty(self) -> bool:
         return self.git.is_empty and self.beads.is_empty
+
+
+@dataclass(frozen=True)
+class CheckOutcome:
+    """Ein relevantes Pruefergebnis fuer die Controller-Sicht."""
+
+    name: str
+    passed: bool
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("CheckOutcome.name darf nicht leer sein")
+
+
+@dataclass(frozen=True)
+class RoundStatus:
+    """Rundenstand einer Korrekturschleife (z. B. Runde 2 von 5)."""
+
+    current: int
+    limit: int
+
+    def __post_init__(self) -> None:
+        if self.current < 1:
+            raise ValueError("RoundStatus.current beginnt bei 1")
+        if self.limit < self.current:
+            raise ValueError("RoundStatus.limit liegt unter current")
+
+    @property
+    def remaining(self) -> int:
+        return self.limit - self.current
+
+
+@dataclass(frozen=True)
+class ControllerContext:
+    """Zugeschnittener Pruefkontext fuer einen Controller-Schritt.
+
+    Buendelt die in Quellen-Bead ki-dev-ablauf-rdcs (Planerausgabe 34)
+    geforderten Tatsachen: urspruenglicher TASK, offene Beanstandung,
+    Schrittdelta (Git und ``bd``/Dolt), relevante Pruefergebnisse und
+    Rundenstand. Der kumulierte Laufdelta wird nur bei Bedarf beigelegt.
+    Dieser Vertrag beschreibt die Sicht, nicht die Schleifenverkabelung.
+    """
+
+    task: str
+    step_delta: CombinedDelta
+    round_status: RoundStatus
+    open_objection: str | None = None
+    checks: tuple[CheckOutcome, ...] = ()
+    run_delta: CombinedDelta | None = None
+
+    def __post_init__(self) -> None:
+        if not self.task.strip():
+            raise ValueError(
+                "ControllerContext.task darf nicht leer sein"
+            )
+        if self.step_delta.scope is not DeltaScope.STEP:
+            raise ValueError("step_delta muss Scope STEP haben")
+        run_delta = self.run_delta
+        if (
+            run_delta is not None
+            and run_delta.scope is not DeltaScope.RUN
+        ):
+            raise ValueError("run_delta muss Scope RUN haben")

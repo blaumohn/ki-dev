@@ -63,6 +63,24 @@ Tiefere Bausteine (`capture_git_ref`, `checkpoint_git_step`,
 `build_git_delta`, `capture_beads_ref`, `build_beads_delta`) bleiben
 einzeln verfuegbar.
 
+## Zugeschnittener Controller-Kontext
+
+`ControllerContext` buendelt die in Anlage B (Planerausgabe 34)
+geforderte Pruefsicht als kleinen strukturierten Vertrag – ohne
+Schleifenlogik:
+
+| Feld | Inhalt |
+| --- | --- |
+| `task` | urspruenglicher TASK (Pflicht, nicht leer) |
+| `step_delta` | `CombinedDelta` der aktuellen Runde (Scope `STEP`) |
+| `round_status` | `RoundStatus(current, limit)` mit `remaining` |
+| `open_objection` | noch offene Beanstandung oder `None` |
+| `checks` | `tuple[CheckOutcome, ...]` relevanter Pruefergebnisse |
+| `run_delta` | kumulierter Laufdelta (Scope `RUN`) nur bei Bedarf |
+
+Die Scopes werden erzwungen: `step_delta` muss `STEP`, ein gesetzter
+`run_delta` muss `RUN` sein.
+
 ## Leerer Delta ist kein Erfolg
 
 Ein leerer `step_delta` wird nie automatisch als Erfolg behandelt

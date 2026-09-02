@@ -58,13 +58,21 @@ def verify_bd_version(bd: str = "bd") -> None:
 def capture_beads_ref(repo: Path) -> VcsRef:
     """Erfasse den aktuellen Dolt-Commit der Beads-Datenbank."""
     out = _bd(repo, "vc", "status", "--json")
-    try:
-        commit = json.loads(out)["commit"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+    return VcsRef(ChangeMedium.BEADS, _commit_field(out))
+
+
+def _commit_field(raw: str) -> str:
+    payload = _load_json(raw, "bd vc status --json")
+    if not isinstance(payload, dict):
         raise DeltaCommandError(
-            f"bd vc status lieferte kein commit-Feld: {out!r}"
-        ) from exc
-    return VcsRef(ChangeMedium.BEADS, str(commit))
+            f"bd vc status --json war kein Objekt: {raw!r}"
+        )
+    commit = payload.get("commit")
+    if not isinstance(commit, str) or not commit.strip():
+        raise DeltaCommandError(
+            f"bd vc status ohne gueltiges commit-Feld: {raw!r}"
+        )
+    return commit
 
 
 def build_beads_delta(repo: Path, boundary: RefBoundary) -> BeadsDelta:
@@ -85,21 +93,39 @@ def _diff_issues(
     out = _bd(repo, "diff", base, result, "--json").strip()
     if not out or out.startswith(_NO_CHANGES):
         return ()
-    try:
-        entries = json.loads(out)
-    except json.JSONDecodeError as exc:
-        raise DeltaCommandError(
-            f"bd diff --json war kein JSON: {out!r}"
-        ) from exc
+    entries = _load_json(out, "bd diff --json")
     if isinstance(entries, dict) and "error" in entries:
         raise DeltaCommandError(f"bd diff meldete: {entries['error']}")
-    return tuple(
-        BeadsIssueChange(
-            issue_id=str(entry["IssueID"]),
-            change_type=str(entry["DiffType"]),
+    if not isinstance(entries, list):
+        raise DeltaCommandError(
+            f"bd diff --json war keine Liste: {out!r}"
         )
-        for entry in entries
-    )
+    return tuple(_issue_change(entry) for entry in entries)
+
+
+def _issue_change(entry: object) -> BeadsIssueChange:
+    if not isinstance(entry, dict):
+        raise DeltaCommandError(
+            f"bd diff --json Eintrag ist kein Objekt: {entry!r}"
+        )
+    issue_id = entry.get("IssueID")
+    change_type = entry.get("DiffType")
+    if not isinstance(issue_id, str) or not isinstance(
+        change_type, str
+    ):
+        raise DeltaCommandError(
+            f"bd diff --json Eintrag ohne Pflichtfelder: {entry!r}"
+        )
+    return BeadsIssueChange(issue_id=issue_id, change_type=change_type)
+
+
+def _load_json(raw: str, label: str) -> object:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise DeltaCommandError(
+            f"{label} war kein JSON: {raw!r}"
+        ) from exc
 
 
 def _bd(repo: Path, *args: str) -> str:
