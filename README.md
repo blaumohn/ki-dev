@@ -75,18 +75,13 @@ regelgeleitete Kontextableitung
 spätere Pages-PM-Integration
 ```
 
-Wo der jeweils aktuelle Stand nachzusehen ist:
-
-```text
-README        → verständliche Einordnung des Reifegrads
-Beads / bv    → lebender Arbeitsgraph
-Git           → tatsächlicher technischer Bestand und Verlauf
-```
-
 Der lebende Arbeitsstand wird hier deshalb nicht als Vorgangsliste
-nachgeschrieben. Im geklonten Repository zeigen die vorhandenen `bv`-Ansichten
-den aktuellen Arbeitsgraphen; für eine teilbare statische Ansicht gibt es den
-vorhandenen Weg `bv --pages`.
+nachgeschrieben. Er liegt im Beads-Arbeitsgraphen.
+
+Im geklonten Repository lässt er sich beispielsweise mit `bv` ansehen.[^bv]
+
+[^bv]: Zum Beispiel: `cd <repository>`, dann `bv`. Für eine statische, teilbare
+    Ansicht: `bv --pages`.
 
 Die ausführlichere Bootstrap- und Zielrichtungserklärung folgt weiter unten
 unter [Bootstrap und Zielrichtung](#bootstrap-und-zielrichtung).
@@ -216,6 +211,34 @@ Quellen zur Einordnung: [Ralphex](https://github.com/umputun/ralphex),
 
 ## Die deterministische Arbeitsumgebung
 
+Ab hier tauchen drei Begriffe durchgehend auf:
+
+```text
+Controller → Rolle, die einen begrenzten Arbeitsschritt bestimmt und
+             anschließend dessen Wirkung prüft
+Worker     → Rolle, die genau diesen einen begrenzten Arbeitsschritt ausführt
+Executor   → technisches Werkzeug, das eine solche Rolle ausführt,
+             z. B. die Claude CLI oder die Codex CLI
+```
+
+Controller und Worker sind Rollen im Ablauf; ein Executor ist das Werkzeug, mit
+dem eine Rolle besetzt wird. Dieselbe CLI kann in einem Lauf den Worker geben
+und in einem anderen den Controller – Rolle und Werkzeug sind nicht dasselbe.
+
+Die Controller↔Worker-Dynamik hat dabei eine feste Grundform:
+
+```text
+Controller → TASK
+Worker     → Änderung
+Maschine   → Delta / Prüfungen
+Controller → PASS | CHANGES | NEEDS_DECISION | ESCALATE
+```
+
+Der Controller schneidet einen Schritt zu, der Worker führt ihn aus, die
+Maschine macht die Änderung unabhängig sichtbar, der Controller urteilt über das
+beobachtete Ergebnis. Der ausführliche Zustandsablauf folgt unter
+[Controller und Worker](#controller-und-worker).
+
 Ohne eine solche äußere Orchestrierung muss ein Agentenlauf leicht mehrere
 Aufgaben gleichzeitig übernehmen:
 
@@ -281,12 +304,14 @@ System beobachtet eine Änderung
 
 Ein konkreter Fall:
 
-> **Vorgang V:** Der Executor soll bei Fehler X auf den vorgesehenen
-> Rückfallweg wechseln.
+> **Vorgang V:** Der CSV-Import soll bei Fehler X – einer Zeile mit ungültigem
+> Datumsformat – die betroffene Zeile überspringen und protokollieren, statt den
+> gesamten Import abzubrechen.
 
 Dazu gibt es bereits eine Programmierrichtlinie (*Fehlerfälle brauchen einen
-Test*), eine System-Spezifikation für das Executor-Modul, eine Entscheidung über
-das Rückfallverhalten sowie bestehenden Quelltext und Tests.
+Test*), eine System-Spezifikation für das CSV-Import-Modul, eine Entscheidung
+über das Verhalten bei fehlerhaften Zeilen sowie bestehenden Quelltext und
+Tests.
 
 Ohne zusätzliche Struktur bekäme ein Agent das ganze Repository samt vieler
 Projektdokumente und müsste selbst suchen. `ki-dev` schneidet den Arbeitsraum
@@ -295,10 +320,10 @@ entlang von Beziehungen zu:
 ```mermaid
 graph LR
     V["Vorgang V<br/>Art: Entwicklung"]
-    E["Komponente<br/>Executor"]
+    E["Komponente<br/>CSV-Import"]
     G["Richtlinie<br/>Programmierleitlinien"]
-    S["System-Spezifikation<br/>Executor"]
-    D["Entscheidung<br/>Rückfallverhalten"]
+    S["System-Spezifikation<br/>CSV-Import"]
+    D["Entscheidung<br/>Verhalten bei fehlerhaften Zeilen"]
 
     V -->|"betrifft"| E
     S -->|"beschreibt"| E
@@ -313,7 +338,7 @@ Kontext für Vorgang V
 =
 Vorgang
 + geltende Programmierrichtlinien
-+ relevanter Teil der Executor-Spezifikation
++ relevanter Teil der CSV-Import-Spezifikation
 + maßgebliche Entscheidung zu Fehler X
 ```
 
@@ -325,13 +350,13 @@ gespielt wird.
 
 ## Controller und Worker
 
-Der **Worker** führt einen begrenzten Auftrag aus, verändert Quelltext, Tests
-oder Arbeitsbestand und meldet nur außergewöhnliche Situationen semantisch –
-etwa eine fehlende Entscheidung.
-
-Der **Controller** bestimmt oder prüft den Auftrag, beurteilt die tatsächlich
-entstandene Wirkung, fordert Änderungen an oder nimmt den Stand an – und prüft
-auch, ob der Arbeitsgegenstand selbst noch sinnvoll geschnitten ist.
+Controller und Worker wurden oben als Rollen eingeführt; im Ablauf hat jede eine
+genauere Ausprägung. Der **Worker** verändert Quelltext, Tests oder
+Arbeitsbestand und meldet nur außergewöhnliche Situationen semantisch – etwa
+eine fehlende Entscheidung. Der **Controller** bestimmt oder prüft den Auftrag,
+beurteilt die tatsächlich entstandene Wirkung, fordert Änderungen an oder nimmt
+den Stand an – und prüft auch, ob der Arbeitsgegenstand selbst noch sinnvoll
+geschnitten ist.
 
 ```mermaid
 stateDiagram-v2
@@ -356,7 +381,7 @@ Für Vorgang V sieht der Controller keinen langen Rollen-Prompt, sondern einen
 Zustand mit sichtbarem Aktionsraum:
 
 ```text
-Vorgang: Rückfallweg des Executors bei Fehler X
+Vorgang: Verhalten des CSV-Imports bei Fehler X
 
 Runde: 2 von 5
 
@@ -458,13 +483,13 @@ flowchart LR
 ```
 
 Die Planung darf offen und dialogisch sein. Die Materialisierung soll es nicht
-sein. Aus einem Gespräch wie „Wir brauchen einen Rückfallweg, er darf nur bei
-Fehler X greifen, dafür brauchen wir einen Test“ entstehen unterschiedliche
-dauerhafte Aussagen:
+sein. Aus einem Gespräch wie „Ein einzelner Zeilenfehler darf den CSV-Import
+nicht abbrechen; die Zeile soll übersprungen und protokolliert werden, dafür
+brauchen wir einen Test“ entstehen unterschiedliche dauerhafte Aussagen:
 
 ```text
 System-Spezifikation → welches Verhalten das System besitzen muss
-Entscheidung         → warum dieser Rückfallweg gewählt wurde
+Entscheidung         → warum das Überspringen dem Abbruch vorgezogen wurde
 Richtlinie           → welche allgemeine Entwicklungsregel gilt
 Vorgang              → welche Arbeit konkret auszuführen ist
 Nachweisbeziehung    → welche Umsetzung und welcher Test das belegen
