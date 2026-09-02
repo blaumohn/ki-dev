@@ -1,224 +1,228 @@
 # ki-dev
 
-`ki-dev` ist eine Arbeitsweise und ein lokaler Orchestrator für KI-gestützte
-Softwareentwicklung in kleinen Teams und Open-Source-Projekten.
+## ki-dev in 30 Sekunden
 
-Das Grundproblem ist nicht, dass KI-Agenten zu wenig können. Häufig müssen sie
-bei jedem Schritt **zu viel selbst rekonstruieren**:
+`ki-dev` schafft eine kontrollierte Entwicklungsumgebung für KI-gestützte
+Projektarbeit. Es verbindet Planung, gezielten Arbeitskontext, Umsetzung,
+Prüfung und Projektzustand über einen deterministischen Orchestrator.
 
-- Was ist gerade die eigentliche Aufgabe?
-- Welche Entscheidungen gelten dafür?
-- Welche Richtlinien muss ich beachten?
-- Welcher Teil der Systemdokumentation ist betroffen?
-- Was hat der vorige Agent tatsächlich geändert?
-- Welche nächsten Schritte sind jetzt überhaupt zulässig?
+> **Projektbedeutung → deterministisch zugeschnittener Arbeitsraum → KI-Urteil**
 
-Wenn all das nur in langen Prompts, Gesprächen und Dateien steckt, wird
-Projektstruktur zu einer Aufmerksamkeitsfrage: Der Agent muss sie finden,
-richtig deuten und im richtigen Augenblick beachten. Das kostet Kontext und
-macht gleiche Abläufe unnötig verschieden.
+Die Maschine trägt, was sich zuverlässig festlegen lässt:
 
-`ki-dev` dreht dieses Verhältnis um:
+```text
+Zustand · zulässige Übergänge · Rollenfolge · Schrittgrenzen
+Wiederholungsgrenzen · Nachrichtenform · Änderungsnachweise
+geltender Kontext
+```
 
-> **Die Maschine verwaltet, was deterministisch ist.  
-> Die KI urteilt dort, wo wirklich Urteil nötig ist.**
+Die KI urteilt dort, wo tatsächlich Urteil nötig ist:
+
+```text
+Wie setze ich das um? · Ist diese Umsetzung richtig?
+Welche technische Lösung passt? · Trägt die Annahme des Vorgangs noch?
+```
 
 ---
 
-## Die Idee in einem Beispiel
+## Für wen – und welche Arbeit fehlt
 
-Nehmen wir während des ganzen README denselben kleinen Entwicklungsvorgang:
+`ki-dev` richtet sich besonders an kleine Teams und Open-Source-Projekte, in
+denen Planung, Projektpflege, Umsetzung und Prüfung bei denselben wenigen
+Beteiligten zusammenkommen.
 
-> **Vorgang V:** Beim Executor soll ein neuer Rückfallfall behandelt werden.
+Ein wesentlicher Engpass liegt dort oft nicht nur in der Programmierarbeit,
+sondern in der Arbeit dazwischen:
 
-Dazu gibt es bereits:
+```text
+Planung
+→ gültige Projektdokumentation
+→ sinnvoll geschnittene Vorgänge
+→ Abhängigkeiten
+→ richtiger Arbeitskontext
+→ kontrollierte Umsetzung
+→ Prüfung
+→ Rückführung neuer Erkenntnisse
+```
 
-- eine Programmierrichtlinie: *Fehlerfälle brauchen einen Test*;
-- eine System-Spezifikation für das Executor-Modul;
-- eine Entscheidung, wie Rückfälle behandelt werden;
-- bestehenden Quelltext und Tests.
+In größeren Organisationen verteilt sich diese Zwischenarbeit auf
+Produktmanagement, technische Leitung, Projektmanagement und feste
+Review-Prozesse. Im kleinen Projekt fällt sie auf dieselben Entwickler zurück.
 
-Ohne zusätzliche Struktur könnte ein Agent einfach das ganze Repository und
-viele Projektdokumente erhalten und selbst suchen.
+Coding-Agenten reduzieren Implementierungsarbeit, beseitigen diese
+Zwischenarbeit aber nicht. Bei mehreren Agentenläufen entsteht zusätzlich
+Steuerungs- und Rückführungsarbeit: Sitzung öffnen, Zusammenhang erklären,
+Ergebnis prüfen, Erkenntnis zurücktragen.
 
-`ki-dev` soll stattdessen schrittweise einen kleinen, erklärbaren Arbeitsraum
-bauen.
+---
+
+## Vom Hinweis zur erzwungenen Regel
+
+Eine Regel ist nicht zuverlässig durchgesetzt, nur weil sie irgendwo im Prompt
+steht.
+
+```text
+nur Prompt:
+
+„Denke daran, bei einer Graphabweichung zu eskalieren.“
+
+→ Die Regel ist Text.
+→ Der Agent muss sie gerade beachten.
+
+
+ki-dev:
+
+aktueller Zustand
+→ Die Maschine stellt die Graphprüfung ausdrücklich.
+→ Mögliche Antworten werden sichtbar gemacht.
+→ Das Ergebnisformat wird geprüft.
+→ Der Übergang wird maschinell erzwungen.
+```
+
+Daraus folgt der Leitgedanke des Entwurfs:
+
+> **Wichtige Bedingungen werden möglichst von passivem Kontext in aktive,
+> prüfbare Ablaufbedingungen überführt.**
+
+Das lässt sich stufen:
+
+```text
+1. Information irgendwo im Prompt
+   → Der Agent könnte sie beachten.
+
+2. Information im richtigen Zustand aktiv hervorgehoben
+   → Der Agent wird darauf aufmerksam gemacht.
+
+3. zulässige Antworten begrenzt
+   → Es werden nur passende Züge angeboten.
+
+4. Ausgabe strukturell geprüft
+   → Eine ungültige Antwort wird zurückgewiesen.
+
+5. Wirkung unabhängig beobachtet
+   → Diff, Tests, Schemaprüfung statt Selbstauskunft.
+
+6. Grenze maschinell erzwungen
+   → nach fünf Korrekturrunden keine sechste normale Runde.
+```
+
+Geringerer Tokenverbrauch ist eine Folge davon – nicht die Architekturidee.
+
+---
+
+## Was es bereits gibt
+
+`ki-dev` erfindet weder deterministische Orchestrierung noch autonome
+Coding-Agenten. Beides existiert bereits.
+
+```text
+Coding-Agenten (Claude Code, Codex)
+→ führen Entwicklungsarbeit aus
+
+Ralphex
+→ automatisiert Implementierung und umfangreiche Review-Schleifen
+  mit mehreren Prüfagenten und begrenzbaren Iterationen
+
+LangGraph / CrewAI Flows
+→ allgemeine Bausteine für zustandsbehaftete Agentenabläufe
+
+OpenHands
+→ umfassendere Coding-Agenten-Laufzeit
+
+ki-dev
+→ verbindet solche Agentenläufe mit Projektbedeutung,
+  gezieltem Kontext und einem expliziten Entwicklungsvertrag
+```
+
+`ki-dev` zielt nicht auf eine neue Agentenlaufzeit. Es hält Zustände,
+Übergänge, Grenzen, Änderungsnachweise und später auch die Ableitung des
+geltenden Projektkontexts außerhalb der Agentensitzung fest. Vorhandene
+Claude- und Codex-CLIs bleiben ausführende Werkzeuge.
+
+Quellen zur Einordnung: [Ralphex](https://github.com/umputun/ralphex),
+[LangGraph](https://docs.langchain.com/oss/python/langgraph/overview),
+[CrewAI](https://docs.crewai.com/),
+[OpenHands](https://docs.openhands.dev/sdk).
+
+---
+
+## Die deterministische Arbeitsumgebung
+
+Ohne eine solche äußere Orchestrierung muss ein Agentenlauf leicht mehrere
+Aufgaben gleichzeitig übernehmen:
+
+1. die Fachaufgabe zu lösen,
+2. den Projektzustand zusammenzusuchen,
+3. den Arbeitsablauf zu verwalten,
+4. den Stand der Korrekturrunden im Blick zu behalten,
+5. Nachrichtenformate zu erraten,
+6. Änderungen zu rekonstruieren und
+7. zu entscheiden, welche Übergänge erlaubt sind.
+
+Die Punkte 2 bis 7 sollen, soweit sie strukturell bestimmbar sind, nicht jedes
+Mal von der KI rekonstruiert werden.
+
+Man kann diese Umgebung wie ein begrenztes Spiel verstehen: Der Orchestrator
+kennt Zustand, Regeln und erlaubte Züge; der Agent entscheidet innerhalb dieses
+Raums, und die Maschine prüft anschließend wieder die Grenzen.
 
 ```mermaid
 flowchart LR
-    V["Vorgang V<br/>Rückfallfall umsetzen"]
-    G["Programmierrichtlinie<br/>Fehlerfälle brauchen Tests"]
-    S["System-Spezifikation<br/>Executor"]
-    D["Entscheidung<br/>Rückfallverhalten"]
-    C["zugeschnittener<br/>Arbeitskontext"]
+    S["Maschine kennt<br/>den erlaubten Raum"]
+    A["Agent handelt<br/>innerhalb dieses Raums"]
+    V["Maschine prüft<br/>beobachtbares Ergebnis"]
 
-    V --> C
-    G --> C
-    S --> C
-    D --> C
+    S --> A --> V
+    V -->|"gültig"| N["nächster Zustand"]
+    V -->|"behebbarer Fehler"| F["präzise Rückmeldung"]
+    F --> A
+    V -->|"Grenze erreicht / unklar"| E["Eskalation"]
 ```
 
-Der Agent bekommt also nicht einfach „das Projekt“, sondern die für diesen
-Schritt relevante Hand.
+Schemaprüfung, Auswahlbegrenzung, Rundenbegrenzung und Deltaerfassung sind
+nicht vier lose Funktionen, sondern vier Anwendungen derselben Regel:
+
+- ungültiges Nachrichtenschema → genaue Fehlermeldung → erneuter, **begrenzter**
+  Versuch;
+- Controller-Zustand → nur die gerade zulässigen Urteile werden angeboten;
+- Korrekturrunde 5 von 5 → keine sechste normale Runde;
+- Graphprüfung → im passenden Zustand ausdrücklich gestellt;
+- Worker behauptet nichts über seine Änderung → die Maschine erzeugt Git- und
+  Dolt-Deltas.
+
+**Die Maschine begrenzt Schleifen.** Ein Agent darf eine Korrektur erneut
+versuchen, aber nicht unbegrenzt. Ein Prompt kann immer wieder „Versuch es noch
+einmal“ sagen; der Orchestrator kennt Runde und Obergrenze und erzwingt danach
+einen sicheren Ausstieg nach `ESCALATE`. Der Agent soll nicht selbst bemerken
+müssen, dass bereits die fünfte gleichartige Korrekturrunde erreicht ist.
+
+**Die Wirkung zählt, nicht die Selbstauskunft.** Ein Worker soll nicht erklären
+müssen, was er geändert hat. `ki-dev` beobachtet es: für Quelltext über
+`git diff` zwischen den Commits vor und nach dem Schritt, für den Arbeitsgraphen
+`bd` über dessen Dolt-Versionierung.
+
+```text
+Worker behauptet etwas
+≠
+System beobachtet eine Änderung
+```
 
 ---
 
-## Warum ein „Spiel“?
+## Vom Vorgang zum Arbeitskontext
 
-Ein guter Agent sollte nicht gleichzeitig
+Ein konkreter Fall:
 
-1. die Fachaufgabe lösen,
-2. den Projektzustand zusammensuchen,
-3. den Arbeitsablauf verwalten,
-4. Wiederholungen zählen,
-5. Nachrichtenformate erraten,
-6. Änderungen rekonstruieren und
-7. entscheiden, welche Übergänge erlaubt sind.
+> **Vorgang V:** Der Executor soll bei Fehler X auf den vorgesehenen
+> Rückfallweg wechseln.
 
-Viele dieser Dinge sind keine KI-Aufgabe.
+Dazu gibt es bereits eine Programmierrichtlinie (*Fehlerfälle brauchen einen
+Test*), eine System-Spezifikation für das Executor-Modul, eine Entscheidung über
+das Rückfallverhalten sowie bestehenden Quelltext und Tests.
 
-`ki-dev` behandelt einen Agentenlauf deshalb wie ein **begrenztes Spiel**:
-
-- Die Maschine kennt den Zustand.
-- Die Maschine kennt die erlaubten Züge.
-- Die Maschine zeigt dem Agenten die gerade wichtigen Karten.
-- Der Agent wählt oder bearbeitet nur den nichtdeterministischen Teil.
-- Die Maschine prüft anschließend wieder die Grenzen.
-
-```mermaid
-flowchart TB
-    M["ki-dev<br/>Zustand + Regeln + Kontext"]
-    P["kleiner sichtbarer<br/>Aktionsraum"]
-    A["KI-Agent<br/>Arbeit oder Urteil"]
-    O["beobachtbare Wirkung"]
-    V["deterministische Prüfung"]
-
-    M --> P --> A --> O --> V --> M
-```
-
-Beim Vorgang V kann ein Controller beispielsweise nicht beliebig irgendetwas
-antworten, sondern erhält sinngemäß:
-
-```text
-Vorgang: Rückfallfall im Executor
-
-Runde: 2 von 5
-
-Offene Beanstandung:
-Test für den Rückfallfall fehlt.
-
-Aktuelle Änderung:
-<Delta der letzten Worker-Runde>
-
-Zulässige Urteile:
-- PASS
-- CHANGES
-- NEEDS_DECISION
-- ESCALATE
-```
-
-Die Auswahl hilft der KI beim Denken. Die Maschine prüft sie trotzdem erneut.
-
----
-
-## Drei Ebenen: Repository, Pages PM, ki-dev
-
-Langfristig gehören drei verschiedene Ebenen zusammen, ohne dieselbe Aufgabe zu
-haben.
-
-```mermaid
-flowchart TB
-    K["ki-dev<br/><b>Arbeitsprozesse</b><br/>Planning · Kontext · Umsetzung · Review · Resume"]
-    P["Pages PM<br/><b>Projektbedeutung</b><br/>Vorgänge · Entscheidungen · Richtlinien · Spezifikationen · Beziehungen · Geltung"]
-    R["Repository<br/><b>technische Wirklichkeit</b><br/>Quelltext · Tests · Module · Konfiguration · Build"]
-
-    K -->|"arbeitet auf"| P
-    P -->|"beschreibt / betrifft"| R
-```
-
-### Repository
-
-Das Repository bleibt die technische Wirklichkeit:
-
-```text
-src/executor.py
-tests/test_executor.py
-pyproject.toml
-...
-```
-
-Dort liegt, **was gebaut ist**.
-
-### Pages PM
-
-Pages PM ist langfristig die strukturierte Projektbedeutung darüber:
-
-```text
-Vorgang V
-  betrifft → Executor
-
-Richtlinie G
-  gilt für → Entwicklung
-
-Entscheidung D
-  betrifft → Executor
-```
-
-Pages PM beantwortet damit Fragen wie:
-
-- Welche Gegenstände gibt es?
-- Wie hängen sie zusammen?
-- Was gilt für was?
-- Welche Entscheidung ist noch gültig?
-- Welche Herkunft und welcher Verlauf gehören dazu?
-
-### ki-dev
-
-`ki-dev` verwendet diese Bedeutung im konkreten Arbeitsablauf:
-
-```text
-Welche Arbeit läuft jetzt?
-→ welcher Kontext gilt dafür?
-→ welche Rolle arbeitet?
-→ was wurde tatsächlich geändert?
-→ was prüft der Controller?
-→ welcher Übergang ist jetzt erlaubt?
-```
-
-Für Vorgang V könnte die spätere Arbeitsteilung so aussehen:
-
-```mermaid
-sequenceDiagram
-    participant PM as Pages PM
-    participant KD as ki-dev
-    participant W as Worker
-    participant C as Controller
-
-    PM->>KD: V + geltende Richtlinie + relevante Spezifikation + Entscheidung
-    KD->>W: begrenzter TASK + Arbeitskontext
-    W->>KD: Arbeit am Repository
-    KD->>KD: tatsächlichen Delta erfassen
-    KD->>C: TASK + Delta + offene Punkte + erlaubte Urteile
-    C->>KD: PASS / CHANGES / NEEDS_DECISION / ESCALATE
-```
-
-Wichtig ist die Grenze:
-
-> **Pages PM bestimmt langfristig, was im Projekt gilt.  
-> `ki-dev` bestimmt, wie ein konkreter KI-gestützter Arbeitsprozess darauf
-> abläuft.**
-
-`ki-dev` ist daher kein Ersatz für das Repository und langfristig auch kein
-zweites Projektinformationssystem neben Pages PM.
-
----
-
-## Kontext ist ein Graph, kein großer Prompt
-
-Die Beziehungen im Projekt sind nicht nur Dokumentationsschmuck. Sie können
-bestimmen, welcher Kontext für eine Tätigkeit relevant ist.
-
-Für unser Beispiel:
+Ohne zusätzliche Struktur bekäme ein Agent das ganze Repository samt vieler
+Projektdokumente und müsste selbst suchen. `ki-dev` schneidet den Arbeitsraum
+entlang von Beziehungen zu:
 
 ```mermaid
 graph LR
@@ -234,7 +238,7 @@ graph LR
     G -->|"gilt für"| V
 ```
 
-Daraus kann später regelhaft folgen:
+Daraus kann regelhaft folgen:
 
 ```text
 Kontext für Vorgang V
@@ -242,95 +246,24 @@ Kontext für Vorgang V
 Vorgang
 + geltende Programmierrichtlinien
 + relevanter Teil der Executor-Spezifikation
-+ maßgebliche Entscheidung
++ maßgebliche Entscheidung zu Fehler X
 ```
 
-Das ist das Bild der **Karten auf der Hand**:
-
-Ein Pokerspieler erhält nicht das ganze Kartenspiel und soll sich merken,
-welche Karten wahrscheinlich gelten. Er bekommt genau die Karten, mit denen
-dieser Zug gespielt wird.
-
-Für KI-Agenten bedeutet das:
-
-- weniger Sucharbeit;
-- weniger wiederholter Kontext;
-- weniger versteckte Ablaufregeln;
-- weniger Abhängigkeit davon, ob eine wichtige Information gerade beachtet
-  wurde.
-
----
-
-## Deterministische Umgebung, nicht deterministische Facharbeit
-
-`ki-dev` versucht nicht, KI deterministisch zu machen.
-
-Es trennt vielmehr zwei Arten von Arbeit.
-
-```mermaid
-flowchart LR
-    subgraph Maschine["deterministisch"]
-        S["Zustand"]
-        R["erlaubte Übergänge"]
-        N["Nachrichtenprüfung"]
-        L["Wiederholungsgrenzen"]
-        X["Schrittgrenzen"]
-        D["Änderungsdeltas"]
-    end
-
-    subgraph KI["nichtdeterministisch"]
-        W["Umsetzung"]
-        Q["Qualitätsurteil"]
-        F["fachliche Interpretation"]
-    end
-
-    Maschine --> KI
-    KI --> Maschine
-```
-
-Die Maschine kann beispielsweise sicher wissen:
-
-```text
-- dies ist Runde 2 von höchstens 5;
-- der nächste Schritt ist Controller-Review;
-- CHANGES ist noch zulässig;
-- der Worker-Schritt ist beendet;
-- Git hat sich von Commit B nach C verändert;
-- Test X schlägt fehl.
-```
-
-Der Controller muss dagegen urteilen:
-
-```text
-- erfüllt die Änderung den Auftrag?
-- ist die Lösung technisch passend?
-- behebt sie die offene Beanstandung?
-- ist der Vorgang selbst noch sinnvoll geschnitten?
-```
-
-Genau dort soll die KI ihre Stärke einsetzen.
+Ein Pokerspieler bekommt nicht das ganze Kartenspiel mit der Auflage, sich zu
+merken, welche Karten wohl gelten. Er bekommt die Karten, mit denen dieser Zug
+gespielt wird.
 
 ---
 
 ## Controller und Worker
 
-Der kleinste Arbeitskern besitzt zwei Rollen.
+Der **Worker** führt einen begrenzten Auftrag aus, verändert Quelltext, Tests
+oder Arbeitsbestand und meldet nur außergewöhnliche Situationen semantisch –
+etwa eine fehlende Entscheidung.
 
-**Worker**
-
-- führt einen begrenzten Auftrag aus;
-- verändert Quelltext, Tests oder den Arbeitsbestand;
-- meldet nur außergewöhnliche Situationen semantisch, etwa fehlende
-  Entscheidungen oder notwendige Eskalation.
-
-**Controller**
-
-- bestimmt oder prüft den begrenzten Auftrag;
-- beurteilt die tatsächlich entstandene Wirkung;
-- fordert Änderungen an oder nimmt den Stand an;
-- prüft auch, ob der Arbeitsgegenstand selbst noch sinnvoll ist.
-
-Ein typischer Ablauf für Vorgang V:
+Der **Controller** bestimmt oder prüft den Auftrag, beurteilt die tatsächlich
+entstandene Wirkung, fordert Änderungen an oder nimmt den Stand an – und prüft
+auch, ob der Arbeitsgegenstand selbst noch sinnvoll geschnitten ist.
 
 ```mermaid
 stateDiagram-v2
@@ -351,59 +284,87 @@ stateDiagram-v2
     Passed --> [*]
 ```
 
-Jeder rückführende Weg besitzt eine feste Grenze. Eine Agentenschleife darf
-nicht unbemerkt zehn, fünfzig oder fünfhundert Korrekturrunden verbrauchen.
+Für Vorgang V sieht der Controller keinen langen Rollen-Prompt, sondern einen
+Zustand mit sichtbarem Aktionsraum:
+
+```text
+Vorgang: Rückfallweg des Executors bei Fehler X
+
+Runde: 2 von 5
+
+Offene Beanstandung:
+Test für Fehler X fehlt.
+
+Aktuelle Änderung:
+<Git-Schrittdelta der letzten Worker-Runde>
+
+Arbeitsgraph:
+[ ] Vorgang bleibt richtig
+[ ] Graphänderung erforderlich
+[ ] Graphverbesserung sinnvoll
+
+Zulässige Urteile:
+- PASS
+- CHANGES
+- NEEDS_DECISION
+- ESCALATE
+```
+
+Das ist schwerer zu übersehen als ein Satz auf Seite 17 eines Rollen-Prompts.
+Die Auswahl hilft beim Urteil; die Maschine prüft die Antwort trotzdem erneut.
 
 ---
 
-## Die Wirkung zählt, nicht die Selbstauskunft des Agents
+## Repository – Pages PM – ki-dev
 
-Ein Worker soll im Normalfall nicht erklären müssen:
+Damit der Kontextzuschnitt regelhaft möglich wird, braucht es eine Ebene, die
+Projektbedeutung führt. Langfristig gehören drei Ebenen zusammen, ohne dieselbe
+Aufgabe zu haben.
 
-> „Ich habe Datei A geändert und Test B ergänzt.“
+```mermaid
+flowchart TB
+    K["ki-dev<br/><b>Arbeitsprozesse</b><br/>Planning · Kontext · Umsetzung · Review · Resume"]
+    P["Pages PM<br/><b>Projektbedeutung</b><br/>Vorgänge · Entscheidungen · Richtlinien · Spezifikationen · Beziehungen · Geltung"]
+    R["Repository<br/><b>technische Wirklichkeit</b><br/>Quelltext · Tests · Module · Konfiguration · Build"]
 
-`ki-dev` kann die tatsächliche Wirkung selbst beobachten.
-
-Für Git:
-
-```text
-Commit B
-→ Worker-Schritt
-→ Commit C
-→ git diff B..C
+    K -->|"arbeitet auf"| P
+    P -->|"beschreibt / betrifft"| R
 ```
 
-Für den derzeit verwendeten Arbeitsgraphen `bd` kann die vorhandene
-Dolt-Versionierung entsprechend Zustandsgrenzen und Deltas liefern.
+Das **Repository** bleibt die technische Wirklichkeit. Dort liegt, *was gebaut
+ist*.
 
-Der Controller erhält damit vorzugsweise Tatsachen:
+**Pages PM** führt die strukturierte Bedeutung darüber: Welche Gegenstände gibt
+es, wie hängen sie zusammen, was gilt für was, welche Entscheidung ist noch
+gültig, welche Herkunft gehört dazu? Genau daraus lässt sich der Arbeitskontext
+für Vorgang V ableiten, statt ihn von Hand zusammenzustellen.
+
+**`ki-dev`** verwendet diese Bedeutung im Ablauf: Welche Arbeit läuft jetzt,
+welcher Kontext gilt dafür, welche Rolle arbeitet, was wurde tatsächlich
+geändert, was prüft der Controller, welcher Übergang ist erlaubt?
+
+> **Pages PM bestimmt langfristig, welche Projektinformation gilt und wie sie
+> zusammenhängt.
+> `ki-dev` bestimmt, wie ein konkreter KI-gestützter Arbeitsprozess darauf
+> abläuft.**
 
 ```text
-TASK
-+ Git-Schrittdelta
-+ Arbeitsgraph-Delta
-+ relevante Tests
-+ offene Beanstandung
-+ Rundenstand
-+ zulässige nächste Urteile
+Repository → was technisch existiert
+Pages PM   → was projektfachlich gilt
+ki-dev     → wie darauf gearbeitet wird
 ```
 
-Das spart nicht nur Kontext. Es trennt auch sauber:
-
-```text
-Worker behauptet etwas
-≠
-System beobachtet eine Änderung
-```
+`ki-dev` ist daher kein Ersatz für das Repository, keine zweite
+Quelltextwahrheit neben Git und langfristig kein zweites
+Projektinformationssystem neben Pages PM.
 
 ---
 
-## Planning und Dokumentation
+## Von Planung zu Projektwissen
 
-`ki-dev` soll nicht nur fertige Umsetzungsvorgänge ausführen.
-
-Zum Zielbild gehört ein kontrollierter Weg von menschlich geführter Planung zu
-dauerhafter Projektinformation.
+`ki-dev` soll nicht nur fertige Umsetzungsvorgänge ausführen. Zum Zielbild
+gehört ein kontrollierter Weg von menschlich geführter Planung zu dauerhafter
+Projektinformation.
 
 ```mermaid
 flowchart LR
@@ -421,83 +382,56 @@ flowchart LR
     G --> I
 ```
 
-Die Planung darf dabei offen und dialogisch sein. Die Materialisierung soll es
-nicht sein.
-
-Aus einem Gespräch wie
-
-```text
-„Wir brauchen einen Rückfallweg.
-Er darf nur bei Fehler X greifen.
-Dafür brauchen wir einen Test.“
-```
-
-können unterschiedliche dauerhafte Aussagen entstehen:
+Die Planung darf offen und dialogisch sein. Die Materialisierung soll es nicht
+sein. Aus einem Gespräch wie „Wir brauchen einen Rückfallweg, er darf nur bei
+Fehler X greifen, dafür brauchen wir einen Test“ entstehen unterschiedliche
+dauerhafte Aussagen:
 
 ```text
-System-Spezifikation
-→ welches Verhalten das System besitzen muss
-
-Entscheidung
-→ warum genau dieser Rückfallweg gewählt wurde
-
-Richtlinie
-→ welche allgemeine Entwicklungsregel gilt
-
-Vorgang
-→ welche Arbeit konkret auszuführen ist
-
-Nachweis
-→ welche Umsetzung und welcher Test die Anforderung belegen
+System-Spezifikation → welches Verhalten das System besitzen muss
+Entscheidung         → warum dieser Rückfallweg gewählt wurde
+Richtlinie           → welche allgemeine Entwicklungsregel gilt
+Vorgang              → welche Arbeit konkret auszuführen ist
+Nachweisbeziehung    → welche Umsetzung und welcher Test das belegen
 ```
 
-Damit muss ein einzelnes großes „Planungsdokument“ nicht für immer gleichzeitig
+Ein einzelnes großes „Planungsdokument“ muss dann nicht auf Dauer gleichzeitig
 Architektur, Entscheidungssammlung, Ablaufbeschreibung und Aufgabenliste sein.
 
 ---
 
-## Was `ki-dev` heute absichtlich noch kleiner macht
+## Bootstrap und Zielrichtung
 
-Das langfristige Ziel braucht Pages PM nicht als Voraussetzung für den ersten
-nutzbaren `ki-dev`-Stand.
-
-Der Bootstrap verwendet zunächst vorhandene, einfachere Wahrheiten:
-
-```mermaid
-flowchart TB
-    B["Bootstrap"]
-    BD["bd<br/>Arbeitsgraph"]
-    GIT["Git<br/>Quelltext + technische Geschichte"]
-    DOC["Repo-Dateien<br/>vorläufige Fachinformationen"]
-    KD["kleiner ki-dev-Orchestrator"]
-
-    B --> BD
-    B --> GIT
-    B --> DOC
-    B --> KD
-```
-
-Der heutige Weg ist bewusst pragmatisch:
+Pages PM ist keine Voraussetzung für den ersten nutzbaren `ki-dev`-Stand. Der
+Bootstrap verwendet vorhandene, einfachere Wahrheiten:
 
 - `bd` führt den Arbeitsgraphen;
 - Git führt Quelltext und technische Änderungen;
-- kleine Fachdateien können normative Aussagen vorläufig im Repository halten;
-- Claude- und Codex-CLI werden lokal verwendet;
+- kleine Fachdateien halten normative Aussagen vorläufig im Repository;
 - `ki-dev` automatisiert zuerst die Controller↔Worker-Kontrollschleife;
 - Pages-PM-Integration, vollständiges Planning und weitergehende
   Kontextableitung folgen später.
 
-Das ist keine zweite Zielarchitektur, sondern eine Bootstrap-Grenze.
+Der Betrieb bleibt dabei bewusst klein – ein Merkmal des Bootstrap, kein
+architektonisches Alleinstellungsmerkmal:
 
----
+```text
+lokal angemeldete Claude- oder Codex-CLI
++ lokaler ki-dev-Orchestrator
+```
 
-## Weg vom Bootstrap zum Zielsystem
+Welche CLI eine Rolle bedient, ist Teil der Rollenbelegung
+(`executor` + `model` + `effort`). Ein Lauf kann beide Werkzeuge mischen – etwa
+Claude als Worker und Codex als Controller –, muss es aber nicht.
 
-Die Entwicklung folgt dem Grundsatz:
+`ki-dev` braucht dafür weder eigene Anbieter-API-Schlüssel noch eine eigene
+Abrechnungsschicht noch einen zusätzlichen Orchestrierungsdienst. Der
+ausführbare Vertrag der beiden CLI-Adapter steht in
+[`docs/cli-adapters.md`](docs/cli-adapters.md).
 
-> **Kein allgemeines Agentensystem auf Vorrat bauen.  
-> Jeden nächsten deterministischen Baustein aus einem echten Arbeitsproblem
-> ableiten.**
+Die Weiterentwicklung folgt dem Grundsatz: kein allgemeines Agentensystem auf
+Vorrat bauen, sondern jeden nächsten deterministischen Baustein aus einem echten
+Arbeitsproblem ableiten.
 
 ```mermaid
 flowchart LR
@@ -511,70 +445,20 @@ flowchart LR
     V0 --> V1 --> V2 --> V3 --> V4 --> V5
 ```
 
-Diese Reihenfolge ist nicht als starre Versionsliste zu verstehen. Entscheidend
-ist die Richtung:
+Das ist keine starre Versionsliste, sondern eine Richtung: von manueller
+Kopierarbeit über eine kleine ausführbare Kontrollmaschine hin zu strukturierter
+Kontextbildung und einem gemeinsamen Projektinformationsmodell mit Pages PM.
 
-```text
-heutige manuelle Kopierarbeit
-→ kleine ausführbare Kontrollmaschine
-→ mehr deterministische Projektarbeit
-→ strukturierte Kontextbildung
-→ gemeinsames Projektinformationsmodell mit Pages PM
-```
+Reale `ki-dev`-Abläufe dienen zugleich als Erprobung für Pages PM: Welche
+Beziehungen braucht Kontextbildung wirklich? Welche Aussage braucht eine eigene
+Identität? Welche Richtlinie muss automatisch in welchem Vorgang gelten?
 
-Reale `ki-dev`-Abläufe dienen dabei zugleich als Erprobung für Pages PM:
-Welche Beziehungen braucht Kontextbildung wirklich? Welche Aussage braucht eine
-eigene Identität? Wo reicht ein Feld? Welche Richtlinie muss automatisch in
-welchem Vorgang gelten?
+Was `ki-dev` dabei ausdrücklich **nicht** werden soll: ein Chatbot, der
+„irgendwie das Repository erledigt“; ein unbegrenzter Agentenloop, der bis zum
+Erfolg weiterläuft; ein Vorwand, große Mengen Projektkontext in jeden Prompt zu
+laden; ein anbieterspezifischer Workflow, dessen Fachlogik von einer bestimmten
+Claude- oder Codex-Sitzung abhängt.
 
----
-
-## Was `ki-dev` nicht sein soll
-
-`ki-dev` ist nicht:
-
-- ein Chatbot, der selbstständig „irgendwie das Repository erledigt“;
-- eine zweite Quelltextwahrheit neben Git;
-- eine zweite dauerhafte Projektmanagement-Datenbank neben Pages PM;
-- ein System, das jeden Gedanken eines Agents protokollieren muss;
-- ein Versuch, fachliche Entscheidungen durch Zustandsmaschinen zu ersetzen;
-- ein Vorwand, große Mengen Projektkontext in jeden Prompt zu laden;
-- ein unbegrenzter Agentenloop, der bis zum Erfolg weiterläuft;
-- ein Anbieter-spezifischer Workflow, dessen Fachlogik von einer bestimmten
-  Claude- oder Codex-Sitzung abhängt.
-
----
-
-## Der Kern in einem Bild
-
-Unser Vorgang V begann als einfache Aufgabe:
-
-> Rückfallfall im Executor umsetzen.
-
-Im Zielbild wird daraus kein riesiger Prompt, sondern eine nachvollziehbare
-Kette:
-
-```mermaid
-flowchart LR
-    V["Vorgang V"]
-    P["Pages PM<br/>was gilt?"]
-    K["ki-dev<br/>welcher Kontext<br/>und welcher Zug?"]
-    W["Worker<br/>ändert"]
-    D["beobachteter<br/>Delta"]
-    C["Controller<br/>urteilt"]
-    E["PASS / CHANGES /<br/>Entscheidung / Eskalation"]
-
-    V --> P --> K --> W --> D --> C --> E
-    E -->|"CHANGES"| K
-```
-
-Die Projektstruktur bleibt außerhalb des Agentengedächtnisses greifbar.
-Deterministische Regeln bleiben als Regeln sichtbar. Änderungen werden
-beobachtet statt nur beschrieben. Die KI bekommt den für ihren jeweiligen Zug
-nötigen Zusammenhang.
-
-Das ist die Leitidee von `ki-dev`:
-
-> **Nicht mehr KI für die Verwaltung von KI-Arbeit einsetzen als nötig.  
+> **Nicht mehr KI für die Verwaltung von KI-Arbeit einsetzen als nötig.
 > Struktur, Zustand und Kontext maschinell begrenzen – und die KI für die
 > eigentliche Entwicklungs- und Prüfarbeit verwenden.**
