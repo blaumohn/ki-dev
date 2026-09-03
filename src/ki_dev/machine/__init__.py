@@ -8,6 +8,9 @@ Oeffentliche Nutzung durch den spaeteren Orchestrator:
 * :class:`Limits` / :class:`Counters` -- begrenzte aktive Zyklen
 * :class:`AgentEscalation` / :class:`MachineEscalation` -- getrennte
   Eskalationsursachen
+* :class:`RunState` mit :func:`encode_run_state` /
+  :func:`decode_run_state` -- versionierter JSON-Vertrag des
+  fortgeschriebenen Laufzustands
 
 Diese Ebene kennt weder Dateien noch Prozesse noch Git-Aktionen.
 """
@@ -43,6 +46,7 @@ from .contract import (
     ProtocolError,
     ReviewedResultFrozen,
     RunStarted,
+    RunState,
     StepResultCaptured,
     TransitionResult,
     WorkerCompleted,
@@ -51,11 +55,18 @@ from .contract import (
     WorkerNeedsDecision,
     WorkerProcessError,
 )
+from .state_json import (
+    SCHEMA_VERSION,
+    RunStateFormatError,
+    decode_run_state,
+    encode_run_state,
+)
 from .transitions import advance
 
 __all__ = [
     "DEFAULT_LIMITS",
     "FINALIZATION_PHASES",
+    "SCHEMA_VERSION",
     "STOPPED_PHASES",
     "TERMINAL_PHASES",
     "WAITING_PHASES",
@@ -82,6 +93,8 @@ __all__ = [
     "ProtocolError",
     "ReviewedResultFrozen",
     "RunStarted",
+    "RunState",
+    "RunStateFormatError",
     "StepResultCaptured",
     "TransitionResult",
     "WorkerCompleted",
@@ -90,4 +103,6 @@ __all__ = [
     "WorkerNeedsDecision",
     "WorkerProcessError",
     "advance",
+    "decode_run_state",
+    "encode_run_state",
 ]

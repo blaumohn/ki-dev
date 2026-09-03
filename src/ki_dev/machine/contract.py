@@ -86,6 +86,9 @@ class AgentEscalation:
 
     def __post_init__(self) -> None:
         _require_text(self.cause, "AgentEscalation.cause")
+        _require_phase(
+            self.resume_point, "AgentEscalation.resume_point"
+        )
 
 
 @dataclass(frozen=True)
@@ -94,6 +97,16 @@ class MachineEscalation:
 
     cause: MachineEscalationCause
     resume_point: Phase
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.cause, MachineEscalationCause):
+            raise TypeError(
+                "MachineEscalation.cause muss ein "
+                "MachineEscalationCause sein"
+            )
+        _require_phase(
+            self.resume_point, "MachineEscalation.resume_point"
+        )
 
 
 Escalation = AgentEscalation | MachineEscalation
@@ -119,10 +132,11 @@ class Limits:
             ("changes_rounds", self.changes_rounds),
             ("process_retries", self.process_retries),
         ):
+            label = f"Limits.{name}"
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{label} muss ein echter int sein")
             if value < 1:
-                raise ValueError(
-                    f"Limits.{name} muss mindestens 1 sein"
-                )
+                raise ValueError(f"{label} muss mindestens 1 sein")
 
 
 DEFAULT_LIMITS = Limits()
@@ -153,14 +167,13 @@ class Counters:
     changes_round: int = 0
 
     def __post_init__(self) -> None:
-        values = (
-            self.protocol_attempt,
-            self.worker_attempt,
-            self.process_retry,
-            self.changes_round,
-        )
-        if min(values) < 0:
-            raise ValueError("Counters duerfen nicht negativ sein")
+        for name, value in (
+            ("protocol_attempt", self.protocol_attempt),
+            ("worker_attempt", self.worker_attempt),
+            ("process_retry", self.process_retry),
+            ("changes_round", self.changes_round),
+        ):
+            _require_count(value, f"Counters.{name}")
 
     @property
     def run_total(self) -> int:
@@ -212,8 +225,11 @@ class MachineState:
     checkpointed_result: bool = False
 
     def __post_init__(self) -> None:
-        if not isinstance(self.phase, Phase):
-            raise TypeError("MachineState.phase muss eine Phase sein")
+        _require_phase(self.phase, "MachineState.phase")
+        if not isinstance(self.counters, Counters):
+            raise TypeError(
+                "MachineState.counters muessen Counters sein"
+            )
         _require_bool(
             self.checkpointed_result,
             "MachineState.checkpointed_result",
@@ -241,6 +257,39 @@ class MachineState:
                 else checkpointed_result
             ),
         )
+
+
+@dataclass(frozen=True)
+class RunState:
+    """Benannter, fortgeschriebener Zustand genau eines Laufs.
+
+    ``run_id`` identifiziert den Lauf ueber Unterbrechungen hinweg.
+    ``revision`` zaehlt die Fortschreibungen desselben Laufzustands
+    monoton; sie ordnet festgehaltene Staende, ist aber selbst kein
+    Zaehler eines aktiven Zyklus.
+
+    ``escalation`` traegt die zuletzt ausgeloeste Eskalation
+    einschliesslich Ursache und ``resume_point``; ohne angehaltenen
+    Zyklus ist sie ``None``.
+
+    Die Formatversion gehoert nicht hierher, sondern zur
+    Serialisierung (``state_json.SCHEMA_VERSION``).
+    """
+
+    run_id: str
+    revision: int
+    state: MachineState
+    limits: Limits = DEFAULT_LIMITS
+    escalation: Escalation | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.run_id, "RunState.run_id")
+        _require_count(self.revision, "RunState.revision")
+        if not isinstance(self.state, MachineState):
+            raise TypeError("RunState.state muss ein MachineState sein")
+        if not isinstance(self.limits, Limits):
+            raise TypeError("RunState.limits muessen Limits sein")
+        _require_escalation(self.escalation)
 
 
 @dataclass(frozen=True)
@@ -474,3 +523,28 @@ def _require_bool(value: object, label: str) -> None:
     """Pflichtangabe: echter ``bool``, kein truthy Ersatzwert."""
     if not isinstance(value, bool):
         raise TypeError(f"{label} muss ein echter bool sein")
+
+
+def _require_phase(value: object, label: str) -> None:
+    """Pflichtangabe: getippte Phase, kein roher Wert."""
+    if not isinstance(value, Phase):
+        raise TypeError(f"{label} muss eine Phase sein")
+
+
+def _require_count(value: object, label: str) -> None:
+    """Pflichtangabe: nicht negative Anzahl, kein ``bool``."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{label} muss ein echter int sein")
+    if value < 0:
+        raise ValueError(f"{label} darf nicht negativ sein")
+
+
+def _require_escalation(value: object) -> None:
+    """Pflichtangabe: getippte Eskalation oder klares Fehlen."""
+    if value is None:
+        return
+    if not isinstance(value, AgentEscalation | MachineEscalation):
+        raise TypeError(
+            "RunState.escalation muss eine AgentEscalation oder "
+            "MachineEscalation sein"
+        )
