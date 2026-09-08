@@ -4,98 +4,168 @@
 
 # ki-dev
 
-<!-- mdman:toc:start -->
-- [ki-dev in 30 Sekunden](#ki-dev-in-30-sekunden)
-- [Stand heute](#stand-heute)
-- [Für wen – und welche Arbeit fehlt](#für-wen--und-welche-arbeit-fehlt)
-- [Vom Hinweis zur erzwungenen Regel](#vom-hinweis-zur-erzwungenen-regel)
-- [Was es bereits gibt](#was-es-bereits-gibt)
-- [Die deterministische Arbeitsumgebung](#die-deterministische-arbeitsumgebung)
-- [Vom Vorgang zum Arbeitskontext](#vom-vorgang-zum-arbeitskontext)
-- [Controller und Worker](#controller-und-worker)
-- [Repository – Pages PM – ki-dev](#repository--pages-pm--ki-dev)
-- [Von Planung zu Projektwissen](#von-planung-zu-projektwissen)
-- [Bootstrap und Zielrichtung](#bootstrap-und-zielrichtung)
+**Ein deterministischer Orchestrator für KI-gestützte Entwicklungs- und
+Projektarbeit in kleinen Teams.**
 
----
+Die Maschine hält Zustand, Rollenfolge, Schrittgrenzen und Änderungsnachweise.
+Die KI schreibt Quelltext und urteilt über Ergebnisse.
+
+> **Status: aktive Entwicklung.**
+> Gebaut wird gerade der ausführbare Kern: die automatisierte
+> Controller↔Worker-Schleife (`ki-dev loop`). Alles Weitere ist Entwurf und
+> unten als **Zielbild** gekennzeichnet.
+
+<!-- mdman:toc:start -->
+- [In der Praxis](#in-der-praxis)
+- [Die Orchestrierungsparameter](#die-orchestrierungsparameter)
+- [Wofür](#wofür)
+- [Warum nicht einfach ein Agent mit Subagenten?](#warum-nicht-einfach-ein-agent-mit-subagenten)
+- [Zwei Strecken auf derselben Schleife](#zwei-strecken-auf-derselben-schleife)
+- [Die Schleife im Detail](#die-schleife-im-detail)
+- [Worauf die Schleife läuft: LangGraph](#worauf-die-schleife-läuft-langgraph)
+- [Was der Controller tatsächlich sieht](#was-der-controller-tatsächlich-sieht)
+- [Strecke: Planung → Materialisierung (Zielbild)](#strecke-planung--materialisierung-zielbild)
+- [Strecke: Umsetzung (Zielbild)](#strecke-umsetzung-zielbild)
+- [Warum eine Maschine und nicht ein längerer Prompt](#warum-eine-maschine-und-nicht-ein-längerer-prompt)
+- [Der erste Go-live](#der-erste-go-live)
+- [Die Parameter als Messfläche](#die-parameter-als-messfläche)
+- [Richtung danach](#richtung-danach)
+- [Einordnung und Nicht-Ziele](#einordnung-und-nicht-ziele)
 <!-- mdman:toc:end -->
 
+---
 
-## ki-dev in 30 Sekunden
+## In der Praxis
 
-`ki-dev` schafft eine kontrollierte Entwicklungsumgebung für KI-gestützte
-Projektarbeit. Es verbindet Planung, gezielten Arbeitskontext, Umsetzung,
-Prüfung und Projektzustand über einen deterministischen Orchestrator.
+Zwei vorbereitete Agentensitzungen, ein Befehl:
 
-> **Projektbedeutung → deterministisch zugeschnittener Arbeitsraum → KI-Urteil**
-
-Die Maschine trägt, was sich zuverlässig festlegen lässt:
-
-```text
-Zustand · zulässige Übergänge · Rollenfolge · Schrittgrenzen
-Wiederholungsgrenzen · Nachrichtenform · Änderungsnachweise
-geltender Kontext
+```bash
+ki-dev loop --controller-session ctl-7f2a --worker-session wrk-91b4
 ```
 
-Die KI urteilt dort, wo tatsächlich Urteil nötig ist:
-
 ```text
-Wie setze ich das um? · Ist diese Umsetzung richtig?
-Welche technische Lösung passt? · Trägt die Annahme des Vorgangs noch?
+RUN  r-0c31   bd-b200  CSV-Import: fehlerhafte Zeile überspringen
+              base  a1b2c3d   ·   bd  dolt@4471f9
+
+[1] CONTROLLER  codex/sol/high      Restarbeit grob geschnitten
+    A  Fehlertyp und Erkennung ungültiger Datumswerte
+    B  Überspringen und Protokollieren in der Importschleife
+    C  Import-Ergebnis um Zähler erweitern
+
+[2] CONTROLLER  codex/sol/high      TASK  ·  Schnitt A
+    InvalidRowError einführen, Datumsprüfung in parse_row ergänzen.
+    Signatur von parse_row nicht ändern.
+    Schätzung  2 Definitionen · max. 18 Zeilen     ok  (Grenze 5 / 24)
+
+[3] WORKER      claude/sonnet/high  Turn beendet   exit 0 · 48s
+    git   a1b2c3d → e4f5a6b    2 Dateien, +31 −4
+    bd    keine Änderung
+    pytest ✓   ruff ✓
+
+[4] CONTROLLER  codex/sol/high      CHANGES  ·  Runde 1 von 5
+    Test für die ungültige Zeile fehlt.
+    Richtlinie: Fehlerfälle brauchen einen Test.
+
+[5] WORKER      claude/sonnet/high  Turn beendet   exit 0 · 31s
+    git   e4f5a6b → 9c8d7e2    1 Datei, +22 −0
+    pytest ✓   ruff ✓
+
+[6] CONTROLLER  codex/sol/high      PASS_STEP  ·  Schnitt A
+    Restarbeit neu beurteilt: B bleibt, C entfällt —
+    das Ergebnisobjekt zählt übersprungene Zeilen bereits.
+
+[7] CONTROLLER  codex/sol/high      TASK  ·  Schnitt B
+    Schätzung  7 Definitionen · max. 40 Zeilen     zu groß (Grenze 5 / 24)
+    → Zerlegung verlangt, kein Worker-Start
+
+[8] CONTROLLER  codex/sol/high      TASK  ·  Schnitt B1
+    Nur die Importschleife: ungültige Zeile überspringen und mit
+    Zeilennummer protokollieren.
+    Schätzung  3 Definitionen · max. 21 Zeilen     ok
+
+[9] WORKER      claude/sonnet/high  Turn beendet   exit 0 · 52s
+    git   9c8d7e2 → 3f10a4c    2 Dateien, +34 −6
+    pytest ✓   ruff ✓
+
+[10] CONTROLLER codex/sol/high      PASS_STEP  ·  Schnitt B1
+     Restarbeit: B2 — Zähler im Import-Ergebnis führen.
+
+     …   TASK B2   ·   Worker   ·   PASS_STEP B2
+
+[14] CONTROLLER codex/sol/high      PASS
+     Keine Restarbeit mehr.
+
+PASS  r-0c31   4 Worker-Turns · 1 Korrekturrunde · 5 Commits
+               geprüft  7b21e0d  →  integriert (fast-forward)
 ```
 
-> **Status: aktive Entwicklung (Bootstrap).**
-> Arbeitsgraph und Entwurfsstand bestehen bereits; der erste ausführbare
-> `ki-dev`-Kern wird derzeit aufgebaut. Das in diesem README beschriebene
-> Zielsystem ist **noch nicht umgesetzt**.
+Das Wichtigste daran steht in Schritt `[1]`, `[6]` und `[7]`: **ein Vorgang ist
+nicht ein `TASK`.** Der Controller schneidet ihn zu, beurteilt nach jedem
+angenommenen Schnitt die Restarbeit neu — und ein zu großer Schnitt kommt gar
+nicht beim Worker an.
+
+Kein Mensch zwischen den beiden Sitzungen. Genau das ist der erste Nutzen.
+
+> Ausgabe- und Befehlsformat sind der Zielzustand des V0-Kerns und noch nicht
+> eingefroren.
 
 ---
 
-## Stand heute
+## Die Orchestrierungsparameter
 
-Dieses README erklärt eine Architektur, die bewusst weiter reicht als der
-heutige Umsetzungsstand. Die folgende Grenze gilt für alles Weitere:
+Alles, was den Lauf oben bestimmt, steht in `.ki-dev/config.toml` — nicht im
+Prompt und nicht in der Entscheidung eines Agenten:
 
-**Heute vorhanden:**
+```toml
+[roles.controller]
+executor = "codex"       # welche lokale CLI die Rolle ausführt
+model    = "sol"
+effort   = "high"
 
-```text
-Entwurfs- und Planungsstand   → schriftlich festgehalten
-bd                            → gegenwärtiger Arbeitsgraph
-Git                           → tatsächlicher technischer Bestand
-erster ausführbarer
-Controller↔Worker-Kern        → im Aufbau
+[roles.worker]
+executor = "claude"      # Rollen dürfen verschiedene Werkzeuge nutzen
+model    = "sonnet"
+effort   = "high"
+
+[limits]
+max_changes           = 5   # Korrekturrunden je Schnitt, dann ESCALATE
+max_protocol_attempts = 3   # Rückkopplung bei ungültiger Ausgabe
+max_process_retries   = 2   # abgebrochene CLI-Prozesse
+
+[worker_step]
+max_estimated_definitions      = 5    # wie groß ein Schnitt sein darf
+max_estimated_definition_lines = 24
+review_boundary                = "worker_turn"
+
+[git]
+history_policy = "preserve"  # Schrittcommits bleiben erhalten
 ```
 
-**Zielbild, noch nicht umgesetzt:**
+Drei Dinge folgen daraus unmittelbar:
 
 ```text
-weitergehendes Planning
-Materialisierung von Planungsergebnissen
-regelgeleitete Kontextableitung
-spätere Pages-PM-Integration
+Rolle ≠ Werkzeug     Dieselbe CLI kann im einen Lauf Worker sein,
+                     im anderen Controller.
+
+Grenzen sind Zahlen  Runde 6 von 5 findet nicht statt, weil die Maschine
+                     zählt — nicht weil der Agent es bemerkt.
+
+Schnittgröße wird    Der Controller schätzt sie vor jedem TASK; der
+gemessen             Orchestrator vergleicht sie mit der Grenze und
+                     verlangt sonst eine neue Zerlegung.
 ```
 
-Der lebende Arbeitsstand wird hier deshalb nicht als Vorgangsliste
-nachgeschrieben. Er liegt im Beads-Arbeitsgraphen.
-
-Im geklonten Repository lässt er sich beispielsweise mit `bv` ansehen.[^bv]
-
-[^bv]: Zum Beispiel: `cd <repository>`, dann `bv`. Für eine statische, teilbare
-    Ansicht: `bv --pages`.
-
-Die ausführlichere Bootstrap- und Zielrichtungserklärung folgt weiter unten
-unter [Bootstrap und Zielrichtung](#bootstrap-und-zielrichtung).
+Kein gestarteter Agent darf diese Werte verändern.
 
 ---
 
-## Für wen – und welche Arbeit fehlt
+## Wofür
 
-`ki-dev` richtet sich besonders an kleine Teams und Open-Source-Projekte, in
-denen Planung, Projektpflege, Umsetzung und Prüfung bei denselben wenigen
-Beteiligten zusammenkommen.
-
-Ein wesentlicher Engpass liegt dort oft nicht nur in der Programmierarbeit,
-sondern in der Arbeit dazwischen:
+Ein kleines Team oder ein Open-Source-Projekt hat meist kein
+Produktmanagement, keine eigene technische Leitung und keinen festen
+Review-Prozess. Diese Arbeit fällt auf dieselben zwei, drei Entwickler zurück.
+Coding-Agenten nehmen sie nicht ab — sie verschieben den Engpass vom Tippen
+zum Steuern:
 
 ```text
 Planung
@@ -108,267 +178,137 @@ Planung
 → Rückführung neuer Erkenntnisse
 ```
 
-In größeren Organisationen verteilt sich diese Zwischenarbeit auf
-Produktmanagement, technische Leitung, Projektmanagement und feste
-Review-Prozesse. Im kleinen Projekt fällt sie auf dieselben Entwickler zurück.
+`ki-dev` deckt diese Arbeit dazwischen ab — in zwei Strecken:
 
-Coding-Agenten reduzieren Implementierungsarbeit, beseitigen diese
-Zwischenarbeit aber nicht. Bei mehreren Agentenläufen entsteht zusätzlich
-Steuerungs- und Rückführungsarbeit: Sitzung öffnen, Zusammenhang erklären,
-Ergebnis prüfen, Erkenntnis zurücktragen.
+```text
+Planung / Materialisierung
+  Planungssitzung  →  Materialisierungs-Schleife  →  Doku + Vorgänge in bd
+
+Dev / Umsetzung
+  bd-Vorgang + geltender Kontext  →  Dev-Schleife  →  Quelltext in Git
+```
 
 ---
 
-## Vom Hinweis zur erzwungenen Regel
+## Warum nicht einfach ein Agent mit Subagenten?
 
-Eine Regel ist nicht zuverlässig durchgesetzt, nur weil sie irgendwo im Prompt
-steht.
-
-```text
-nur Prompt:
-
-„Denke daran, bei einer Graphabweichung zu eskalieren.“
-
-→ Die Regel ist Text.
-→ Der Agent muss sie gerade beachten.
-
-
-ki-dev:
-
-aktueller Zustand
-→ Die Maschine stellt die Graphprüfung ausdrücklich.
-→ Mögliche Antworten werden sichtbar gemacht.
-→ Das Ergebnisformat wird geprüft.
-→ Der Übergang wird maschinell erzwungen.
-```
-
-Daraus folgt der Leitgedanke des Entwurfs:
-
-> **Wichtige Bedingungen werden möglichst von passivem Kontext in aktive,
-> prüfbare Ablaufbedingungen überführt.**
-
-Das lässt sich stufen:
+Das ist die naheliegende Alternative, und sie funktioniert. Der Unterschied
+liegt darin, **wer bestimmt, welche Rolle als Nächstes läuft** — und wo der
+Zustand liegt, wenn der Prozess endet:
 
 ```text
-1. Information irgendwo im Prompt
-   → Der Agent könnte sie beachten.
-
-2. Information im richtigen Zustand aktiv hervorgehoben
-   → Der Agent wird darauf aufmerksam gemacht.
-
-3. zulässige Antworten begrenzt
-   → Es werden nur passende Züge angeboten.
-
-4. Ausgabe strukturell geprüft
-   → Eine ungültige Antwort wird zurückgewiesen.
-
-5. Wirkung unabhängig beobachtet
-   → Diff, Tests, Schemaprüfung statt Selbstauskunft.
-
-6. Grenze maschinell erzwungen
-   → nach fünf Korrekturrunden keine sechste normale Runde.
+                        Rollenfolge bestimmt   Zustand lebt in
+────────────────────────────────────────────────────────────────────────
+Agent mit Subagenten    der Agent selbst       der Agentensitzung
+Ralphex                 ein Agent im Lauf      Plan-Datei + Lauf
+LangGraph / CrewAI      dein eigener Code      dem Graphzustand
+ki-dev                  der Orchestrator       Graphzustand + bd + Git
 ```
 
-Geringerer Tokenverbrauch ist eine Folge davon – nicht die Architekturidee.
+Ein Agent, der sich selbst reviewt, entscheidet auch selbst, ob er noch eine
+Runde dreht. Von außen ist nicht sichtbar, dass gerade Runde fünf läuft, und
+wenn die Sitzung endet, endet der Ablaufzustand mit ihr.
+
+```text
+Claude entscheidet:   Wie löse ich das?
+Codex entscheidet:    Ist das richtig?
+ki-dev entscheidet:   Wer ist jetzt dran? Wie groß darf der Schnitt sein?
+                      Wie viele Runden bleiben? Was hat sich wirklich geändert?
+```
+
+Gegenüber LangGraph und CrewAI Flows ist `ki-dev` kein Wettbewerber, sondern
+ein Aufsatz: LangGraph liefert die Ablaufmechanik, `ki-dev` den fachlichen
+Vertrag darüber — Vorgangsbindung, Schnitt-Gates, Wirkungsnachweis, geltender
+Kontext.
+
+Ob äußere feingranulare Steuerung im Ergebnis wirklich besser ist als ein
+Agent mit Subagenten, ist offen — siehe
+[Die Parameter als Messfläche](#die-parameter-als-messfläche).
 
 ---
 
-## Was es bereits gibt
+## Zwei Strecken auf derselben Schleife
 
-`ki-dev` erfindet weder deterministische Orchestrierung noch autonome
-Coding-Agenten. Beides existiert bereits.
-
-```text
-Coding-Agenten (Claude Code, Codex)
-→ führen Entwicklungsarbeit aus
-
-Ralphex
-→ automatisiert Implementierung und umfangreiche Review-Schleifen
-  mit mehreren Prüfagenten und begrenzbaren Iterationen
-
-LangGraph / CrewAI Flows
-→ allgemeine Bausteine für zustandsbehaftete Agentenabläufe
-
-OpenHands
-→ umfassendere Coding-Agenten-Laufzeit
-
-ki-dev
-→ verbindet solche Agentenläufe mit Projektbedeutung,
-  gezieltem Kontext und einem expliziten Entwicklungsvertrag
-```
-
-`ki-dev` zielt nicht auf eine neue Agentenlaufzeit. Es hält Zustände,
-Übergänge, Grenzen, Änderungsnachweise und später auch die Ableitung des
-geltenden Projektkontexts außerhalb der Agentensitzung fest. Vorhandene
-Claude- und Codex-CLIs bleiben ausführende Werkzeuge.
-
-Quellen zur Einordnung: [Ralphex](https://github.com/umputun/ralphex),
-[LangGraph](https://docs.langchain.com/oss/python/langgraph/overview),
-[CrewAI](https://docs.crewai.com/),
-[OpenHands](https://docs.openhands.dev/sdk).
-
----
-
-## Die deterministische Arbeitsumgebung
-
-Ab hier tauchen drei Begriffe durchgehend auf:
-
-```text
-Controller → Rolle, die einen begrenzten Arbeitsschritt bestimmt und
-             anschließend dessen Wirkung prüft
-Worker     → Rolle, die genau diesen einen begrenzten Arbeitsschritt ausführt
-Executor   → technisches Werkzeug, das eine solche Rolle ausführt,
-             z. B. die Claude CLI oder die Codex CLI
-```
-
-Controller und Worker sind Rollen im Ablauf; ein Executor ist das Werkzeug, mit
-dem eine Rolle besetzt wird. Dieselbe CLI kann in einem Lauf den Worker geben
-und in einem anderen den Controller – Rolle und Werkzeug sind nicht dasselbe.
-
-Die Controller↔Worker-Dynamik hat dabei eine feste Grundform:
-
-```text
-Controller → TASK
-Worker     → Änderung
-Maschine   → Delta / Prüfungen
-Controller → PASS | CHANGES | NEEDS_DECISION | ESCALATE
-```
-
-Der Controller schneidet einen Schritt zu, der Worker führt ihn aus, die
-Maschine macht die Änderung unabhängig sichtbar, der Controller urteilt über das
-beobachtete Ergebnis. Der ausführliche Zustandsablauf folgt unter
-[Controller und Worker](#controller-und-worker).
-
-Ohne eine solche äußere Orchestrierung muss ein Agentenlauf leicht mehrere
-Aufgaben gleichzeitig übernehmen:
-
-1. die Fachaufgabe zu lösen,
-2. den Projektzustand zusammenzusuchen,
-3. den Arbeitsablauf zu verwalten,
-4. den Stand der Korrekturrunden im Blick zu behalten,
-5. Nachrichtenformate zu erraten,
-6. Änderungen zu rekonstruieren und
-7. zu entscheiden, welche Übergänge erlaubt sind.
-
-Die Punkte 2 bis 7 sollen, soweit sie strukturell bestimmbar sind, nicht jedes
-Mal von der KI rekonstruiert werden.
-
-Man kann diese Umgebung wie ein begrenztes Spiel verstehen: Der Orchestrator
-kennt Zustand, Regeln und erlaubte Züge; der Agent entscheidet innerhalb dieses
-Raums, und die Maschine prüft anschließend wieder die Grenzen.
+Eine **Strecke** ist eine Arbeitsart mit eigener Rollenbesetzung, eigenem
+Wirkungsnachweis und eigener Abschlussbedingung. Jede Strecke läuft als
+eigener `ki-dev`-Lauf. Materialisierung und Umsetzung sind zwei getrennte
+Strecken, kein durchgehender Fluss — aber beide sind dieselbe Schleife:
 
 ```mermaid
 flowchart LR
-    S["Maschine kennt<br/>den erlaubten Raum"]
-    A["Agent handelt<br/>innerhalb dieses Raums"]
-    V["Maschine prüft<br/>beobachtbares Ergebnis"]
+    C["Controller<br/>schneidet einen Schritt zu<br/>und prüft dessen Wirkung"]
+    W["Worker<br/>führt genau diesen<br/>einen Schritt aus"]
 
-    S --> A --> V
-    V -->|"gültig"| N["nächster Zustand"]
-    V -->|"behebbarer Fehler"| F["präzise Rückmeldung"]
-    F --> A
-    V -->|"Grenze erreicht / unklar"| E["Eskalation"]
+    C -->|"TASK"| W
+    W -->|"beobachtete Wirkung"| C
 ```
 
-Schemaprüfung, Auswahlbegrenzung, Rundenbegrenzung und Deltaerfassung sind
-nicht vier lose Funktionen, sondern vier Anwendungen derselben Regel:
-
-- ungültiges Nachrichtenschema → genaue Fehlermeldung → erneuter, **begrenzter**
-  Versuch;
-- Controller-Zustand → nur die gerade zulässigen Urteile werden angeboten;
-- Korrekturrunde 5 von 5 → keine sechste normale Runde;
-- Graphprüfung → im passenden Zustand ausdrücklich gestellt;
-- Worker behauptet nichts über seine Änderung → die Maschine erzeugt Git- und
-  Dolt-Deltas.
-
-**Die Maschine begrenzt Schleifen.** Ein Agent darf eine Korrektur erneut
-versuchen, aber nicht unbegrenzt. Ein Prompt kann immer wieder „Versuch es noch
-einmal“ sagen; der Orchestrator kennt Runde und Obergrenze und erzwingt danach
-einen sicheren Ausstieg nach `ESCALATE`. Der Agent soll nicht selbst bemerken
-müssen, dass bereits die fünfte gleichartige Korrekturrunde erreicht ist.
-
-**Die Wirkung zählt, nicht die Selbstauskunft.** Ein Worker soll nicht erklären
-müssen, was er geändert hat. `ki-dev` beobachtet es: für Quelltext über
-`git diff` zwischen den Commits vor und nach dem Schritt, für den Arbeitsgraphen
-`bd` über dessen Dolt-Versionierung.
-
-```text
-Worker behauptet etwas
-≠
-System beobachtet eine Änderung
-```
-
----
-
-## Vom Vorgang zum Arbeitskontext
-
-Ein konkreter Fall:
-
-> **Vorgang V:** Der CSV-Import soll bei Fehler X – einer Zeile mit ungültigem
-> Datumsformat – die betroffene Zeile überspringen und protokollieren, statt den
-> gesamten Import abzubrechen.
-
-Dazu gibt es bereits eine Programmierrichtlinie (*Fehlerfälle brauchen einen
-Test*), eine System-Spezifikation für das CSV-Import-Modul, eine Entscheidung
-über das Verhalten bei fehlerhaften Zeilen sowie bestehenden Quelltext und
-Tests.
-
-Ohne zusätzliche Struktur bekäme ein Agent das ganze Repository samt vieler
-Projektdokumente und müsste selbst suchen. `ki-dev` schneidet den Arbeitsraum
-entlang von Beziehungen zu:
+Was sich unterscheidet, ist die Besetzung — nicht der Mechanismus:
 
 ```mermaid
-graph LR
-    V["Vorgang V<br/>Art: Entwicklung"]
-    E["Komponente<br/>CSV-Import"]
-    G["Richtlinie<br/>Programmierleitlinien"]
-    S["System-Spezifikation<br/>CSV-Import"]
-    D["Entscheidung<br/>Verhalten bei fehlerhaften Zeilen"]
+flowchart TB
+    L["<b>ki-dev loop</b><br/>Zustand · Rollenfolge · Schrittgrenzen<br/>Wiederholungsgrenzen · Deltas · Protokoll"]
 
-    V -->|"betrifft"| E
-    S -->|"beschreibt"| E
-    D -->|"betrifft"| E
-    G -->|"gilt für"| V
+    subgraph M["Materialisierungs-Schleife"]
+        direction LR
+        MC["Controller"] -->|"TASK"| MW["Worker<br/>bd-Operationen<br/>+ Doku schreiben"]
+        MW -->|"bd- und Doku-Delta"| MC
+    end
+
+    subgraph D["Dev-Schleife"]
+        direction LR
+        DC["Controller"] -->|"TASK"| DW["Worker<br/>Quelltext-Operationen"]
+        DW -->|"Git-Delta + Tests"| DC
+    end
+
+    L --> M
+    L --> D
 ```
 
-Daraus kann regelhaft folgen:
+| | Materialisierungs-Schleife | Dev-Schleife |
+| --- | --- | --- |
+| Eingang | freigegebener Planungsstand | ein `bd`-Vorgang + geltender Kontext |
+| Worker macht | `bd`-Operationen, Doku schreiben | Funktionen, Klassen, Tests |
+| Wirkung sichtbar über | `bd`-Delta (Dolt) + `git diff` der Doku | `git diff` + Tests |
+| Controller prüft | Trägt der Arbeitsgraph die Planung? | Ist die Umsetzung richtig? |
+| Fertig, wenn | Doku und Vorgänge konsistent stehen | Vorgang integriert und geschlossen |
+
+Zeitlich hängen die Strecken zusammen, technisch nicht:
 
 ```text
-Kontext für Vorgang V
-=
-Vorgang
-+ geltende Programmierrichtlinien
-+ relevanter Teil der CSV-Import-Spezifikation
-+ maßgebliche Entscheidung zu Fehler X
+Planungssitzung (Mensch ↔ Planer)
+        ↓  freigegebener Stand
+Materialisierungs-Schleife                    eigener Lauf
+        ↓  Doku + Vorgänge in bd
+        ⋮   später, unabhängig, je Vorgang
+Dev-Schleife                                  eigener Lauf
+        ↓  Quelltext in Git
 ```
 
-Ein Pokerspieler bekommt nicht das ganze Kartenspiel mit der Auflage, sich zu
-merken, welche Karten wohl gelten. Er bekommt die Karten, mit denen dieser Zug
-gespielt wird.
+Materialisierung ist dabei kein mechanisches Zerlegen von Text in Vorgänge.
+Sie muss den **bestehenden** Graphen mitlesen: Welche Vorgänge bleiben gültig?
+Welche Annahme ist durch die neue Planung überholt? Welche Abhängigkeit ändert
+sich? Genau deshalb braucht sie dieselbe Kontrollschleife wie die Umsetzung.
+
+Deshalb wird zuerst die Schleife gebaut und erst danach die beiden Strecken,
+die auf ihr laufen.
 
 ---
 
-## Controller und Worker
-
-Controller und Worker wurden oben als Rollen eingeführt; im Ablauf hat jede eine
-genauere Ausprägung. Der **Worker** verändert Quelltext, Tests oder
-Arbeitsbestand und meldet nur außergewöhnliche Situationen semantisch – etwa
-eine fehlende Entscheidung. Der **Controller** bestimmt oder prüft den Auftrag,
-beurteilt die tatsächlich entstandene Wirkung, fordert Änderungen an oder nimmt
-den Stand an – und prüft auch, ob der Arbeitsgegenstand selbst noch sinnvoll
-geschnitten ist.
+## Die Schleife im Detail
 
 ```mermaid
 stateDiagram-v2
     [*] --> Controller
 
     Controller --> Worker: TASK
-    Worker --> Capture: Schritt beendet
+    Worker --> Capture: Prozess beendet
     Capture --> Controller: Delta + Prüfungen
 
     Controller --> Worker: CHANGES
     Controller --> Waiting: NEEDS_DECISION
     Controller --> Paused: ESCALATE
+    Controller --> Controller: PASS_STEP
     Controller --> Passed: PASS
 
     Waiting --> Controller: Entscheidung liegt vor
@@ -377,167 +317,406 @@ stateDiagram-v2
     Passed --> [*]
 ```
 
-Für Vorgang V sieht der Controller keinen langen Rollen-Prompt, sondern einen
-Zustand mit sichtbarem Aktionsraum:
+Der Controller hat je Zug genau ein Ergebnis, mehr gibt es nicht:
 
 ```text
-Vorgang: Verhalten des CSV-Imports bei Fehler X
+TASK             der zugeschnittene Auftrag für den nächsten Schnitt
+CHANGES          nachbessern, derselbe Schnitt
+PASS_STEP        dieser Schnitt ist angenommen — Restarbeit neu beurteilen
+NEEDS_DECISION   fachliche Entscheidung fehlt → Mensch
+ESCALATE         automatisch nicht sicher fortsetzbar → Mensch
+PASS             der ganze Vorgang ist fertig
+```
 
-Runde: 2 von 5
+Vier Regeln machen daraus eine Maschine statt eines Gesprächs.
 
-Offene Beanstandung:
-Test für Fehler X fehlt.
+### Der Controller schneidet den Vorgang zu
+
+Ein Vorgang wird nur dann unmittelbar zum `TASK`, wenn er schon
+Schnittgröße hat. Sonst gilt:
+
+```text
+Vorgang
+  ↓  grobe Orientierung, veränderbar
+A · B · C
+  ↓  genau einen Schnitt bestimmen
+TASK + Größenschätzung
+  ↓  Orchestrator prüft gegen die Grenze
+Worker
+  ↓  PASS_STEP
+Restarbeit neu beurteilen  →  nächster Schnitt
+```
+
+Die Grenze zwischen zwei Schnitten ist nicht Datei, Funktion oder Zeilenzahl,
+sondern der zusammenhängende prüfbare Vertrag:
+
+```text
+Teil A und Teil B
+
+A ohne B ergibt keinen prüfbaren Vertrag   →  zusammenlassen
+A kann unabhängig PASS_STEP oder
+CHANGES erhalten                           →  trennen
+```
+
+Der Vorteil kleiner Schnitte ist nicht Sparsamkeit, sondern begrenzter
+struktureller Schaden: Ein großer offener Auftrag kann eine ungünstige
+Grundstruktur erzeugen, auf der alle späteren Korrekturen dann aufbauen.
+
+Dasselbe Prinzip gilt eine Ebene höher, aber getrennt: Wie grob die
+Materialisierung Vorgänge schneidet, ist ein anderer Regler als die
+Schnittgröße innerhalb eines Vorgangs.
+
+### Der Prozess-Exit ist die Schrittgrenze
+
+Ein Agenten-Turn ist ein synchroner CLI-Aufruf. Die Alternativen wären, ein
+Terminalfenster fernzusteuern und die Bildschirmausgabe abzuschöpfen, oder den
+Agenten sagen zu lassen „ich bin fertig“. Das erste hängt an PTY- und
+Darstellungsdetails, das zweite ist wieder eine Selbstauskunft.
+
+Ein Prozessende ist dagegen eine Tatsache mit Exitcode — nichts zu parsen,
+keine Mitwirkung des Agenten nötig. Und erst eine eindeutige Grenze macht das
+Delta überhaupt wohldefiniert:
+
+```text
+Referenz vor dem Start  →  Prozess läuft  →  Referenz nach dem Exit
+                                              └ Delta = genau dieser Schritt
+```
+
+Ohne diese Grenze wüsste die Maschine nicht, welche Änderungen zu welchem
+Schnitt gehören — und damit auch nicht, was der Controller gerade beurteilt.
+Bei einer Wiederaufnahme gilt dasselbe: Der Prozess ist gelaufen oder nicht.
+
+### Gezählt wird die Wirkung, nicht die Selbstauskunft
+
+Der Worker beschreibt sein Ergebnis normalerweise gar nicht. `ki-dev` merkt
+sich vor dem Schritt die Referenz und bildet danach das Delta:
+
+```text
+Git   base_commit  →  Worker  →  head_commit  →  git diff
+bd    Dolt-Ref     →  Worker  →  Dolt-Ref     →  bd-Delta
+```
+
+Nur Sonderfälle meldet der Worker selbst: `NEEDS_DECISION` und `ESCALATE`.
+
+### Jede Schleife hat eine Obergrenze
+
+Korrekturrunden, Protokollfehler, Prozess-Retries — jeder wiederholbare Weg
+verbraucht einen begrenzten Zähler. Ist er erschöpft, eskaliert die Maschine.
+
+---
+
+## Worauf die Schleife läuft: LangGraph
+
+**Entscheidung: die Ablauf-Laufzeit ist LangGraph.** `ki-dev` baut dafür keine
+eigene persistente Agentenlaufzeit.
+
+Gebraucht wird nicht nur „welche Zustände gibt es“, sondern Persistenz,
+Checkpoints, Unterbrechung und Wiederaufnahme über Prozessenden hinweg — genau
+LangGraphs Gegenstand. CrewAI Flows wäre technisch ebenfalls geeignet; seine
+zusätzlichen Crew- und Delegations-Abstraktionen braucht `ki-dev` nicht, weil
+die Rollen ohnehin festgelegt sind.
+
+```text
+LangGraph liefert            ki-dev liefert
+─────────────────────────    ─────────────────────────────────
+Graphzustand                 Controller-/Worker-Vertrag
+Knoten und Übergänge         adaptive Worker-Schnitte
+Schleifen                    Größen-Gates
+Checkpoints                  Git-/bd-Wirkungsnachweis
+Unterbrechung / Resume       PASS_STEP vs. PASS
+                             Zähler und Eskalationsregeln
+                             sichere Integration
+```
+
+Ein Durchlauf besteht überwiegend aus gewöhnlichen Python-Knoten — nur zwei
+brauchen einen KI-Executor:
+
+```text
+CONTROLLER          KI       codex CLI
+  ↓ TASK
+WORKER              KI       claude CLI
+  ↓ Prozessende
+CAPTURE_GIT_DELTA   Python
+CAPTURE_BD_DELTA    Python
+RUN_TESTS           Python
+RUN_LINT            Python
+  ↓
+CONTROLLER          KI       codex CLI
+```
+
+Eine Grenze bleibt ausdrücklich bei `ki-dev`:
+
+```text
+LangGraph beantwortet:        Wo stand der Ablauf?
+LangGraph beantwortet nicht:  Darf diese äußere Wirkung erneut ausgeführt
+                              werden?
+```
+
+Nachricht zugestellt, Commit erzeugt, `bd` verändert, integriert, Vorgang
+geschlossen — bei einer Wiederaufnahme darf keine dieser Wirkungen blind
+wiederholt werden. Erwarteten Ausgangszustand prüfen, Wirkung identifizierbar
+machen, bereits erfolgte Wirkung erkennen: das bleibt `ki-dev`-Fachlogik.
+
+---
+
+## Was der Controller tatsächlich sieht
+
+Schritt `[4]` aus dem Lauf oben. Der Controller bekommt keinen langen
+Rollen-Prompt, sondern einen Zustand mit sichtbarem Aktionsraum:
+
+```text
+Vorgang: bd-b200  CSV-Import: fehlerhafte Zeile überspringen
+Schnitt: A — Fehlertyp und Erkennung ungültiger Datumswerte
+
+Runde: 1 von 5
+
+Auftrag dieses Schnitts:
+  InvalidRowError einführen, Datumsprüfung in parse_row ergänzen.
+  Signatur von parse_row nicht ändern.
 
 Aktuelle Änderung:
-<Git-Schrittdelta der letzten Worker-Runde>
+  src/csv/import.py   +27 −4
+  src/csv/errors.py   +4  −0
+  <git diff a1b2c3d..e4f5a6b>
+
+Prüfungen:
+  pytest ✓   ruff ✓
+
+Geltender Kontext:
+  Richtlinie      Fehlerfälle brauchen einen Test
+  Entscheidung    überspringen statt abbrechen
 
 Arbeitsgraph:
-[ ] Vorgang bleibt richtig
-[ ] Graphänderung erforderlich
-[ ] Graphverbesserung sinnvoll
+  [ ] Vorgang bleibt richtig geschnitten
+  [ ] Graphänderung erforderlich
+  [ ] Graphverbesserung sinnvoll
 
 Zulässige Urteile:
-- PASS
-- CHANGES
-- NEEDS_DECISION
-- ESCALATE
+  PASS_STEP · CHANGES · NEEDS_DECISION · ESCALATE
 ```
 
-Das ist schwerer zu übersehen als ein Satz auf Seite 17 eines Rollen-Prompts.
-Die Auswahl hilft beim Urteil; die Maschine prüft die Antwort trotzdem erneut.
+Drei Dinge daran sind Absicht:
 
-Wie fein diese äußere deterministische Steuerung sinnvollerweise sein sollte,
-ist eine offene empirische Entwurfsfrage von `ki-dev`. Zunächst setzt `ki-dev`
-praktisch auf begrenzte, beobachtbare Worker-Schnitte mit anschließender
-erneuter Controller-Steuerung. Ob diese Form gegenüber gröberer Ausführung oder
-einer klassischen Worker→Reviewer-Schleife tatsächlich bessere Ergebnisse
-liefert, soll später vergleichend untersucht werden.
+- **Geprüft wird der Schnitt, nicht der ganze Vorgang.** `PASS_STEP` beendet A,
+  nicht `bd-b200`.
+- **Die Frage nach dem Arbeitsgraphen wird gestellt**, nicht nur erwähnt. Ein
+  Controller darf feststellen, dass der Vorgang selbst falsch geschnitten ist —
+  dafür braucht er einen Zustand, der ihn danach fragt.
+- **In Runde 5 von 5 fehlt `CHANGES` in der Liste.** Die Maschine bietet nur
+  an, was der Zustand erlaubt — und prüft die Antwort danach trotzdem noch
+  einmal.
 
 ---
 
-## Repository – Pages PM – ki-dev
+## Strecke: Planung → Materialisierung (Zielbild)
 
-Damit der Kontextzuschnitt regelhaft möglich wird, braucht es eine Ebene, die
-Projektbedeutung führt. Langfristig gehören drei Ebenen zusammen, ohne dieselbe
-Aufgabe zu haben.
-
-```mermaid
-flowchart TB
-    K["ki-dev<br/><b>Arbeitsprozesse</b><br/>Planning · Kontext · Umsetzung · Review · Resume"]
-    P["Pages PM<br/><b>Projektbedeutung</b><br/>Vorgänge · Entscheidungen · Richtlinien · Spezifikationen · Beziehungen · Geltung"]
-    R["Repository<br/><b>technische Wirklichkeit</b><br/>Quelltext · Tests · Module · Konfiguration · Build"]
-
-    K -->|"arbeitet auf"| P
-    P -->|"beschreibt / betrifft"| R
+```bash
+ki-dev plan "CSV-Import soll fehlerhafte Zeilen überspringen"
 ```
-
-Das **Repository** bleibt die technische Wirklichkeit. Dort liegt, *was gebaut
-ist*.
-
-**Pages PM** führt die strukturierte Bedeutung darüber: Welche Gegenstände gibt
-es, wie hängen sie zusammen, was gilt für was, welche Entscheidung ist noch
-gültig, welche Herkunft gehört dazu? Genau daraus lässt sich der Arbeitskontext
-für Vorgang V ableiten, statt ihn von Hand zusammenzustellen.
-
-**`ki-dev`** verwendet diese Bedeutung im Ablauf: Welche Arbeit läuft jetzt,
-welcher Kontext gilt dafür, welche Rolle arbeitet, was wurde tatsächlich
-geändert, was prüft der Controller, welcher Übergang ist erlaubt?
-
-> **Pages PM bestimmt langfristig, welche Projektinformation gilt und wie sie
-> zusammenhängt.
-> `ki-dev` bestimmt, wie ein konkreter KI-gestützter Arbeitsprozess darauf
-> abläuft.**
 
 ```text
-Repository → was technisch existiert
-Pages PM   → was projektfachlich gilt
-ki-dev     → wie darauf gearbeitet wird
+Planer:   Soll die übersprungene Zeile nur protokolliert oder auch
+          gesammelt zurückgemeldet werden?
+Mensch:   Protokollieren reicht. Fehlerfälle brauchen bei uns immer einen Test.
+Planer:   Vorschlag: Zeile überspringen, WARN-Log mit Zeilennummer,
+          Import-Ergebnis meldet die Anzahl übersprungener Zeilen.
+Mensch:   WRITE
 ```
 
-`ki-dev` ist daher kein Ersatz für das Repository, keine zweite
-Quelltextwahrheit neben Git und langfristig kein zweites
-Projektinformationssystem neben Pages PM.
-
----
-
-## Von Planung zu Projektwissen
-
-`ki-dev` soll nicht nur fertige Umsetzungsvorgänge ausführen. Zum Zielbild
-gehört ein kontrollierter Weg von menschlich geführter Planung zu dauerhafter
-Projektinformation.
-
-```mermaid
-flowchart LR
-    H["Mensch + Planer<br/>Fragen, Optionen, Entscheidungen"]
-    S["bestätigter<br/>Planning-Stand"]
-    C["kontrolliertes<br/>Schreiben"]
-    F["Fachgegenstände<br/>Spezifikationen · Entscheidungen · Richtlinien"]
-    G["Arbeitsgraph<br/>Vorgänge · Abhängigkeiten"]
-    I["Umsetzung"]
-
-    H --> S --> C
-    C --> F
-    C --> G
-    F --> I
-    G --> I
-```
-
-Die Planung darf offen und dialogisch sein. Die Materialisierung soll es nicht
-sein. Aus einem Gespräch wie „Ein einzelner Zeilenfehler darf den CSV-Import
-nicht abbrechen; die Zeile soll übersprungen und protokolliert werden, dafür
-brauchen wir einen Test“ entstehen unterschiedliche dauerhafte Aussagen:
+`WRITE` friert den bestätigten Stand ein und startet damit die
+Materialisierungs-Schleife. Aus dem Gespräch entstehen unterschiedliche
+dauerhafte Aussagen:
 
 ```text
-System-Spezifikation → welches Verhalten das System besitzen muss
-Entscheidung         → warum das Überspringen dem Abbruch vorgezogen wurde
-Richtlinie           → welche allgemeine Entwicklungsregel gilt
-Vorgang              → welche Arbeit konkret auszuführen ist
-Nachweisbeziehung    → welche Umsetzung und welcher Test das belegen
+System-Spezifikation  →  welches Verhalten das System besitzen muss
+Entscheidung          →  warum Überspringen dem Abbruch vorgezogen wurde
+Richtlinie            →  „Fehlerfälle brauchen einen Test“
+Vorgang               →  welche Arbeit konkret auszuführen ist
+Nachweisbeziehung     →  welcher Test das belegt
 ```
 
-Ein einzelnes großes „Planungsdokument“ muss dann nicht auf Dauer gleichzeitig
+Erst nach ausdrücklicher Freigabe des Gesamtplans entstehen Vorgänge:
+
+```text
+PASS  bd-a1b2
+      docs/spec/csv-import.md      geändert
+      docs/decisions/csv-rows.md   neu
+      bd-b200  CSV-Import: fehlerhafte Zeile überspringen
+      bd-b201  Import-Ergebnis meldet übersprungene Zeilen
+      bd-b201 → bd-b200
+
+Nächste Aktion: ki-dev ready
+```
+
+Ein einzelnes großes „Planungsdokument“ muss so nicht dauerhaft gleichzeitig
 Architektur, Entscheidungssammlung, Ablaufbeschreibung und Aufgabenliste sein.
 
 ---
 
-## Bootstrap und Zielrichtung
+## Strecke: Umsetzung (Zielbild)
 
-Pages PM ist keine Voraussetzung für den ersten nutzbaren `ki-dev`-Stand. Der
-Bootstrap verwendet vorhandene, einfachere Wahrheiten:
+```bash
+ki-dev ready
+```
 
-- `bd` führt den Arbeitsgraphen;
-- Git führt Quelltext und technische Änderungen;
-- kleine Fachdateien halten normative Aussagen vorläufig im Repository;
-- `ki-dev` automatisiert als Erstes die Controller↔Worker-Kontrollschleife –
-  genau dieser Kern wird derzeit gebaut;
-- Pages-PM-Integration, vollständiges Planning und weitergehende
-  Kontextableitung folgen später.
+```text
+READY
+bd-b200  P2  CSV-Import: fehlerhafte Zeile überspringen
+```
 
-Der Betrieb bleibt dabei bewusst klein – ein Merkmal des Bootstrap, kein
-architektonisches Alleinstellungsmerkmal:
+```bash
+ki-dev run bd-b200      # ein Vorgang
+ki-dev run --loop       # bis nichts mehr ready ist oder ein Gate stoppt
+ki-dev status           # aktive Phase, Bead, Branch, nächste Aktion
+ki-dev resume bd-b200   # nach Abbruch oder Eskalation
+```
+
+Der Dev-Controller bekommt den Vorgang **plus den dafür geltenden Kontext** —
+nicht das ganze Repository:
+
+```mermaid
+graph LR
+    V["Vorgang bd-b200<br/>Art: Entwicklung"]
+    E["Komponente<br/>CSV-Import"]
+    G["Richtlinie<br/>Fehlerfälle brauchen einen Test"]
+    S["System-Spezifikation<br/>CSV-Import"]
+    D["Entscheidung<br/>überspringen statt abbrechen"]
+
+    V -->|"betrifft"| E
+    S -->|"beschreibt"| E
+    D -->|"betrifft"| E
+    G -->|"gilt für"| V
+```
+
+Ein Pokerspieler bekommt nicht das ganze Kartenspiel mit der Auflage, sich zu
+merken, welche Karten gerade gelten. Er bekommt die Karten für diesen Zug.
+
+Nach `PASS` integriert `ki-dev` per Fast-forward und schließt den Vorgang. Wird
+die Historie dabei kompakter geschrieben, muss der Zielcommit denselben
+Dateibaum tragen wie der Commit, den der Controller geprüft hat — sonst
+Abbruch statt Reparatur.
+
+---
+
+## Warum eine Maschine und nicht ein längerer Prompt
+
+Eine Regel ist nicht durchgesetzt, nur weil sie im Prompt steht.
+
+```text
+1. Information irgendwo im Prompt      Der Agent könnte sie beachten.
+2. im richtigen Zustand hervorgehoben  Der Agent wird darauf gestoßen.
+3. zulässige Züge begrenzt             Unpassendes wird nicht angeboten.
+4. Ausgabe strukturell geprüft         Ungültige Antwort wird zurückgewiesen.
+5. Wirkung unabhängig beobachtet       Diff und Tests statt Selbstauskunft.
+6. Grenze maschinell erzwungen         Nach Runde 5 gibt es keine sechste.
+```
+
+`ki-dev` verschiebt wichtige Bedingungen so weit wie möglich von Stufe 1 nach
+unten. Geringerer Tokenverbrauch ist eine Folge davon, nicht der Zweck.
+
+```text
+Maschine   Zustand · zulässige Übergänge · Rollenfolge · Schrittgrenzen
+           Wiederholungsgrenzen · Nachrichtenform · Deltas · geltender Kontext
+
+KI         Wie setze ich das um? · Ist diese Umsetzung richtig?
+           Welche Lösung passt? · Trägt die Annahme des Vorgangs noch?
+```
+
+---
+
+## Der erste Go-live
+
+Ziel ist die **Grundlage**, auf der die weiteren Ausbaurichtungen reibungslos
+entstehen können — nicht die vollständige Zustandsmenge.
+
+```text
+enthalten                            noch nicht enthalten
+─────────────────────────────────    ─────────────────────────────────
+Controller- und Worker-Rolle         automatische Sitzungsvorbereitung
+lokale claude-/codex-CLIs direkt     automatische Vorgangsauswahl aus bd
+executor + model + effort je Rolle   vollständiges Planning + MATERIALIZE
+ein Turn = ein synchroner Prozess    regelgeleitete Kontextableitung
+Git- und bd-Delta je Schritt         Pages-PM-Integration
+adaptive Schnitte + Größen-Gate      automatische Modellwahl
+geprüfter Nachrichtenvertrag         Anbieter-APIs, Schlüsselverwaltung
+begrenzte Zähler + Eskalation
+LangGraph: Checkpoints + resume
+```
+
+Keine eigenen API-Schlüssel, keine Abrechnungsschicht, kein zusätzlicher
+Orchestrierungsdienst:
 
 ```text
 lokal angemeldete Claude- oder Codex-CLI
 + lokaler ki-dev-Orchestrator
 ```
 
-Welche CLI eine Rolle bedient, ist Teil der Rollenbelegung
-(`executor` + `model` + `effort`). Ein Lauf kann beide Werkzeuge mischen – etwa
-Claude als Worker und Codex als Controller –, muss es aber nicht.
+Der abgenommene Nachweis ist ein echter kleiner Entwicklungsvorgang, der
+`TASK → Änderung → Delta → CHANGES → Änderung → PASS_STEP → PASS` vollständig
+durchläuft.
 
-`ki-dev` braucht dafür weder eigene Anbieter-API-Schlüssel noch eine eigene
-Abrechnungsschicht noch einen zusätzlichen Orchestrierungsdienst. Der
-ausführbare Vertrag der beiden CLI-Adapter steht in
-[`docs/cli-adapters.md`](docs/cli-adapters.md).
+---
 
-Die Weiterentwicklung folgt dem Grundsatz: kein allgemeines Agentensystem auf
-Vorrat bauen, sondern jeden nächsten deterministischen Baustein aus einem echten
-Arbeitsproblem ableiten.
+## Die Parameter als Messfläche
+
+Die Werte aus `config.toml` sind nicht nur Einstellungen, sondern ein
+Parameterraum. Und weil die Maschine ihre Läufe ohnehin protokolliert, liefert
+derselbe Aufbau die Messwerte gleich mit.
+
+Vergleichbare Profile über dieselben Aufgaben:
+
+```text
+Profil A   grobe Schnitte, seltene Rückkopplung
+           max_estimated_definitions = 20
+           review_boundary = "worker_turn"
+
+Profil B   kleine Schnitte, häufige Rückkopplung
+           max_estimated_definitions = 5
+           review_boundary = "worker_turn"
+
+Profil C   kleine Schnitte, Rückkopplung je Schreibvorgang
+           review_boundary = "write_op"
+
+Profil D   wie B, aber Controller und Worker auf demselben Executor
+```
+
+Gemessen wird, was der Lauf schon festhält:
+
+```text
+Ergebnis        gelöste Vorgänge · Regressionen · falsche PASS
+Aufwand         Worker-Turns · Controller-Turns · CHANGES-Runden
+Struktur        Schnittzahl · Änderungsgröße je Schnitt · verworfene Arbeit
+Mensch          NEEDS_DECISION · ESCALATE
+Kosten          Tokens und Laufzeit, soweit der Executor sie zuverlässig meldet
+```
+
+Die offene Frage lautet damit nicht „ist `ki-dev` besser“, sondern:
+
+> Welche dieser Parameter haben überhaupt eine Wirkung auf das Ergebnis — und
+> ab welcher Feinheit kippt der Nutzen zusätzlicher Rückkopplung in bloße
+> Kosten?
+
+Zwei Randbedingungen dazu:
+
+```text
+Messmodell vor den Vergleichsläufen festlegen
+→ sonst wird nachträglich die günstige Kennzahl ausgewählt
+
+Instrumentierung ist kein Blocker für den ersten Go-live
+→ erhalten bleibt nur, was der Laufzustand ohnehin kennt
+```
+
+Solange keine eigenen Ergebnisse vorliegen, steht hier eine Hypothese und kein
+Befund.
+
+---
+
+## Richtung danach
 
 ```mermaid
 flowchart LR
     V0["V0<br/>begrenzte<br/>Controller↔Worker-Schleife"]
-    V1["Rollen + Protokoll +<br/>sichere Wiederaufnahme"]
+    V1["Rollen · Protokoll ·<br/>sichere Wiederaufnahme"]
     V2["Arbeitsgraph +<br/>automatische Auswahl"]
     V3["Planning +<br/>Materialisierung"]
     V4["regelgeleitete<br/>Kontextbildung"]
@@ -546,20 +725,46 @@ flowchart LR
     V0 --> V1 --> V2 --> V3 --> V4 --> V5
 ```
 
-Das ist keine starre Versionsliste, sondern eine Richtung: von manueller
-Kopierarbeit über eine kleine ausführbare Kontrollmaschine hin zu strukturierter
-Kontextbildung und einem gemeinsamen Projektinformationsmodell mit Pages PM.
+Keine feste Versionsliste, sondern eine Richtung. Der Grundsatz: kein
+allgemeines Agentensystem auf Vorrat bauen, sondern jeden nächsten
+deterministischen Baustein aus einem echten Arbeitsproblem ableiten.
 
-Reale `ki-dev`-Abläufe dienen zugleich als Erprobung für Pages PM: Welche
-Beziehungen braucht Kontextbildung wirklich? Welche Aussage braucht eine eigene
-Identität? Welche Richtlinie muss automatisch in welchem Vorgang gelten?
+Der lebende Arbeitsstand steht nicht hier, sondern im Beads-Arbeitsgraphen; im
+geklonten Repository etwa über `bv`, für eine teilbare statische Ansicht
+`bv --pages`.
 
-Was `ki-dev` dabei ausdrücklich **nicht** werden soll: ein Chatbot, der
-„irgendwie das Repository erledigt“; ein unbegrenzter Agentenloop, der bis zum
-Erfolg weiterläuft; ein Vorwand, große Mengen Projektkontext in jeden Prompt zu
-laden; ein anbieterspezifischer Workflow, dessen Fachlogik von einer bestimmten
-Claude- oder Codex-Sitzung abhängt.
+---
+
+## Einordnung und Nicht-Ziele
+
+```text
+Claude Code / Codex   führen die Entwicklungsarbeit aus
+LangGraph             trägt den persistenten Ablauf — verwendete Laufzeit
+CrewAI Flows          geprüfte Alternative dazu
+Ralphex               automatisiert Implementierung und Review-Schleifen
+OpenHands             umfassendere Coding-Agenten-Laufzeit
+bd (Beads)            versionierter Arbeitsgraph
+```
+
+Der eigene Beitrag liegt daneben: Zustand, Rollenfolge, Schnittgrenzen,
+Änderungsnachweise und später der geltende Projektkontext bleiben **außerhalb**
+der Agentensitzung. Vorhandene CLIs bleiben ausführende Werkzeuge.
+
+Was `ki-dev` ausdrücklich nicht werden soll:
+
+- ein Chatbot, der „irgendwie das Repository erledigt“;
+- ein unbegrenzter Agentenloop, der bis zum Erfolg weiterläuft;
+- ein Vorwand, große Mengen Projektkontext in jeden Prompt zu laden;
+- eine zweite Quelltextwahrheit neben Git;
+- ein anbieterspezifischer Ablauf, dessen Fachlogik von einer bestimmten
+  Claude- oder Codex-Sitzung abhängt.
 
 > **Nicht mehr KI für die Verwaltung von KI-Arbeit einsetzen als nötig.
-> Struktur, Zustand und Kontext maschinell begrenzen – und die KI für die
+> Struktur, Zustand und Kontext maschinell begrenzen — und die KI für die
 > eigentliche Entwicklungs- und Prüfarbeit verwenden.**
+
+Quellen zur Einordnung: [Ralphex](https://github.com/umputun/ralphex),
+[LangGraph](https://docs.langchain.com/oss/python/langgraph/overview),
+[CrewAI](https://docs.crewai.com/),
+[OpenHands](https://docs.openhands.dev/sdk),
+[Beads](https://github.com/gastownhall/beads).
