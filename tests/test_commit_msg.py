@@ -69,8 +69,9 @@ _titles = (
 )
 _ALNUM = "0123456789abcdefghijklmnopqrstuvwxyz"
 _ids = st.builds(
-    lambda short, children: f"ki-dev-ablauf-{short}"
-    + "".join(f".{n}" for n in children),
+    lambda short, children: (
+        f"ki-dev-ablauf-{short}" + "".join(f".{n}" for n in children)
+    ),
     st.text(alphabet=_ALNUM, min_size=1, max_size=5),
     st.lists(st.integers(min_value=0, max_value=999), max_size=3),
 )
