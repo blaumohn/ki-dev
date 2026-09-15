@@ -11,7 +11,8 @@ dependencies = [
   "typer>=0.12",
   "rich>=13.7",
   "plumbum>=1.8",
-  "python-statemachine>=2.3",
+  "langgraph>=1.0,<2",
+  "langgraph-checkpoint-sqlite>=3.0,<4",
   "jsonschema>=4.21",
 ]
 
