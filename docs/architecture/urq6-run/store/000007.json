@@ -1,0 +1,27 @@
+{
+  "edges": [],
+  "format": 1,
+  "nodes": [
+    {
+      "data": {
+        "text": "LangGraph ist dabei am naechsten an einem eigenen Orchestrator."
+      },
+      "expected": null,
+      "id": "langgraph-empfehlung",
+      "location": "architektur/orchestrator",
+      "op": "put",
+      "sources": [
+        {
+          "end": 3315,
+          "path": "bd:ki-dev-ablauf-74lc",
+          "sha256": "cea5f22afbe2b13769715c106028804bde06a77ae37a814607c1cb8c84ff80bb",
+          "start": 3315
+        }
+      ],
+      "type": "aussage@1"
+    }
+  ],
+  "parent": "4dcd8a3c360a40269e91ec9c243a2f6090cb00e39b162427e652cdcb96bf08c3",
+  "step": 7,
+  "types": []
+}

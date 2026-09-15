@@ -1,0 +1,27 @@
+{
+  "edges": [],
+  "format": 1,
+  "nodes": [
+    {
+      "data": {
+        "text": "Der erste ki-dev-Kern verbindet Controller und Worker direkt ueber lokal angemeldete Claude-/Codex-CLIs."
+      },
+      "expected": null,
+      "id": "kern-verbindet-controller-worker",
+      "location": "architektur/kern",
+      "op": "put",
+      "sources": [
+        {
+          "end": 13,
+          "path": "bd:ki-dev-ablauf-9p4a",
+          "sha256": "c7df77b60c35390894ca9907f6029e81888367891746341700838685abd3f2b3",
+          "start": 12
+        }
+      ],
+      "type": "aussage@1"
+    }
+  ],
+  "parent": "444bf7c8fd303650c4a1355a90c8dc9baccd89962d9544c60c0f544991bd2409",
+  "step": 5,
+  "types": []
+}

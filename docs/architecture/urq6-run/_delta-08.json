@@ -1,0 +1,27 @@
+{
+  "edges": [],
+  "format": 1,
+  "nodes": [
+    {
+      "data": {
+        "text": "Fuer den eigentlichen ki-dev loop ist LangGraph sehr wahrscheinlich bereits die passendere Grundlage; LangGraph ist dabei der Orchestrator-Unterbau, nicht das fertige ki-dev."
+      },
+      "expected": null,
+      "id": "langgraph-entscheidung",
+      "location": "architektur/orchestrator",
+      "op": "put",
+      "sources": [
+        {
+          "end": 52,
+          "path": "bd:ki-dev-ablauf-uxdk",
+          "sha256": "62b126b0eb0d6a2fdb5f8fa789733a214bdbf810d98d2a9d1deb5644309889a7",
+          "start": 52
+        }
+      ],
+      "type": "aussage@1"
+    }
+  ],
+  "parent": "c942f8c291338aedd6f39bed5e377b3c66ad0d81d743e0dfa46dde9471848fa8",
+  "step": 8,
+  "types": []
+}

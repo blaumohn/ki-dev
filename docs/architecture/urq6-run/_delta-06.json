@@ -1,0 +1,27 @@
+{
+  "edges": [],
+  "format": 1,
+  "nodes": [
+    {
+      "data": {
+        "text": "Die Projektplanung endet fuer diesen Snapshot mit Nachricht 24; ab Nachricht 26 wird die abgeschlossene Planung nur noch aufgezeichnet und geprueft."
+      },
+      "expected": null,
+      "id": "snapshot-006-abschlussgrenze",
+      "location": "prozess/snapshot-abschluss",
+      "op": "put",
+      "sources": [
+        {
+          "end": 13,
+          "path": "bd:ki-dev-ablauf-uoyb",
+          "sha256": "43b6a5b7d67bb89cb5774fbe2105471c40e3919bcea323b9c72ea2af45fc11cf",
+          "start": 13
+        }
+      ],
+      "type": "aussage@1"
+    }
+  ],
+  "parent": "4902807fa753ea419d720b52282dd11aa20394a3ab672b1b2001e43d1f117c30",
+  "step": 6,
+  "types": []
+}

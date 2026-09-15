@@ -1,0 +1,97 @@
+{
+  "edges": [],
+  "format": 1,
+  "nodes": [
+    {
+      "data": {
+        "text": "Damit sollte der Bootstrap Ralphex als vorhandene Ausfuehrungs- und Reviewmaschine benutzen."
+      },
+      "expected": null,
+      "id": "bootstrap-ausfuehrung-ralphex",
+      "location": "bootstrap/ausfuehrung",
+      "op": "put",
+      "sources": [
+        {
+          "end": 518,
+          "path": "bd:ki-dev-ablauf-9407",
+          "sha256": "430bd18f43c6ccd6b9aac033b36acdce47e7f33953cda1d2a2cff0893fce4e25",
+          "start": 518
+        }
+      ],
+      "type": "aussage@1"
+    },
+    {
+      "data": {
+        "text": "Damit ergibt sich ein stufenweiser Bootstrap (Stufe 0-4)."
+      },
+      "expected": null,
+      "id": "bootstrap-plan-stufen-1-4",
+      "location": "bootstrap/plan",
+      "op": "put",
+      "sources": [
+        {
+          "end": 538,
+          "path": "bd:ki-dev-ablauf-9407",
+          "sha256": "430bd18f43c6ccd6b9aac033b36acdce47e7f33953cda1d2a2cff0893fce4e25",
+          "start": 536
+        }
+      ],
+      "type": "aussage@1"
+    }
+  ],
+  "parent": null,
+  "step": 1,
+  "types": [
+    {
+      "id": "aussage@1",
+      "kind": "node",
+      "schema": {
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "id": "ersetzt_durch@1",
+      "kind": "edge",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "id": "bezieht_sich_auf@1",
+      "kind": "edge",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "id": "vorschlaegt_zurueckstellung_von@1",
+      "kind": "edge",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "id": "hebt_auf@1",
+      "kind": "edge",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    }
+  ]
+}
