@@ -60,13 +60,18 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
+Bare `python`/`python3` on PATH are blocked by a PreToolUse hook (Claude Code
+only; Codex runs without that restriction). Always use the venv interpreter:
 
 ```bash
-# Example:
-# npm install
-# npm test
+./.venv/bin/python -m pytest      # test suite (verified working, ~410 tests)
+bd prime                          # refresh Beads context
 ```
+
+Do not use `./.venv/bin/python -m unittest discover`: this project's tests are
+pytest-style (plain functions plus Hypothesis `@given`), not
+`unittest.TestCase` subclasses, so `unittest discover` finds 0 tests and exits
+5 — a false failure unrelated to permissions or access.
 
 ## Architecture Overview
 
