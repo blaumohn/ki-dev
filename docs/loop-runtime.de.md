@@ -142,7 +142,7 @@ konfigurierbare Standardgrenzen:
 | `safety_limits.max_total_tokens` | 1.000.000 | Input, Cache-Schreiben, Cache-Lesen und Output; Pruefung vor dem naechsten Aufruf |
 | `safety_limits.max_claude_cost_usd` | 3 | Summe der von Claude gemeldeten API-Kostenwerte |
 | `safety_limits.max_failed_corrections` | 2 | Nach zwei abgelehnten Korrekturen kein weiterer automatischer Bau |
-| `safety_limits.max_stagnant_changes` | 3 | Nach so vielen CHANGES in Folge an derselben `requirement_ref` kein weiterer automatischer Bau |
+| `safety_limits.max_stagnant_changes` | 3 | Bei so vielen CHANGES in Folge an derselben `requirement_ref` (die aktuelle Runde eingeschlossen) kein weiterer automatischer Bau |
 | `build.budget.max_turns` / `review.budget.max_turns` | 12 | Native Claude-Turn-Grenze pro Aufruf |
 | `budget.max_budget_usd` je Rolle | 1 | Native Claude-Kostengrenze pro Aufruf |
 | `budget.max_context_tokens` je Rolle | 80.000 | Claude-Sitzung vor Resume anhand des letzten realen Requests pruefen |

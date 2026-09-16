@@ -218,6 +218,14 @@ def stagnation_reason(
     """Erkenne eine ununterbrochene Folge von CHANGES an derselben
     Abnahmekriteriums-Referenz.
 
+    Der Aufrufer persistiert die aktuelle Entscheidung immer VOR
+    diesem Aufruf (siehe ``LoopRuntime._accept_artifact``); ``action``
+    und ``requirement_ref`` beschreiben also dieselbe Entscheidung, die
+    bereits als juengste Nachricht in ``store.load_messages()`` steht.
+    ``limit`` zaehlt deshalb inklusive dieser aktuellen Entscheidung:
+    ``max_stagnant_changes=3`` haelt beim dritten CHANGES in Folge an
+    derselben Referenz an, nicht erst beim vierten.
+
     Fortschritt bedeutet eine geloeste oder gewechselte Referenz, nicht
     dieselbe geaenderte Datei oder ein groesserer Diff: jede andere
     Aktion oder ein anderes ``requirement_ref`` unterbricht die Serie.

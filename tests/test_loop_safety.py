@@ -185,9 +185,15 @@ def test_stagnation_reason_persists_across_fresh_store_instances(
 ):
     """Der Stillstand wird aus persistierten Nachrichten neu berechnet,
     nicht aus Prozessspeicher; ein Neustart/Sitzungswechsel setzt die
-    Serie deshalb nicht zurueck."""
+    Serie deshalb nicht zurueck.
+
+    Der Aufrufer persistiert die aktuelle Entscheidung immer VOR dem
+    Aufruf von ``stagnation_reason`` (siehe dessen Docstring); die
+    dritte gleichlautende Nachricht hier steht fuer genau diese schon
+    gespeicherte aktuelle Entscheidung.
+    """
     store = RunStore(tmp_path, "run-x")
-    for round_id in (1, 2):
+    for round_id in (1, 2, 3):
         store.write_message(
             f"r{round_id:04d}-review-a0000",
             {
@@ -201,14 +207,14 @@ def test_stagnation_reason_persists_across_fresh_store_instances(
 
     fresh_store = RunStore(tmp_path, "run-x")
     reason = stagnation_reason(
-        fresh_store, action="CHANGES", requirement_ref="AC1", limit=2
+        fresh_store, action="CHANGES", requirement_ref="AC1", limit=3
     )
     assert reason is not None
     assert "AC1" in reason
-    assert "2" in reason
+    assert "seit 3 Korrekturrunden in Folge verletzt" in reason
 
     below_limit = stagnation_reason(
-        fresh_store, action="CHANGES", requirement_ref="AC1", limit=3
+        fresh_store, action="CHANGES", requirement_ref="AC1", limit=4
     )
     assert below_limit is None
 
