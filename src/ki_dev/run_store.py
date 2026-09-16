@@ -7,6 +7,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 
 class RunStoreError(RuntimeError):
@@ -66,6 +67,26 @@ class RunStore:
         path = self.run_dir / "messages" / f"{message_id}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         self._write_once(path, value)
+
+    def load_messages(self) -> list[dict[str, object]]:
+        """Persistierte Review-Nachrichten in Entstehungsreihenfolge.
+
+        Nachrichtendateinamen kodieren Runde und Sequenz
+        (``r0002-review-a0000.json``); die Sortierung nach Dateiname
+        liefert damit die tatsaechliche zeitliche Reihenfolge.
+        """
+        directory = self.run_dir / "messages"
+        if not directory.exists():
+            return []
+        messages: list[dict[str, object]] = []
+        for path in sorted(directory.glob("*.json")):
+            value = self._load_json(path)
+            if not isinstance(value, dict):
+                raise RunStoreError(
+                    f"Nachricht ist kein Objekt: {path}"
+                )
+            messages.append(cast(dict[str, object], value))
+        return messages
 
     def _write_once(self, path: Path, value: object) -> None:
         encoded = _canonical_json(value)

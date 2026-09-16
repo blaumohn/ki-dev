@@ -3,19 +3,30 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
+from pathlib import Path
 
 import pytest
 
 from ki_dev.executors import Effort
 from ki_dev.executors.contract import TurnResult, TurnStatus
-from ki_dev.loop import AgentBuildMode, AgentReviewer, ReviewAction
+from ki_dev.loop import (
+    AgentBuildMode,
+    AgentReviewer,
+    LoopTask,
+    ReviewAction,
+)
 from ki_dev.loop_cli import LoopConfigError, _role, start_from_config
 from ki_dev.loop_runtime import (
     LoopResumeError,
     LoopRuntime,
     StaticEvidenceCollector,
 )
-from ki_dev.loop_safety import CallLedger, SafetyLimits, SafetyStop
+from ki_dev.loop_safety import (
+    CallLedger,
+    SafetyLimits,
+    SafetyStop,
+    stagnation_reason,
+)
 from ki_dev.machine import Limits
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
@@ -114,6 +125,165 @@ def test_two_failed_corrections_stop_before_fourth_build(tmp_path):
     assert result.status == "paused_interactive"
     assert "Korrekturen" in result.detail
     assert builder.calls == reviewer.calls == 3
+
+
+def test_stagnant_same_reference_stops_before_next_build(tmp_path):
+    builder = FakeBuilder()
+    reviewer = FakeReviewer([ReviewAction.CHANGES] * 5)
+    with runtime(
+        tmp_path,
+        builder,
+        reviewer,
+        safety_limits=SafetyLimits(
+            max_failed_corrections=10, max_stagnant_changes=3
+        ),
+    ) as run:
+        result = run.start(_task("guard"), Limits(changes_rounds=5))
+    assert result.status == "paused_interactive"
+    assert "Stillstand" in result.detail
+    assert "AC1" in result.detail
+    # Drei CHANGES-Runden in Folge an derselben Referenz halten vor
+    # dem vierten Bauaufruf an, unabhaengig von max_failed_corrections.
+    assert builder.calls == reviewer.calls == 3
+
+
+def test_changing_reference_is_not_treated_as_stagnation(tmp_path):
+    task = LoopTask(
+        "guard",
+        "Auftrag",
+        ("bd:jbr.2",),
+        Path("/work"),
+        "write",
+        acceptance_criteria=("Kriterium 1", "Kriterium 2"),
+    )
+    builder = FakeBuilder()
+    reviewer = FakeReviewer(
+        [
+            (ReviewAction.CHANGES, "AC1"),
+            (ReviewAction.CHANGES, "AC2"),
+            (ReviewAction.CHANGES, "AC1"),
+            ReviewAction.PASS,
+        ]
+    )
+    with runtime(
+        tmp_path,
+        builder,
+        reviewer,
+        safety_limits=SafetyLimits(
+            max_agent_calls=20,
+            max_failed_corrections=10,
+            max_stagnant_changes=2,
+        ),
+    ) as run:
+        result = run.start(task, Limits(changes_rounds=5))
+    assert result.status == "passed"
+    assert builder.calls == reviewer.calls == 4
+
+
+def test_stagnation_reason_persists_across_fresh_store_instances(
+    tmp_path,
+):
+    """Der Stillstand wird aus persistierten Nachrichten neu berechnet,
+    nicht aus Prozessspeicher; ein Neustart/Sitzungswechsel setzt die
+    Serie deshalb nicht zurueck."""
+    store = RunStore(tmp_path, "run-x")
+    for round_id in (1, 2):
+        store.write_message(
+            f"r{round_id:04d}-review-a0000",
+            {
+                "run_id": "run-x",
+                "round_id": round_id,
+                "action": "CHANGES",
+                "detail": "x",
+                "requirement_ref": "AC1",
+            },
+        )
+
+    fresh_store = RunStore(tmp_path, "run-x")
+    reason = stagnation_reason(
+        fresh_store, action="CHANGES", requirement_ref="AC1", limit=2
+    )
+    assert reason is not None
+    assert "AC1" in reason
+    assert "2" in reason
+
+    below_limit = stagnation_reason(
+        fresh_store, action="CHANGES", requirement_ref="AC1", limit=3
+    )
+    assert below_limit is None
+
+
+def test_stagnation_reason_ignores_non_matching_history(tmp_path):
+    store = RunStore(tmp_path, "run-y")
+    store.write_message(
+        "r0001-review-a0000",
+        {
+            "run_id": "run-y",
+            "round_id": 1,
+            "action": "CHANGES",
+            "detail": "x",
+            "requirement_ref": "AC2",
+        },
+    )
+    store.write_message(
+        "r0002-review-a0000",
+        {
+            "run_id": "run-y",
+            "round_id": 2,
+            "action": "CHANGES",
+            "detail": "x",
+            "requirement_ref": "AC1",
+        },
+    )
+    assert (
+        stagnation_reason(
+            store, action="CHANGES", requirement_ref="AC1", limit=2
+        )
+        is None
+    )
+    assert (
+        stagnation_reason(
+            store, action="PASS", requirement_ref=None, limit=1
+        )
+        is None
+    )
+
+
+def test_stagnation_reason_reports_recorded_consumption(tmp_path):
+    store = RunStore(tmp_path, "run-z")
+    store.write_message(
+        "r0001-review-a0000",
+        {
+            "run_id": "run-z",
+            "round_id": 1,
+            "action": "CHANGES",
+            "detail": "x",
+            "requirement_ref": "AC1",
+        },
+    )
+    (store.run_dir / "calls").mkdir(parents=True, exist_ok=True)
+    store._write_once(
+        store.run_dir / "calls" / "call-1-result.json",
+        {"status": "ok", "usage": {**USAGE}},
+    )
+    store.write_message(
+        "r0002-review-a0000",
+        {
+            "run_id": "run-z",
+            "round_id": 2,
+            "action": "CHANGES",
+            "detail": "x",
+            "requirement_ref": "AC1",
+        },
+    )
+
+    reason = stagnation_reason(
+        store, action="CHANGES", requirement_ref="AC1", limit=2
+    )
+
+    assert reason is not None
+    assert "160" in reason  # Summe aller Tokenarten aus USAGE
+    assert "0.2" in reason  # cost_usd
 
 
 def test_call_limit_survives_restart_and_answer(tmp_path):

@@ -17,12 +17,14 @@ class SafetyLimits:
     max_total_tokens: int = 1_000_000
     max_claude_cost_usd: float = 3.0
     max_failed_corrections: int = 2
+    max_stagnant_changes: int = 3
 
     def __post_init__(self) -> None:
         for name in (
             "max_agent_calls",
             "max_total_tokens",
             "max_failed_corrections",
+            "max_stagnant_changes",
         ):
             if (
                 type(getattr(self, name)) is not int
@@ -204,6 +206,71 @@ class CallLedger:
             raise RunStoreError("ungueltiger Aufrufbezug")
         path = self.store.run_dir / "calls" / f"{call_id}-{suffix}.json"
         self.store._write_once(path, value)
+
+
+def stagnation_reason(
+    store: RunStore,
+    *,
+    action: str,
+    requirement_ref: str | None,
+    limit: int,
+) -> str | None:
+    """Erkenne eine ununterbrochene Folge von CHANGES an derselben
+    Abnahmekriteriums-Referenz.
+
+    Fortschritt bedeutet eine geloeste oder gewechselte Referenz, nicht
+    dieselbe geaenderte Datei oder ein groesserer Diff: jede andere
+    Aktion oder ein anderes ``requirement_ref`` unterbricht die Serie.
+    Persistierte Nachrichten ueberleben Resume und Sitzungswechsel,
+    daher wird die Serie nicht durch einen Neustart zurueckgesetzt.
+    """
+    if action != "CHANGES" or not requirement_ref:
+        return None
+    streak = 0
+    for message in reversed(store.load_messages()):
+        if (
+            message.get("action") != "CHANGES"
+            or message.get("requirement_ref") != requirement_ref
+        ):
+            break
+        streak += 1
+    if streak < limit:
+        return None
+    tokens, cost = _recorded_usage(store)
+    return (
+        f"Stillstand: {requirement_ref} bleibt seit {streak} "
+        "Korrekturrunden in Folge verletzt (bisheriger Verbrauch "
+        f"{tokens} Tokens, {cost:g} USD); Ursache/Loesungsansatz vor "
+        "weiterem Bau klaeren."
+    )
+
+
+def _recorded_usage(store: RunStore) -> tuple[int, float]:
+    """Bereits abgeschlossener Verbrauch als Beleg fuer eine Eskalation.
+
+    Rein informativ: die verbindliche Freigabepruefung bleibt
+    ``CallLedger._reserve``; hier zaehlt nur bereits abgeschlossener,
+    gueltiger Verbrauch, ohne unvollstaendige Aufrufe zu beanstanden.
+    """
+    tokens = 0
+    cost = 0.0
+    for path in sorted((store.run_dir / "calls").glob("*-result.json")):
+        usage = store._load_json(path).get("usage")
+        if not isinstance(usage, dict):
+            continue
+        tokens += sum(
+            value
+            for key in (
+                "input_tokens",
+                "output_tokens",
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+            )
+            if isinstance(value := usage.get(key), int)
+        )
+        if isinstance(value := usage.get("cost_usd"), (int, float)):
+            cost += value
+    return tokens, cost
 
 
 def validate_usage(usage: object) -> None:

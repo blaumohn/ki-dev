@@ -37,7 +37,12 @@ from ki_dev.loop import (
     bind_review_decision,
     parse_review_decision,
 )
-from ki_dev.loop_safety import CallLedger, SafetyLimits, SafetyStop
+from ki_dev.loop_safety import (
+    CallLedger,
+    SafetyLimits,
+    SafetyStop,
+    stagnation_reason,
+)
 from ki_dev.machine import (
     AgentEscalation,
     CheckpointRecorded,
@@ -761,9 +766,9 @@ class LoopRuntime:
         decision: ReviewDecision,
     ) -> dict[str, object]:
         if decision.action is ReviewAction.CHANGES:
-            if (
-                run.state.counters.changes_round
-                >= self._ledger.limits().max_failed_corrections
+            limits = self._ledger.limits()
+            if run.state.counters.changes_round >= (
+                limits.max_failed_corrections
             ):
                 return self._safety_stop(
                     state,
@@ -771,6 +776,14 @@ class LoopRuntime:
                     "Ursache/Loesungsansatz vor weiterem Bau klaeren. "
                     + decision.detail,
                 )
+            reason = stagnation_reason(
+                self.store,
+                action=decision.action.value,
+                requirement_ref=decision.requirement_ref,
+                limit=limits.max_stagnant_changes,
+            )
+            if reason is not None:
+                return self._safety_stop(state, reason)
             update = self._transition(
                 run, ControllerChanges(decision.detail)
             )

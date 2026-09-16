@@ -49,12 +49,15 @@ class FakeReviewer:
         self.calls = 0
 
     def review(self, request):
-        action = self.actions[self.calls]
+        item = self.actions[self.calls]
         self.calls += 1
-        if isinstance(action, Exception):
-            raise action
-        if type(action) is str:
-            return action
+        if isinstance(item, Exception):
+            raise item
+        if type(item) is str:
+            return item
+        action, ref = (
+            item if isinstance(item, tuple) else (item, "AC1")
+        )
         detail = (
             ""
             if action is ReviewAction.PASS
@@ -66,7 +69,7 @@ class FakeReviewer:
                 "round_id": request.round_id,
                 "action": action.value,
                 "detail": detail,
-                "requirement_ref": "AC1"
+                "requirement_ref": ref
                 if action is ReviewAction.CHANGES
                 else None,
             }

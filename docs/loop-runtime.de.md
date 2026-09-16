@@ -142,6 +142,7 @@ konfigurierbare Standardgrenzen:
 | `safety_limits.max_total_tokens` | 1.000.000 | Input, Cache-Schreiben, Cache-Lesen und Output; Pruefung vor dem naechsten Aufruf |
 | `safety_limits.max_claude_cost_usd` | 3 | Summe der von Claude gemeldeten API-Kostenwerte |
 | `safety_limits.max_failed_corrections` | 2 | Nach zwei abgelehnten Korrekturen kein weiterer automatischer Bau |
+| `safety_limits.max_stagnant_changes` | 3 | Nach so vielen CHANGES in Folge an derselben `requirement_ref` kein weiterer automatischer Bau |
 | `build.budget.max_turns` / `review.budget.max_turns` | 12 | Native Claude-Turn-Grenze pro Aufruf |
 | `budget.max_budget_usd` je Rolle | 1 | Native Claude-Kostengrenze pro Aufruf |
 | `budget.max_context_tokens` je Rolle | 80.000 | Claude-Sitzung vor Resume anhand des letzten realen Requests pruefen |
@@ -175,6 +176,23 @@ Maschineneskalation `execution_guard`, `paused_interactive` und einem
 Interrupt der Art `escalate`. Es folgt kein automatischer Agenten-Retry.
 Das gilt auch fuer unbekannte CLI-Fehler; sie gelten nicht ohne Nachweis
 als voruebergehend. Fachliche Review-Nachrichten bleiben davon getrennt.
+
+## Eskalation bei Stillstand
+
+Fortschritt heisst: eine andere oder geloeste `requirement_ref` (siehe
+"Auftragsbindung fuer CHANGES"), nicht mehr Diff-Zeilen, mehr gruene
+Tests oder dieselbe geaenderte Datei. Bindet der Reviewer
+`max_stagnant_changes` CHANGES in Folge an dieselbe Referenz, haelt
+der Lauf vor dem naechsten Bauaufruf an -- unabhaengig davon, ob jeder
+einzelne Befund fuer sich reparierbar wirkt. Die Meldung nennt
+Referenz, Anzahl der Wiederholungen und den bisher aus `calls/`
+belegten Verbrauch. Die Serie wird bei jeder Pruefung aus den
+persistierten Review-Nachrichten neu berechnet; ein Neustart,
+Sitzungswechsel oder eine Antwort setzt sie nicht zurueck. Nach der
+Klaerung (`ki-dev loop resume --answer ...`) prueft derselbe Reviewer
+dieselbe Runde erneut, statt automatisch denselben unveraenderten
+Reparaturansatz erneut zu bauen; Verbrauchsgrenzen bleiben dabei
+wirksam.
 
 Eine Wiederaufnahme braucht eine ausdrueckliche Antwort. Sie hebt
 Verbrauchsgrenzen nicht auf. Ein begonnenes, nicht bilanziertes Ergebnis
