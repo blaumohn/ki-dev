@@ -80,6 +80,7 @@ from ki_dev.review_context import (
     project_review_context,
 )
 from ki_dev.run_store import RunStore
+from ki_dev.session_handoff import build_handoff
 
 
 class LoopResumeError(RuntimeError):
@@ -561,6 +562,16 @@ class LoopRuntime:
         escalation = MachineEscalation(
             MachineEscalationCause.EXECUTION_GUARD,
             run.state.phase,
+        )
+        handoff = build_handoff(
+            self.store,
+            _task(state),
+            round_id=state["round_id"],
+            phase=run.state.phase.value,
+            reason=detail,
+        )
+        self.store.write_handoff(
+            f"r{state['round_id']:04d}-rev{run.revision:06d}", handoff
         )
         return {
             **self._replace_run(
@@ -1071,6 +1082,7 @@ def _encode_task(task: LoopTask) -> dict[str, object]:
         "workdir": str(task.workdir),
         "access_profile": task.access_profile,
         "acceptance_criteria": list(task.acceptance_criteria),
+        "env": dict(task.env),
     }
 
 
@@ -1085,6 +1097,7 @@ def _task(state: LoopGraphState) -> LoopTask:
         acceptance_criteria=tuple(
             cast(list[str], value["acceptance_criteria"])
         ),
+        env=cast(dict[str, str], value["env"]),
     )
 
 

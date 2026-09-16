@@ -145,6 +145,12 @@ def test_stagnant_same_reference_stops_before_next_build(tmp_path):
     # Drei CHANGES-Runden in Folge an derselben Referenz halten vor
     # dem vierten Bauaufruf an, unabhaengig von max_failed_corrections.
     assert builder.calls == reviewer.calls == 3
+    handoffs = list((tmp_path / "guard" / "handoff").glob("*.json"))
+    assert len(handoffs) == 1
+    handoff = json.loads(handoffs[0].read_text())
+    assert handoff["open_requirement_ref"] == "AC1"
+    assert handoff["needed_decision"] in result.detail
+    assert handoff["acceptance_criteria"] == ["Kriterium 1"]
 
 
 def test_changing_reference_is_not_treated_as_stagnation(tmp_path):

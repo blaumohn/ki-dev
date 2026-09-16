@@ -7,6 +7,8 @@ jedes executor-spezifische CLI-Argument bleiben hinter dieser Grenze.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from .base import CliAdapter
 from .claude_cli import ClaudeCliAdapter
 from .codex_cli import CodexCliAdapter
@@ -49,6 +51,8 @@ def send_turn(
     message: str,
     model: str,
     effort: Effort,
+    workdir: Path,
+    env: dict[str, str] | None = None,
     **adapter_kwargs: object,
 ) -> TurnResult:
     """Fuehre genau einen Turn beim genannten Executor aus."""
@@ -57,5 +61,7 @@ def send_turn(
         message=message,
         model=model,
         effort=effort,
+        workdir=workdir,
+        env=env or {},
     )
     return build_executor(executor, **adapter_kwargs).send_turn(request)

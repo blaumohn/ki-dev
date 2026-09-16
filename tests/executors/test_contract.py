@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ki_dev.executors import (
@@ -42,6 +44,28 @@ def test_request_rejects_bad_fields(kwargs, exc):
         "message": "m",
         "model": "mod",
         "effort": Effort.LOW,
+        "workdir": Path("/work"),
+    }
+    base.update(kwargs)
+    with pytest.raises(exc):
+        TurnRequest(**base)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "exc"),
+    [
+        ({"workdir": Path("relative")}, ValueError),
+        ({"env": {"": "x"}}, TypeError),
+        ({"env": {"K": 1}}, TypeError),
+    ],
+)
+def test_request_rejects_bad_workdir_and_env(kwargs, exc):
+    base = {
+        "session_id": "s",
+        "message": "m",
+        "model": "mod",
+        "effort": Effort.LOW,
+        "workdir": Path("/work"),
     }
     base.update(kwargs)
     with pytest.raises(exc):

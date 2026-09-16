@@ -70,3 +70,27 @@ def test_argv_is_recorded():
     argv = _py("pass")
     result = run_cli_turn(argv, stdin="", timeout_s=10)
     assert result.argv == tuple(argv)
+
+
+def test_cwd_binds_child_process_to_given_worktree(tmp_path):
+    result = run_cli_turn(
+        _py("import os, sys; sys.stdout.write(os.getcwd())"),
+        stdin="",
+        timeout_s=10,
+        cwd=tmp_path,
+    )
+    assert result.stdout == str(tmp_path)
+
+
+def test_env_overrides_ambient_variable_for_child_process(monkeypatch):
+    monkeypatch.setenv("KI_DEV_TEST_MARKER", "ambient")
+    result = run_cli_turn(
+        _py(
+            "import os, sys; "
+            "sys.stdout.write(os.environ.get('KI_DEV_TEST_MARKER', ''))"
+        ),
+        stdin="",
+        timeout_s=10,
+        env={"KI_DEV_TEST_MARKER": "bound"},
+    )
+    assert result.stdout == "bound"

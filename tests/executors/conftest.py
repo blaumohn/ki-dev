@@ -16,6 +16,7 @@ class FakeRunner:
             duration_s=0.0,
         )
         self.calls: list[tuple[tuple[str, ...], str, float]] = []
+        self.kwargs: list[dict[str, object]] = []
 
     def __call__(
         self,
@@ -23,9 +24,10 @@ class FakeRunner:
         *,
         stdin: str,
         timeout_s: float,
-        **_: object,
+        **kwargs: object,
     ) -> TurnResult:
         self.calls.append((tuple(argv), stdin, timeout_s))
+        self.kwargs.append(kwargs)
         return self.result
 
     @property
@@ -35,6 +37,10 @@ class FakeRunner:
     @property
     def stdin(self) -> str:
         return self.calls[-1][1]
+
+    @property
+    def last_kwargs(self) -> dict[str, object]:
+        return self.kwargs[-1]
 
     def value_after(self, flag: str) -> str:
         argv = self.argv

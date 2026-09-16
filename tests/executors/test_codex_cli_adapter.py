@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ki_dev.executors import (
@@ -19,6 +21,7 @@ def _request(**over: object) -> TurnRequest:
         "message": "naechster schritt",
         "model": "gpt-5-codex",
         "effort": Effort.MEDIUM,
+        "workdir": Path("/work"),
     }
     base.update(over)
     return TurnRequest(**base)  # type: ignore[arg-type]

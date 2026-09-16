@@ -57,6 +57,7 @@ class LoopTask:
     workdir: Path
     access_profile: str
     acceptance_criteria: tuple[str, ...] = field(kw_only=True)
+    env: dict[str, str] = field(kw_only=True, default_factory=dict)
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -96,6 +97,13 @@ class LoopTask:
         ):
             raise ValueError(
                 "LoopTask.acceptance_criteria muss eindeutig sein"
+            )
+        if not isinstance(self.env, dict) or any(
+            not isinstance(k, str) or not k or not isinstance(v, str)
+            for k, v in self.env.items()
+        ):
+            raise TypeError(
+                "LoopTask.env muss ein Mapping von Text auf Text sein"
             )
 
     def acceptance_criterion_ref(self, index: int) -> str:
@@ -166,6 +174,8 @@ class AgentBuildMode:
                 model=self.model,
                 effort=self.effort,
                 message=_build_prompt(request),
+                workdir=request.task.workdir,
+                env=request.task.env,
                 budget=self.budget,
             )
         )
@@ -192,6 +202,8 @@ class AgentReviewer:
                 model=self.model,
                 effort=self.effort,
                 message=_review_prompt(request),
+                workdir=request.task.workdir,
+                env=request.task.env,
                 budget=self.budget,
             )
         )

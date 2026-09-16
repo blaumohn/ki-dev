@@ -8,6 +8,7 @@ vollstaendige Argumentbildung liegt in der jeweiligen Unterklasse.
 from __future__ import annotations
 
 import math
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
@@ -47,6 +48,10 @@ class CliAdapter(ABC):
             timeout_s=min(self.timeout_s, request.budget.timeout_s)
             if request.budget
             else self.timeout_s,
+            cwd=request.workdir,
+            env={**os.environ, **request.env}
+            if request.env
+            else None,
         )
 
     @property

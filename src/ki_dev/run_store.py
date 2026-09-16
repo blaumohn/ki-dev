@@ -68,6 +68,11 @@ class RunStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._write_once(path, value)
 
+    def write_handoff(self, handoff_id: str, value: object) -> None:
+        path = self.run_dir / "handoff" / f"{handoff_id}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_once(path, value)
+
     def load_messages(self) -> list[dict[str, object]]:
         """Persistierte Review-Nachrichten in Entstehungsreihenfolge.
 

@@ -371,7 +371,11 @@ def test_codex_encodes_toml_strings(dirs):
 
 def test_ki_dev_turn_values_beat_defaults(dirs):
     request = TurnRequest(
-        session_id="s-1", message="m", model="haiku", effort=Effort.LOW
+        session_id="s-1",
+        message="m",
+        model="haiku",
+        effort=Effort.LOW,
+        workdir=Path("/work"),
     )
 
     claude = agent_cli.build_args(

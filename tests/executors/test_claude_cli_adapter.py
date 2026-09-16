@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ki_dev.executors import (
@@ -19,9 +21,37 @@ def _request(**over: object) -> TurnRequest:
         "message": "bitte weitermachen",
         "model": "claude-sonnet-5",
         "effort": Effort.HIGH,
+        "workdir": Path("/work"),
     }
     base.update(over)
     return TurnRequest(**base)  # type: ignore[arg-type]
+
+
+def test_send_turn_binds_child_process_to_task_workdir():
+    """CliAdapter.send_turn() (base.py, gemeinsam fuer alle Adapter)
+    muss den Kindprozess technisch an ``request.workdir`` binden;
+    eine Pfadangabe allein im Prompt reicht dafuer nicht (p0h.3)."""
+    runner = FakeRunner()
+    ClaudeCliAdapter(runner=runner).send_turn(
+        _request(workdir=Path("/worktree/x"))
+    )
+    assert runner.last_kwargs["cwd"] == Path("/worktree/x")
+
+
+def test_send_turn_overlays_bound_env_on_inherited_environment():
+    runner = FakeRunner()
+    ClaudeCliAdapter(runner=runner).send_turn(
+        _request(env={"PYTHONPATH": "/worktree/x/src"})
+    )
+    env = runner.last_kwargs["env"]
+    assert env["PYTHONPATH"] == "/worktree/x/src"
+    assert "PATH" in env  # geerbte Umgebung bleibt sonst erhalten
+
+
+def test_send_turn_passes_no_env_override_without_bound_values():
+    runner = FakeRunner()
+    ClaudeCliAdapter(runner=runner).send_turn(_request())
+    assert runner.last_kwargs["env"] is None
 
 
 def test_argv_starts_with_claude_binary():

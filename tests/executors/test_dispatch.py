@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ki_dev.executors import (
@@ -41,6 +43,7 @@ def test_send_turn_dispatches_by_name():
         message="mach weiter",
         model="gpt-5-codex",
         effort=Effort.HIGH,
+        workdir=Path("/work"),
         runner=runner,
     )
     assert result is runner.result
@@ -66,6 +69,7 @@ def test_send_turn_reports_runner_failure():
         message="hallo",
         model="claude-sonnet-5",
         effort=Effort.LOW,
+        workdir=Path("/work"),
         runner=FakeRunner(failed),
     )
     assert result.status is TurnStatus.START_ERROR

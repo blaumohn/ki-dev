@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -150,6 +151,7 @@ def _request():
         "auftrag",
         "model",
         Effort.MEDIUM,
+        Path("/work"),
         budget=TurnBudget(),
     )
 

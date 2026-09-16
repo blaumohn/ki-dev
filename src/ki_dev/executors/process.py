@@ -11,6 +11,7 @@ expliziter :class:`TurnStatus` zurueckgegeben.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from plumbum import CommandNotFound, local
 from plumbum.commands.processes import ProcessTimedOut
@@ -25,12 +26,15 @@ def run_cli_turn(
     *,
     stdin: str,
     timeout_s: float = DEFAULT_TIMEOUT_S,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> TurnResult:
     """Starte genau einen CLI-Turn und erfasse den Ausgang.
 
-    Der Prozess erbt die Umgebung des Aufrufers, inklusive der
-    Anmeldung der bereits eingerichteten CLI. Es findet keine
-    API-Schluesselverwaltung und kein Login statt.
+    Ohne ``cwd``/``env`` erbt der Prozess Arbeitsverzeichnis und
+    Umgebung des Aufrufers, inklusive der Anmeldung der bereits
+    eingerichteten CLI. Es findet keine API-Schluesselverwaltung und
+    kein Login statt.
     """
     argv_t = tuple(argv)
     start = time.monotonic()
@@ -46,6 +50,8 @@ def run_cli_turn(
         exit_code, stdout, stderr = (command << stdin).run(
             retcode=None,
             timeout=timeout_s,
+            cwd=cwd,
+            env=env,
         )
     except ProcessTimedOut:
         return _outcome(

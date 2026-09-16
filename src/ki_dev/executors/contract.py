@@ -8,8 +8,9 @@ ein synchroner Prozessaufruf; sein Ende ist die Schrittgrenze.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 
@@ -65,12 +66,22 @@ class TurnBudget:
 
 @dataclass(frozen=True)
 class TurnRequest:
-    """Eingabe fuer einen einzelnen synchronen Turn."""
+    """Eingabe fuer einen einzelnen synchronen Turn.
+
+    ``workdir`` und ``env`` binden den Kindprozess technisch an den
+    konfigurierten Worktree, statt sich auf Pfadangaben im Prompt zu
+    verlassen: der Agent liest und schreibt Dateien relativ zu
+    ``workdir``, und ``env`` ueberschreibt gezielt geerbte
+    Umgebungsvariablen (z. B. eine fremde ``PYTHONPATH``), die sonst
+    stillschweigend auf einen anderen Quellstand zeigen koennten.
+    """
 
     session_id: str
     message: str
     model: str
     effort: Effort
+    workdir: Path
+    env: dict[str, str] = field(default_factory=dict)
     budget: TurnBudget | None = None
 
     def __post_init__(self) -> None:
@@ -82,6 +93,15 @@ class TurnRequest:
             raise ValueError("model darf nicht leer sein")
         if not isinstance(self.effort, Effort):
             raise TypeError("effort muss ein Effort-Wert sein")
+        if not self.workdir.is_absolute():
+            raise ValueError("workdir muss absolut sein")
+        if not isinstance(self.env, dict) or any(
+            not isinstance(k, str) or not k or not isinstance(v, str)
+            for k, v in self.env.items()
+        ):
+            raise TypeError(
+                "env muss ein Mapping von Text auf Text sein"
+            )
         if self.budget is not None and not isinstance(
             self.budget, TurnBudget
         ):

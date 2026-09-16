@@ -16,6 +16,9 @@ ki-dev loop --config loop.json --run-id run-42
   "sources": ["bd:projekt-42", "docs/vertrag.md"],
   "workdir": "/absoluter/pfad/zum/repository",
   "access_profile": "write",
+  "env": {
+    "PYTHONPATH": "/absoluter/pfad/zum/repository/src"
+  },
   "finalization": {
     "target_workdir": "/absoluter/pfad/zum/sauberen-ziel-worktree",
     "target_ref": "refs/heads/main",
@@ -60,6 +63,22 @@ ki-dev loop --config loop.json --run-id run-42
 `build` und `review` müssen verschiedene vorbereitete Sitzungen benutzen.
 Optionale Felder dürfen entfallen; für Grenzen gelten dann die eingebauten
 Werte. Unbekannte Felder werden abgewiesen.
+
+## Worker-Umgebung
+
+`workdir` bindet nicht nur den Prompt, sondern das tatsaechliche
+Arbeitsverzeichnis des Agentenprozesses (`cwd`) und, ueber `_run_check`,
+auch jeden konfigurierten Pruefauftrag. Eine reine Pfadangabe im Prompt
+waere keine technische Bindung. `env` (optional, Standard leer)
+ueberschreibt gezielt einzelne geerbte Umgebungsvariablen fuer beide --
+Agententurn und Pruefauftraege --, ohne die uebrige geerbte Umgebung zu
+ersetzen. Das ist noetig, wenn eine vom Aufrufer geerbte `PYTHONPATH`
+sonst denselben Paketnamen aus einem fremden Quellstand (z. B. der
+eigenen ki-dev-Installation) statt aus `workdir` aufloesen wuerde:
+`cwd` allein schuetzt bei einem `src/`-Layout nicht davor.
+Pruefauftraege bleiben Sache der Orchestrierung; der Worker prueft
+gezielte Entwicklungsfaelle selbst, ohne die bekannte Umgebung neu
+suchen zu muessen.
 
 Der `workdir` ist der isolierte Bau-/Review-Worktree. `target_workdir` ist ein
 zweiter, sauberer Worktree desselben Git-Repositories, der auf `target_ref`
@@ -176,6 +195,24 @@ Maschineneskalation `execution_guard`, `paused_interactive` und einem
 Interrupt der Art `escalate`. Es folgt kein automatischer Agenten-Retry.
 Das gilt auch fuer unbekannte CLI-Fehler; sie gelten nicht ohne Nachweis
 als voruebergehend. Fachliche Review-Nachrichten bleiben davon getrennt.
+
+## Kompakte Sitzungsuebergabe statt unbegrenztem Resume
+
+Sitzungen sind aufrufergebunden vorbereitet (getrennte `session_id` je
+Rolle, siehe uar.1); ki-dev provisioniert oder rotiert sie nicht selbst
+-- das waere ein eigenstaendiger Mechanismus, den dieses Design nicht
+vorsieht. Jede Eskalation (Verbrauchsgrenze, Kontextvorpruefung,
+Stillstand, Agentenfehler) schreibt stattdessen unter
+`<run>/handoff/` eine kompakte, auftragsgebundene Uebergabe:
+Auftrag und Abnahmekriterien, massgebliche Quellen, die noch offene
+bzw. bereits abgeloeste `requirement_ref`, die bisher verworfenen
+Korrekturversuche (Runde, Referenz, Begruendung -- kein Bau-/Review-
+Transkript) und der bisher belegte Verbrauch. Ein Mensch entnimmt der
+juengsten Datei genau das, was eine frisch vorbereitete Rollensitzung
+braucht, statt den wachsenden Sitzungsverlauf per `--resume`
+unbegrenzt fortzusetzen. Rollentrennung, Provenienz und die
+bestehende Verbrauchsbilanz bleiben dabei erhalten; ein Sitzungswechsel
+ist kein Budgetreset (siehe "Eskalation bei Stillstand").
 
 ## Eskalation bei Stillstand
 

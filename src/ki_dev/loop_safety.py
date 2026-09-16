@@ -244,7 +244,7 @@ def stagnation_reason(
         streak += 1
     if streak < limit:
         return None
-    tokens, cost = _recorded_usage(store)
+    tokens, cost = recorded_usage(store)
     return (
         f"Stillstand: {requirement_ref} bleibt seit {streak} "
         "Korrekturrunden in Folge verletzt (bisheriger Verbrauch "
@@ -253,7 +253,7 @@ def stagnation_reason(
     )
 
 
-def _recorded_usage(store: RunStore) -> tuple[int, float]:
+def recorded_usage(store: RunStore) -> tuple[int, float]:
     """Bereits abgeschlossener Verbrauch als Beleg fuer eine Eskalation.
 
     Rein informativ: die verbindliche Freigabepruefung bleibt

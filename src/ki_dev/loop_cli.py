@@ -141,6 +141,7 @@ def _task(config: dict[str, object], run_id: str) -> LoopTask:
         "sources",
         "workdir",
         "access_profile",
+        "env",
         "build",
         "review",
         "tests",
@@ -171,6 +172,14 @@ def _task(config: dict[str, object], run_id: str) -> LoopTask:
         raise LoopConfigError(
             "acceptance_criteria muss eine nichtleere Textliste sein"
         )
+    env = config.get("env", {})
+    if not isinstance(env, dict) or any(
+        not isinstance(k, str) or not isinstance(v, str)
+        for k, v in env.items()
+    ):
+        raise LoopConfigError(
+            "env muss ein Mapping von Text auf Text sein"
+        )
     workdir = Path(_text(config, "workdir")).resolve()
     try:
         return LoopTask(
@@ -180,6 +189,7 @@ def _task(config: dict[str, object], run_id: str) -> LoopTask:
             workdir=workdir,
             access_profile=_text(config, "access_profile"),
             acceptance_criteria=tuple(criteria),
+            env=dict(env),
         )
     except (TypeError, ValueError) as exc:
         raise LoopConfigError(str(exc)) from exc

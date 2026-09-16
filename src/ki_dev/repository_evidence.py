@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,17 +72,25 @@ class RepositoryEvidenceCollector:
             ),
             round_status=RoundStatus(round_id, self.round_limit),
             checks=tuple(
-                _run_check(task.workdir, check) for check in self.checks
+                _run_check(task, check) for check in self.checks
             ),
             run_delta=build_run_delta(task.workdir, first_base, result),
         )
 
 
-def _run_check(repo: Path, check: CheckCommand) -> CheckOutcome:
+def _run_check(task: LoopTask, check: CheckCommand) -> CheckOutcome:
+    """Fuehre einen Pruefauftrag im gebundenen Worktree aus.
+
+    ``task.env`` ueberschreibt gezielt geerbte Umgebungsvariablen
+    (z. B. eine fremde ``PYTHONPATH``), die den Kindprozess sonst
+    stillschweigend gegen einen anderen Quellstand als
+    ``task.workdir`` pruefen liessen.
+    """
     try:
         completed = subprocess.run(
             check.argv,
-            cwd=repo,
+            cwd=task.workdir,
+            env={**os.environ, **task.env} if task.env else None,
             text=True,
             capture_output=True,
             timeout=check.timeout_s,
