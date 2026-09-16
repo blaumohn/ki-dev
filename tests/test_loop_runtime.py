@@ -245,6 +245,59 @@ def test_process_retries_are_bounded(tmp_path):
     assert "process_retries_exhausted" in result.detail
 
 
+def test_empty_result_feedback_reruns_build_instead_of_reusing_artifact(
+    tmp_path,
+):
+    """Regression: leere Rueckkopplung muss echt neu bauen.
+
+    ``_feed_back_empty_result`` oeffnet einen neuen
+    Worker-Zyklus, ohne ``round_id`` (Graph-Zustand) oder
+    ``process_retry`` fortzuschreiben -- nur
+    ``worker_attempt`` steigt. Bildete ``_operation()`` die
+    operation_id weiterhin nur aus round_id/process_retry,
+    waere sie identisch mit der des ersten, bereits
+    gespeicherten Bauversuchs, und ``_progress_operation``
+    haette dessen Artefakt einfach wiederverwendet, statt
+    den Builder fuer den tatsaechlich neuen Versuch erneut
+    aufzurufen.
+    """
+    empty_context = ControllerContext(
+        "Auftrag",
+        CombinedDelta(
+            DeltaScope.STEP,
+            GitDelta(
+                RefBoundary(
+                    VcsRef(ChangeMedium.GIT, "g1-a"),
+                    VcsRef(ChangeMedium.GIT, "g1-a"),
+                ),
+                (),
+                "",
+            ),
+            BeadsDelta(
+                RefBoundary(
+                    VcsRef(ChangeMedium.BEADS, "b1"),
+                    VcsRef(ChangeMedium.BEADS, "b1"),
+                ),
+                (),
+                "",
+            ),
+        ),
+        RoundStatus(1, 5),
+    )
+    builder = FakeBuilder()
+    reviewer = FakeReviewer([ReviewAction.PASS])
+    with _runtime(
+        tmp_path, "run-empty-result", builder, reviewer, [empty_context]
+    ) as runtime:
+        result = runtime.start(
+            _task("run-empty-result"), Limits(changes_rounds=1)
+        )
+
+    assert result.status == "paused_interactive"
+    assert "empty_result_unresolved" in result.detail
+    assert builder.calls == 2
+
+
 def test_changes_rounds_are_bounded(tmp_path):
     reviewer = FakeReviewer(
         [ReviewAction.CHANGES, ReviewAction.CHANGES]
@@ -285,7 +338,7 @@ def test_crash_after_effect_without_artifact_is_not_repeated(tmp_path):
         result = resumed.resume()
 
     assert result.status == "uncertain"
-    assert result.operation_id == "r0001-build-a0000"
+    assert result.operation_id == "r0001-build-w0001-p0000-t0000"
     assert builder.calls == 1
 
 
@@ -324,7 +377,7 @@ def test_saved_result_survives_crash_before_graph_checkpoint(
     def write_then_crash(store, operation_id, value):
         nonlocal crashed
         original(store, operation_id, value)
-        if operation_id.endswith("build-a0000") and not crashed:
+        if "build-w" in operation_id and not crashed:
             crashed = True
             raise SystemExit("nach Persistenz")
 

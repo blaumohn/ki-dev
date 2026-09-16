@@ -418,15 +418,28 @@ class LoopRuntime:
         self, state: LoopGraphState, kind: str
     ) -> dict[str, object]:
         run = decode_run_state(state["run_state"])
-        attempt = (
-            state["review_sequence"]
-            if kind == "review"
-            else run.state.counters.process_retry
-        )
         if kind in {"freeze", "finalize_history", "verify_final", "integrate"}:
             operation_id = f"final-{kind}-r{run.revision:04d}"
+        elif kind == "review":
+            operation_id = (
+                f"r{state['round_id']:04d}-{kind}-"
+                f"a{state['review_sequence']:04d}"
+            )
         else:
-            operation_id = f"r{state['round_id']:04d}-{kind}-a{attempt:04d}"
+            # Jeder relevante Zaehler muss einfliessen: ein
+            # tatsaechlich neuer Bau-/Nachweisversuch kann
+            # round_id und process_retry unveraendert lassen
+            # (z. B. bei einer Protokoll-Wiederholung), wuerde
+            # sonst dieselbe operation_id wie der vorige
+            # Versuch erhalten und dessen gespeichertes
+            # Artefakt faelschlich wiederverwenden.
+            counters = run.state.counters
+            operation_id = (
+                f"r{state['round_id']:04d}-{kind}-"
+                f"w{counters.worker_attempt:04d}"
+                f"-p{counters.process_retry:04d}"
+                f"-t{counters.protocol_attempt:04d}"
+            )
         return {"id": operation_id, "kind": kind, "status": "prepared"}
 
     def _progress_operation(
