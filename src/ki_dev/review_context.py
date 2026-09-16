@@ -61,6 +61,22 @@ class ReviewProjection:
 
 _DIFF_START = re.compile(r"(?m)^diff --git ")
 _BINARY_MARKERS = ("Binary files ", "GIT binary patch")
+_INDEX_LINE = re.compile(r"(?m)^index ([0-9a-f]+)\.\.([0-9a-f]+)")
+_LOCKFILE_NAMES = frozenset(
+    {
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "poetry.lock",
+        "Pipfile.lock",
+        "uv.lock",
+        "Cargo.lock",
+        "composer.lock",
+        "Gemfile.lock",
+        "go.sum",
+    }
+)
 _SKIP_PARTS = frozenset(
     {
         ".loope",
@@ -179,11 +195,20 @@ def _project_delta(
             continue
         section = sections.get(change.path, "")
         if _is_binary(section):
-            metadata = (
+            chunks.append(
                 f"{label}_FILE {change.status} {change.path} "
-                "[binary metadata only]\n"
+                f"{_binary_reference(section)} [binary metadata only]\n"
             )
-            chunks.append(metadata)
+            omissions.append(Omission(ref, "binary_content"))
+            continue
+        is_reloaded_lockfile = change.path in preferred_paths
+        if _is_lockfile(change.path) and not is_reloaded_lockfile:
+            chunks.append(
+                f"{label}_FILE {change.status} {change.path} "
+                f"[{_change_stat(section)}; generierte "
+                "Lockfile-Details nur per Nachladen]\n"
+            )
+            omissions.append(Omission(ref, "lockfile_summary"))
             continue
         limited, reason = _limit_file(section, limits)
         chunks.append(
@@ -256,6 +281,32 @@ def _is_binary(text: str) -> bool:
     return "\x00" in text or any(
         marker in text for marker in _BINARY_MARKERS
     )
+
+
+def _binary_reference(section: str) -> str:
+    """Nachvollziehbare Blob-Referenz statt Binaerpatch/Base64."""
+    match = _INDEX_LINE.search(section)
+    if match is None:
+        return "index=unbekannt"
+    return f"index={match.group(1)}..{match.group(2)}"
+
+
+def _is_lockfile(path: str) -> bool:
+    return PurePosixPath(path).name in _LOCKFILE_NAMES
+
+
+def _change_stat(section: str) -> str:
+    added = sum(
+        1
+        for line in section.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    )
+    removed = sum(
+        1
+        for line in section.splitlines()
+        if line.startswith("-") and not line.startswith("---")
+    )
+    return f"+{added}/-{removed} Zeilen"
 
 
 def _limit_file(

@@ -14,6 +14,7 @@ from ki_dev.deltas import (
     VcsRef,
 )
 from ki_dev.review_context import (
+    Omission,
     ProjectionLimits,
     project_review_context,
 )
@@ -75,8 +76,56 @@ def test_binary_is_metadata_only():
     projected = project_review_context(
         _context([("assets/blob.bin", binary)])
     )
-    assert "assets/blob.bin [binary metadata only]" in projected.text
+    assert (
+        "assets/blob.bin index=unbekannt [binary metadata only]"
+        in projected.text
+    )
     assert "Binary files" not in projected.text
+    assert projected.omissions == (
+        Omission("step:git:assets/blob.bin", "binary_content"),
+    )
+
+
+def test_binary_reference_uses_git_blob_hashes_when_present():
+    binary = (
+        "diff --git a/assets/blob.bin b/assets/blob.bin\n"
+        "index f395269..c670d96 100644\n"
+        "Binary files a/assets/blob.bin and b/assets/blob.bin differ\n"
+    )
+    projected = project_review_context(
+        _context([("assets/blob.bin", binary)])
+    )
+    assert "index=f395269..c670d96" in projected.text
+
+
+def test_lockfile_is_summarized_not_shown_in_full():
+    lockfile = _patch(
+        "package-lock.json",
+        "+\"left-pad\": \"1.0.0\"\n-\"left-pad\": \"0.9.0\"\n",
+    )
+    projected = project_review_context(
+        _context([("package-lock.json", lockfile)])
+    )
+    assert "left-pad" not in projected.text
+    assert "+1/-1 Zeilen" in projected.text
+    assert any(
+        item.reason == "lockfile_summary"
+        for item in projected.omissions
+    )
+
+
+def test_lockfile_full_content_returns_via_preferred_paths():
+    lockfile = _patch(
+        "package-lock.json",
+        "+\"left-pad\": \"1.0.0\"\n",
+    )
+    context = _context([("package-lock.json", lockfile)])
+    summarized = project_review_context(context)
+    reloaded = project_review_context(
+        context, preferred_paths=("package-lock.json",)
+    )
+    assert "left-pad" not in summarized.text
+    assert "left-pad" in reloaded.text
 
 
 def test_json_single_line_is_limited_by_bytes():

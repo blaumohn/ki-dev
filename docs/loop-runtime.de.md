@@ -290,3 +290,33 @@ Beads-Schreibwirkungen oder `data_mode: "beads_direct"` werden ausdrücklich
 abgewiesen. Sie dürfen erst unterstützt werden, wenn ein eigener isolierter,
 versionierter DB-Arbeitsstand samt geprüftem Delta und kontrollierter Übernahme
 vorhanden ist. `.beads/issues.jsonl` ist dabei nur Export, nie DB-Wahrheit.
+
+## Begrenzte Review-Projektion
+
+`project_review_context` (`review_context.py`) begrenzt, was der Reviewer je
+Runde tatsaechlich sieht -- `projection_limits` (siehe oben) je Datei und
+insgesamt, unabhaengig davon, wie gross Delta oder Laufhistorie wirklich sind:
+
+- Laufzeit-/Cache-/interne Dolt-Pfade (`.ki-dev`, `.beads/*` ausser
+  `issues.jsonl`, `.venv`, `__pycache__`, `.pytest_cache`, `.ruff_cache`,
+  `.hypothesis`, `.loope`) werden nie als Diff-Inhalt uebergeben, beliebig
+  tief verschachtelt.
+- Binaerdateien erscheinen nur als Pfad, Aenderungsart und Git-Blob-Referenz
+  (`index=<a>..<b>` aus dem Diff, falls vorhanden), nie als Binaerpatch/Base64.
+- Generierte Lockfiles (`package-lock.json`, `yarn.lock`, `poetry.lock`,
+  `Cargo.lock`, `go.sum`, ...) erscheinen zunaechst nur als Zeilen-Statistik;
+  volle Details kommen ausschliesslich per gezieltem Nachladen
+  (`preferred_paths`, s. u.).
+- Jede Auslassung (Laufzeitpfad, Binaerinhalt, Lockfile-Zusammenfassung,
+  Zeilen-/Byte-/Gesamtgrenze) wird als `OMITTED [<referenz>] reason=<grund>`
+  festgehalten; die Projektion behauptet nie stillschweigend Vollstaendigkeit.
+- Auch ein einzelner, sehr grosser JSON-Einzeiler faellt unter die
+  Byte-Grenze je Datei, unabhaengig von der Zeilenzahl.
+
+`preferred_paths` ist der einzige Nachlademechanismus: nur Pfade des
+aktuellen Schrittdeltas sind zulaessig, sie werden zuerst einsortiert und
+umgehen fuer Lockfiles die Zusammenfassung -- ohne Datei- oder
+Gesamtgrenzen zu lockern. Ein abschliessender Review sieht sowohl den
+Schrittdelta als auch den kumulierten Laufdelta seit Laufbeginn; reicht der
+Nachweis wegen Begrenzung nicht aus, ist gezieltes Nachladen oder ein Stopp
+angezeigt, kein unbegruendetes PASS.
