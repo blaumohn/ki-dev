@@ -60,11 +60,12 @@ Keine Schlüssel ins Image schreiben.
 - loope setzt selbst Sandbox-/Berechtigungsflags. Die Container-Launcher
   ersetzen diese durch uneingeschränkte Ausführung **innerhalb des Containers**.
   Auch Reviewer haben damit Schreibzugriff; ihre fachliche Rolle bleibt im Prompt.
-- Claude lädt ausschließlich `docker/claude-settings.json`, das im Container
-  unter `/home/agent/.claude/settings.json` liegt. Andere Benutzer-/Projekt-Settings
-  und deren Sperr-Hooks bleiben deaktiviert. CLAUDE.md und Projektdaten bleiben
+- Claude lädt ausschließlich eine pro Aufruf erzeugte Settings-Datei (siehe
+  „Container-Konfiguration“). Andere Benutzer-/Projekt-Settings und deren
+  Sperr-Hooks bleiben deaktiviert. CLAUDE.md und Projektdaten bleiben
   verfügbar. Codex-Hooks sind abgeschaltet;
-  das Host-Verzeichnis `~/.codex/rules` wird mit einem leeren tmpfs überdeckt.
+  die Host-Verzeichnisse `~/.codex/rules` und `~/.claude/rules` sowie
+  `/workspace/.claude` werden mit leeren tmpfs überdeckt.
   Die Host-Dateien bleiben unverändert.
   Beads-Kontext bei Bedarf über `bd prime` laden.
 - Der Container bekommt keinen Docker-Socket. Vom Host-Home sind ausschließlich
@@ -75,6 +76,110 @@ Keine Schlüssel ins Image schreiben.
 
 Die [Codex-Dokumentation](https://developers.openai.com/codex/security)
 beschreibt diese Ausführung für Umgebungen mit externer Isolation.
+
+## Container-Konfiguration
+
+Die Konfiguration ist in vier Bereiche getrennt. A und B werden als
+**Verzeichnisse** eingebunden, nicht als Einzeldateien: Ein Editor, der atomar
+speichert (neue Datei, dann Umbenennen), ersetzt die Inode. Ein
+Einzeldatei-Bind bliebe auf der alten, gelöschten Inode stehen
+(„Settings file not found … (deleted)“); ein Verzeichnis-Bind zeigt die neue
+Datei sofort.
+
+| Bereich | Quelle (Host) | Im Container | Schreibrechte |
+| --- | --- | --- | --- |
+| A Ausführungsrichtlinie | `docker/agent-settings/access/policy.json` | `/opt/agent-settings/access/` | nur Host; im Container read-only, auch unter `/workspace/docker/agent-settings/access` |
+| B Modellparameter | `docker/agent-settings/model/claude.json`, `codex.json` | `/opt/agent-settings/model/` | Host und Container (dieselben Dateien) |
+| C Lokale Regeln | – | tmpfs über `~/.claude/rules`, `~/.codex/rules`, `/workspace/.claude` | nur flüchtig im Container |
+| D Anmeldung | `~/.claude`, `~/.codex`, optional `~/.claude.json` | `/home/agent/…` | Host und Container (Token-Erneuerung) |
+
+**A** enthält die festen Vorgaben, die der Launcher (`agent_cli.py`) auswertet:
+
+- `claude.settings`: werden in die erzeugte Claude-Settings-Datei übernommen
+  (`skipDangerousModePermissionPrompt`, `disableAllHooks`).
+- `codex.config`: werden als `-c key=value` übergeben (`features.hooks=false`).
+- Fest im Launcher: `--dangerously-skip-permissions` bzw.
+  `--dangerously-bypass-approvals-and-sandbox`, `--setting-sources ""`, das
+  Entfernen der loope-Sandbox-/Approval-Argumente (einschließlich
+  `-c sandbox_mode=…`/`-c approval_policy=…` bei Codex).
+
+Dass Agenten A weder lesen noch ändern, ist eine Arbeitsregel. Technisch
+verhindert ist nur das Schreiben im Container (beide Pfade read-only); lesen
+können Prozesse im Container die Datei. A enthält deshalb keine Geheimnisse.
+
+**B** enthält ausschließlich diese Schlüssel; alles andere wird abgelehnt:
+
+- Claude: `model`, `effortLevel` (`low`/`medium`/`high`/`xhigh`),
+  `modelSettings.<modell>.effortLevel`, `advisorModel`, `language`.
+  Alle Schlüssel sind im Schema von Claude Code 2.1.272 vorhanden.
+  `language` (Antwortsprache) liegt bewusst in B: Die Einstellung betrifft nur
+  die Modellausgabe, nicht die Ausführungsrichtlinie. `maxEffortLevel` ist
+  nicht erlaubt, weil es explizite `--effort`-Werte des Aufrufers deckeln würde.
+- Codex: `model`, `model_reasoning_effort`.
+
+**D** bleibt außerhalb des Repositorys. Tokens gehören weder nach A noch nach B.
+
+### Auswertung und Priorität
+
+Bei jedem regulären `claude`-/`codex`-Aufruf liest und validiert der Launcher A
+und B neu. Aufrufe zur Anmeldung und Diagnose (`auth`, `login`, `logout`,
+`doctor`, `--help`, `--version`) werden unverändert durchgereicht und lesen A/B
+nicht.
+
+1. **A** gilt immer. B darf keine A-Schlüssel enthalten und umgekehrt.
+   Aufrufer-Argumente, die A widersprechen, brechen mit Fehler ab: bei Claude
+   `--settings` und `--setting-sources`, bei Codex `-c`/`--config` mit einem
+   A-Schlüssel sowie `--enable`/`--disable` für ein Feature aus A.
+2. **Explizite Aufruferwerte** schlagen B. Für jeden gesetzten Wert lässt der
+   Launcher den entsprechenden B-Default weg, statt einen zweiten,
+   widersprüchlichen Wert zu erzeugen:
+   - Claude: `--model` ersetzt `model`; `--effort` ersetzt `effortLevel` und
+     `modelSettings`.
+   - Codex: `-m`/`--model` ersetzt `model`; `-c`/`--config` mit `model` oder
+     `model_reasoning_effort` ersetzt den jeweiligen Wert; `-p`/`--profile`
+     und `--oss` ersetzen beide Werte.
+   - Erkannt werden die Formen `OPTION WERT` und `OPTION=WERT`.
+3. **B** gilt für alle übrigen Werte.
+
+Ungültiges oder fehlendes A/B (kein JSON, unbekannte Schlüssel, falsche Typen,
+ungültiger Effort) bricht den Aufruf mit `agent-cli: <datei>: <grund>` ab.
+Dann wird keine Konfiguration erzeugt oder verwendet.
+
+- **Claude:** Der Launcher schreibt A+B pro Aufruf nach
+  `/opt/agent-settings/generated/claude-<pid>-<zufall>.json` (erst temporär,
+  dann atomar umbenannt) und startet `claude --setting-sources ""
+  --settings <datei>`. `generated/` liegt nur im Container-Dateisystem, gehört
+  dem Containerbenutzer (Modus 700) und hat keinen Host-Mount. Parallele
+  Aufrufe erhalten getrennte Dateien. Dateien beendeter Aufrufe werden beim
+  nächsten Aufruf entfernt; alle verschwinden mit dem Container.
+- **Codex:** Keine erzeugte `config.toml`. A und B gehen als TOML-kodierte
+  Overlays (`-c features.hooks=false -c model="…"`) vor die
+  Aufruferargumente.
+- Es wird nichts nach `~/.claude/settings.json` oder `~/.codex/config.toml`
+  geschrieben; diese liegen im Host-Mount. Erzeugte Dateien werden nie nach B
+  zurückgeschrieben. Dauerhafte Modelländerungen erfolgen in B.
+
+### Wann Änderungen wirken
+
+- **B ändern** (auf dem Host oder im Container): gilt beim nächsten
+  `claude`-/`codex`-Aufruf, ohne Containerneustart oder Image-Rebuild. Bereits
+  laufende Sitzungen laden B nicht nach.
+- **A ändern**: auf dem Host bearbeiten; gilt ebenfalls beim nächsten Aufruf.
+- **Einmalige Migration** (dieser Umbau, Änderungen an `agent_cli.py`,
+  Dockerfile oder Mounts): Image neu bauen
+  (`./scripts/agent-container build`) und laufende Container neu starten.
+
+### Reichweite gegenüber ki-dev
+
+`ki_dev.executors.contract.TurnRequest` verlangt `model` und `effort` ohne
+Default. Der Claude-Adapter übergibt `--model` und `--effort`, der
+Codex-Adapter `--model` und `-c model_reasoning_effort=…`. Nach Punkt 2 lässt
+der Launcher deshalb die B-Werte für Modell und Effort bei automatisierten
+ki-dev-Läufen immer weg (Test `test_ki_dev_turn_values_beat_defaults`).
+**B ist kein Stellhebel für ki-dev-Läufe**; dort gelten die Werte aus dem
+`TurnRequest`. B dient als Default für manuelle und interaktive Aufrufe
+(z. B. `claude` in `./scripts/agent-container shell`). Übrige B-Werte wie
+`language` oder `advisorModel` wirken auch bei ki-dev-Läufen mit Claude.
 
 ## Beads
 
