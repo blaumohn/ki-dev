@@ -234,7 +234,7 @@ def reject_codex_policy_overrides(
         if option.name in CONFIG_OPTIONS:
             paths = config_paths(option.value)
         else:
-            paths = {f"features.{option.value}"}
+            paths = {("features", option.value)}
         conflict = conflicting_key(config, paths)
         if conflict is not None:
             raise SettingsError(
@@ -243,7 +243,7 @@ def reject_codex_policy_overrides(
             )
 
 
-def config_paths(assignment: str) -> set[str]:
+def config_paths(assignment: str) -> set[tuple[str, ...]]:
     # A dotted or quoted key is only the address this assignment
     # writes to, not a claim on its parent table: "-c a.b=1" leaves
     # siblings of "a" untouched, so only "a.b" (and anything the value
@@ -256,7 +256,10 @@ def config_paths(assignment: str) -> set[str]:
     return assigned_paths(path, value_at_path(data, path))
 
 
-def key_path(key: str) -> str:
+def key_path(key: str) -> tuple[str, ...]:
+    # Segments stay a tuple, never a joined string: a quoted TOML key
+    # may itself contain a literal ".", which must not be confused
+    # with the separator between path segments.
     try:
         (path,) = leaf_paths(tomllib.loads(f"{key} = 0"))
     except tomllib.TOMLDecodeError as error:
@@ -266,10 +269,12 @@ def key_path(key: str) -> str:
     return path
 
 
-def leaf_paths(table: dict, prefix: str = "") -> set[str]:
+def leaf_paths(
+    table: dict, prefix: tuple[str, ...] = ()
+) -> set[tuple[str, ...]]:
     paths = set()
     for key, value in table.items():
-        path = f"{prefix}.{key}" if prefix else key
+        path = (*prefix, key)
         if isinstance(value, dict):
             paths |= leaf_paths(value, path)
         else:
@@ -293,14 +298,16 @@ def parsed_value(key: str, value: str, assignment: str) -> dict:
         ) from error
 
 
-def value_at_path(data: dict, path: str) -> object:
+def value_at_path(data: dict, path: tuple[str, ...]) -> object:
     value: object = data
-    for part in path.split("."):
+    for part in path:
         value = value[part]
     return value
 
 
-def assigned_paths(path: str, value: object) -> set[str]:
+def assigned_paths(
+    path: tuple[str, ...], value: object
+) -> set[tuple[str, ...]]:
     # A table value (an inline table on the right-hand side) wholesale
     # replaces everything under it, so each of its own paths is
     # assigned too. A scalar value only assigns the single leaf.
@@ -309,20 +316,31 @@ def assigned_paths(path: str, value: object) -> set[str]:
     return {path}
 
 
-def flatten_table_paths(table: dict, prefix: str) -> set[str]:
+def flatten_table_paths(
+    table: dict, prefix: tuple[str, ...]
+) -> set[tuple[str, ...]]:
     paths = set()
     for key, value in table.items():
-        path = f"{prefix}.{key}"
+        path = (*prefix, key)
         paths.add(path)
         if isinstance(value, dict):
             paths |= flatten_table_paths(value, path)
     return paths
 
 
-def conflicting_key(config: dict, paths: set[str]) -> str | None:
+def conflicting_key(
+    config: dict, paths: set[tuple[str, ...]]
+) -> str | None:
+    # Policy keys are a fixed, author-chosen dotted-string convention
+    # (not caller-supplied TOML), so a plain split is safe here.
     for policy_key in config:
+        policy_path = tuple(policy_key.split("."))
         for path in paths:
-            if path == policy_key or policy_key.startswith(f"{path}."):
+            is_ancestor = (
+                len(path) < len(policy_path)
+                and policy_path[: len(path)] == path
+            )
+            if path == policy_path or is_ancestor:
                 return policy_key
     return None
 

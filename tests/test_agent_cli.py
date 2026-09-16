@@ -290,6 +290,7 @@ def test_codex_caller_values_beat_defaults(dirs, caller, removed):
         ["-c", "features={hooks=true}"],
         ["-c", '"features"."hooks"=true'],
         ["-c", "features . hooks = true"],
+        ["-c", 'features."hooks"=true'],
     ],
 )
 def test_codex_rejects_policy_overrides(dirs, caller):
@@ -305,6 +306,11 @@ def test_codex_rejects_policy_overrides(dirs, caller):
         # parent with the protected "features.hooks".
         ["-c", "features.web_search=false"],
         ["--config=features.other_key=true"],
+        # A quoted key may itself contain a literal ".": the whole
+        # quoted string is one segment, unrelated to the two-segment
+        # features.hooks path, and must neither crash nor be flagged.
+        ["-c", '"features.hooks"=true'],
+        ["-c", 'features."guardianv2.thread_context"=true'],
     ],
 )
 def test_codex_allows_sibling_feature_overrides(dirs, caller):
