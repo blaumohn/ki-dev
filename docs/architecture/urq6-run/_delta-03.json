@@ -1,0 +1,27 @@
+{
+  "edges": [],
+  "format": 1,
+  "nodes": [
+    {
+      "data": {
+        "text": "Die bestehenden ki-dev-Fachschemas sind brauchbare Bootstrap-Schemas, aber noch kein endgueltiges Fachmodell."
+      },
+      "expected": null,
+      "id": "fachschemas-sind-bootstrap-schemas",
+      "location": "fachmodell/schemas",
+      "op": "put",
+      "sources": [
+        {
+          "end": 23,
+          "path": "bd:ki-dev-ablauf-0s5f",
+          "sha256": "846f65fa98f1df52f7e313654e510011b0d58397d1e4ef39d89fe83c0bf6d38e",
+          "start": 23
+        }
+      ],
+      "type": "aussage@1"
+    }
+  ],
+  "parent": "ca3bd1023cbff7056126eebab08883201b099e505218ec65e43202f728fe4023",
+  "step": 3,
+  "types": []
+}

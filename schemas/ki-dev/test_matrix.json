@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ki-dev.local/schemas/test_matrix.json",
+  "title": "ki-dev Fachart: test_matrix",
+  "description": "Zuordnung Zustandsmaschinen-/Fachanforderungen zu Tests.",
+  "type": "object",
+  "required": ["fachart", "kennung", "titel", "zustand", "eintraege"],
+  "additionalProperties": false,
+  "properties": {
+    "fachart": { "const": "test_matrix" },
+    "kennung": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
+    "titel": { "type": "string", "minLength": 1 },
+    "zustand": { "enum": ["entwurf", "aktiv", "abgeloest", "verworfen"] },
+    "eintraege": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "requirement"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "description": "Lokale Unterkennung, eindeutig innerhalb dieses Dokuments."
+          },
+          "requirement": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*#[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)*$",
+            "description": "Verweis <kennung>#<anforderungs-id> auf eine Spezifikations-Anforderung. Existenz wird erst von ki-dev check geprueft."
+          },
+          "implementation": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "description": "Quelltextpfade als Beleg, sofern behauptet (Existenz wird erst von ki-dev check geprueft)."
+          },
+          "tests": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "description": "Testpfade/-referenzen als Beleg, sofern behauptet (Existenz wird erst von ki-dev check geprueft)."
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ki-dev.local/schemas/system_spec.json",
+  "title": "ki-dev Fachart: system_spec",
+  "description": "Definition und Systemaufbau.",
+  "type": "object",
+  "required": ["fachart", "kennung", "titel", "zustand", "beschreibung", "komponenten"],
+  "additionalProperties": false,
+  "properties": {
+    "fachart": { "const": "system_spec" },
+    "kennung": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
+    "titel": { "type": "string", "minLength": 1 },
+    "zustand": { "enum": ["entwurf", "aktiv", "abgeloest", "verworfen"] },
+    "beschreibung": { "type": "string", "minLength": 1 },
+    "komponenten": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "verantwortung"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "description": "Lokale Unterkennung, eindeutig innerhalb dieses Dokuments."
+          },
+          "name": { "type": "string", "minLength": 1 },
+          "verantwortung": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "description": "Optionale lokale Anforderungen (Anforderungs-/Quelltext-Schnittstelle). Existenz-/Verweispruefung erfolgt in ki-dev check.",
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "testability"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)*$",
+            "description": "Lokale Anforderungskennung, eindeutig innerhalb dieses Dokuments (z. B. CW-01)."
+          },
+          "text": { "type": "string", "minLength": 1 },
+          "testability": {
+            "enum": ["testable"],
+            "description": "Grundlegender Wertebereich; derzeit ist nur 'testable' vorgesehen. Erweiterung nur per bewusster Entscheidung."
+          }
+        }
+      }
+    }
+  }
+}

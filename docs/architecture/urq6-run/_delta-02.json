@@ -1,0 +1,27 @@
+{
+  "edges": [],
+  "format": 1,
+  "nodes": [
+    {
+      "data": {
+        "text": "Technischer Rahmen: Python, Typer, Rich, PyYAML, jsonschema; Abhaengigkeiten in pyproject.toml."
+      },
+      "expected": null,
+      "id": "bootstrap-technischer-rahmen",
+      "location": "bootstrap/technik",
+      "op": "put",
+      "sources": [
+        {
+          "end": 19,
+          "path": "bd:ki-dev-ablauf-phdp",
+          "sha256": "ba695399d259ccb56bfa9e5c9b0972fe51c3e7f8a48876e1d92e990f45ff88f2",
+          "start": 14
+        }
+      ],
+      "type": "aussage@1"
+    }
+  ],
+  "parent": "00f1791ecd56e228503122542cece0cc2940002126c74ae977a1d73a27906c21",
+  "step": 2,
+  "types": []
+}

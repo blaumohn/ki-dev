@@ -1,6 +1,16 @@
 
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.hypothesis/
+build/
+dist/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+.local/

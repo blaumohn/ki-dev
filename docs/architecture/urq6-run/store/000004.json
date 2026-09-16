@@ -1,0 +1,27 @@
+{
+  "edges": [],
+  "format": 1,
+  "nodes": [
+    {
+      "data": {
+        "text": "bd bleibt vorlaeufig der Arbeitsgraph. Ralphex ist aus der neuen Minimal-Go-live-Strecke herausgefallen."
+      },
+      "expected": null,
+      "id": "arbeitsgraph-und-ralphex-ausstieg",
+      "location": "architektur/arbeitsgraph",
+      "op": "put",
+      "sources": [
+        {
+          "end": 19,
+          "path": "bd:ki-dev-ablauf-h1vf",
+          "sha256": "a2cef1a465c657a6af1e7bad56494ddd00c4196def5c09d4510fedb4da64cf68",
+          "start": 18
+        }
+      ],
+      "type": "aussage@1"
+    }
+  ],
+  "parent": "20c41020f22d4a97be0a952131673accea3ccef6fcdcf6a7ac85280932eaa4f3",
+  "step": 4,
+  "types": []
+}

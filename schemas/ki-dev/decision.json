@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ki-dev.local/schemas/decision.json",
+  "title": "ki-dev Fachart: decision",
+  "description": "Architektur-/Fachentscheidung mit Begruendung.",
+  "type": "object",
+  "required": ["fachart", "kennung", "titel", "zustand", "kontext", "entscheidung", "begruendung"],
+  "additionalProperties": false,
+  "properties": {
+    "fachart": { "const": "decision" },
+    "kennung": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
+    "titel": { "type": "string", "minLength": 1 },
+    "zustand": { "enum": ["entwurf", "aktiv", "abgeloest", "verworfen"] },
+    "kontext": { "type": "string", "minLength": 1 },
+    "entscheidung": { "type": "string", "minLength": 1 },
+    "begruendung": { "type": "string", "minLength": 1 },
+    "alternativen": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "ablehnungsgrund"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "description": "Lokale Unterkennung, eindeutig innerhalb dieses Dokuments."
+          },
+          "name": { "type": "string", "minLength": 1 },
+          "ablehnungsgrund": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

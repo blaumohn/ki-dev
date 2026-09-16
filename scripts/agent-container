@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${KI_DEV_AGENT_CONTAINER:-}" == "1" ]]; then
+  echo "scripts/agent-container starts the Docker sandbox from the host and needs" >&2
+  echo "Docker; it neither has nor needs a Docker socket inside that sandbox." >&2
+  echo "You are already running inside the agent container, so run the target" >&2
+  echo "command directly instead, e.g.:" >&2
+  echo "  bd prime" >&2
+  echo "  ./.venv/bin/python -m pytest" >&2
+  exit 1
+fi
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+image_name="${KI_DEV_AGENT_IMAGE:-ki-dev-agent:local}"
+volume_key="$(printf '%s' "$repo_dir" | cksum | cut -d ' ' -f 1)"
+home_volume="ki-dev-agent-${volume_key}-home"
+venv_volume="ki-dev-agent-${volume_key}-venv"
+
+case "${1:-shell}" in
+  build)
+    loope_source="${LOOPE_SOURCE:-$repo_dir/../loope}"
+    if [[ ! -f "$loope_source/Cargo.toml" ]]; then
+      echo "Set LOOPE_SOURCE to the local loope source directory." >&2
+      exit 1
+    fi
+    build_context="$(mktemp -d)"
+    trap 'rm -rf -- "$build_context"' EXIT
+    mkdir -p "$build_context/loope" "$build_context/project" "$build_context/docker"
+    cp "$loope_source/Cargo.toml" "$loope_source/Cargo.lock" "$build_context/loope/"
+    cp -R "$loope_source/src" "$build_context/loope/"
+    cp "$repo_dir/pyproject.toml" "$build_context/project/"
+    cp -R "$repo_dir/src" "$build_context/project/"
+    cp -R "$repo_dir/docker/agent" "$build_context/docker/"
+    docker build --build-arg "AGENT_UID=$(id -u)" --build-arg "AGENT_GID=$(id -g)" \
+      -t "$image_name" -f "$build_context/docker/agent/Dockerfile" "$build_context"
+    exit
+    ;;
+  shell) shift "$(( $# > 0 ? 1 : 0 ))"; set -- bash "$@" ;;
+  run) shift ;;
+  *)
+    echo "Usage: $0 build | shell | run COMMAND [ARGS...]" >&2
+    exit 2
+    ;;
+esac
+if [[ $# == 0 ]]; then
+  echo "run requires a command" >&2
+  exit 2
+fi
+# Reuse the user's existing CLI logins; no API keys are forwarded.
+auth_root="${KI_DEV_AGENT_AUTH_HOME:-$HOME}"
+for auth_dir in .claude .codex; do
+  if [[ ! -d "$auth_root/$auth_dir" ]]; then
+    echo "Missing $auth_root/$auth_dir; log in with the CLI on the host first." >&2
+    exit 1
+  fi
+done
+export KI_DEV_AGENT_REPO="$repo_dir"
+export KI_DEV_AGENT_IMAGE="$image_name"
+export KI_DEV_AGENT_AUTH_HOME="$auth_root"
+export KI_DEV_AGENT_HOME_VOLUME="$home_volume"
+export KI_DEV_AGENT_VENV_VOLUME="$venv_volume"
+export KI_DEV_CLAUDE_STATE=/dev/null
+if [[ -f "$auth_root/.claude.json" ]]; then
+  export KI_DEV_CLAUDE_STATE="$auth_root/.claude.json"
+fi
+run_args=(run --rm --no-deps)
+if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
+exec docker compose -f "$repo_dir/compose.yaml" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"

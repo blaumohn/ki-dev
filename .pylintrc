@@ -1,0 +1,38 @@
+[MASTER]
+ignore=.git,.venv,venv,__pycache__,vendor,node_modules,var
+jobs=1
+
+[MESSAGES CONTROL]
+disable=all
+enable=
+    too-many-branches,
+    too-many-statements,
+    too-many-return-statements,
+    too-many-nested-blocks,
+    too-many-locals,
+    invalid-name,
+    line-too-long
+
+[DESIGN]
+max-branches=8
+max-statements=24
+max-returns=4
+max-nested-blocks=2
+max-locals=10
+
+[BASIC]
+function-rgx=[a-z_][a-z0-9_]{2,40}$
+method-rgx=[a-z_][a-z0-9_]{2,40}$
+variable-rgx=[a-z_][a-z0-9_]{1,40}$
+argument-rgx=[a-z_][a-z0-9_]{1,40}$
+attr-rgx=[a-z_][a-z0-9_]{1,40}$
+class-rgx=[A-Z_][a-zA-Z0-9]+$
+const-rgx=([A-Z_][A-Z0-9_]*|__[a-z_]+__)$
+module-rgx=[a-z_][a-z0-9_]*$
+
+[FORMAT]
+max-line-length=72
+
+[REPORTS]
+reports=no
+score=no

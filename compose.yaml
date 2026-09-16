@@ -1,0 +1,67 @@
+services:
+  agent:
+    image: ${KI_DEV_AGENT_IMAGE:-ki-dev-agent:local}
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      TERM: ${TERM:-xterm-256color}
+    volumes:
+      - type: bind
+        source: ${KI_DEV_AGENT_REPO:-.}
+        target: /workspace
+        bind:
+          create_host_path: false
+      - type: volume
+        source: agent-home
+        target: /home/agent
+      - type: volume
+        source: agent-venv
+        target: /workspace/.venv
+      - type: bind
+        source: ${KI_DEV_AGENT_AUTH_HOME:-${HOME}}/.claude
+        target: /home/agent/.claude
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KI_DEV_AGENT_AUTH_HOME:-${HOME}}/.codex
+        target: /home/agent/.codex
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KI_DEV_CLAUDE_STATE:-/dev/null}
+        target: /run/claude-host.json
+        read_only: true
+        bind:
+          create_host_path: false
+      # A: execution policy, read-only (also over its repository path).
+      - type: bind
+        source: ./docker/agent-settings/access
+        target: /opt/agent-settings/access
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./docker/agent-settings/access
+        target: /workspace/docker/agent-settings/access
+        read_only: true
+        bind:
+          create_host_path: false
+      # B: model defaults, shared read-write with the host.
+      - type: bind
+        source: ./docker/agent-settings/model
+        target: /opt/agent-settings/model
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /home/agent/.codex/rules:rw,nosuid,nodev,mode=1777
+      - /workspace/.claude:rw,nosuid,nodev,mode=1777
+      - /home/agent/.claude/rules:rw,nosuid,nodev,mode=1777
+
+volumes:
+  agent-home:
+    name: ${KI_DEV_AGENT_HOME_VOLUME:-ki-dev-agent-home}
+  agent-venv:
+    name: ${KI_DEV_AGENT_VENV_VOLUME:-ki-dev-agent-venv}
