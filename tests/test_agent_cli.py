@@ -120,6 +120,50 @@ def test_claude_diagnostics_passthrough(tmp_path):
     assert args == ["auth", "status"]
 
 
+@pytest.mark.parametrize(
+    ("name", "caller"),
+    [
+        ("claude", ["login"]),
+        ("claude", ["auth", "status"]),
+        ("claude", ["--help"]),
+        ("claude", ["--version"]),
+        ("codex", ["doctor"]),
+        ("codex", ["logout"]),
+        ("codex", ["-h"]),
+    ],
+)
+def test_diagnostics_passthrough_at_command_position(
+    tmp_path, name, caller
+):
+    missing = agent_cli.SettingsDirs.under(tmp_path / "missing")
+
+    args = agent_cli.build_args(name, caller, missing)
+
+    assert args == caller
+
+
+@pytest.mark.parametrize(
+    ("name", "caller"),
+    [
+        # "login"/"doctor" is a value here, not the subcommand: the
+        # launcher must still apply A/B, not pass the call through
+        # as-is.
+        ("claude", ["-p", "login"]),
+        ("codex", ["exec", "doctor"]),
+        # "--" marks the end of launcher-relevant args; a literal
+        # "--help" after it is not a top-level flag.
+        ("codex", ["exec", "--", "--help"]),
+    ],
+)
+def test_keyword_outside_command_position_is_not_passthrough(
+    dirs, name, caller
+):
+    args = agent_cli.build_args(name, caller, dirs)
+
+    assert args != caller
+    assert args[-len(caller) :] == caller
+
+
 def test_claude_filters_host_sandbox_flags(dirs):
     args = agent_cli.build_args(
         "claude",
@@ -241,11 +285,39 @@ def test_codex_caller_values_beat_defaults(dirs, caller, removed):
         ["--config=features.hooks=true"],
         ["--enable", "hooks"],
         ["--disable=hooks"],
+        # Inline table, quoted keys and dotted spacing all resolve to
+        # the same path as the plain dotted-key spelling above.
+        ["-c", "features={hooks=true}"],
+        ["-c", '"features"."hooks"=true'],
+        ["-c", "features . hooks = true"],
     ],
 )
 def test_codex_rejects_policy_overrides(dirs, caller):
     with pytest.raises(agent_cli.SettingsError, match="features.hooks"):
         agent_cli.build_args("codex", ["exec", *caller], dirs)
+
+
+@pytest.mark.parametrize(
+    "caller",
+    [
+        # A dotted-key assignment only ever addresses its own leaf; it
+        # must not be rejected merely for sharing the "features"
+        # parent with the protected "features.hooks".
+        ["-c", "features.web_search=false"],
+        ["--config=features.other_key=true"],
+    ],
+)
+def test_codex_allows_sibling_feature_overrides(dirs, caller):
+    args = agent_cli.build_args("codex", ["exec", *caller], dirs)
+
+    assert args[-len(caller) - 1 :] == ["exec", *caller]
+
+
+def test_codex_rejects_invalid_config_key(dirs):
+    with pytest.raises(agent_cli.SettingsError, match="invalid -c"):
+        agent_cli.build_args(
+            "codex", ["exec", "-c", "invalid key=value"], dirs
+        )
 
 
 def test_codex_drops_sandbox_config(dirs):
@@ -326,6 +398,16 @@ def test_ki_dev_turn_values_beat_defaults(dirs):
         ("claude.json", "[]", "expected a JSON object"),
         ("claude.json", '{"hooks": {}}', "unsupported keys"),
         ("claude.json", '{"effortLevel": "max"}', "effortLevel"),
+        # Unhashable JSON types must not reach the frozenset membership
+        # check with a bare TypeError; they fail the same as any other
+        # invalid value.
+        ("claude.json", '{"effortLevel": []}', "effortLevel"),
+        ("claude.json", '{"effortLevel": {}}', "effortLevel"),
+        (
+            "claude.json",
+            '{"modelSettings": {"opus": {"effortLevel": []}}}',
+            "effortLevel",
+        ),
         ("claude.json", '{"model": ""}', "model"),
         (
             "claude.json",
@@ -352,15 +434,90 @@ def test_invalid_model_defaults_fail(dirs, file_name, content, message):
         ({"claude": POLICY["claude"]}, "policy must be an object"),
         (
             {**POLICY, "claude": {"settings": {"model": "opus"}}},
-            "must not set model defaults",
+            "unsupported keys",
         ),
         (
             {**POLICY, "codex": {"config": {"model": "gpt"}}},
-            "must not set model defaults",
+            "unsupported keys",
         ),
         (
-            {**POLICY, "codex": {"config": {"features": {"x": 1}}}},
+            {
+                **POLICY,
+                "codex": {"config": {"features.hooks": {"x": 1}}},
+            },
             "boolean, integer or string",
+        ),
+        # An empty section is structurally an object, but it drops the
+        # execution policy the bead requires (hooks stay disabled).
+        (
+            {**POLICY, "claude": {"settings": {}}},
+            "disableAllHooks must be true",
+        ),
+        (
+            {
+                **POLICY,
+                "claude": {
+                    "settings": {
+                        "skipDangerousModePermissionPrompt": True,
+                        "disableAllHooks": False,
+                    }
+                },
+            },
+            "disableAllHooks must be true",
+        ),
+        (
+            {
+                **POLICY,
+                "claude": {
+                    "settings": {
+                        "skipDangerousModePermissionPrompt": False,
+                        "disableAllHooks": True,
+                    }
+                },
+            },
+            "skipDangerousModePermissionPrompt must be true",
+        ),
+        (
+            {
+                **POLICY,
+                "claude": {
+                    "settings": {
+                        "skipDangerousModePermissionPrompt": [],
+                        "disableAllHooks": True,
+                    }
+                },
+            },
+            "skipDangerousModePermissionPrompt must be true",
+        ),
+        (
+            {
+                **POLICY,
+                "claude": {
+                    "settings": {
+                        "skipDangerousModePermissionPrompt": "yes",
+                        "disableAllHooks": True,
+                    }
+                },
+            },
+            "skipDangerousModePermissionPrompt must be true",
+        ),
+        (
+            {
+                **POLICY,
+                "claude": {
+                    "settings": {
+                        "skipDangerousModePermissionPrompt": True,
+                        "disableAllHooks": True,
+                        "features.hooks": True,
+                    }
+                },
+            },
+            "unsupported keys",
+        ),
+        ({**POLICY, "codex": {"config": {}}}, "must be false"),
+        (
+            {**POLICY, "codex": {"config": {"features.hooks": True}}},
+            "must be false",
         ),
     ],
 )

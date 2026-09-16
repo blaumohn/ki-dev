@@ -13,6 +13,7 @@ import re
 import secrets
 import sys
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,19 +21,12 @@ SETTINGS_ROOT = Path("/opt/agent-settings")
 POLICY_FILE = "policy.json"
 CLIS = ("claude", "codex")
 
-# Authentication and diagnostics keep their normal CLI behavior.
-PASSTHROUGH = frozenset(
-    {
-        "--help",
-        "-h",
-        "--version",
-        "-V",
-        "login",
-        "logout",
-        "auth",
-        "doctor",
-    }
-)
+# Authentication and diagnostics keep their normal CLI behavior. Flags
+# are recognized anywhere before "--"; subcommands only at the command
+# position (the first leading argument), so they cannot be a flag's
+# value in disguise.
+PASSTHROUGH_FLAGS = frozenset({"--help", "-h", "--version", "-V"})
+PASSTHROUGH_COMMANDS = frozenset({"login", "logout", "auth", "doctor"})
 
 # Host sandbox options that the container isolation replaces.
 SANDBOX_OPTIONS = (
@@ -63,6 +57,13 @@ CLAUDE_MODEL_KEYS = frozenset(
 CLAUDE_TEXT_KEYS = ("model", "advisorModel", "language")
 CLAUDE_EFFORTS = frozenset({"low", "medium", "high", "xhigh"})
 CODEX_MODEL_KEYS = frozenset({"model", "model_reasoning_effort"})
+
+# Allowed keys of the access policy (A). Unlike the model defaults (B),
+# these are a fixed, small set: A only ever states execution policy.
+CLAUDE_POLICY_KEYS = frozenset(
+    {"skipDangerousModePermissionPrompt", "disableAllHooks"}
+)
+CODEX_POLICY_KEYS = frozenset({"features.hooks"})
 
 CONFIG_OPTIONS = ("-c", "--config")
 GENERATED_NAME = re.compile(r"claude-(\d+)-[0-9a-f]+\.json")
@@ -112,7 +113,7 @@ def build_args(
 ) -> list[str]:
     if name not in CLIS:
         raise SettingsError(f"unsupported CLI {name!r}")
-    if any(arg in PASSTHROUGH for arg in args):
+    if is_diagnostics_passthrough(args):
         return args
     policy = load_policy(dirs.access)[name]
     defaults = load_model_defaults(dirs.model, name)
@@ -120,6 +121,13 @@ def build_args(
     if name == "codex":
         return codex_args(policy, defaults, caller)
     return claude_args(policy, defaults, caller, dirs.generated)
+
+
+def is_diagnostics_passthrough(args: list[str]) -> bool:
+    leading = leading_args(args)
+    if leading and leading[0] in PASSTHROUGH_COMMANDS:
+        return True
+    return any(arg in PASSTHROUGH_FLAGS for arg in leading)
 
 
 # --- Claude ---------------------------------------------------------
@@ -224,14 +232,99 @@ def reject_codex_policy_overrides(
     names = (*CONFIG_OPTIONS, "--enable", "--disable")
     for option in find_options(args, names):
         if option.name in CONFIG_OPTIONS:
-            key = config_key(option.value)
+            paths = config_paths(option.value)
         else:
-            key = f"features.{option.value}"
-        if key in config:
+            paths = {f"features.{option.value}"}
+        conflict = conflicting_key(config, paths)
+        if conflict is not None:
             raise SettingsError(
                 f"{option.name} {option.value} conflicts with the "
-                f"access policy key {key!r}"
+                f"access policy key {conflict!r}"
             )
+
+
+def config_paths(assignment: str) -> set[str]:
+    # A dotted or quoted key is only the address this assignment
+    # writes to, not a claim on its parent table: "-c a.b=1" leaves
+    # siblings of "a" untouched, so only "a.b" (and anything the value
+    # itself replaces, see below) counts as assigned.
+    key, separator, value = assignment.partition("=")
+    if not separator:
+        raise SettingsError(f"invalid -c assignment {assignment!r}")
+    path = key_path(key)
+    data = parsed_value(key, value, assignment)
+    return assigned_paths(path, value_at_path(data, path))
+
+
+def key_path(key: str) -> str:
+    try:
+        (path,) = leaf_paths(tomllib.loads(f"{key} = 0"))
+    except tomllib.TOMLDecodeError as error:
+        raise SettingsError(
+            f"invalid -c key {key!r}: {error}"
+        ) from error
+    return path
+
+
+def leaf_paths(table: dict, prefix: str = "") -> set[str]:
+    paths = set()
+    for key, value in table.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            paths |= leaf_paths(value, path)
+        else:
+            paths.add(path)
+    return paths
+
+
+def parsed_value(key: str, value: str, assignment: str) -> dict:
+    # A bareword value that is not valid TOML on its own (e.g.
+    # "key=high") is retried as a plain string, matching Codex's own
+    # lenient -c parsing. The key was already validated by key_path.
+    try:
+        return tomllib.loads(assignment)
+    except tomllib.TOMLDecodeError:
+        pass
+    try:
+        return tomllib.loads(f"{key}={json.dumps(value)}")
+    except tomllib.TOMLDecodeError as error:
+        raise SettingsError(
+            f"invalid -c assignment {assignment!r}: {error}"
+        ) from error
+
+
+def value_at_path(data: dict, path: str) -> object:
+    value: object = data
+    for part in path.split("."):
+        value = value[part]
+    return value
+
+
+def assigned_paths(path: str, value: object) -> set[str]:
+    # A table value (an inline table on the right-hand side) wholesale
+    # replaces everything under it, so each of its own paths is
+    # assigned too. A scalar value only assigns the single leaf.
+    if isinstance(value, dict):
+        return {path} | flatten_table_paths(value, path)
+    return {path}
+
+
+def flatten_table_paths(table: dict, prefix: str) -> set[str]:
+    paths = set()
+    for key, value in table.items():
+        path = f"{prefix}.{key}"
+        paths.add(path)
+        if isinstance(value, dict):
+            paths |= flatten_table_paths(value, path)
+    return paths
+
+
+def conflicting_key(config: dict, paths: set[str]) -> str | None:
+    for policy_key in config:
+        for path in paths:
+            if path == policy_key or policy_key.startswith(f"{path}."):
+                return policy_key
+    return None
 
 
 def codex_caller_choices(args: list[str]) -> set[str]:
@@ -351,32 +444,39 @@ def load_policy(access_dir: Path) -> dict:
     check_exact_keys(path, "policy", policy, {"claude", "codex"})
     claude = policy["claude"]
     check_exact_keys(path, "claude", claude, {"settings"})
-    check_policy_section(
-        path, "claude.settings", claude["settings"], CLAUDE_MODEL_KEYS
-    )
+    check_claude_policy_settings(path, claude["settings"])
     codex = policy["codex"]
     check_exact_keys(path, "codex", codex, {"config"})
-    check_policy_section(
-        path, "codex.config", codex["config"], CODEX_MODEL_KEYS
-    )
-    for key, value in codex["config"].items():
+    check_codex_policy_config(path, codex["config"])
+    return policy
+
+
+def check_claude_policy_settings(path: Path, settings: object) -> None:
+    if not isinstance(settings, dict):
+        raise SettingsError(
+            f"{path}: claude.settings must be an object"
+        )
+    check_allowed_keys(path, settings, CLAUDE_POLICY_KEYS)
+    for key in sorted(CLAUDE_POLICY_KEYS):
+        if settings.get(key) is not True:
+            raise SettingsError(
+                f"{path}: claude.settings.{key} must be true"
+            )
+
+
+def check_codex_policy_config(path: Path, config: object) -> None:
+    if not isinstance(config, dict):
+        raise SettingsError(f"{path}: codex.config must be an object")
+    check_allowed_keys(path, config, CODEX_POLICY_KEYS)
+    for key, value in config.items():
         if not isinstance(value, bool | int | str):
             raise SettingsError(
                 f"{path}: codex.config.{key} must be a boolean, "
                 "integer or string"
             )
-    return policy
-
-
-def check_policy_section(
-    path: Path, label: str, section: object, model_keys: frozenset
-) -> None:
-    if not isinstance(section, dict):
-        raise SettingsError(f"{path}: {label} must be an object")
-    overlap = sorted(model_keys & section.keys())
-    if overlap:
+    if config.get("features.hooks") is not False:
         raise SettingsError(
-            f"{path}: {label} must not set model defaults {overlap}"
+            f"{path}: codex.config['features.hooks'] must be false"
         )
 
 
@@ -417,7 +517,7 @@ def check_model_settings(path: Path, model_settings: object) -> None:
 
 
 def check_effort(path: Path, label: str, value: object) -> None:
-    if value not in CLAUDE_EFFORTS:
+    if not isinstance(value, str) or value not in CLAUDE_EFFORTS:
         raise SettingsError(
             f"{path}: {label} must be one of {sorted(CLAUDE_EFFORTS)}"
         )
