@@ -11,6 +11,7 @@ from typing import Protocol
 
 from ki_dev.deltas import ControllerContext
 from ki_dev.executors import Effort, Executor, TurnRequest
+from ki_dev.executors.contract import TurnBudget, TurnResult
 from ki_dev.review_context import (
     DEFAULT_PROJECTION_LIMITS,
     ProjectionLimits,
@@ -28,6 +29,24 @@ class ReviewAction(StrEnum):
 
 class LoopProtocolError(ValueError):
     """Agentenausgabe verletzt Huelle oder Referenzbindung."""
+
+
+class AgentTurnError(RuntimeError):
+    """Agentenaufruf ohne Erlaubnis zur automatischen Wiederholung."""
+
+    def __init__(self, result: TurnResult) -> None:
+        self.result = result
+        super().__init__(
+            "; ".join(
+                filter(
+                    None,
+                    (
+                        result.error or result.status.value,
+                        result.stderr[:2000],
+                    ),
+                )
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -105,21 +124,23 @@ class AgentBuildMode:
     session_id: str
     model: str
     effort: Effort
+    budget: TurnBudget = TurnBudget()
+    last_result: TurnResult | None = None
 
     def build(self, request: BuildRequest) -> BuildReport:
+        self.last_result = None
         result = self.executor.send_turn(
             TurnRequest(
                 session_id=self.session_id,
                 model=self.model,
                 effort=self.effort,
                 message=_build_prompt(request),
+                budget=self.budget,
             )
         )
+        self.last_result = result
         if not result.ok:
-            raise RuntimeError(
-                result.error
-                or f"Bau-Turn fehlgeschlagen: {result.status}"
-            )
+            raise AgentTurnError(result)
         return BuildReport(result.stdout)
 
 
@@ -129,21 +150,23 @@ class AgentReviewer:
     session_id: str
     model: str
     effort: Effort
+    budget: TurnBudget = TurnBudget()
+    last_result: TurnResult | None = None
 
     def review(self, request: ReviewRequest) -> str:
+        self.last_result = None
         result = self.executor.send_turn(
             TurnRequest(
                 session_id=self.session_id,
                 model=self.model,
                 effort=self.effort,
                 message=_review_prompt(request),
+                budget=self.budget,
             )
         )
+        self.last_result = result
         if not result.ok:
-            raise RuntimeError(
-                result.error
-                or f"Review-Turn fehlgeschlagen: {result.status}"
-            )
+            raise AgentTurnError(result)
         return result.stdout
 
 
@@ -247,6 +270,9 @@ Massgebliche Quellen:
 
 Offene Beanstandung: {objection}
 Bearbeite den Auftrag und pruefe seine Wirkung.
+Arbeite innerhalb der Aufrufgrenzen. Bei fehlendem Zugriff oder
+anderem Blocker beende die Arbeit mit einer konkreten Begruendung;
+versuche nicht wiederholt, denselben Blocker zu umgehen.
 Berichte knapp, was getan und geprueft wurde.
 """
 

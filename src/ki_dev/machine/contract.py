@@ -75,6 +75,7 @@ class MachineEscalationCause(StrEnum):
     EMPTY_RESULT_UNRESOLVED = "empty_result_unresolved"
     FINAL_VERIFICATION_FAILED = "final_verification_failed"
     INTEGRATION_FAILED = "integration_failed"
+    EXECUTION_GUARD = "execution_guard"
 
 
 @dataclass(frozen=True)

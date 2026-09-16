@@ -7,6 +7,7 @@ vollstaendige Argumentbildung liegt in der jeweiligen Unterklasse.
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
@@ -28,6 +29,12 @@ class CliAdapter(ABC):
         timeout_s: float = DEFAULT_TIMEOUT_S,
         runner: ProcessRunner = run_cli_turn,
     ) -> None:
+        if (
+            type(timeout_s) not in (int, float)
+            or not math.isfinite(timeout_s)
+            or timeout_s <= 0
+        ):
+            raise ValueError("timeout_s muss positiv und endlich sein")
         self.executable = executable or self.default_executable
         self.timeout_s = timeout_s
         self._runner = runner
@@ -37,7 +44,9 @@ class CliAdapter(ABC):
         return self._runner(
             argv,
             stdin=self.message_stdin(request),
-            timeout_s=self.timeout_s,
+            timeout_s=min(self.timeout_s, request.budget.timeout_s)
+            if request.budget
+            else self.timeout_s,
         )
 
     @property

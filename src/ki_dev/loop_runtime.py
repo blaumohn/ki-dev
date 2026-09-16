@@ -22,6 +22,7 @@ from ki_dev.deltas import (
 from ki_dev.loop import (
     AgentBuildMode,
     AgentReviewer,
+    AgentTurnError,
     BuildMode,
     BuildReport,
     BuildRequest,
@@ -33,6 +34,7 @@ from ki_dev.loop import (
     ReviewRequest,
     parse_review_decision,
 )
+from ki_dev.loop_safety import CallLedger, SafetyLimits, SafetyStop
 from ki_dev.machine import (
     AgentEscalation,
     CheckpointRecorded,
@@ -63,13 +65,13 @@ from ki_dev.machine import (
     decode_run_state,
     encode_run_state,
 )
+from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
     DEFAULT_PROJECTION_LIMITS,
     ProjectionLimits,
     project_review_context,
 )
 from ki_dev.run_store import RunStore
-from ki_dev.repository_finalization import Finalizer
 
 
 class LoopResumeError(RuntimeError):
@@ -132,6 +134,7 @@ class LoopRuntime:
     evidence_collector: EvidenceCollector
     finalizer: Finalizer
     limits: ProjectionLimits = DEFAULT_PROJECTION_LIMITS
+    safety_limits: SafetyLimits = SafetyLimits()
 
     def __post_init__(self) -> None:
         if (
@@ -143,6 +146,7 @@ class LoopRuntime:
                 "Bau und Review brauchen unabhaengige Sitzungen"
             )
         self._invocation_id = uuid.uuid4().hex
+        self._ledger = CallLedger(self.store)
         self.store.run_dir.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(
             self.store.checkpoint_path, check_same_thread=False
@@ -175,6 +179,7 @@ class LoopRuntime:
             "schema_version": 1,
             "task": _encode_task(task),
             "limits": asdict(limits),
+            "safety_limits": asdict(self.safety_limits),
         }
         if manifest_extra:
             overlap = set(manifest) & set(manifest_extra)
@@ -251,6 +256,11 @@ class LoopRuntime:
             raise LoopResumeError(
                 "Abgleich gehoert nicht zur unklaren Operation"
             )
+        if pending.get("call_id"):
+            try:
+                self._ledger.reconcile(pending["call_id"], artifact)
+            except SafetyStop as exc:
+                raise LoopResumeError(str(exc)) from exc
         self.store.write_artifact(operation_id, artifact)
         self._graph.update_state(
             self._config(),
@@ -395,7 +405,9 @@ class LoopRuntime:
             }
         if phase is Phase.VERIFY_FINAL_RESULT:
             return {
-                "pending_operation": self._operation(state, "verify_final")
+                "pending_operation": self._operation(
+                    state, "verify_final"
+                )
             }
         if phase is Phase.FAST_FORWARD_INTEGRATE:
             return {
@@ -418,7 +430,12 @@ class LoopRuntime:
         self, state: LoopGraphState, kind: str
     ) -> dict[str, object]:
         run = decode_run_state(state["run_state"])
-        if kind in {"freeze", "finalize_history", "verify_final", "integrate"}:
+        if kind in {
+            "freeze",
+            "finalize_history",
+            "verify_final",
+            "integrate",
+        }:
             operation_id = f"final-{kind}-r{run.revision:04d}"
         elif kind == "review":
             operation_id = (
@@ -451,17 +468,44 @@ class LoopRuntime:
             return self._accept_artifact(state, pending, stored)
         status = pending["status"]
         if status == "prepared":
+            call_id = None
+            if pending["kind"] in {"build", "review"}:
+                actor = (
+                    self.builder
+                    if pending["kind"] == "build"
+                    else self.reviewer
+                )
+                call_id = f"{operation_id}-{uuid.uuid4().hex}"
+                try:
+                    self._ledger.reserve(
+                        call_id,
+                        operation_id,
+                        isinstance(
+                            actor, (AgentBuildMode, AgentReviewer)
+                        ),
+                        actor.executor.name
+                        if isinstance(
+                            actor, (AgentBuildMode, AgentReviewer)
+                        )
+                        else None,
+                    )
+                except SafetyStop as exc:
+                    return self._safety_stop(state, str(exc))
             started = {
                 **pending,
                 "status": "started",
                 "invocation": self._invocation_id,
+                "call_id": call_id,
             }
             return {"pending_operation": started}
-        if (
-            pending.get("invocation") != self._invocation_id
-            and pending.get("kind")
-            not in {"freeze", "finalize_history", "verify_final", "integrate"}
-        ):
+        if pending.get(
+            "invocation"
+        ) != self._invocation_id and pending.get("kind") not in {
+            "freeze",
+            "finalize_history",
+            "verify_final",
+            "integrate",
+        }:
             return {
                 "status": "uncertain",
                 "last_error": (
@@ -471,7 +515,9 @@ class LoopRuntime:
                 ),
             }
         try:
-            value = self._execute_operation(state, pending)
+            value = self._metered_operation(state, pending)
+        except (AgentTurnError, SafetyStop, PermissionError) as exc:
+            return self._safety_stop(state, str(exc))
         except LoopProtocolError as exc:
             return self._protocol_failure(state, str(exc))
         except Exception as exc:
@@ -480,6 +526,64 @@ class LoopRuntime:
             )
         self.store.write_artifact(operation_id, value)
         return self._accept_artifact(state, pending, value)
+
+    def _metered_operation(
+        self, state: LoopGraphState, pending: dict[str, object]
+    ) -> object:
+        if pending["kind"] not in {"build", "review"}:
+            return self._execute_operation(state, pending)
+        call_id = pending.get("call_id")
+        if not call_id:
+            raise SafetyStop(
+                "Agentenaufruf ohne persistierte Budgetreservierung"
+            )
+        actor = (
+            self.builder
+            if pending["kind"] == "build"
+            else self.reviewer
+        )
+        try:
+            value = self._execute_operation(state, pending)
+        except Exception as exc:
+            self._ledger.finish(
+                call_id,
+                getattr(actor, "last_result", None),
+                f"{type(exc).__name__}: {exc}",
+            )
+            if isinstance(
+                actor, (AgentBuildMode, AgentReviewer)
+            ) and not isinstance(exc, LoopProtocolError):
+                raise SafetyStop(str(exc)) from exc
+            raise
+        self._ledger.finish(
+            call_id, getattr(actor, "last_result", None), None
+        )
+        return value
+
+    def _safety_stop(
+        self, state: LoopGraphState, detail: str
+    ) -> dict[str, object]:
+        run = decode_run_state(state["run_state"])
+        escalation = MachineEscalation(
+            MachineEscalationCause.EXECUTION_GUARD,
+            run.state.phase,
+        )
+        return {
+            **self._replace_run(
+                run,
+                run.state.moved_to(Phase.PAUSED_INTERACTIVE),
+                escalation,
+            ),
+            "status": "paused_interactive",
+            "pending_operation": None,
+            "last_error": detail,
+            "interrupt_payload": {
+                "kind": "escalate",
+                "run_id": run.run_id,
+                "round_id": state["round_id"],
+                "reason": detail,
+            },
+        }
 
     def _execute_operation(
         self, state: LoopGraphState, pending: dict[str, object]
@@ -667,6 +771,16 @@ class LoopRuntime:
         decision: ReviewDecision,
     ) -> dict[str, object]:
         if decision.action is ReviewAction.CHANGES:
+            if (
+                run.state.counters.changes_round
+                >= self._ledger.limits().max_failed_corrections
+            ):
+                return self._safety_stop(
+                    state,
+                    "Korrekturen wiederholt abgelehnt; "
+                    "Ursache/Loesungsansatz vor weiterem Bau klaeren. "
+                    + decision.detail,
+                )
             update = self._transition(
                 run, ControllerChanges(decision.detail)
             )
@@ -895,7 +1009,7 @@ def _context_document(context: ControllerContext) -> dict[str, object]:
 
 
 def _result_refs(artifact: dict[str, object]) -> dict[str, object]:
-    """Extrahiere genau die Referenzen des dem Reviewer gezeigten Deltas."""
+    """Extrahiere die Referenzen des dem Reviewer gezeigten Deltas."""
     try:
         context = cast(dict[str, object], artifact["context"])
         step = cast(dict[str, object], context["step_delta"])

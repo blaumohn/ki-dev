@@ -23,14 +23,14 @@ ki-dev loop --config loop.json --run-id run-42
     "session_id": "build-session",
     "model": "gpt-5.6-terra",
     "effort": "high",
-    "timeout_s": 1800
+    "timeout_s": 180
   },
   "review": {
     "executor": "claude",
     "session_id": "review-session",
     "model": "sonnet",
     "effort": "high",
-    "timeout_s": 1800
+    "timeout_s": 180
   },
   "tests": [
     {
@@ -88,6 +88,77 @@ ki-dev loop resume run-42 --reconcile-result abgeglichen.json
 ```
 
 Ohne diesen expliziten Abgleich bleibt der Lauf angehalten.
+
+## Verbrauchsschutz
+
+Ein CLI-Aufruf kann viele interne Modellanfragen enthalten.
+Deshalb gelten zusaetzlich zu den Maschinenzaehlern folgende
+konfigurierbare Standardgrenzen:
+
+| Grenze | Standard | Wirkung |
+| --- | ---: | --- |
+| `safety_limits.max_agent_calls` | 6 | Bau und Review zusammen, inkl. fehlgeschlagener Aufrufe |
+| `safety_limits.max_total_tokens` | 1.000.000 | Input, Cache-Schreiben, Cache-Lesen und Output; Pruefung vor dem naechsten Aufruf |
+| `safety_limits.max_claude_cost_usd` | 3 | Summe der von Claude gemeldeten API-Kostenwerte |
+| `safety_limits.max_failed_corrections` | 2 | Nach zwei abgelehnten Korrekturen kein weiterer automatischer Bau |
+| `build.budget.max_turns` / `review.budget.max_turns` | 12 | Native Claude-Turn-Grenze pro Aufruf |
+| `budget.max_budget_usd` je Rolle | 1 | Native Claude-Kostengrenze pro Aufruf |
+| `budget.max_context_tokens` je Rolle | 80.000 | Claude-Sitzung vor Resume anhand des letzten realen Requests pruefen |
+| `budget.timeout_s` je Rolle | 180 s | Prozesstimeout fuer beide Adapter; der kleinere Wert aus Rollen-Timeout und Budget gilt |
+
+Beispiel fuer eine bewusst kleinere Schranke auf oberster Konfigurationsebene:
+
+```json
+"safety_limits": {
+  "max_agent_calls": 4,
+  "max_total_tokens": 500000,
+  "max_claude_cost_usd": 2,
+  "max_failed_corrections": 1
+}
+```
+
+Die Rolle kann ein `budget`-Objekt mit den vier oben genannten Feldern
+enthalten. Nicht angegebene Werte erhalten die Standardwerte; wirksame
+Rollenbudgets und Laufgrenzen werden beim Start im Manifest gespeichert.
+Diese Werte sind Betriebsvorgaben, keine berechneten Abo-Prozentgrenzen.
+
+`calls/` enthaelt unveraenderliche Start- und Ergebnisbelege mit
+Verbrauch, Dauer und Fehlergrund. Die Reservierung vor einem Aufruf
+wird gesperrt gegen gleichzeitige Reservierungen; ein Neustart setzt
+keinen Zaehler zurueck. Die Bilanz zaehlt Cache-Lesetokens mit und
+vermeidet bei Codex deren Doppelzaehlung als ungecachten Input.
+
+Ein Agentenfehler, verweigerte Berechtigung, Kontingentabbruch, fehlender
+Verbrauchsnachweis oder eine erreichte Grenze fuehrt zu einer
+Maschineneskalation `execution_guard`, `paused_interactive` und einem
+Interrupt der Art `escalate`. Es folgt kein automatischer Agenten-Retry.
+Das gilt auch fuer unbekannte CLI-Fehler; sie gelten nicht ohne Nachweis
+als voruebergehend. Fachliche Review-Nachrichten bleiben davon getrennt.
+
+Eine Wiederaufnahme braucht eine ausdrueckliche Antwort. Sie hebt
+Verbrauchsgrenzen nicht auf. Ein begonnenes, nicht bilanziertes Ergebnis
+bleibt ungeklaert. Beim Abgleich einer solchen `uncertain`-Operation
+muss `--reconcile-result` neben dem fachlichen Artefakt auch `usage`
+mit `input_tokens`, `output_tokens`, `cache_read_input_tokens` und
+`cache_creation_input_tokens` enthalten, bei Claude zusaetzlich
+`cost_usd`. Werte muessen aus dem tatsaechlichen Aufruf stammen.
+Altläufe ohne Bilanz erhalten keinen automatischen neuen Agentenaufruf.
+Ein textuelles „weiter“ ersetzt weder diesen Nachweis noch eine
+Neuplanung mit kleinerem Auftrag und vorbereiteter frischer Sitzung.
+
+Die Lauf-Token-/Kostensumme wird an CLI-Schrittgrenzen geprueft und
+kann durch den gerade laufenden Aufruf ueberschritten werden. Claude
+hat zusaetzlich die nativen Grenzen innerhalb dieses Aufrufs; auch
+diese sind keine Reservierung eines exakten Aboanteils. Fuer Codex
+werden hier keine nativen Turn-/USD-Grenzen behauptet. Seine
+Aufrufe werden zeitlich begrenzt und anschliessend bilanziert.
+Andere Laeufe oder manuelle Sitzungen desselben Kontos sind nicht
+Teil dieser laufbezogenen Bilanz.
+
+Der konkrete Anlass und die Messmethode stehen in der
+[Verbrauchsanalyse zu uar-2-02](ki-dev/uar-2-02-verbrauch.md).
+
+## Gepruefter Abschluss
 
 `PASS` ist noch kein Erfolg. Der Loop bindet es zunächst an den exakten,
 zuletzt geprüften Commit sowie dessen Baum-ID. Anschließend erzeugt er einen

@@ -8,7 +8,8 @@ installierte, bereits angemeldete ``codex``-CLI.
 from __future__ import annotations
 
 from .base import CliAdapter
-from .contract import TurnRequest
+from .contract import TurnRequest, TurnResult
+from .metering import codex_result
 
 # Lokal verifizierter Bezugsstand der dokumentierten CLI-Syntax.
 VERIFIED_CLI_VERSION = "0.154.0"
@@ -24,11 +25,15 @@ class CodexCliAdapter(CliAdapter):
     def default_executable(self) -> str:
         return "codex"
 
+    def send_turn(self, request: TurnRequest) -> TurnResult:
+        result = super().send_turn(request)
+        return codex_result(result) if request.budget else result
+
     def build_argv(self, request: TurnRequest) -> list[str]:
         # ``-`` weist ``codex exec`` an, den Prompt von stdin zu
         # lesen. Effort geht direkt als Codex-Konfigurationsschluessel
         # ``model_reasoning_effort`` mit.
-        return [
+        argv = [
             "exec",
             "resume",
             request.session_id,
@@ -38,3 +43,6 @@ class CodexCliAdapter(CliAdapter):
             f"model_reasoning_effort={request.effort.value}",
             "-",
         ]
+        if request.budget:
+            argv.insert(-1, "--json")
+        return argv

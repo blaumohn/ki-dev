@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import cast
 
 from ki_dev.executors import Effort, build_executor
+from ki_dev.executors.contract import TurnBudget
 from ki_dev.loop import AgentBuildMode, AgentReviewer, LoopTask
 from ki_dev.loop_runtime import LoopRunResult, LoopRuntime
+from ki_dev.loop_safety import SafetyLimits
 from ki_dev.machine import Limits
 from ki_dev.repository_evidence import (
     CheckCommand,
@@ -32,6 +34,13 @@ def start_from_config(
     runs_dir: Path,
 ) -> LoopRunResult:
     config = _load_object(path)
+    # Effektive Defaults bleiben ueber Upgrades nachvollziehbar.
+    for role in ("build", "review"):
+        values = _required_object(config, role)
+        config[role] = {
+            **values,
+            "budget": asdict(_turn_budget(values.get("budget", {}))),
+        }
     actual_run_id = run_id or f"run-{uuid.uuid4().hex[:12]}"
     task = _task(config, actual_run_id)
     limits = _limits(config.get("limits", {}))
@@ -108,6 +117,7 @@ def _runtime(
         ),
         finalizer=finalizer,
         limits=projection,
+        safety_limits=_safety(config.get("safety_limits", {})),
     )
 
 
@@ -123,6 +133,7 @@ def _task(config: dict[str, object], run_id: str) -> LoopTask:
         "limits",
         "projection_limits",
         "finalization",
+        "safety_limits",
     }
     extra = set(config) - expected
     if extra:
@@ -146,7 +157,7 @@ def _task(config: dict[str, object], run_id: str) -> LoopTask:
 
 def _role(value: dict[str, object]) -> dict[str, object]:
     required = {"executor", "session_id", "model", "effort"}
-    optional = {"executable", "timeout_s"}
+    optional = {"executable", "timeout_s", "budget"}
     _exact_fields(value, required, optional, "Rolle")
     kwargs: dict[str, object] = {}
     if "executable" in value:
@@ -168,7 +179,22 @@ def _role(value: dict[str, object]) -> dict[str, object]:
         "session_id": _text(value, "session_id"),
         "model": _text(value, "model"),
         "effort": effort,
+        "budget": _turn_budget(value.get("budget", {})),
     }
+
+
+def _turn_budget(value: object) -> TurnBudget:
+    try:
+        return TurnBudget(**_mapping(value, "budget"))
+    except (TypeError, ValueError) as exc:
+        raise LoopConfigError(str(exc)) from exc
+
+
+def _safety(value: object) -> SafetyLimits:
+    try:
+        return SafetyLimits(**_mapping(value, "safety_limits"))
+    except (TypeError, ValueError) as exc:
+        raise LoopConfigError(str(exc)) from exc
 
 
 def _check(value: object) -> CheckCommand:
@@ -199,7 +225,9 @@ def _finalizer(value: dict[str, object]) -> RepositoryFinalizer:
     )
     try:
         return RepositoryFinalizer(
-            target_workdir=Path(_text(value, "target_workdir")).resolve(),
+            target_workdir=Path(
+                _text(value, "target_workdir")
+            ).resolve(),
             target_ref=_text(value, "target_ref"),
             commit_message=_text(value, "commit_message"),
             data_mode=_text(value, "data_mode"),

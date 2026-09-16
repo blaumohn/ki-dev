@@ -14,9 +14,10 @@ Typen und keinerlei Claude-/Codex-spezifische Argumente.
 
 | Typ | Zweck |
 | --- | --- |
-| `TurnRequest` | Eingabe: `session_id`, `message`, `model`, `effort` |
+| `TurnRequest` | Eingabe: `session_id`, `message`, `model`, `effort`, optional `budget` |
+| `TurnBudget` | Interne Claude-Turn-/Kosten-/Kontextgrenzen und gemeinsamer Timeout |
 | `Effort` | `LOW` / `MEDIUM` / `HIGH` |
-| `TurnResult` | Ausgabe: `status`, `exit_code`, `stdout`, `stderr`, `argv`, `duration_s`, `error` |
+| `TurnResult` | Ausgabe: `status`, `exit_code`, `stdout`, `stderr`, `argv`, `duration_s`, `error`, optional `usage` |
 | `TurnStatus` | `OK` / `NONZERO_EXIT` / `TIMEOUT` / `START_ERROR` |
 | `Executor` | Protokoll mit `name` und `send_turn(request) -> TurnResult` |
 
@@ -67,6 +68,9 @@ Modul: `ki_dev.executors.process` (`run_cli_turn`)
 
 Der Standard-Timeout ist `DEFAULT_TIMEOUT_S = 900` Sekunden und pro
 Adapterinstanz ueberschreibbar.
+`ki-dev loop` uebergibt immer ein `TurnBudget`; dessen Standardtimeout
+betraegt 180 Sekunden und begrenzt den Adaptertimeout zusaetzlich.
+Alle Zeit- und Kostengrenzen muessen positiv und endlich sein.
 
 ## ClaudeCliAdapter
 
@@ -95,6 +99,24 @@ claude --print --output-format text \
   (gueltige Werte in 2.1.272: `low`, `medium`, `high`, `xhigh`,
   `max`). Die drei Vertragsstufen werden unveraendert durchgereicht.
 
+Mit `TurnBudget` (immer im Loop) verwendet der Adapter stattdessen
+`--output-format json --max-turns 12 --max-budget-usd 1.0`, mit den
+jeweils konfigurierten Grenzwerten. Vor einem Aufruf wird die lokale
+vorbereitete Sitzung unter `~/.claude/projects/*/<session_id>.jsonl`
+gelesen. Fehlender, mehrdeutiger oder zu grosser Kontext stoppt vor
+dem CLI-Start. Synthetische Fehler mit Nullusage verschleiern nicht
+den letzten echten Kontext.
+
+Das JSON-Resultat liefert Antworttext und `usage` getrennt. Auch bei
+Exitcode 0 gelten `is_error`, ein Fehler-`subtype` oder
+`permission_denials` als Nicht-Erfolg. Fehlende Pflichtdaten werden
+nicht durch geschaetzte Nullkosten ersetzt. Der lokale Preflight
+ohne gestarteten Prozess ist dagegen nachweislich verbrauchsfrei.
+Native Flags und Ergebnisfelder sind in der
+[Claude-CLI-Referenz](https://code.claude.com/docs/en/cli-reference)
+und der [Verbrauchsdokumentation](https://code.claude.com/docs/en/agent-sdk/cost-tracking)
+beschrieben. Die Flags sind auch im installierten Bezugsstand vorhanden.
+
 ## CodexCliAdapter
 
 Verwendete CLI: **OpenAI Codex CLI** (`codex`), nachweisbar per
@@ -120,6 +142,14 @@ codex exec resume <session_id> \
 * `-c model_reasoning_effort=<stufe>` – direkte Uebersetzung von
   `effort` in den Codex-Konfigurationsschluessel.
 * abschliessendes `-` – Prompt wird von stdin gelesen.
+
+Mit `TurnBudget` aktiviert der Adapter `--json`. Er extrahiert die
+letzte abgeschlossene Agentenantwort und den Verbrauch aus
+`turn.completed`. Fehlerereignisse oder fehlende Verbrauchswerte
+sind kein Erfolg. `cached_input_tokens` ist eine Teilmenge von
+`input_tokens`; in der gemeinsamen Bilanz wird dieser Anteil genau
+einmal gezaehlt. Die Claude-spezifischen Turn-/Kosten-/Kontextgrenzen
+werden nicht als unterstuetzte Codex-Funktionen ausgegeben.
 
 ## Effort im Turn-Vertrag
 
