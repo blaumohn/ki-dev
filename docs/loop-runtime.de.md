@@ -9,6 +9,10 @@ ki-dev loop --config loop.json --run-id run-42
 ```json
 {
   "task": "Den beschriebenen Auftrag umsetzen",
+  "acceptance_criteria": [
+    "Konkretes, pruefbares Kriterium 1",
+    "Konkretes, pruefbares Kriterium 2"
+  ],
   "sources": ["bd:projekt-42", "docs/vertrag.md"],
   "workdir": "/absoluter/pfad/zum/repository",
   "access_profile": "write",
@@ -88,6 +92,43 @@ ki-dev loop resume run-42 --reconcile-result abgeglichen.json
 ```
 
 Ohne diesen expliziten Abgleich bleibt der Lauf angehalten.
+
+## Auftragsbindung fuer CHANGES
+
+`acceptance_criteria` ist eine nichtleere, eindeutige Liste bestehender
+Anforderungen; sie ist Teil des unveraenderlichen Auftrags und bleibt
+ueber Korrekturen und Resume stabil. Der Reviewer erhaelt sie durchnummeriert
+als `AC1`, `AC2`, ... und muss ein `CHANGES` an genau eine davon binden:
+
+```json
+{"run_id":"run-42","round_id":2,"action":"CHANGES","detail":"...","requirement_ref":"AC1"}
+```
+
+Ein `CHANGES` ohne bekannte Referenz (fehlend, leer oder unbekannt) wird
+nicht als Reparaturauftrag uebernommen, sondern automatisch zu
+`NEEDS_DECISION` umgewandelt: mehrdeutige Anforderungen oder eine
+strengere neue Interpretation brauchen eine menschliche Klaerung statt
+einer automatisch gestarteten weiteren Baurunde. Ein Quelltext-Diff
+allein ist dabei kein Ablehnungsgrund; geprueft wird nur die technische
+Referenz, nicht die inhaltliche Berechtigung der Beanstandung. Alle
+anderen Aktionen (`PASS`, `NEEDS_DECISION`, `ESCALATE`) duerfen kein
+`requirement_ref` setzen. Eine freigegebene echte Auftragserweiterung
+braucht einen neuen, gesondert gestarteten Lauf mit erweiterten
+`acceptance_criteria` statt einer stillen Erweiterung des laufenden
+Auftrags.
+
+## Statusabfrage ohne Fortschreiben
+
+```bash
+ki-dev loop status run-42 --runs-dir .ki-dev/runs
+```
+
+Liest Status, Phase und Runden-ID des zuletzt persistierten Checkpoints,
+ohne Bau/Review/Resume auszufuehren und ohne den Lauf zu veraendern oder
+fehlende Checkpoint-Dateien anzulegen. Ein aktiver Schreiber mit offener
+WAL-Datei wird konsistent gelesen, nicht blockiert und nicht veraendert.
+Fehlt der Lauf oder ist sein Checkpoint unvollstaendig, meldet das
+Kommando das eindeutig statt eines erfundenen Platzhalterstatus.
 
 ## Verbrauchsschutz
 

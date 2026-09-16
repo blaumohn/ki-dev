@@ -124,6 +124,7 @@ def _runtime(
 def _task(config: dict[str, object], run_id: str) -> LoopTask:
     expected = {
         "task",
+        "acceptance_criteria",
         "sources",
         "workdir",
         "access_profile",
@@ -145,14 +146,30 @@ def _task(config: dict[str, object], run_id: str) -> LoopTask:
         not isinstance(item, str) for item in sources
     ):
         raise LoopConfigError("sources muss eine Textliste sein")
+    criteria = config.get("acceptance_criteria")
+    if (
+        not isinstance(criteria, list)
+        or not criteria
+        or any(
+            not isinstance(item, str) or not item.strip()
+            for item in criteria
+        )
+    ):
+        raise LoopConfigError(
+            "acceptance_criteria muss eine nichtleere Textliste sein"
+        )
     workdir = Path(_text(config, "workdir")).resolve()
-    return LoopTask(
-        run_id=run_id,
-        task=_text(config, "task"),
-        sources=tuple(sources),
-        workdir=workdir,
-        access_profile=_text(config, "access_profile"),
-    )
+    try:
+        return LoopTask(
+            run_id=run_id,
+            task=_text(config, "task"),
+            sources=tuple(sources),
+            workdir=workdir,
+            access_profile=_text(config, "access_profile"),
+            acceptance_criteria=tuple(criteria),
+        )
+    except (TypeError, ValueError) as exc:
+        raise LoopConfigError(str(exc)) from exc
 
 
 def _role(value: dict[str, object]) -> dict[str, object]:

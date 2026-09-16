@@ -22,6 +22,7 @@ from ki_dev.loop import (
     LoopProtocolError,
     LoopTask,
     ReviewAction,
+    bind_review_decision,
     parse_review_decision,
     run_review_round,
 )
@@ -37,8 +38,11 @@ class FakeBuilder:
 
 
 class FakeReviewer:
-    def __init__(self, action: ReviewAction) -> None:
+    def __init__(
+        self, action: ReviewAction, requirement_ref="AC1"
+    ) -> None:
         self.action = action
+        self.requirement_ref = requirement_ref
         self.requests = []
 
     def review(self, request):
@@ -51,6 +55,9 @@ class FakeReviewer:
                 "detail": "Test fehlt"
                 if self.action is ReviewAction.CHANGES
                 else "",
+                "requirement_ref": self.requirement_ref
+                if self.action is ReviewAction.CHANGES
+                else None,
             }
         )
 
@@ -82,7 +89,12 @@ def test_fake_build_review_cycle_reaches_typed_decision(action):
     builder = FakeBuilder()
     reviewer = FakeReviewer(action)
     task = LoopTask(
-        "run-1", "Auftrag", ("bd:jbr.1",), Path("/work"), "write"
+        "run-1",
+        "Auftrag",
+        ("bd:jbr.1",),
+        Path("/work"),
+        "write",
+        acceptance_criteria=("Kriterium 1",),
     )
     result = run_review_round(
         task=task,
@@ -100,11 +112,21 @@ def test_fake_build_review_cycle_reaches_typed_decision(action):
     "payload",
     [
         "PASS",
-        '{"run_id":"other","round_id":1,"action":"PASS","detail":""}',
-        '{"run_id":"run-1","round_id":2,"action":"PASS","detail":""}',
-        '{"run_id":"run-1","round_id":true,"action":"PASS","detail":""}',
-        '{"run_id":"run-1","round_id":1,"action":"MAYBE","detail":""}',
+        '{"run_id":"other","round_id":1,"action":"PASS","detail":"",'
+        '"requirement_ref":null}',
+        '{"run_id":"run-1","round_id":2,"action":"PASS","detail":"",'
+        '"requirement_ref":null}',
+        '{"run_id":"run-1","round_id":true,"action":"PASS","detail":"",'
+        '"requirement_ref":null}',
+        '{"run_id":"run-1","round_id":1,"action":"MAYBE","detail":"",'
+        '"requirement_ref":null}',
         '{"run_id":"run-1","round_id":1,"action":"PASS"}',
+        '{"run_id":"run-1","round_id":1,"action":"PASS","detail":"",'
+        '"requirement_ref":"AC1"}',
+        '{"run_id":"run-1","round_id":1,"action":"CHANGES",'
+        '"detail":"x","requirement_ref":""}',
+        '{"run_id":"run-1","round_id":1,"action":"CHANGES",'
+        '"detail":"x","requirement_ref":1}',
     ],
 )
 def test_invalid_or_foreign_review_decisions_are_rejected(payload):
@@ -117,7 +139,14 @@ def test_context_binding_is_checked_after_build():
     wrong = ControllerContext(
         "Fremder Auftrag", wrong.step_delta, wrong.round_status
     )
-    task = LoopTask("run-1", "Auftrag", (), Path("/work"), "write")
+    task = LoopTask(
+        "run-1",
+        "Auftrag",
+        (),
+        Path("/work"),
+        "write",
+        acceptance_criteria=("Kriterium 1",),
+    )
     with pytest.raises(LoopProtocolError, match="fremdem Auftrag"):
         run_review_round(
             task=task,
@@ -145,6 +174,9 @@ def test_every_review_action_is_typed(action):
             "round_id": 1,
             "action": action.value,
             "detail": detail,
+            "requirement_ref": "AC1"
+            if action is ReviewAction.CHANGES
+            else None,
         }
     )
     assert (
@@ -153,3 +185,99 @@ def test_every_review_action_is_typed(action):
         ).action
         is action
     )
+
+
+def _bound_task() -> LoopTask:
+    return LoopTask(
+        "run-1",
+        "Auftrag",
+        (),
+        Path("/work"),
+        "write",
+        acceptance_criteria=(
+            "Status meldet vorhandene Laeufe korrekt",
+        ),
+    )
+
+
+def test_changes_with_known_reference_stays_changes():
+    task = _bound_task()
+    decision = parse_review_decision(
+        json.dumps(
+            {
+                "run_id": "run-1",
+                "round_id": 1,
+                "action": "CHANGES",
+                "detail": "Gueltiger Lauf wird faelschlich als "
+                "fehlend gemeldet",
+                "requirement_ref": "AC1",
+            }
+        ),
+        run_id="run-1",
+        round_id=1,
+    )
+    bound = bind_review_decision(decision, task)
+    assert bound.action is ReviewAction.CHANGES
+    assert bound.requirement_ref == "AC1"
+
+
+@pytest.mark.parametrize("ref", [None, "AC9"])
+def test_changes_without_bound_reference_becomes_needs_decision(ref):
+    task = _bound_task()
+    detail = "Neue checkpoints.sqlite-shm-Datei ist aufgetaucht"
+    decision = parse_review_decision(
+        json.dumps(
+            {
+                "run_id": "run-1",
+                "round_id": 1,
+                "action": "CHANGES",
+                "detail": detail,
+                "requirement_ref": ref,
+            }
+        ),
+        run_id="run-1",
+        round_id=1,
+    )
+    bound = bind_review_decision(decision, task)
+    assert bound.action is ReviewAction.NEEDS_DECISION
+    assert bound.requirement_ref is None
+    assert detail in bound.detail
+
+
+def test_non_changes_decisions_pass_through_binding_unchanged():
+    task = _bound_task()
+    decision = parse_review_decision(
+        json.dumps(
+            {
+                "run_id": "run-1",
+                "round_id": 1,
+                "action": "PASS",
+                "detail": "",
+                "requirement_ref": None,
+            }
+        ),
+        run_id="run-1",
+        round_id=1,
+    )
+    assert bind_review_decision(decision, task) == decision
+
+
+def test_acceptance_criteria_must_be_unique_and_nonempty():
+    with pytest.raises(ValueError):
+        LoopTask(
+            "run-1",
+            "Auftrag",
+            (),
+            Path("/work"),
+            "write",
+            acceptance_criteria=(),
+        )
+    with pytest.raises(ValueError):
+        LoopTask(
+            "run-1",
+            "Auftrag",
+            (),
+            Path("/work"),
+            "write",
+            acceptance_criteria=("gleich", "gleich"),
+        )

@@ -32,6 +32,7 @@ from ki_dev.loop import (
     ReviewDecision,
     Reviewer,
     ReviewRequest,
+    bind_review_decision,
     parse_review_decision,
 )
 from ki_dev.loop_safety import CallLedger, SafetyLimits, SafetyStop
@@ -649,6 +650,7 @@ class LoopRuntime:
             decision = parse_review_decision(
                 raw, run_id=task.run_id, round_id=round_id
             )
+            decision = bind_review_decision(decision, task)
             return {
                 "raw": raw,
                 "decision": _decision_document(decision),
@@ -956,6 +958,7 @@ def _encode_task(task: LoopTask) -> dict[str, object]:
         "sources": list(task.sources),
         "workdir": str(task.workdir),
         "access_profile": task.access_profile,
+        "acceptance_criteria": list(task.acceptance_criteria),
     }
 
 
@@ -967,6 +970,9 @@ def _task(state: LoopGraphState) -> LoopTask:
         sources=tuple(cast(list[str], value["sources"])),
         workdir=Path(cast(str, value["workdir"])),
         access_profile=cast(str, value["access_profile"]),
+        acceptance_criteria=tuple(
+            cast(list[str], value["acceptance_criteria"])
+        ),
     )
 
 
@@ -976,6 +982,7 @@ def _decision_document(decision: ReviewDecision) -> dict[str, object]:
         "round_id": decision.round_id,
         "action": decision.action.value,
         "detail": decision.detail,
+        "requirement_ref": decision.requirement_ref,
     }
 
 
@@ -985,6 +992,7 @@ def _decode_decision(value: dict[str, object]) -> ReviewDecision:
         cast(int, value["round_id"]),
         ReviewAction(cast(str, value["action"])),
         cast(str, value["detail"]),
+        cast("str | None", value["requirement_ref"]),
     )
 
 

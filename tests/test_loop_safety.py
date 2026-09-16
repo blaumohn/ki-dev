@@ -224,6 +224,7 @@ def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
         json.dumps(
             {
                 "task": "Auftrag",
+                "acceptance_criteria": ["Kriterium 1"],
                 "workdir": str(tmp_path),
                 "access_profile": "write",
                 "build": {},

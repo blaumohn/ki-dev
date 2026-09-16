@@ -34,7 +34,10 @@ def test_prepare_rejects_preexisting_foreign_changes(tmp_path: Path):
     _git(repo, "commit", "-q", "-m", "base")
     foreign = repo / "foreign.txt"
     foreign.write_text("must survive\n")
-    task = LoopTask("run-1", "task", (), repo, "write")
+    task = LoopTask(
+        "run-1", "task", (), repo, "write",
+        acceptance_criteria=("Kriterium 1",),
+    )
 
     with pytest.raises(RuntimeError, match="fremde Aenderungen"):
         RepositoryEvidenceCollector().prepare(task, 1)

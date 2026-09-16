@@ -66,6 +66,9 @@ class FakeReviewer:
                 "round_id": request.round_id,
                 "action": action.value,
                 "detail": detail,
+                "requirement_ref": "AC1"
+                if action is ReviewAction.CHANGES
+                else None,
             }
         )
 
@@ -120,6 +123,7 @@ def _task(run_id: str) -> LoopTask:
         ("bd:jbr.2",),
         Path("/work"),
         "write",
+        acceptance_criteria=("Kriterium 1",),
     )
 
 
