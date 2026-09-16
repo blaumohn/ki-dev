@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -118,7 +118,16 @@ def _require_clean_worktree(repo: Path) -> None:
 
 
 def _encode_refs(refs: MediaRefs) -> dict[str, object]:
-    return cast(dict[str, object], asdict(refs))
+    return {
+        "git": {
+            "medium": refs.git.medium.value,
+            "value": refs.git.value,
+        },
+        "beads": {
+            "medium": refs.beads.medium.value,
+            "value": refs.beads.value,
+        },
+    }
 
 
 def _decode_refs(value: object) -> MediaRefs:
