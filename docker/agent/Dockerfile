@@ -25,11 +25,16 @@ RUN python -m venv /workspace/.venv \
     && /workspace/.venv/bin/pip install --no-cache-dir hatchling '/opt/project[test]' \
     && mkdir -p /home/agent/.claude /home/agent/.codex \
     && chown -R ${AGENT_UID}:${AGENT_GID} /workspace /home/agent
-COPY docker/agent/agent-cli.py /opt/agent-bin/agent-cli.py
+# access/ and model/ are bind targets; generated/ stays container-only.
+RUN mkdir -p /opt/agent-settings/access /opt/agent-settings/model \
+        /opt/agent-settings/generated \
+    && chown ${AGENT_UID}:${AGENT_GID} /opt/agent-settings/generated \
+    && chmod 700 /opt/agent-settings/generated
+COPY docker/agent/agent_cli.py /opt/agent-bin/agent_cli.py
 COPY docker/agent/entrypoint.sh /usr/local/bin/agent-entrypoint
-RUN chmod +x /usr/local/bin/agent-entrypoint /opt/agent-bin/agent-cli.py \
-    && ln -s agent-cli.py /opt/agent-bin/codex \
-    && ln -s agent-cli.py /opt/agent-bin/claude
+RUN chmod +x /usr/local/bin/agent-entrypoint /opt/agent-bin/agent_cli.py \
+    && ln -s agent_cli.py /opt/agent-bin/codex \
+    && ln -s agent_cli.py /opt/agent-bin/claude
 ENV HOME=/home/agent \
     VIRTUAL_ENV=/workspace/.venv \
     PATH=/opt/agent-bin:/workspace/.venv/bin:/usr/local/bin:/usr/bin:/bin \

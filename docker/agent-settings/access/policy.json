@@ -1,0 +1,13 @@
+{
+  "claude": {
+    "settings": {
+      "skipDangerousModePermissionPrompt": true,
+      "disableAllHooks": true
+    }
+  },
+  "codex": {
+    "config": {
+      "features.hooks": false
+    }
+  }
+}

@@ -36,10 +36,23 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # A: execution policy, read-only (also over its repository path).
       - type: bind
-        source: ./docker/claude-settings.json
-        target: /home/agent/.claude/settings.json
+        source: ./docker/agent-settings/access
+        target: /opt/agent-settings/access
         read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./docker/agent-settings/access
+        target: /workspace/docker/agent-settings/access
+        read_only: true
+        bind:
+          create_host_path: false
+      # B: model defaults, shared read-write with the host.
+      - type: bind
+        source: ./docker/agent-settings/model
+        target: /opt/agent-settings/model
         bind:
           create_host_path: false
     tmpfs:
