@@ -14,6 +14,7 @@ from ki_dev.loop_cli import (
     result_document,
     resume_run,
     start_from_config,
+    status_run,
 )
 from ki_dev.loop_runtime import LoopResumeError, LoopRunResult
 from ki_dev.planning_cli import app as planning_app
@@ -83,6 +84,17 @@ def resume(
             reconcile_result=reconcile_result,
         )
     )
+
+
+@loop_app.command("status")
+def status(
+    run_id: Annotated[str, typer.Argument()],
+    runs_dir: Annotated[Path, typer.Option("--runs-dir")] = Path(
+        ".ki-dev/runs"
+    ),
+) -> None:
+    """Den Status eines Laufs anzeigen, ohne ihn fortzusetzen."""
+    _execute(lambda: status_run(run_id, runs_dir=runs_dir))
 
 
 def _execute(action: Callable[[], LoopRunResult]) -> None:

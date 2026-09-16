@@ -11,7 +11,11 @@ from typing import cast
 from ki_dev.executors import Effort, build_executor
 from ki_dev.executors.contract import TurnBudget
 from ki_dev.loop import AgentBuildMode, AgentReviewer, LoopTask
-from ki_dev.loop_runtime import LoopRunResult, LoopRuntime
+from ki_dev.loop_runtime import (
+    LoopRunResult,
+    LoopRuntime,
+    read_run_status,
+)
 from ki_dev.loop_safety import SafetyLimits
 from ki_dev.machine import Limits
 from ki_dev.repository_evidence import (
@@ -80,6 +84,15 @@ def resume_run(
                 )
             return runtime.reconcile(current.operation_id, artifact)
         return runtime.resume(answer)
+
+
+def status_run(run_id: str, *, runs_dir: Path) -> LoopRunResult:
+    """Lies den Status eines Laufs, ohne ihn fortzusetzen oder zu
+    veraendern."""
+    store = RunStore(runs_dir, run_id)
+    manifest = store.load_manifest()
+    _required_object(manifest, "configuration")
+    return read_run_status(store)
 
 
 def result_document(result: LoopRunResult) -> dict[str, object]:

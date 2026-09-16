@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
+import tempfile
 import uuid
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -273,21 +275,7 @@ class LoopRuntime:
 
     def result(self) -> LoopRunResult:
         state = cast(LoopGraphState, self._snapshot().values)
-        run = decode_run_state(state["run_state"])
-        pending = state.get("pending_operation") or {}
-        operation_id = cast(str | None, pending.get("id"))
-        detail = state.get("last_error")
-        if run.escalation is not None:
-            cause = str(run.escalation.cause)
-            detail = f"{cause}: {detail}" if detail else cause
-        return LoopRunResult(
-            run_id=run.run_id,
-            status=state["status"],
-            round_id=state["round_id"],
-            phase=run.state.phase,
-            detail=detail,
-            operation_id=operation_id,
-        )
+        return _decode_result(state)
 
     def _invoke(self, value: object) -> None:
         run = self._latest_run_state(value)
@@ -320,7 +308,7 @@ class LoopRuntime:
         return snapshot
 
     def _config(self) -> dict[str, object]:
-        return {"configurable": {"thread_id": self.store.run_id}}
+        return _thread_config(self.store.run_id)
 
     def _compile_graph(self):
         graph = StateGraph(LoopGraphState)
@@ -949,6 +937,117 @@ class LoopRuntime:
             "interrupt_payload": None,
             "last_error": None,
         }
+
+
+_STATUS_READ_ATTEMPTS = 3
+
+
+def read_run_status(store: RunStore) -> LoopRunResult:
+    """Lies den zuletzt persistierten Laufstatus rein lesend.
+
+    Der Checkpoint wird nur betrachtet, wenn er bereits existiert.
+    Fuer jeden Leseversuch werden WAL- und SHM-Datei zuerst und die
+    Hauptdatei zuletzt unveraendert in ein privates Scratch-Verzeichnis
+    kopiert; erst dort wird eine SQLite-Verbindung geoeffnet und wieder
+    geschlossen. Im Laufverzeichnis selbst entsteht dadurch nie eine
+    neue Datei und nie eine Schreibwirkung.
+
+    Die Reihenfolge WAL/SHM-vor-Hauptdatei ist kein Zufall: Checkpointet
+    ein Schreiber zwischen den beiden Kopien (z. B. weil er in diesem
+    Moment schliesst), landen die bis dahin nur in der WAL vorhandenen
+    Aenderungen in der danach kopierten, dann bereits aktualisierten
+    Hauptdatei. Eine veraltete, mitkopierte WAL wird von SQLite anhand
+    ihrer Generationskennung ignoriert. So geht dabei nie ein bereits
+    committeter Zustand verloren. Ein zweiter und dritter Leseversuch
+    mit je frischer Kopie faengt zusaetzlich jede verbleibende, sehr
+    kurze Inkonsistenz ab, statt einen vollstaendigen, persistierten
+    Lauf faelschlich als fehlend zu melden.
+
+    Die gelesene Zustandsstruktur wird beim Dekodieren validiert:
+    fehlende Pflichtfelder (z. B. ``status``) oder ein ungueltiges
+    ``run_state``-Dokument werden als ``LoopResumeError`` gemeldet
+    statt als ungefangener ``KeyError``/Formatfehler durchzuschlagen.
+    """
+    if not store.checkpoint_path.exists():
+        raise LoopResumeError(f"Lauf {store.run_id} fehlt")
+    last_error: Exception | None = None
+    for _ in range(_STATUS_READ_ATTEMPTS):
+        try:
+            tuple_ = _read_checkpoint_tuple(store)
+        except (sqlite3.DatabaseError, OSError) as exc:
+            last_error = exc
+            continue
+        if tuple_ is None:
+            continue
+        try:
+            state = cast(
+                LoopGraphState, tuple_.checkpoint["channel_values"]
+            )
+            return _decode_result(state)
+        except (KeyError, TypeError, ValueError) as exc:
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise LoopResumeError(
+            f"Lauf {store.run_id} ist unvollstaendig: {last_error}"
+        ) from last_error
+    raise LoopResumeError(f"Lauf {store.run_id} fehlt")
+
+
+def _read_checkpoint_tuple(store: RunStore):
+    with tempfile.TemporaryDirectory() as scratch:
+        copy_path = _copy_checkpoint_files(
+            store.checkpoint_path, Path(scratch)
+        )
+        connection = sqlite3.connect(copy_path, check_same_thread=False)
+        try:
+            checkpointer = SqliteSaver(
+                connection,
+                serde=JsonPlusSerializer(allowed_msgpack_modules=[]),
+            )
+            return checkpointer.get_tuple(_thread_config(store.run_id))
+        finally:
+            connection.close()
+
+
+def _copy_checkpoint_files(
+    checkpoint_path: Path, scratch: Path
+) -> Path:
+    """Kopiere WAL/SHM zuerst, die Hauptdatei zuletzt nach scratch."""
+    for suffix in ("-wal", "-shm"):
+        sidecar = checkpoint_path.with_name(
+            checkpoint_path.name + suffix
+        )
+        try:
+            if sidecar.exists():
+                shutil.copy2(sidecar, scratch / sidecar.name)
+        except FileNotFoundError:
+            pass
+    destination = scratch / checkpoint_path.name
+    shutil.copy2(checkpoint_path, destination)
+    return destination
+
+
+def _thread_config(run_id: str) -> dict[str, object]:
+    return {"configurable": {"thread_id": run_id}}
+
+
+def _decode_result(state: LoopGraphState) -> LoopRunResult:
+    run = decode_run_state(state["run_state"])
+    pending = state.get("pending_operation") or {}
+    operation_id = cast(str | None, pending.get("id"))
+    detail = state.get("last_error")
+    if run.escalation is not None:
+        cause = str(run.escalation.cause)
+        detail = f"{cause}: {detail}" if detail else cause
+    return LoopRunResult(
+        run_id=run.run_id,
+        status=state["status"],
+        round_id=state["round_id"],
+        phase=run.state.phase,
+        detail=detail,
+        operation_id=operation_id,
+    )
 
 
 def _encode_task(task: LoopTask) -> dict[str, object]:
