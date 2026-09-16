@@ -156,22 +156,28 @@ def test_status_reads_crash_state_with_wal_but_no_shm(tmp_path):
     (run_dir / "checkpoints.sqlite-wal").write_bytes(wal_bytes)
     assert not (run_dir / "checkpoints.sqlite-shm").exists()
 
-    before = _sidecar_free_snapshot(run_dir)
-
     result = status_run("run-crash", runs_dir=tmp_path)
 
     assert result.status == "waiting_decision"
     assert result.phase is waiting.phase
     assert result.round_id == waiting.round_id
 
-    after = _sidecar_free_snapshot(run_dir)
-    assert after == before
-    assert not (run_dir / "checkpoints.sqlite-shm").exists()
+    # Das Lesen einer WAL ohne vorhandene SHM-Datei braucht deren
+    # Neuanlage (SQLites eigene Koordination fuer den WAL-Index); das
+    # ist ein notwendiger Sidecar und kein stiller Fehlschlag-Grund
+    # (p0h.1). Hauptdatei und WAL selbst bleiben dabei byteidentisch --
+    # das Lesen veraendert nie den eigentlichen persistierten Inhalt.
+    assert (run_dir / "checkpoints.sqlite").read_bytes() == main_bytes
+    assert (
+        run_dir / "checkpoints.sqlite-wal"
+    ).read_bytes() == wal_bytes
 
 
-def test_status_survives_checkpoint_race_during_snapshot(
+def test_status_read_is_consistent_despite_concurrent_checkpoint(
     tmp_path, monkeypatch
 ):
+    """Ein Checkpoint mitten in unserer eigenen Momentaufnahme darf nie
+    zu einer Mischung aus zwei Schreibvorgaengen fuehren (re0)."""
     import ki_dev.loop_runtime as loop_runtime_module
 
     builder = FakeBuilder()
@@ -186,40 +192,45 @@ def test_status_survives_checkpoint_race_during_snapshot(
         StaticFinalizer(),
     )
     waiting = runtime.start(_task("run-race"), Limits())
-    run_dir = tmp_path / "run-race"
-    assert (run_dir / "checkpoints.sqlite-wal").exists()
     _add_configuration(tmp_path, "run-race")
 
-    real_copy2 = loop_runtime_module.shutil.copy2
     triggered = {"done": False}
 
-    def racing_copy2(src, dst, *args, **kwargs):
-        # Der Schreiber schliesst absichtlich genau zwischen der
-        # WAL/SHM-Kopie und der Kopie der Hauptdatei -- exakt das
-        # Zeitfenster, in dem ein Checkpoint die WAL-Aenderungen in
-        # die Hauptdatei uebernehmen und die Sidecar-Dateien im
-        # Original entfernen kann.
-        source = Path(src)
-        if (
-            not triggered["done"]
-            and source.name == "checkpoints.sqlite"
-        ):
-            triggered["done"] = True
-            runtime.close()
-        return real_copy2(src, dst, *args, **kwargs)
+    def racing_snapshot(source, destination):
+        target = loop_runtime_module.sqlite3.connect(destination)
+
+        def concurrent_write_mid_copy(status, remaining, total):
+            del status, total
+            if not triggered["done"] and remaining > 0:
+                triggered["done"] = True
+                # Ein weiterer Schreibvorgang samt Checkpoint laeuft,
+                # waehrend unsere eigene Momentaufnahme bereits eine
+                # Seite kopiert hat.
+                runtime.resume("weiter")
+
+        try:
+            source.backup(
+                target, pages=1, progress=concurrent_write_mid_copy
+            )
+        finally:
+            target.close()
 
     monkeypatch.setattr(
-        loop_runtime_module.shutil, "copy2", racing_copy2
+        loop_runtime_module, "_backup_snapshot", racing_snapshot
     )
 
     result = status_run("run-race", runs_dir=tmp_path)
 
     assert triggered["done"]
-    assert result.status == "waiting_decision"
-    assert result.phase is waiting.phase
-    assert result.round_id == waiting.round_id
-    assert not (run_dir / "checkpoints.sqlite-wal").exists()
-    assert not (run_dir / "checkpoints.sqlite-shm").exists()
+    # Die Momentaufnahme ist entweder der Stand vor oder der Stand nach
+    # dem nebenlaeufigen Schreibvorgang -- niemals eine unmoegliche
+    # Mischung aus beiden.
+    if result.status == "waiting_decision":
+        assert result.round_id == waiting.round_id
+        assert result.phase is waiting.phase
+    else:
+        assert result.status == "passed"
+    runtime.close()
 
 
 def _corrupt_latest_checkpoint(
@@ -287,6 +298,35 @@ def test_status_reports_checkpoint_with_invalid_run_state(tmp_path):
 
     with pytest.raises(LoopResumeError):
         status_run("run-bad-run-state", runs_dir=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda values: values.__setitem__("status", "nonsense"),
+        lambda values: values.__setitem__("round_id", -7),
+        lambda values: values.__setitem__("round_id", True),
+    ],
+)
+def test_status_rejects_semantically_invalid_required_fields(
+    tmp_path, mutate
+):
+    """8to: ``status``/``round_id`` muessen echte, gueltige Werte sein,
+    nicht nur irgendein vorhandenes JSON-Feld."""
+    runtime = LoopRuntime(
+        RunStore(tmp_path, "run-invalid-status"),
+        FakeBuilder(),
+        FakeReviewer([ReviewAction.NEEDS_DECISION]),
+        StaticEvidenceCollector((_context(1),)),
+        StaticFinalizer(),
+    )
+    runtime.start(_task("run-invalid-status"), Limits())
+    _corrupt_latest_checkpoint(runtime, "run-invalid-status", mutate)
+    runtime.close()
+    _add_configuration(tmp_path, "run-invalid-status")
+
+    with pytest.raises(LoopResumeError):
+        status_run("run-invalid-status", runs_dir=tmp_path)
 
 
 def test_status_cli_exits_with_code_2_for_incomplete_checkpoint(

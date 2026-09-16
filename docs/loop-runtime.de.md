@@ -143,9 +143,15 @@ ki-dev loop status run-42 --runs-dir .ki-dev/runs
 ```
 
 Liest Status, Phase und Runden-ID des zuletzt persistierten Checkpoints,
-ohne Bau/Review/Resume auszufuehren und ohne den Lauf zu veraendern oder
-fehlende Checkpoint-Dateien anzulegen. Ein aktiver Schreiber mit offener
-WAL-Datei wird konsistent gelesen, nicht blockiert und nicht veraendert.
+ohne Bau/Review/Resume auszufuehren und ohne den Lauf inhaltlich zu
+veraendern. Die Momentaufnahme laeuft ueber SQLites Online-Backup-API
+(Snapshot-Isolation): ein aktiver Schreiber mit offener WAL-Datei wird
+konsistent gelesen, nicht blockiert und sein Datenstand nicht veraendert,
+auch wenn waehrend der Aufnahme ein Checkpoint dazwischenkommt. Fehlt
+zu einer WAL-Datei die zugehoerige SHM-Datei (z. B. nach einem Absturz),
+legt das Lesen genau diesen notwendigen Sidecar neu an -- keine
+Kopiereigenheit, sondern SQLites eigene Koordination fuer den
+WAL-Index; Haupt- und WAL-Datei selbst bleiben dabei byteidentisch.
 Fehlt der Lauf oder ist sein Checkpoint unvollstaendig, meldet das
 Kommando das eindeutig statt eines erfundenen Platzhalterstatus.
 
@@ -201,8 +207,10 @@ als voruebergehend. Fachliche Review-Nachrichten bleiben davon getrennt.
 Sitzungen sind aufrufergebunden vorbereitet (getrennte `session_id` je
 Rolle, siehe uar.1); ki-dev provisioniert oder rotiert sie nicht selbst
 -- das waere ein eigenstaendiger Mechanismus, den dieses Design nicht
-vorsieht. Jede Eskalation (Verbrauchsgrenze, Kontextvorpruefung,
-Stillstand, Agentenfehler) schreibt stattdessen unter
+vorsieht. Jeder Halt nach `paused_interactive` oder
+`waiting_decision` -- Verbrauchsgrenze, Kontextvorpruefung, Stillstand,
+Agentenfehler, erschoepfte Protokoll-/Prozessversuche, Reviewer-Urteil
+`ESCALATE`/`NEEDS_DECISION` -- schreibt stattdessen unter
 `<run>/handoff/` eine kompakte, auftragsgebundene Uebergabe:
 Auftrag und Abnahmekriterien, massgebliche Quellen, die noch offene
 bzw. bereits abgeloeste `requirement_ref`, die bisher verworfenen

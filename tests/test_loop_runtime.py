@@ -175,6 +175,14 @@ def test_needs_decision_is_bound_and_resumes_same_run(tmp_path):
 
     assert waiting.status == "waiting_decision"
     assert builder.calls == 1
+    handoffs = list(
+        (tmp_path / "run-decision" / "handoff").glob("*.json")
+    )
+    assert len(handoffs) == 1
+    assert (
+        json.loads(handoffs[0].read_text())["needed_decision"]
+        == "NEEDS_DECISION detail"
+    )
 
     with _runtime(
         tmp_path, "run-decision", builder, reviewer, [_context(1)]
@@ -203,6 +211,16 @@ def test_escalation_resume_rechecks_and_never_passes_by_itself(
     ) as runtime:
         paused = runtime.start(_task("run-escalate"), Limits())
     assert paused.status == "paused_interactive"
+    # ucq: der normale Reviewer-ESCALATE-Pfad (nicht nur der
+    # Maschinen-Guard) schreibt ebenfalls eine Sitzungsuebergabe.
+    handoffs = list(
+        (tmp_path / "run-escalate" / "handoff").glob("*.json")
+    )
+    assert len(handoffs) == 1
+    assert (
+        json.loads(handoffs[0].read_text())["needed_decision"]
+        == "ESCALATE detail"
+    )
 
     with _runtime(
         tmp_path,
@@ -232,6 +250,10 @@ def test_protocol_attempts_are_bounded(tmp_path):
     assert result.status == "paused_interactive"
     assert reviewer.calls == 2
     assert "protocol_attempts_exhausted" in result.detail
+    handoffs = list(
+        (tmp_path / "run-protocol" / "handoff").glob("*.json")
+    )
+    assert len(handoffs) == 1
 
 
 def test_process_retries_are_bounded(tmp_path):
@@ -250,6 +272,10 @@ def test_process_retries_are_bounded(tmp_path):
     assert result.status == "paused_interactive"
     assert builder.calls == 2
     assert "process_retries_exhausted" in result.detail
+    handoffs = list(
+        (tmp_path / "run-process" / "handoff").glob("*.json")
+    )
+    assert len(handoffs) == 1
 
 
 def test_empty_result_feedback_reruns_build_instead_of_reusing_artifact(

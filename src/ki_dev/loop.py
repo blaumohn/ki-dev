@@ -349,6 +349,14 @@ def _build_prompt(request: BuildRequest) -> str:
     sources = (
         "\n".join(f"- {source}" for source in task.sources) or "- keine"
     )
+    criteria = "\n".join(
+        f"- {ref}: {text}"
+        for ref, text in zip(
+            task.acceptance_criterion_refs(),
+            task.acceptance_criteria,
+            strict=True,
+        )
+    )
     objection = request.objection or "keine"
     heading = (
         f"Bauauftrag fuer Lauf {task.run_id}, Runde {request.round_id}."
@@ -361,6 +369,9 @@ Der Prompt ist keine technische Zugriffssperre.
 
 Gesamtauftrag:
 {task.task}
+
+Abnahmekriterien:
+{criteria}
 
 Massgebliche Quellen:
 {sources}

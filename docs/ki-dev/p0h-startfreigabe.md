@@ -74,9 +74,18 @@ abgeleiteten Garantien (siehe Verbrauchsschutz-Abschnitt in
 
 ## Testnachweis
 
-648 Tests gruen (dreifach wiederholt, keine Flakes beobachtet); Ruff fuer
+652 Tests gruen (mehrfach wiederholt, keine Flakes beobachtet); Ruff fuer
 alle in p0h geaenderten Dateien ohne Befund. Kein Docker-/Containerlauf und
 kein bezahlter CLI-Aufruf Teil dieses Nachweises.
+
+Ein unabhaengiger Review dieser Commits fand vier weitere Befunde, die vor
+dieser Startfreigabe noch behoben wurden: eine SQLite-Snapshot-Race beim
+Statuslesen (jetzt ueber die Online-Backup-API statt manueller
+WAL-/Hauptdatei-Kopie, `ki-dev-ablauf-re0`), fehlende Abnahmekriterien im
+Bauauftrag (`ygq`), ein Reviewer-`ESCALATE`, das die Sitzungsuebergabe
+umging (`ucq`), sowie eine fehlende Validierung von `status`/`round_id`
+beim Statuslesen (`8to`). Alle vier sind in Beads geschlossen und durch
+Regressionstests abgedeckt.
 
 ## Bekannte Grenzen vor uar.2
 

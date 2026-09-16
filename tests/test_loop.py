@@ -17,8 +17,12 @@ from ki_dev.deltas import (
     RoundStatus,
     VcsRef,
 )
+from ki_dev.executors import Effort
+from ki_dev.executors.contract import TurnResult, TurnStatus
 from ki_dev.loop import (
+    AgentBuildMode,
     BuildReport,
+    BuildRequest,
     LoopProtocolError,
     LoopTask,
     ReviewAction,
@@ -281,3 +285,37 @@ def test_acceptance_criteria_must_be_unique_and_nonempty():
             "write",
             acceptance_criteria=("gleich", "gleich"),
         )
+
+
+def test_build_prompt_includes_acceptance_criteria():
+    """ygq: Abnahmekriterien muessen auch den Bauagenten erreichen,
+    nicht nur den Reviewer -- sonst sind vermeidbare kostenpflichtige
+    CHANGES-Runden fuer dort bereits bekannte Anforderungen moeglich."""
+
+    class RecordingExecutor:
+        name = "recording"
+
+        def __init__(self) -> None:
+            self.requests = []
+
+        def send_turn(self, request):
+            self.requests.append(request)
+            return TurnResult(TurnStatus.OK, 0, "erledigt", "", (), 0.0)
+
+    executor = RecordingExecutor()
+    build = AgentBuildMode(executor, "build-session", "m", Effort.LOW)
+    task = LoopTask(
+        "run-1",
+        "Auftrag",
+        (),
+        Path("/work"),
+        "write",
+        acceptance_criteria=(
+            "Ausgabe ist deterministisch",
+            "Kein Netzwerkzugriff",
+        ),
+    )
+    build.build(BuildRequest(task, 1))
+    message = executor.requests[0].message
+    assert "AC1: Ausgabe ist deterministisch" in message
+    assert "AC2: Kein Netzwerkzugriff" in message

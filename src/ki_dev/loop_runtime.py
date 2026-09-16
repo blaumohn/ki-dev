@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sqlite3
 import tempfile
 import uuid
@@ -563,17 +562,7 @@ class LoopRuntime:
             MachineEscalationCause.EXECUTION_GUARD,
             run.state.phase,
         )
-        handoff = build_handoff(
-            self.store,
-            _task(state),
-            round_id=state["round_id"],
-            phase=run.state.phase.value,
-            reason=detail,
-        )
-        self.store.write_handoff(
-            f"r{state['round_id']:04d}-rev{run.revision:06d}", handoff
-        )
-        return {
+        update = {
             **self._replace_run(
                 run,
                 run.state.moved_to(Phase.PAUSED_INTERACTIVE),
@@ -589,6 +578,41 @@ class LoopRuntime:
                 "reason": detail,
             },
         }
+        return self._write_handoff_if_stopped(state, update, detail)
+
+    def _write_handoff_if_stopped(
+        self,
+        state: LoopGraphState,
+        update: dict[str, object],
+        reason: str,
+    ) -> dict[str, object]:
+        """Persistiere die kompakte Sitzungsuebergabe fuer jeden Halt.
+
+        Gilt fuer jeden Uebergang nach ``PAUSED_INTERACTIVE`` oder
+        ``WAITING_DECISION`` -- unabhaengig davon, ob eine
+        Maschinengrenze, ein Prozessfehler oder ein Reviewer-Urteil
+        (``ESCALATE``/``NEEDS_DECISION``) den Halt ausgeloest hat.
+        """
+        next_run = decode_run_state(
+            cast(dict[str, object], update["run_state"])
+        )
+        if next_run.state.phase not in (
+            Phase.PAUSED_INTERACTIVE,
+            Phase.WAITING_DECISION,
+        ):
+            return update
+        handoff = build_handoff(
+            self.store,
+            _task(state),
+            round_id=state["round_id"],
+            phase=next_run.state.phase.value,
+            reason=reason,
+        )
+        self.store.write_handoff(
+            f"r{state['round_id']:04d}-rev{next_run.revision:06d}",
+            handoff,
+        )
+        return update
 
     def _execute_operation(
         self, state: LoopGraphState, pending: dict[str, object]
@@ -802,7 +826,11 @@ class LoopRuntime:
                 cast(dict[str, object], update["run_state"])
             )
             if next_run.state.phase is Phase.PAUSED_INTERACTIVE:
-                return {**update, "status": "paused_interactive"}
+                return self._write_handoff_if_stopped(
+                    state,
+                    {**update, "status": "paused_interactive"},
+                    decision.detail,
+                )
             return {
                 **update,
                 "round_id": state["round_id"] + 1,
@@ -815,28 +843,36 @@ class LoopRuntime:
         if decision.action is ReviewAction.PASS:
             return self._transition(run, ControllerPass())
         if decision.action is ReviewAction.NEEDS_DECISION:
-            return {
+            return self._write_handoff_if_stopped(
+                state,
+                {
+                    **self._transition(
+                        run, ControllerNeedsDecision(decision.detail)
+                    ),
+                    "interrupt_payload": {
+                        "kind": "needs_decision",
+                        "run_id": run.run_id,
+                        "round_id": state["round_id"],
+                        "question": decision.detail,
+                    },
+                },
+                decision.detail,
+            )
+        return self._write_handoff_if_stopped(
+            state,
+            {
                 **self._transition(
-                    run, ControllerNeedsDecision(decision.detail)
+                    run, ControllerEscalate(decision.detail)
                 ),
                 "interrupt_payload": {
-                    "kind": "needs_decision",
+                    "kind": "escalate",
                     "run_id": run.run_id,
                     "round_id": state["round_id"],
-                    "question": decision.detail,
+                    "reason": decision.detail,
                 },
-            }
-        return {
-            **self._transition(
-                run, ControllerEscalate(decision.detail)
-            ),
-            "interrupt_payload": {
-                "kind": "escalate",
-                "run_id": run.run_id,
-                "round_id": state["round_id"],
-                "reason": decision.detail,
             },
-        }
+            decision.detail,
+        )
 
     def _protocol_failure(
         self, state: LoopGraphState, detail: str
@@ -851,12 +887,16 @@ class LoopRuntime:
             if next_run.state.phase is Phase.PAUSED_INTERACTIVE
             else "running"
         )
-        return {
-            **update,
-            "pending_operation": None,
-            "status": status,
-            "last_error": detail,
-        }
+        return self._write_handoff_if_stopped(
+            state,
+            {
+                **update,
+                "pending_operation": None,
+                "status": status,
+                "last_error": detail,
+            },
+            detail,
+        )
 
     def _process_failure(
         self, state: LoopGraphState, detail: str
@@ -883,15 +923,19 @@ class LoopRuntime:
             cast(dict[str, object], update["run_state"])
         )
         paused = next_run.state.phase is Phase.PAUSED_INTERACTIVE
-        return {
-            **update,
-            "pending_operation": None,
-            "round_base": None
-            if next_run.state.phase is Phase.WORKER_STEP_PREPARE
-            else state["round_base"],
-            "status": "paused_interactive" if paused else "running",
-            "last_error": detail,
-        }
+        return self._write_handoff_if_stopped(
+            state,
+            {
+                **update,
+                "pending_operation": None,
+                "round_base": None
+                if next_run.state.phase is Phase.WORKER_STEP_PREPARE
+                else state["round_base"],
+                "status": "paused_interactive" if paused else "running",
+                "last_error": detail,
+            },
+            detail,
+        )
 
     def _manual_process_failure(
         self, run: RunState
@@ -969,28 +1013,28 @@ _STATUS_READ_ATTEMPTS = 3
 def read_run_status(store: RunStore) -> LoopRunResult:
     """Lies den zuletzt persistierten Laufstatus rein lesend.
 
-    Der Checkpoint wird nur betrachtet, wenn er bereits existiert.
-    Fuer jeden Leseversuch werden WAL- und SHM-Datei zuerst und die
-    Hauptdatei zuletzt unveraendert in ein privates Scratch-Verzeichnis
-    kopiert; erst dort wird eine SQLite-Verbindung geoeffnet und wieder
-    geschlossen. Im Laufverzeichnis selbst entsteht dadurch nie eine
-    neue Datei und nie eine Schreibwirkung.
+    Der Checkpoint wird nur betrachtet, wenn er bereits existiert. Die
+    Kopie entsteht ueber SQLites eigene Online-Backup-API
+    (``sqlite3.Connection.backup``) aus einer read-only geoeffneten
+    Quellverbindung: das Backup laeuft in einer eigenen
+    Lesetransaktion mit Snapshot-Isolation und liefert deshalb immer
+    einen tatsaechlich existierenden, in sich konsistenten Zustand --
+    nie eine Mischung aus zwei verschiedenen Schreibvorgaengen, wie es
+    ein manuelles Kopieren von WAL-/SHM-/Hauptdatei bei einem
+    dazwischenliegenden Checkpoint erzeugen koennte. Im Laufverzeichnis
+    selbst entsteht dadurch nie eine neue Datei und nie eine
+    Schreibwirkung.
 
-    Die Reihenfolge WAL/SHM-vor-Hauptdatei ist kein Zufall: Checkpointet
-    ein Schreiber zwischen den beiden Kopien (z. B. weil er in diesem
-    Moment schliesst), landen die bis dahin nur in der WAL vorhandenen
-    Aenderungen in der danach kopierten, dann bereits aktualisierten
-    Hauptdatei. Eine veraltete, mitkopierte WAL wird von SQLite anhand
-    ihrer Generationskennung ignoriert. So geht dabei nie ein bereits
-    committeter Zustand verloren. Ein zweiter und dritter Leseversuch
-    mit je frischer Kopie faengt zusaetzlich jede verbleibende, sehr
-    kurze Inkonsistenz ab, statt einen vollstaendigen, persistierten
-    Lauf faelschlich als fehlend zu melden.
+    Ein zweiter und dritter Leseversuch mit je frischer Kopie faengt
+    eine seltene ``sqlite3.OperationalError`` (z. B. eine sehr kurze
+    Sperre) ab, statt einen vollstaendigen, persistierten Lauf
+    faelschlich als fehlend zu melden.
 
     Die gelesene Zustandsstruktur wird beim Dekodieren validiert:
-    fehlende Pflichtfelder (z. B. ``status``) oder ein ungueltiges
-    ``run_state``-Dokument werden als ``LoopResumeError`` gemeldet
-    statt als ungefangener ``KeyError``/Formatfehler durchzuschlagen.
+    fehlende oder ungueltige Pflichtfelder (``status``, ``round_id``)
+    oder ein ungueltiges ``run_state``-Dokument werden als
+    ``LoopResumeError`` gemeldet statt als ungefangener
+    ``KeyError``/Formatfehler durchzuschlagen.
     """
     if not store.checkpoint_path.exists():
         raise LoopResumeError(f"Lauf {store.run_id} fehlt")
@@ -1020,9 +1064,14 @@ def read_run_status(store: RunStore) -> LoopRunResult:
 
 def _read_checkpoint_tuple(store: RunStore):
     with tempfile.TemporaryDirectory() as scratch:
-        copy_path = _copy_checkpoint_files(
-            store.checkpoint_path, Path(scratch)
+        copy_path = Path(scratch) / store.checkpoint_path.name
+        source = sqlite3.connect(
+            f"{store.checkpoint_path.as_uri()}?mode=ro", uri=True
         )
+        try:
+            _backup_snapshot(source, copy_path)
+        finally:
+            source.close()
         connection = sqlite3.connect(copy_path, check_same_thread=False)
         try:
             checkpointer = SqliteSaver(
@@ -1034,30 +1083,50 @@ def _read_checkpoint_tuple(store: RunStore):
             connection.close()
 
 
-def _copy_checkpoint_files(
-    checkpoint_path: Path, scratch: Path
-) -> Path:
-    """Kopiere WAL/SHM zuerst, die Hauptdatei zuletzt nach scratch."""
-    for suffix in ("-wal", "-shm"):
-        sidecar = checkpoint_path.with_name(
-            checkpoint_path.name + suffix
-        )
-        try:
-            if sidecar.exists():
-                shutil.copy2(sidecar, scratch / sidecar.name)
-        except FileNotFoundError:
-            pass
-    destination = scratch / checkpoint_path.name
-    shutil.copy2(checkpoint_path, destination)
-    return destination
+def _backup_snapshot(
+    source: sqlite3.Connection, destination: Path
+) -> None:
+    """Konsistente Momentaufnahme ueber die SQLite-Online-Backup-API.
+
+    ``backup`` haelt intern eine eigene Lesetransaktion und liest die
+    Quelle damit als Snapshot zu genau einem Zeitpunkt, unabhaengig
+    davon, wie viele Checkpoints ein Schreiber waehrenddessen ausfuehrt.
+    """
+    target = sqlite3.connect(destination)
+    try:
+        source.backup(target)
+    finally:
+        target.close()
 
 
 def _thread_config(run_id: str) -> dict[str, object]:
     return {"configurable": {"thread_id": run_id}}
 
 
+_VALID_RUN_STATUSES = frozenset(
+    {
+        "running",
+        "waiting_decision",
+        "paused_interactive",
+        "uncertain",
+        "error",
+        "passed",
+    }
+)
+
+
 def _decode_result(state: LoopGraphState) -> LoopRunResult:
     run = decode_run_state(state["run_state"])
+    status = state["status"]
+    if status not in _VALID_RUN_STATUSES:
+        raise LoopResumeError(f"unbekannter Laufstatus: {status!r}")
+    round_id = state["round_id"]
+    if (
+        isinstance(round_id, bool)
+        or not isinstance(round_id, int)
+        or round_id < 1
+    ):
+        raise LoopResumeError(f"ungueltige round_id: {round_id!r}")
     pending = state.get("pending_operation") or {}
     operation_id = cast(str | None, pending.get("id"))
     detail = state.get("last_error")
@@ -1066,8 +1135,8 @@ def _decode_result(state: LoopGraphState) -> LoopRunResult:
         detail = f"{cause}: {detail}" if detail else cause
     return LoopRunResult(
         run_id=run.run_id,
-        status=state["status"],
-        round_id=state["round_id"],
+        status=status,
+        round_id=round_id,
         phase=run.state.phase,
         detail=detail,
         operation_id=operation_id,
