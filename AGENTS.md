@@ -23,3 +23,17 @@ bd prime                # Refresh Beads context
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 <!-- END BEADS CODEX SETUP -->
+
+## Verbrauchsmessung: Sitzungsdaten sparsam untersuchen
+
+Beim Entwickeln und Prüfen der Tokenmessung keine vollständigen
+Roh-Sitzungsdateien in den Agentenkontext laden. Ein deterministischer Parser
+darf die Dateien lesen, gibt aber nur gezielt ausgewählte JSON-Metadaten aus
+(etwa IDs, Zeitstempel, Modell, Tokenzähler und Kontingentwerte).
+Gesprächsinhalte, Prompts, Werkzeugausgaben und Zugangsdaten gehören weder in
+die Ausgabe noch in Fehlerdiagnosen. Auch Debug-Ausgaben begrenzen; Kürzungen
+und fehlende Messwerte ausdrücklich kennzeichnen. Keine vollständigen
+Ereignis-Dumps als Abkürzung verwenden.
+
+Architektur und Messvertrag:
+[Tokenmessung und Estimatoren](docs/architecture/tokenmessung-estimatoren.de.md).

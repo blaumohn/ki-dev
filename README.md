@@ -29,6 +29,7 @@ Die KI schreibt Quelltext und urteilt über Ergebnisse.
 - [Warum eine Maschine und nicht ein längerer Prompt](#warum-eine-maschine-und-nicht-ein-längerer-prompt)
 - [Der erste Go-live](#der-erste-go-live)
 - [Die Parameter als Messfläche](#die-parameter-als-messfläche)
+- [Tokenmessung und Estimatoren (Zielbild)](#tokenmessung-und-estimatoren-zielbild)
 - [Richtung danach](#richtung-danach)
 - [Einordnung und Nicht-Ziele](#einordnung-und-nicht-ziele)
 <!-- mdman:toc:end -->
@@ -612,7 +613,8 @@ Eine Regel ist nicht durchgesetzt, nur weil sie im Prompt steht.
 ```
 
 `ki-dev` verschiebt wichtige Bedingungen so weit wie möglich von Stufe 1 nach
-unten. Geringerer Tokenverbrauch ist eine Folge davon, nicht der Zweck.
+unten. Vollständige, geprüfte Ergebnisse bleiben das Ziel; gemessener
+Tokenverbrauch hilft zusätzlich, Aufgabenschnitt und Verbrauchsschutz zu steuern.
 
 ```text
 Maschine   Zustand · zulässige Übergänge · Rollenfolge · Schrittgrenzen
@@ -702,12 +704,55 @@ Zwei Randbedingungen dazu:
 Messmodell vor den Vergleichsläufen festlegen
 → sonst wird nachträglich die günstige Kennzahl ausgewählt
 
-Instrumentierung ist kein Blocker für den ersten Go-live
-→ erhalten bleibt nur, was der Laufzustand ohnehin kennt
+Manueller Messabgleich vor dem nächsten echten Loop
+→ /status und deterministische Messung müssen nachvollziehbar zusammenpassen
+
+Vollständiger Estimator-Ausbau ist kein Blocker für diesen Messabgleich
+→ neue Prognosen zunächst beobachten und gegen reale Ergebnisse kalibrieren
 ```
 
 Solange keine eigenen Ergebnisse vorliegen, steht hier eine Hypothese und kein
 Befund.
+
+---
+
+## Tokenmessung und Estimatoren (Zielbild)
+
+Tokenverbrauch ist ein Betriebssignal des Orchestrators. Er wird zusammen mit
+Fortschritt, vollständiger Umsetzung und Nacharbeit bewertet. Die ohnehin
+nötige Einschätzung bei der Materialisierung von Beads-Aufgaben dient zugleich
+der Verbrauchsprognose: Mehrere Modelle beurteilen denselben Aufgabenstand
+unabhängig und helfen, einen passenden Schnitt zu finden.
+
+```mermaid
+flowchart LR
+    R["Sitzungsmetadaten"] --> M["Deterministische Tokenmessung"]
+    M --> B["Bestehende Verbrauchsbilanz"]
+    A["Versionierter Auftrag"] --> E["Mehrmodell-Einschätzung"]
+    E --> S["Aufgabenschnitt in Beads"]
+    E --> K["Kalibrierung gegen Ist-Verbrauch und Ergebnis"]
+    B --> K
+    K --> G["Bestehende Budget-Guards"]
+    B --> G
+```
+
+Gesucht wird die Balance: Große Vorgänge können unvollständig bleiben und viel
+Nacharbeit verlangen; zu kleine Vorgänge wiederholen Kontextaufnahme und
+Übergaben. Der Vergleich zählt daher auch Schätzung, Review, Reparaturen und
+sämtliche Teilaufgaben. Unvollständige Umsetzung ist kein günstiges Ergebnis.
+
+**Roh-Sitzungen gehören nicht vollständig in den Agentenkontext.** Werkzeuge
+extrahieren nur benötigte JSON-Metadaten; die Messung braucht keine Modellaufrufe.
+Vor dem nächsten Loop-Nachweis ist der manuelle Abgleich mit `/status`
+erforderlich. Exakte Tokenzählung wird zusätzlich mit bekannten strukturierten
+Verbrauchsereignissen geprüft. Eine feste Umrechnung von Kontingentprozent in
+Tokens wird nicht vorausgesetzt.
+
+Messadapter, Laufbilanz und Schutzgrenzen existieren bereits. Mehrmodell-
+Schätzung, Kalibrierung und vorausschauende Freigabe sind Erweiterungen im
+Beads-Epic **ki-dev-ablauf-wu0**. Der
+[Systementwurf](docs/architecture/tokenmessung-estimatoren.de.md) beschreibt
+Modulgrenzen, bewertete Alternativen und technische Herausforderungen.
 
 ---
 

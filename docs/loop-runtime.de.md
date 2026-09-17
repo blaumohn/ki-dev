@@ -245,6 +245,15 @@ urspruenglichen.
 
 ### Fuenfstundenkontingent-Vorpruefung
 
+Geplanter Ausbau (2026-09-17):
+[Tokenmessung und Estimatoren](architecture/tokenmessung-estimatoren.de.md)
+beschreibt normalisierte Verbrauchsbilanzen, Mehrmodell-Schnittpruefung und
+kalibrierte Prognosen. Diese Erweiterungen sind noch kein Runtime-Verhalten.
+Vor dem naechsten echten Loop-Nachweis ist zusaetzlich der manuelle Messabgleich
+`ki-dev-ablauf-wu0.1` erforderlich; er blockiert in Beads `ki-dev-ablauf-uar.2`.
+Die nachfolgend beschriebenen bestehenden Guards bleiben unabhaengig davon
+wirksam.
+
 Vor jedem Bau-/Review-Aufruf und bei Resume misst der zustaendige
 Adapter (`Executor.measure_quota(session_id)`) den zuletzt bekannten
 Verbrauchsanteil des rollierenden Fuenfstundenfensters des
