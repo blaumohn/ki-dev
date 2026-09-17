@@ -28,11 +28,17 @@ Architekturquelle: docs/architecture/tokenmessung-estimatoren.de.md.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+
+from ki_dev.executors.claude_cli import (
+    VERIFIED_CLI_VERSION as _CLAUDE_VERIFIED_VERSION,
+)
+from ki_dev.executors.codex_cli import (
+    VERIFIED_CLI_VERSION as _CODEX_VERIFIED_VERSION,
+)
 
 
 class UsageStatus(StrEnum):
@@ -223,49 +229,50 @@ def _nonneg_int(value: object) -> int | None:
     return value
 
 
-_DIAGNOSTIC_VALUE_LIMIT = 80
+def _describe_invalid(value: object) -> str:
+    """Nur der Typname, nie der Wert selbst.
 
-
-def _safe_repr(value: object) -> str:
-    """Begrenzte, gekennzeichnete Kurzform fuer Diagnosetexte.
-
-    Ausgabe-/Diagnosegrenze (wu0.2-Akzeptanzkriterium 4): beliebiger
-    Fremdinhalt (auch ein Sentinel-Gespraechstext) darf nie
-    unbegrenzt in ``UsageEvent.detail`` landen.
+    Ausgabe-/Inhaltsgrenze (wu0.2-Akzeptanzkriterium 4): ein
+    Fremdwert (auch ein Sentinel-Gespraechstext oder ein beliebig
+    langer String) wird ausschliesslich durch Typ und den ohnehin
+    festen Fehlergrund im umgebenden Text beschrieben -- nie durch
+    einen Ausschnitt seines Inhalts, auch nicht gekuerzt.
     """
-    text = repr(value)
-    if len(text) > _DIAGNOSTIC_VALUE_LIMIT:
-        return text[:_DIAGNOSTIC_VALUE_LIMIT] + "...[gekuerzt]"
-    return text
+    return type(value).__name__
 
 
-# Einfaches, anbieterunabhaengiges Versionsschema (z. B. "0.154.0",
-# "2.1.272"): keine feste Anbieterliste, aber ein erkennbares
-# Versionsformat. Ein beliebiger nichtleerer String (z. B. ein
-# Tippfehler oder Platzhalter) ist damit kein implizit gueltiger
-# Versionsnachweis mehr (Messvertrag).
-_VERSION_PATTERN = re.compile(r"^[0-9]+(\.[0-9]+){1,3}$")
+# Lokal tatsaechlich verifizierte CLI-Versionen (siehe
+# executors/claude_cli.py/codex_cli.py, dieselbe Konstante --
+# ki-dev-ablauf-u3c prueft die Durchsetzung dieses Bezugs im
+# Executor selbst). Ein plausibel geformter, aber nicht verifizierter
+# Versionswert (z. B. "999.999.999") ist damit kein implizit
+# gueltiger Messwert (Messvertrag).
+_KNOWN_SUPPORTED_VERSIONS: dict[str, frozenset[str]] = {
+    "claude": frozenset({_CLAUDE_VERIFIED_VERSION}),
+    "codex": frozenset({_CODEX_VERIFIED_VERSION}),
+}
 
 
 def _measured_or_partial(
-    version: str | None, version_field: str
+    provider: str, version: object, version_field: str
 ) -> tuple[UsageStatus, str]:
     """Messvertrag: "unbekannte Version ist kein implizit gueltiger
-    Messwert". Ohne (oder mit unerkennbarer) Version bleiben die
-    Zahlen erhalten (kein Verwerfen), der Status sinkt aber von
-    MEASURED auf PARTIAL."""
-    if not version:
+    Messwert". Ohne (oder mit nicht lokal verifizierter) Version
+    bleiben die Zahlen erhalten (kein Verwerfen), der Status sinkt
+    aber von MEASURED auf PARTIAL."""
+    if not isinstance(version, str) or not version:
         return (
             UsageStatus.PARTIAL,
-            f"{version_field} unbekannt; Messwert nicht als "
+            f"{version_field} unbekannt "
+            f"({_describe_invalid(version)}); Messwert nicht als "
             "vollstaendig verifiziert eingestuft",
         )
-    if not _VERSION_PATTERN.fullmatch(version):
+    supported = _KNOWN_SUPPORTED_VERSIONS.get(provider, frozenset())
+    if version not in supported:
         return (
             UsageStatus.PARTIAL,
-            f"{version_field} hat kein erkanntes Versionsformat "
-            f"({_safe_repr(version)}); Messwert nicht als "
-            "vollstaendig verifiziert eingestuft",
+            f"{version_field} ist keine lokal verifizierte Version; "
+            "Messwert nicht als vollstaendig verifiziert eingestuft",
         )
     return UsageStatus.MEASURED, ""
 
@@ -324,7 +331,9 @@ def normalize_claude_cli_result(
         cache_creation=fields["cache_creation_input_tokens"],
         output=fields["output_tokens"],
     )
-    status, note = _measured_or_partial(cli_version, "cli_version")
+    status, note = _measured_or_partial(
+        "claude", cli_version, "cli_version"
+    )
     return UsageEvent(
         status,
         "claude",
@@ -432,7 +441,7 @@ def normalize_claude_session_message_usage(
             detail=f"Unterkategorien widerspruechlich: {exc}",
         )
     status, note = _measured_or_partial(
-        schema_version, "schema_version"
+        "claude", schema_version, "schema_version"
     )
     return UsageEvent(
         status,
@@ -502,7 +511,9 @@ def normalize_codex_turn_usage(
         cache_creation=0,
         output=output,
     )
-    status, note = _measured_or_partial(cli_version, "cli_version")
+    status, note = _measured_or_partial(
+        "codex", cli_version, "cli_version"
+    )
     return UsageEvent(
         status,
         "codex",
@@ -609,7 +620,8 @@ def normalize_codex_token_count_usage(
             tokens=tokens,
             detail=(
                 "gemeldetes total_tokens ist kein gueltiger nicht "
-                f"negativer Ganzzahlwert: {_safe_repr(total_raw)}"
+                "negativer Ganzzahlwert (Typ: "
+                f"{_describe_invalid(total_raw)})"
             ),
         )
     if reported_total is not None and reported_total != tokens.total:
@@ -635,7 +647,9 @@ def normalize_codex_token_count_usage(
                 "Kontextereignis"
             ),
         )
-    status, note = _measured_or_partial(cli_version, "cli_version")
+    status, note = _measured_or_partial(
+        "codex", cli_version, "cli_version"
+    )
     return UsageEvent(
         status,
         "codex",
@@ -765,35 +779,16 @@ def _codex_session_meta(rows: tuple[dict, ...]) -> tuple[
     return None, None
 
 
-def _cumulative_decreased(
-    snapshots: list[tuple[float, object]],
-    latest_time: float,
-    latest_total: int,
-) -> bool:
-    """Ob ein frueherer Snapshot in derselben Datei einen hoeheren
-    Gesamtwert meldete als der zeitlich juengste -- ein Rueckgang, der
-    sonst spurlos verschwindet (Messvertrag: "Zaehlerreset/-rueckgang
-    ... haben explizite Ergebnisse")."""
-    for event_time, usage in snapshots:
-        if event_time == latest_time or not isinstance(usage, dict):
-            continue
-        raw_total = _nonneg_int(usage.get("total_tokens"))
-        if raw_total is not None and raw_total > latest_total:
-            return True
-    return False
-
-
-def read_codex_rollout_usage(
-    path: Path, *, cli_version: str | None = None
-) -> CodexRolloutScan:
-    read = read_jsonl_lenient(path)
-    file_session_id, file_cli_version = _codex_session_meta(read.rows)
-    effective_cli_version = file_cli_version or cli_version
-
-    events: list[UsageEvent] = []
-    seen_requests: set[tuple[float | None, str]] = set()
-    total_snapshots: list[tuple[float, object]] = []
-    for row in read.rows:
+def _codex_token_count_snapshots(
+    rows: tuple[dict, ...],
+) -> tuple[list[tuple[float, dict]], list[dict]]:
+    """``token_count``-Ereignisse mit gueltigem ``info``-Objekt,
+    getrennt in zeitlich einordenbare (fuer Reihenfolge-abhaengige
+    Pruefungen) und nicht einordenbare (fehlender/ungueltiger
+    Zeitstempel)."""
+    ordered: list[tuple[float, dict]] = []
+    unordered: list[dict] = []
+    for row in rows:
         if row.get("type") != "event_msg":
             continue
         payload = row.get("payload")
@@ -801,55 +796,106 @@ def read_codex_rollout_usage(
             "token_count"
         ):
             continue
-        event_time = _iso_to_epoch(row.get("timestamp"))
         info = payload.get("info")
-        info = info if isinstance(info, dict) else {}
+        if not isinstance(info, dict):
+            continue
+        event_time = _iso_to_epoch(row.get("timestamp"))
+        if event_time is None:
+            unordered.append(info)
+        else:
+            ordered.append((event_time, info))
+    ordered.sort(key=lambda item: item[0])
+    return ordered, unordered
+
+
+def read_codex_rollout_usage(
+    path: Path, *, cli_version: str | None = None
+) -> CodexRolloutScan:
+    """last_token_usage zaehlt nur als neuer Request, wenn der
+    gepaarte total_token_usage seit dem vorherigen Ereignis
+    tatsaechlich gewachsen ist -- Zeitstempel oder Inhalt allein
+    belegen keinen neuen Request (empirisch an echten Rollouts
+    bestaetigt: identischer last_token_usage-Inhalt ging in allen
+    beobachteten Faellen mit unveraendertem total_token_usage einher,
+    nie mit Wachstum). Ein Rueckgang irgendwo in der zeitlich
+    geordneten Folge bleibt sichtbar, auch wenn der Zaehler danach
+    wieder waechst (Messvertrag: "Zaehlerreset/-rueckgang ... haben
+    explizite Ergebnisse").
+    """
+    read = read_jsonl_lenient(path)
+    file_session_id, file_cli_version = _codex_session_meta(read.rows)
+    effective_cli_version = file_cli_version or cli_version
+    ordered, unordered = _codex_token_count_snapshots(read.rows)
+
+    events: list[UsageEvent] = []
+    prev_cumulative: int | None = None
+    reset_detected = False
+    latest_total_usage: dict | None = None
+    latest_total_time: float | None = None
+    for event_time, info in ordered:
+        total_usage = info.get("total_token_usage")
+        raw_total = (
+            _nonneg_int(total_usage.get("total_tokens"))
+            if isinstance(total_usage, dict)
+            else None
+        )
+        is_new_request = (
+            raw_total is None
+            or prev_cumulative is None
+            or raw_total > prev_cumulative
+        )
+        if raw_total is not None and prev_cumulative is not None:
+            if raw_total < prev_cumulative:
+                reset_detected = True
+            prev_cumulative = max(prev_cumulative, raw_total)
+        elif raw_total is not None:
+            prev_cumulative = raw_total
+        last_usage = info.get("last_token_usage")
+        if last_usage is not None and is_new_request:
+            events.append(
+                normalize_codex_token_count_usage(
+                    last_usage,
+                    scope=CounterScope.PER_REQUEST,
+                    cli_version=effective_cli_version,
+                    session_id=file_session_id,
+                    event_time=event_time,
+                )
+            )
+        if isinstance(total_usage, dict):
+            latest_total_usage = total_usage
+            latest_total_time = event_time
+    # Nicht zeitlich einordenbare Ereignisse: last_token_usage laesst
+    # sich nicht gegen eine Reihenfolge pruefen, bleibt aber erhalten
+    # statt stillschweigend verworfen zu werden.
+    for info in unordered:
         last_usage = info.get("last_token_usage")
         if last_usage is not None:
-            # Ein Snapshot mit identischem Zeitpunkt UND Inhalt ist
-            # ein Log-Duplikat, kein zweiter realer Request -- sonst
-            # zaehlt derselbe Verbrauch doppelt (empirisch reproduziert:
-            # zwei identische Snapshots ergaben 230 statt 115 Tokens).
-            dedup_key = (
-                event_time,
-                json.dumps(last_usage, sort_keys=True),
-            )
-            if dedup_key not in seen_requests:
-                seen_requests.add(dedup_key)
-                events.append(
-                    normalize_codex_token_count_usage(
-                        last_usage,
-                        scope=CounterScope.PER_REQUEST,
-                        cli_version=effective_cli_version,
-                        session_id=file_session_id,
-                        event_time=event_time,
-                    )
+            events.append(
+                normalize_codex_token_count_usage(
+                    last_usage,
+                    scope=CounterScope.PER_REQUEST,
+                    cli_version=effective_cli_version,
+                    session_id=file_session_id,
+                    event_time=None,
                 )
-        total_usage = info.get("total_token_usage")
-        if total_usage is not None and event_time is not None:
-            total_snapshots.append((event_time, total_usage))
-    if total_snapshots:
-        latest_time, latest_usage = max(
-            total_snapshots, key=lambda item: item[0]
-        )
+            )
+    if latest_total_usage is not None:
         event = normalize_codex_token_count_usage(
-            latest_usage,
+            latest_total_usage,
             scope=CounterScope.CUMULATIVE_SESSION,
             cli_version=effective_cli_version,
             session_id=file_session_id,
-            event_time=latest_time,
+            event_time=latest_total_time,
         )
-        is_measured = event.status is UsageStatus.MEASURED
-        if is_measured and _cumulative_decreased(
-            total_snapshots, latest_time, event.tokens.total
-        ):
+        if reset_detected and event.status is UsageStatus.MEASURED:
             event = replace(
                 event,
                 status=UsageStatus.PARTIAL,
                 detail=(
-                    "kumulativer Zaehler ist gegenueber einem "
-                    "frueheren Snapshot in derselben Datei gesunken "
-                    "(Reset/Compaction); nicht unveraendert "
+                    "kumulativer Zaehler ist an mindestens einer "
+                    "Stelle der zeitlich geordneten Folge in dieser "
+                    "Datei gesunken (Reset/Compaction), auch wenn er "
+                    "seither wieder gewachsen ist; nicht unveraendert "
                     "vertrauenswuerdig"
                 ),
             )

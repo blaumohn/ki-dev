@@ -13,6 +13,12 @@ import json
 
 import pytest
 
+from ki_dev.executors.claude_cli import (
+    VERIFIED_CLI_VERSION as CLAUDE_VERIFIED_VERSION,
+)
+from ki_dev.executors.codex_cli import (
+    VERIFIED_CLI_VERSION as CODEX_VERIFIED_VERSION,
+)
 from ki_dev.usage import (
     CounterScope,
     TokenCounts,
@@ -137,7 +143,9 @@ class TestClaudeCliResult:
 
     def test_valid_usage_is_measured(self):
         event = normalize_claude_cli_result(
-            self._usage(), cli_version="2.1.272", session_id="s1"
+            self._usage(),
+            cli_version=CLAUDE_VERIFIED_VERSION,
+            session_id="s1",
         )
         assert event.status is UsageStatus.MEASURED
         assert event.provider == "claude"
@@ -146,7 +154,7 @@ class TestClaudeCliResult:
         # (Werkzeugnutzung); das result-Ereignis ist deren Summe.
         assert event.counter_scope is CounterScope.CALL_TOTAL
         assert event.tokens == TokenCounts(10, 500, 30, 20)
-        assert event.cli_version == "2.1.272"
+        assert event.cli_version == CLAUDE_VERIFIED_VERSION
         assert event.session_id == "s1"
 
     def test_missing_cli_version_is_partial_not_measured(self):
@@ -199,7 +207,7 @@ class TestClaudeSessionMessageUsage:
     def test_rich_usage_is_measured_with_subcategories(self):
         event = normalize_claude_session_message_usage(
             self._usage(),
-            schema_version="1.2.3",
+            schema_version=CLAUDE_VERIFIED_VERSION,
             confirmed_model="claude-haiku-4-5-20251001",
         )
         assert event.status is UsageStatus.MEASURED
@@ -213,7 +221,7 @@ class TestClaudeSessionMessageUsage:
         del usage["cache_creation"]
         del usage["output_tokens_details"]
         event = normalize_claude_session_message_usage(
-            usage, schema_version="1.2.3"
+            usage, schema_version=CLAUDE_VERIFIED_VERSION
         )
         assert event.status is UsageStatus.MEASURED
         assert event.tokens.reasoning_output is None
@@ -233,7 +241,7 @@ class TestClaudeSessionMessageUsage:
             }
         )
         event = normalize_claude_session_message_usage(
-            usage, schema_version="1.2.3"
+            usage, schema_version=CLAUDE_VERIFIED_VERSION
         )
         assert event.status is UsageStatus.PARTIAL
         # Hauptkategorien bleiben erhalten, nur die widerspruechliche
@@ -255,7 +263,7 @@ class TestCodexTurnUsage:
                 "cached_input_tokens": 40,
                 "output_tokens": 15,
             },
-            cli_version="0.154.0",
+            cli_version=CODEX_VERIFIED_VERSION,
         )
         assert event.status is UsageStatus.MEASURED
         # Ein Turn kann intern mehrere Modell-Requests umfassen
@@ -303,7 +311,7 @@ class TestCodexTokenCountUsage:
                 "total_tokens": 115,
             },
             scope=CounterScope.PER_REQUEST,
-            cli_version="0.154.0",
+            cli_version=CODEX_VERIFIED_VERSION,
         )
         assert event.status is UsageStatus.MEASURED
         assert event.source == "rollout_last_token_usage"
@@ -336,7 +344,7 @@ class TestCodexTokenCountUsage:
                 "total_tokens": 75,
             },
             scope=CounterScope.PER_REQUEST,
-            cli_version="0.154.0",
+            cli_version=CODEX_VERIFIED_VERSION,
         )
         assert event.status is UsageStatus.PARTIAL
         assert event.tokens.fresh_input == 60
@@ -356,7 +364,7 @@ class TestCodexTokenCountUsage:
                 "total_tokens": "not-a-number",
             },
             scope=CounterScope.PER_REQUEST,
-            cli_version="0.154.0",
+            cli_version=CODEX_VERIFIED_VERSION,
         )
         assert event.status is UsageStatus.PARTIAL
         assert event.tokens.fresh_input == 60
@@ -504,7 +512,9 @@ class TestReadCodexRolloutUsage:
             )
             + "\n"
         )
-        scan = read_codex_rollout_usage(path, cli_version="0.154.0")
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
         per_request = [
             e
             for e in scan.events
@@ -582,7 +592,7 @@ def _assistant_row(**kwargs):
         "type": "assistant",
         "sessionId": "sess-1",
         "requestId": "req-1",
-        "version": "2.1.272",
+        "version": CLAUDE_VERIFIED_VERSION,
         "timestamp": "2026-04-04T09:00:00.000Z",
         "message": {
             "id": "msg-1",
@@ -652,7 +662,7 @@ class TestReadClaudeSessionUsage:
         event = scan.events[0]
         assert event.session_id == "sess-1"
         assert event.request_id == "req-1"
-        assert event.schema_version == "2.1.272"
+        assert event.schema_version == CLAUDE_VERIFIED_VERSION
         assert event.confirmed_model == "claude-haiku-4-5-20251001"
         assert event.status is UsageStatus.MEASURED
 
@@ -675,6 +685,18 @@ class TestReadClaudeSessionUsage:
         scan = read_claude_session_usage(path)
         assert len(scan.events) == 1
 
+    def test_non_string_version_field_does_not_crash_the_reader(
+        self, tmp_path
+    ):
+        """[P2] Eine reale Zeile mit "version": 123 (Zahl statt
+        String) darf den Reader nicht mit einem ungefangenen
+        TypeError abbrechen."""
+        path = tmp_path / "session.jsonl"
+        path.write_text(_assistant_row(version=123) + "\n")
+        scan = read_claude_session_usage(path)
+        assert len(scan.events) == 1
+        assert scan.events[0].status is UsageStatus.PARTIAL
+
 
 class TestNachreviewDf44275:
     """Regressionstests zu den sechs Befunden aus dem Nachreview von
@@ -692,33 +714,56 @@ class TestNachreviewDf44275:
                 "total_tokens": sentinel,
             },
             scope=CounterScope.PER_REQUEST,
-            cli_version="0.154.0",
+            cli_version=CODEX_VERIFIED_VERSION,
         )
         assert event.status is UsageStatus.PARTIAL
         assert len(event.detail) < 200
         assert sentinel not in event.detail
 
-    def test_identical_repeated_snapshot_is_not_double_counted(
-        self, tmp_path
-    ):
-        """[P2] Zwei byte-identische last_token_usage-Ereignisse
-        (gleicher Zeitpunkt und Inhalt) sind ein Log-Duplikat, kein
-        zweiter realer Request."""
-        info = {
-            "last_token_usage": {
-                "input_tokens": 100,
-                "cached_input_tokens": 40,
-                "output_tokens": 15,
-                "total_tokens": 115,
+    def _paired_info(self, total_tokens, **last_overrides):
+        last = {
+            "input_tokens": 100,
+            "cached_input_tokens": 40,
+            "output_tokens": 15,
+            "total_tokens": 115,
+        }
+        last.update(last_overrides)
+        return {
+            "last_token_usage": last,
+            "total_token_usage": {
+                "input_tokens": total_tokens,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": total_tokens,
             },
         }
+
+    def test_unchanged_cumulative_means_no_new_request(self, tmp_path):
+        """[P2] Der urspruengliche Befund blieb bei blossem Zeit-/
+        Inhaltsvergleich bestehen: gleiche Zaehler, unterschiedliche
+        Zeitpunkte, aber UNVERAENDERTER kumulativer Zaehler -> kein
+        neuer realer Request (empirisch an echten Rollouts bestaetigt,
+        siehe usage.py-Moduldoc: identischer last_token_usage-Inhalt
+        ging nie mit gewachsenem total_token_usage einher)."""
         path = tmp_path / "rollout.jsonl"
-        line = _rollout_line(
+        first = _rollout_line(
             timestamp="2026-04-04T09:00:00.000Z",
-            payload={"type": "token_count", "info": info},
+            payload={
+                "type": "token_count",
+                "info": self._paired_info(115),
+            },
         )
-        path.write_text(line + "\n" + line + "\n")
-        scan = read_codex_rollout_usage(path, cli_version="0.154.0")
+        second = _rollout_line(
+            timestamp="2026-04-04T09:05:00.000Z",
+            payload={
+                "type": "token_count",
+                "info": self._paired_info(115),
+            },
+        )
+        path.write_text(first + "\n" + second + "\n")
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
         per_request = [
             e
             for e in scan.events
@@ -726,6 +771,49 @@ class TestNachreviewDf44275:
         ]
         assert len(per_request) == 1
         assert per_request[0].tokens.total == 115
+        cumulative = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert cumulative[0].tokens.total == 115
+
+    def test_grown_cumulative_counts_both_requests_even_if_equal_cost(
+        self, tmp_path
+    ):
+        """[P2] Umkehrprobe: waechst der kumulative Zaehler zwischen
+        zwei Ereignissen, handelt es sich um echte, getrennte Requests
+        -- auch wenn ihr last_token_usage zufaellig gleich hoch ist.
+        Ein reiner Inhaltsvergleich wuerde das faelschlich verwerfen
+        (empirisch: 13 von 315 echten last_token_usage-Ereignissen
+        wiederholten den Vorgaengerwert, aber der kumulative Zaehler
+        blieb dabei immer unveraendert -- kein Gegenbeispiel mit
+        Wachstum gefunden)."""
+        path = tmp_path / "rollout.jsonl"
+        first = _rollout_line(
+            timestamp="2026-04-04T09:00:00.000Z",
+            payload={
+                "type": "token_count",
+                "info": self._paired_info(115),
+            },
+        )
+        second = _rollout_line(
+            timestamp="2026-04-04T09:05:00.000Z",
+            payload={
+                "type": "token_count",
+                "info": self._paired_info(230),
+            },
+        )
+        path.write_text(first + "\n" + second + "\n")
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 2
 
     def test_cumulative_decrease_is_flagged_not_silent(self, tmp_path):
         """[P2] Ein Rueckgang eines kumulativen Snapshots gegenueber
@@ -762,7 +850,9 @@ class TestNachreviewDf44275:
         )
         path = tmp_path / "rollout.jsonl"
         path.write_text(earlier + "\n" + later + "\n")
-        scan = read_codex_rollout_usage(path, cli_version="0.154.0")
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
         cumulative = [
             e
             for e in scan.events
@@ -770,6 +860,53 @@ class TestNachreviewDf44275:
         ]
         assert len(cumulative) == 1
         assert cumulative[0].tokens.total == 11
+        assert cumulative[0].status is UsageStatus.PARTIAL
+        assert "gesunken" in cumulative[0].detail
+
+    def test_reset_stays_flagged_even_after_later_recovery(
+        self, tmp_path
+    ):
+        """[P2] Die Folge 115 -> 11 -> 130 muss auch dann als Reset
+        erkannt werden, wenn der Zaehler danach wieder ueber den
+        urspruenglichen Wert waechst -- ein Vergleich nur gegen den
+        letzten Wert (statt gegen die gesamte geordnete Folge) haette
+        130 > 115 als unauffaellig durchgehen lassen."""
+
+        def line(ts, total):
+            return _rollout_line(
+                timestamp=ts,
+                payload={
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": total,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": total,
+                        }
+                    },
+                },
+            )
+
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            line("2026-04-04T09:00:00.000Z", 115)
+            + "\n"
+            + line("2026-04-04T09:05:00.000Z", 11)
+            + "\n"
+            + line("2026-04-04T09:10:00.000Z", 130)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        cumulative = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert len(cumulative) == 1
+        assert cumulative[0].tokens.total == 130
         assert cumulative[0].status is UsageStatus.PARTIAL
         assert "gesunken" in cumulative[0].detail
 
@@ -840,4 +977,35 @@ class TestNachreviewDf44275:
             cli_version="unrecognized-version",
         )
         assert event.status is UsageStatus.PARTIAL
-        assert "Versionsformat" in event.detail
+        assert "verifizierte Version" in event.detail
+        assert "unrecognized-version" not in event.detail
+
+    def test_well_formed_but_unsupported_version_is_partial(self):
+        """[P2] Ein plausibel geformter, aber nicht lokal verifizierter
+        Versionswert (z. B. eine erfundene zukuenftige Version) ist
+        kein implizit gueltiger Messwert -- ein Formatmuster allein
+        reicht nicht."""
+        event = normalize_codex_turn_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+            },
+            cli_version="999.999.999",
+        )
+        assert event.status is UsageStatus.PARTIAL
+        assert "verifizierte Version" in event.detail
+
+    def test_non_string_version_does_not_crash(self):
+        """[P2] Ein JSON-Zahlenwert statt eines Strings (z. B.
+        "version": 123 in einer Sitzungszeile) darf keinen
+        ungefangenen TypeError verursachen."""
+        event = normalize_codex_turn_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+            },
+            cli_version=123,  # type: ignore[arg-type]
+        )
+        assert event.status is UsageStatus.PARTIAL
