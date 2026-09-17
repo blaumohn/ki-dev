@@ -538,13 +538,24 @@ class LoopRuntime:
         Adaptergrenzfall, keine ungeklaerte Situation. ``UNAVAILABLE``
         dagegen ist ein Blocker: die Messung ist fuer diesen Executor
         vorgesehen, aber gerade nicht belegbar, und ein unbelegter
-        Kontext gilt nicht als klein. Ein fehlendes Rollenbudget ist
-        keine gueltige Konfiguration und wird nicht stillschweigend
-        als Freigabe behandelt, sondern schlaegt hier direkt fehl
-        (``AttributeError``), statt den Aufruf ungeprueft zuzulassen.
+        Kontext gilt nicht als klein.
+
+        Ein fehlendes Rollenbudget ist unabhaengig vom Kontextstatus
+        keine gueltige Konfiguration: es steuert auch den nativen
+        Timeout und die Verbrauchserfassung im Adapter (siehe
+        ``CliAdapter.send_turn``/``claude_result``/``codex_result``).
+        Ein ``UNSUPPORTED``- oder ``UNAVAILABLE``-Messwert darf das
+        deshalb nicht stillschweigend uebertoenen; die Pruefung steht
+        vor jeder Fallunterscheidung nach Kontextstatus.
         """
         if not isinstance(actor, (AgentBuildMode, AgentReviewer)):
             return None
+        if actor.budget is None:
+            raise ValueError(
+                f"{role} (executor={actor.executor.name}, "
+                f"session={actor.session_id}): TurnBudget fehlt; "
+                "Timeout und Verbrauchserfassung waeren ungueltig"
+            )
         measurement = actor.executor.measure_context(actor.session_id)
         origin = (
             f"{role} (executor={actor.executor.name}, "

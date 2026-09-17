@@ -297,26 +297,43 @@ def test_resume_rechecks_context_instead_of_reusing_old_measurement(
     assert review_executor.calls == 1
 
 
-def test_missing_role_budget_fails_loudly_instead_of_silent_release(
-    tmp_path,
+@pytest.mark.parametrize(
+    "measurement",
+    [
+        ContextMeasurement(ContextStatus.MEASURED, tokens=100),
+        ContextMeasurement(ContextStatus.MEASURED, tokens=90_000),
+        ContextMeasurement(ContextStatus.UNSUPPORTED),
+        ContextMeasurement(
+            ContextStatus.UNAVAILABLE, detail="Nachweis fehlt"
+        ),
+    ],
+    ids=[
+        "measured-small",
+        "measured-over-limit",
+        "unsupported",
+        "unavailable",
+    ],
+)
+def test_missing_role_budget_fails_loudly_regardless_of_context(
+    tmp_path, measurement
 ):
     """xf2: ein fehlendes Rollenbudget ist keine gueltige
-    Konfiguration und darf die Kontextpruefung nicht stillschweigend
-    umgehen (Leitlinie 'Fallbacks verdecken keine Fehler'). Die
-    normale CLI-Konfiguration liefert immer ein TurnBudget; dieser
-    Zustand entsteht nur durch einen ungueltig zusammengesetzten
-    direkten Runtime-/Agent-Aufruf."""
+    Konfiguration und darf nicht stillschweigend uebergangen werden
+    (Leitlinie 'Fallbacks verdecken keine Fehler') -- unabhaengig vom
+    Kontextstatus, denn das Budget steuert auch Timeout und
+    Verbrauchserfassung im Adapter. Rein per Mock reproduziert (kein
+    echter Agenten-/CLI-Aufruf); die normale CLI-Konfiguration liefert
+    immer ein TurnBudget, dieser Zustand entsteht nur durch einen
+    ungueltig zusammengesetzten direkten Runtime-/Agent-Aufruf."""
     build_executor = ControlledExecutor("claude-cli", "Bau erledigt")
-    build_executor.measurement = ContextMeasurement(
-        ContextStatus.MEASURED, tokens=90_000
-    )
+    build_executor.measurement = measurement
     review_executor = ControlledExecutor(
         "claude-cli", _review_json("run-ctx-no-budget", 1, "PASS")
     )
     build, review = _agents(build_executor, review_executor)
     build.budget = None
 
-    with pytest.raises(AttributeError), _runtime(
+    with pytest.raises(ValueError, match="TurnBudget fehlt"), _runtime(
         tmp_path, "run-ctx-no-budget", build, review
     ) as runtime:
         runtime.start(_task("run-ctx-no-budget"), Limits())
