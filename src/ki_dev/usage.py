@@ -28,7 +28,8 @@ Architekturquelle: docs/architecture/tokenmessung-estimatoren.de.md.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -222,19 +223,51 @@ def _nonneg_int(value: object) -> int | None:
     return value
 
 
+_DIAGNOSTIC_VALUE_LIMIT = 80
+
+
+def _safe_repr(value: object) -> str:
+    """Begrenzte, gekennzeichnete Kurzform fuer Diagnosetexte.
+
+    Ausgabe-/Diagnosegrenze (wu0.2-Akzeptanzkriterium 4): beliebiger
+    Fremdinhalt (auch ein Sentinel-Gespraechstext) darf nie
+    unbegrenzt in ``UsageEvent.detail`` landen.
+    """
+    text = repr(value)
+    if len(text) > _DIAGNOSTIC_VALUE_LIMIT:
+        return text[:_DIAGNOSTIC_VALUE_LIMIT] + "...[gekuerzt]"
+    return text
+
+
+# Einfaches, anbieterunabhaengiges Versionsschema (z. B. "0.154.0",
+# "2.1.272"): keine feste Anbieterliste, aber ein erkennbares
+# Versionsformat. Ein beliebiger nichtleerer String (z. B. ein
+# Tippfehler oder Platzhalter) ist damit kein implizit gueltiger
+# Versionsnachweis mehr (Messvertrag).
+_VERSION_PATTERN = re.compile(r"^[0-9]+(\.[0-9]+){1,3}$")
+
+
 def _measured_or_partial(
     version: str | None, version_field: str
 ) -> tuple[UsageStatus, str]:
     """Messvertrag: "unbekannte Version ist kein implizit gueltiger
-    Messwert". Ohne Version bleiben die Zahlen erhalten (kein
-    Verwerfen), der Status sinkt aber von MEASURED auf PARTIAL."""
-    if version:
-        return UsageStatus.MEASURED, ""
-    return (
-        UsageStatus.PARTIAL,
-        f"{version_field} unbekannt; Messwert nicht als vollstaendig "
-        "verifiziert eingestuft",
-    )
+    Messwert". Ohne (oder mit unerkennbarer) Version bleiben die
+    Zahlen erhalten (kein Verwerfen), der Status sinkt aber von
+    MEASURED auf PARTIAL."""
+    if not version:
+        return (
+            UsageStatus.PARTIAL,
+            f"{version_field} unbekannt; Messwert nicht als "
+            "vollstaendig verifiziert eingestuft",
+        )
+    if not _VERSION_PATTERN.fullmatch(version):
+        return (
+            UsageStatus.PARTIAL,
+            f"{version_field} hat kein erkanntes Versionsformat "
+            f"({_safe_repr(version)}); Messwert nicht als "
+            "vollstaendig verifiziert eingestuft",
+        )
+    return UsageStatus.MEASURED, ""
 
 
 # --- Claude: CLI-Turnergebnis (``claude -p --output-format json``,
@@ -576,7 +609,7 @@ def normalize_codex_token_count_usage(
             tokens=tokens,
             detail=(
                 "gemeldetes total_tokens ist kein gueltiger nicht "
-                f"negativer Ganzzahlwert: {total_raw!r}"
+                f"negativer Ganzzahlwert: {_safe_repr(total_raw)}"
             ),
         )
     if reported_total is not None and reported_total != tokens.total:
@@ -643,19 +676,30 @@ class LenientJsonlRead:
 
 
 def read_jsonl_lenient(path: Path) -> LenientJsonlRead:
-    text = path.read_text(encoding="utf-8")
-    incomplete_last_line = bool(text) and not text.endswith("\n")
-    lines = text.split("\n")
-    # Bei vollstaendigem Text erzeugt der abschliessende Zeilenumbruch
-    # einen leeren letzten Split; bei unvollstaendigem Text ist die
-    # letzte Zeile noch nicht fertig geschrieben. Beide werden gleich
-    # verworfen, nicht als Nutzzeile geparst.
-    if incomplete_last_line or (lines and lines[-1] == ""):
-        lines = lines[:-1]
+    # Auf Byte-Ebene trennen: 0x0A (Zeilenumbruch) kommt in gueltigem
+    # UTF-8 nie innerhalb einer Mehrbyte-Sequenz vor, das Trennen ist
+    # also sicher, bevor ueberhaupt dekodiert wird. Ein aktiver
+    # Schreibvorgang kann sonst mitten in einem Mehrbyte-Zeichen enden;
+    # ein vollstaendiger Datei-Decode wuerde dann mit UnicodeDecodeError
+    # abbrechen und auch bereits vollstaendige Zeilen verlieren.
+    raw = path.read_bytes()
+    incomplete_last_line = bool(raw) and not raw.endswith(b"\n")
+    byte_lines = raw.split(b"\n")
+    # Bei vollstaendigem Inhalt erzeugt der abschliessende
+    # Zeilenumbruch eine leere letzte Zeile; bei unvollstaendigem
+    # Inhalt ist die letzte Zeile noch nicht fertig geschrieben. Beide
+    # werden gleich verworfen, nicht als Nutzzeile geparst.
+    if incomplete_last_line or (byte_lines and byte_lines[-1] == b""):
+        byte_lines = byte_lines[:-1]
     rows: list[dict] = []
     corrupt: list[int] = []
-    for number, line in enumerate(lines, start=1):
-        if not line.strip():
+    for number, raw_line in enumerate(byte_lines, start=1):
+        if not raw_line.strip():
+            continue
+        try:
+            line = raw_line.decode("utf-8")
+        except UnicodeDecodeError:
+            corrupt.append(number)
             continue
         try:
             row = json.loads(line)
@@ -697,12 +741,58 @@ class CodexRolloutScan:
     incomplete_last_line: bool
 
 
+def _codex_session_meta(rows: tuple[dict, ...]) -> tuple[
+    str | None, str | None
+]:
+    """``session_meta``.payload traegt ``id`` (Sitzungskennung, deckt
+    sich mit dem UUID-Teil des Rollout-Dateinamens) und
+    ``cli_version`` -- empirisch an echten lokalen Rollouts bestaetigt,
+    nicht nur vom Aufrufer erratbar."""
+    for row in rows:
+        if row.get("type") != "session_meta":
+            continue
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        session_id = payload.get("id")
+        cli_version = payload.get("cli_version")
+        return (
+            session_id if isinstance(session_id, str) and session_id
+            else None,
+            cli_version if isinstance(cli_version, str) and cli_version
+            else None,
+        )
+    return None, None
+
+
+def _cumulative_decreased(
+    snapshots: list[tuple[float, object]],
+    latest_time: float,
+    latest_total: int,
+) -> bool:
+    """Ob ein frueherer Snapshot in derselben Datei einen hoeheren
+    Gesamtwert meldete als der zeitlich juengste -- ein Rueckgang, der
+    sonst spurlos verschwindet (Messvertrag: "Zaehlerreset/-rueckgang
+    ... haben explizite Ergebnisse")."""
+    for event_time, usage in snapshots:
+        if event_time == latest_time or not isinstance(usage, dict):
+            continue
+        raw_total = _nonneg_int(usage.get("total_tokens"))
+        if raw_total is not None and raw_total > latest_total:
+            return True
+    return False
+
+
 def read_codex_rollout_usage(
     path: Path, *, cli_version: str | None = None
 ) -> CodexRolloutScan:
     read = read_jsonl_lenient(path)
+    file_session_id, file_cli_version = _codex_session_meta(read.rows)
+    effective_cli_version = file_cli_version or cli_version
+
     events: list[UsageEvent] = []
-    latest_total: tuple[float, object] | None = None
+    seen_requests: set[tuple[float | None, str]] = set()
+    total_snapshots: list[tuple[float, object]] = []
     for row in read.rows:
         if row.get("type") != "event_msg":
             continue
@@ -716,31 +806,54 @@ def read_codex_rollout_usage(
         info = info if isinstance(info, dict) else {}
         last_usage = info.get("last_token_usage")
         if last_usage is not None:
-            events.append(
-                normalize_codex_token_count_usage(
-                    last_usage,
-                    scope=CounterScope.PER_REQUEST,
-                    cli_version=cli_version,
-                    event_time=event_time,
+            # Ein Snapshot mit identischem Zeitpunkt UND Inhalt ist
+            # ein Log-Duplikat, kein zweiter realer Request -- sonst
+            # zaehlt derselbe Verbrauch doppelt (empirisch reproduziert:
+            # zwei identische Snapshots ergaben 230 statt 115 Tokens).
+            dedup_key = (
+                event_time,
+                json.dumps(last_usage, sort_keys=True),
+            )
+            if dedup_key not in seen_requests:
+                seen_requests.add(dedup_key)
+                events.append(
+                    normalize_codex_token_count_usage(
+                        last_usage,
+                        scope=CounterScope.PER_REQUEST,
+                        cli_version=effective_cli_version,
+                        session_id=file_session_id,
+                        event_time=event_time,
+                    )
                 )
-            )
         total_usage = info.get("total_token_usage")
-        if (
-            total_usage is not None
-            and event_time is not None
-            and (latest_total is None or event_time > latest_total[0])
-        ):
-            latest_total = (event_time, total_usage)
-    if latest_total is not None:
-        event_time, total_usage = latest_total
-        events.append(
-            normalize_codex_token_count_usage(
-                total_usage,
-                scope=CounterScope.CUMULATIVE_SESSION,
-                cli_version=cli_version,
-                event_time=event_time,
-            )
+        if total_usage is not None and event_time is not None:
+            total_snapshots.append((event_time, total_usage))
+    if total_snapshots:
+        latest_time, latest_usage = max(
+            total_snapshots, key=lambda item: item[0]
         )
+        event = normalize_codex_token_count_usage(
+            latest_usage,
+            scope=CounterScope.CUMULATIVE_SESSION,
+            cli_version=effective_cli_version,
+            session_id=file_session_id,
+            event_time=latest_time,
+        )
+        is_measured = event.status is UsageStatus.MEASURED
+        if is_measured and _cumulative_decreased(
+            total_snapshots, latest_time, event.tokens.total
+        ):
+            event = replace(
+                event,
+                status=UsageStatus.PARTIAL,
+                detail=(
+                    "kumulativer Zaehler ist gegenueber einem "
+                    "frueheren Snapshot in derselben Datei gesunken "
+                    "(Reset/Compaction); nicht unveraendert "
+                    "vertrauenswuerdig"
+                ),
+            )
+        events.append(event)
     return CodexRolloutScan(
         tuple(events), read.corrupt_lines, read.incomplete_last_line
     )

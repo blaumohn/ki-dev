@@ -674,3 +674,170 @@ class TestReadClaudeSessionUsage:
         )
         scan = read_claude_session_usage(path)
         assert len(scan.events) == 1
+
+
+class TestNachreviewDf44275:
+    """Regressionstests zu den sechs Befunden aus dem Nachreview von
+    df44275 (siehe Beads ki-dev-ablauf-wu0.2, zweiter Nachreview)."""
+
+    def test_diagnostic_text_is_bounded_not_raw_content(self):
+        """[P1] Ein beliebig langer Fremdwert darf nie unbegrenzt in
+        detail landen (Sentinel-Leak/Ausgabegrenze)."""
+        sentinel = "S" * 10_000
+        event = normalize_codex_token_count_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+                "total_tokens": sentinel,
+            },
+            scope=CounterScope.PER_REQUEST,
+            cli_version="0.154.0",
+        )
+        assert event.status is UsageStatus.PARTIAL
+        assert len(event.detail) < 200
+        assert sentinel not in event.detail
+
+    def test_identical_repeated_snapshot_is_not_double_counted(
+        self, tmp_path
+    ):
+        """[P2] Zwei byte-identische last_token_usage-Ereignisse
+        (gleicher Zeitpunkt und Inhalt) sind ein Log-Duplikat, kein
+        zweiter realer Request."""
+        info = {
+            "last_token_usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+                "total_tokens": 115,
+            },
+        }
+        path = tmp_path / "rollout.jsonl"
+        line = _rollout_line(
+            timestamp="2026-04-04T09:00:00.000Z",
+            payload={"type": "token_count", "info": info},
+        )
+        path.write_text(line + "\n" + line + "\n")
+        scan = read_codex_rollout_usage(path, cli_version="0.154.0")
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].tokens.total == 115
+
+    def test_cumulative_decrease_is_flagged_not_silent(self, tmp_path):
+        """[P2] Ein Rueckgang eines kumulativen Snapshots gegenueber
+        einem frueheren in derselben Datei (z. B. 115 -> 11) muss
+        sichtbar bleiben, nicht als unveraendert gueltig gemessen
+        gelten."""
+        earlier = _rollout_line(
+            timestamp="2026-04-04T09:00:00.000Z",
+            payload={
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 0,
+                        "output_tokens": 15,
+                        "total_tokens": 115,
+                    }
+                },
+            },
+        )
+        later = _rollout_line(
+            timestamp="2026-04-04T09:05:00.000Z",
+            payload={
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 10,
+                        "cached_input_tokens": 0,
+                        "output_tokens": 1,
+                        "total_tokens": 11,
+                    }
+                },
+            },
+        )
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(earlier + "\n" + later + "\n")
+        scan = read_codex_rollout_usage(path, cli_version="0.154.0")
+        cumulative = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert len(cumulative) == 1
+        assert cumulative[0].tokens.total == 11
+        assert cumulative[0].status is UsageStatus.PARTIAL
+        assert "gesunken" in cumulative[0].detail
+
+    def test_session_meta_id_and_cli_version_are_used(self, tmp_path):
+        """[P2] session_meta traegt Sitzungskennung und CLI-Version;
+        sie duerfen nicht verworfen werden, sonst scheitert die
+        kumulative Zuordnung im Accounting an
+        counter_baseline_unknown."""
+        path = tmp_path / "rollout.jsonl"
+        meta = json.dumps(
+            {
+                "type": "session_meta",
+                "timestamp": "2026-04-04T08:59:00.000Z",
+                "payload": {
+                    "id": "sess-abc",
+                    "cli_version": "0.154.0",
+                },
+            }
+        )
+        usage_line = _rollout_line(
+            timestamp="2026-04-04T09:00:00.000Z",
+            payload={
+                "type": "token_count",
+                "info": {
+                    "last_token_usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 40,
+                        "output_tokens": 15,
+                        "total_tokens": 115,
+                    }
+                },
+            },
+        )
+        path.write_text(meta + "\n" + usage_line + "\n")
+        scan = read_codex_rollout_usage(path)
+        assert len(scan.events) == 1
+        event = scan.events[0]
+        assert event.session_id == "sess-abc"
+        assert event.cli_version == "0.154.0"
+        assert event.status is UsageStatus.MEASURED
+
+    def test_truncated_multibyte_tail_does_not_abort_the_scan(
+        self, tmp_path
+    ):
+        """[P2] Ein aktiver Schreibvorgang kann mitten in einem
+        Mehrbyte-UTF-8-Zeichen enden; bereits vollstaendige Zeilen
+        muessen trotzdem lesbar bleiben, kein UnicodeDecodeError."""
+        path = tmp_path / "data.jsonl"
+        complete = json.dumps({"a": 1, "note": "ä"}).encode("utf-8")
+        truncated_multibyte = "ö".encode()[:1]
+        with path.open("wb") as handle:
+            handle.write(complete + b"\n")
+            handle.write(b'{"a": 2, "note": "' + truncated_multibyte)
+        result = read_jsonl_lenient(path)
+        assert result.rows == ({"a": 1, "note": "ä"},)
+        assert result.incomplete_last_line is True
+        assert result.corrupt_lines == ()
+
+    def test_unrecognized_version_string_is_partial_not_measured(self):
+        """[P2] Ein beliebiger nichtleerer String (z. B. ein Tippfehler)
+        ist kein gueltiger Versionsnachweis."""
+        event = normalize_codex_turn_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+            },
+            cli_version="unrecognized-version",
+        )
+        assert event.status is UsageStatus.PARTIAL
+        assert "Versionsformat" in event.detail
