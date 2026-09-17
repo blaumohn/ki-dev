@@ -12,6 +12,8 @@ _VALID = [
     "feat: Python-CLI ergaenzen (ki-dev-ablauf-8dd)",
     "fix: parser (v2) neu bauen (ki-dev-ablauf-4p8)",
     "docs: verschachtelt (ki-dev-ablauf-8dd.1.2)",
+    "chore: xf2 und cbo in Beads schliessen (ki-dev-ablauf-xf2, cbo)",
+    "chore: drei Issues schliessen (ki-dev-ablauf-hju, dqv, 8dd.1)",
 ]
 
 _INVALID = [
@@ -24,6 +26,8 @@ _INVALID = [
     "feat: grossbuchstaben (KI-DEV-ABLAUF-8DD)",
     "feat: platzhalter (WIP)",
     "feat: id nicht am ende (ki-dev-ablauf-8dd) rest",
+    "chore: zweite id ohne komma (ki-dev-ablauf-xf2 cbo)",
+    "chore: trailing komma (ki-dev-ablauf-xf2,)",
 ]
 
 
@@ -36,7 +40,8 @@ def test_valid_subjects_pass(subject):
 def test_invalid_subjects_rejected(subject):
     problem = validate_subject(subject)
     assert problem is not None
-    assert "<Titel> (<Beads-ID>)" in problem
+    assert "<Titel> (<Beads-ID>[, <Beads-ID>...])" in problem
+    assert "Beads-Integration" in problem
 
 
 def test_check_file_accepts_valid_message(tmp_path):

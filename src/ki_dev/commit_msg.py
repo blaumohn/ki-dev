@@ -1,11 +1,21 @@
-"""Prueft die erste Commit-Zeile auf ``<Titel> (<Beads-ID>)``.
+"""Prueft die erste Commit-Zeile auf ``<Titel> (<Beads-ID>[, <Beads-ID>...])``.
 
 Beispiel einer gueltigen Zeile::
 
     feat: Python-CLI ergaenzen (ki-dev-ablauf-8dd.1)
 
+Bei mehreren betroffenen Issues duerfen weitere IDs kommagetrennt als
+blosses Suffix folgen (Praefix nur bei der ersten ID Pflicht), z. B.::
+
+    chore: xf2 und cbo in Beads schliessen (ki-dev-ablauf-xf2, cbo)
+
 Kind-IDs mit Punkt (``ki-dev-ablauf-8dd.1``) sind zulaessig. Der als
 ``commit-msg`` installierte Git-Hook ruft dieses Modul als Skript auf.
+
+Grund fuer den Zwang zu diesem Format: Beads-Integration. Beads
+verknuepft Commits ueber die Beads-ID am Titelende mit Issues (Verlauf,
+Schliessungen, Audit-Trail in .beads/); ohne dieses Format kann Beads
+einen Commit keinem Issue zuordnen.
 """
 
 import re
@@ -13,9 +23,17 @@ import sys
 
 ISSUE_PREFIX = "ki-dev-ablauf"
 _EXAMPLE = f"feat: Python-CLI ergaenzen ({ISSUE_PREFIX}-8dd.1)"
+_MULTI_EXAMPLE = f"chore: xf2 und cbo in Beads schliessen ({ISSUE_PREFIX}-xf2, cbo)"
+_WHY = (
+    "Grund: Beads-Integration -- Beads verknuepft Commits ueber die "
+    "Beads-ID am Titelende mit Issues; ohne dieses Format kann Beads "
+    "diesen Commit keinem Issue zuordnen."
+)
 
-_ID = re.compile(rf"{re.escape(ISSUE_PREFIX)}-[0-9a-z]+(?:\.[0-9]+)*")
-_SUBJECT = re.compile(rf"^(?P<title>\S.*?) \((?P<id>{_ID.pattern})\)$")
+_SUFFIX = r"[0-9a-z]+(?:\.[0-9]+)*"
+_ID = re.compile(rf"{re.escape(ISSUE_PREFIX)}-{_SUFFIX}")
+_IDS = re.compile(rf"{_ID.pattern}(?:, {_SUFFIX})*")
+_SUBJECT = re.compile(rf"^(?P<title>\S.*?) \((?P<ids>{_IDS.pattern})\)$")
 _TRAILING_PARENS = re.compile(r"\(([^()]*)\)\s*$")
 
 
@@ -55,7 +73,7 @@ def _diagnose(line: str) -> str:
 
 
 def _diagnose_parentheses(content: str) -> str:
-    if _ID.fullmatch(content):
+    if _IDS.fullmatch(content):
         return 'Vor der Klammer "(" fehlt genau ein Leerzeichen.'
     if content.startswith(ISSUE_PREFIX):
         return f'Die Beads-ID "{content}" ist fehlerhaft geschrieben.'
@@ -68,9 +86,11 @@ def _diagnose_parentheses(content: str) -> str:
 def _repair_hint(problem: str) -> str:
     return (
         f"{problem}\n"
-        'Erwartet wird: "<Titel> (<Beads-ID>)".\n'
+        'Erwartet wird: "<Titel> (<Beads-ID>[, <Beads-ID>...])".\n'
         f"Beispiel: {_EXAMPLE}\n"
-        f"Kind-IDs mit Punkt sind erlaubt, z. B. {ISSUE_PREFIX}-8dd.1."
+        f"Beispiel mit mehreren Issues: {_MULTI_EXAMPLE}\n"
+        f"Kind-IDs mit Punkt sind erlaubt, z. B. {ISSUE_PREFIX}-8dd.1.\n"
+        f"{_WHY}"
     )
 
 
