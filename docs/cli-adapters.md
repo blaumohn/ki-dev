@@ -19,7 +19,15 @@ Typen und keinerlei Claude-/Codex-spezifische Argumente.
 | `Effort` | `LOW` / `MEDIUM` / `HIGH` |
 | `TurnResult` | Ausgabe: `status`, `exit_code`, `stdout`, `stderr`, `argv`, `duration_s`, `error`, optional `usage` |
 | `TurnStatus` | `OK` / `NONZERO_EXIT` / `TIMEOUT` / `START_ERROR` |
-| `Executor` | Protokoll mit `name` und `send_turn(request) -> TurnResult` |
+| `ContextMeasurement` | Sitzungsbezogener Kontextmesswert: `status` (`ContextStatus`), optional `tokens`, `detail` |
+| `ContextStatus` | `MEASURED` / `UNSUPPORTED` / `UNAVAILABLE` |
+| `Executor` | Protokoll mit `name`, `send_turn(request) -> TurnResult` und `measure_context(session_id) -> ContextMeasurement` |
+
+Ein Adapter liefert mit `measure_context` nur den Messwert. Freigabe,
+Halt und Persistenz einer erreichten Kontextgrenze entscheidet
+ausschliesslich die Orchestrierung (`loop_runtime._context_guard`,
+siehe [loop-runtime.de.md](loop-runtime.de.md#kontextvorpruefung)),
+nie der Adapter selbst und nie eine Selbsteinschaetzung des Agenten.
 
 `TurnStatus` ist disjunkt: Erfolg, Nicht-null-Exit, Timeout und
 Prozessstartfehler sind eindeutig unterscheidbar. Es gibt keine
@@ -101,18 +109,23 @@ claude --print --output-format text \
 
 Mit `TurnBudget` (immer im Loop) verwendet der Adapter stattdessen
 `--output-format json --max-turns 12 --max-budget-usd 1.0`, mit den
-jeweils konfigurierten Grenzwerten. Vor einem Aufruf wird die lokale
-vorbereitete Sitzung unter `~/.claude/projects/*/<session_id>.jsonl`
-gelesen. Fehlender, mehrdeutiger oder zu grosser Kontext stoppt vor
-dem CLI-Start. Synthetische Fehler mit Nullusage verschleiern nicht
-den letzten echten Kontext.
+jeweils konfigurierten Grenzwerten.
+
+`measure_context(session_id)` liest die lokale vorbereitete Sitzung
+unter `~/.claude/projects/*/<session_id>.jsonl` und liefert den
+zuletzt bekannten Kontext als `ContextMeasurement`. Synthetische
+Fehler mit Nullusage verschleiern dabei nicht den letzten echten
+Kontext. Fehlende, mehrdeutige oder unlesbare Sitzungsdaten ergeben
+`UNAVAILABLE` statt einer Ausnahme oder eines erfundenen Nullwerts;
+ob das den naechsten Aufruf verhindert, entscheidet ausschliesslich
+die Orchestrierung (siehe oben), nicht dieser Adapter. Das Lesen
+selbst startet keinen Prozess und ist verbrauchsfrei.
 
 Das JSON-Resultat liefert Antworttext und `usage` getrennt. Auch bei
 Exitcode 0 gelten `is_error`, ein Fehler-`subtype` oder
 `permission_denials` als Nicht-Erfolg. Fehlende Pflichtdaten werden
-nicht durch geschaetzte Nullkosten ersetzt. Der lokale Preflight
-ohne gestarteten Prozess ist dagegen nachweislich verbrauchsfrei.
-Native Flags und Ergebnisfelder sind in der
+nicht durch geschaetzte Nullkosten ersetzt. Native Flags und
+Ergebnisfelder sind in der
 [Claude-CLI-Referenz](https://code.claude.com/docs/en/cli-reference)
 und der [Verbrauchsdokumentation](https://code.claude.com/docs/en/agent-sdk/cost-tracking)
 beschrieben. Die Flags sind auch im installierten Bezugsstand vorhanden.
@@ -150,6 +163,15 @@ sind kein Erfolg. `cached_input_tokens` ist eine Teilmenge von
 `input_tokens`; in der gemeinsamen Bilanz wird dieser Anteil genau
 einmal gezaehlt. Die Claude-spezifischen Turn-/Kosten-/Kontextgrenzen
 werden nicht als unterstuetzte Codex-Funktionen ausgegeben.
+`measure_context` liefert deshalb unveraendert den `UNSUPPORTED`-
+Standard aus `CliAdapter`: Codex hat keine mit Claudes
+Sitzungsprotokoll vergleichbare lokale Ablage, aus der sich ein
+Kontextmesswert unabhaengig belegen liesse. `UNSUPPORTED` ist ein
+bekannter, dokumentierter Adaptergrenzfall und blockiert deshalb
+keinen Aufruf (siehe
+[loop-runtime.de.md](loop-runtime.de.md#kontextvorpruefung)) --
+anders als `UNAVAILABLE`, das eine vorgesehene, aber fehlgeschlagene
+Messung waere.
 
 ## Effort im Turn-Vertrag
 

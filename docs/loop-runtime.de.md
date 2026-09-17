@@ -170,7 +170,7 @@ konfigurierbare Standardgrenzen:
 | `safety_limits.max_stagnant_changes` | 3 | Bei so vielen CHANGES in Folge an derselben `requirement_ref` (die aktuelle Runde eingeschlossen) kein weiterer automatischer Bau |
 | `build.budget.max_turns` / `review.budget.max_turns` | 12 | Native Claude-Turn-Grenze pro Aufruf |
 | `budget.max_budget_usd` je Rolle | 1 | Native Claude-Kostengrenze pro Aufruf |
-| `budget.max_context_tokens` je Rolle | 80.000 | Claude-Sitzung vor Resume anhand des letzten realen Requests pruefen |
+| `budget.max_context_tokens` je Rolle | 80.000 | Kontextvorpruefung durch die Orchestrierung vor jedem Bau-/Review-Aufruf und bei Resume (siehe unten) |
 | `budget.timeout_s` je Rolle | 180 s | Prozesstimeout fuer beide Adapter; der kleinere Wert aus Rollen-Timeout und Budget gilt |
 
 Beispiel fuer eine bewusst kleinere Schranke auf oberster Konfigurationsebene:
@@ -188,6 +188,35 @@ Die Rolle kann ein `budget`-Objekt mit den vier oben genannten Feldern
 enthalten. Nicht angegebene Werte erhalten die Standardwerte; wirksame
 Rollenbudgets und Laufgrenzen werden beim Start im Manifest gespeichert.
 Diese Werte sind Betriebsvorgaben, keine berechneten Abo-Prozentgrenzen.
+
+### Kontextvorpruefung
+
+Vor jedem Bau-/Review-Aufruf und bei Resume misst der zustaendige
+Adapter (`Executor.measure_context(session_id)`) den zuletzt bekannten
+Sitzungskontext; **Freigabe, Halt und Persistenz entscheidet
+ausschliesslich die Orchestrierung** (`loop_runtime._context_guard`),
+nie eine Selbsteinschaetzung des Agenten oder eine Prompt-Anweisung.
+Ein Adapter liefert nur den Messwert.
+
+Der Messwert traegt eine von drei Herkunftsarten (`ContextStatus`):
+
+| Herkunft | Bedeutung | Wirkung |
+| --- | --- | --- |
+| `measured` | echter Messwert vorhanden | `>= max_context_tokens` haelt vor dem Aufruf an |
+| `unsupported` | dieser Adapter bietet grundsaetzlich keine Messung (aktuell Codex, siehe [cli-adapters.md](cli-adapters.md)) | kein Blocker -- bekannter, dokumentierter Adaptergrenzfall |
+| `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (fehlende/mehrdeutige lokale Ablage, aktuell moeglich bei Claude fuer eine Sitzung ohne vorherigen realen Turn) | haelt vor dem Aufruf an -- ein unbelegter Kontext gilt nicht als klein |
+
+Eine erreichte oder unbelegte Grenze fuehrt vor dem naechsten externen
+Aufruf zur Pause; die Meldung nennt Rolle, Executor, Sitzung, Messwert
+(falls vorhanden), Grenze und Herkunft, und es entsteht eine Handoff-
+Datei wie bei jeder anderen Eskalation. Ein kleiner Kontext ohne
+weiteren Blocker laesst dieselbe Sitzung unveraendert weiterlaufen;
+ein anderer Pausegrund (z. B. `NEEDS_DECISION`) kann trotz kleinem
+Kontext ein Handoff erzeugen -- keiner der beiden Faelle erzwingt
+einen Sitzungswechsel, und automatische Sitzungsrotation ist nicht
+Teil dieses Mechanismus (siehe "Kompakte Sitzungsuebergabe" oben).
+Resume prueft den dann aktuellen Messwert erneut, nicht den
+urspruenglichen.
 
 `calls/` enthaelt unveraenderliche Start- und Ergebnisbelege mit
 Verbrauch, Dauer und Fehlergrund. Die Reservierung vor einem Aufruf

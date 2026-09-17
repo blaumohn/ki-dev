@@ -16,7 +16,14 @@ VERIFIED_CLI_VERSION = "0.154.0"
 
 
 class CodexCliAdapter(CliAdapter):
-    """Setzt eine vorbereitete Codex-CLI-Sitzung einen Turn fort."""
+    """Setzt eine vorbereitete Codex-CLI-Sitzung einen Turn fort.
+
+    Ohne native Turn-/Kosten-/Kontextgrenzen (siehe
+    ``docs/cli-adapters.md``) bietet Codex keine lokale, vergleichbare
+    Kontextmessung wie Claudes Sitzungsprotokoll; ``measure_context``
+    bleibt deshalb bewusst beim ``UNSUPPORTED``-Standard aus
+    ``CliAdapter`` statt eine ungeprüfte Messquelle zu erfinden.
+    """
 
     name = "codex-cli"
     verified_cli_version = VERIFIED_CLI_VERSION

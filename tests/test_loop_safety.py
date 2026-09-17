@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 
 from ki_dev.executors import Effort
-from ki_dev.executors.contract import TurnResult, TurnStatus
+from ki_dev.executors.contract import (
+    ContextMeasurement,
+    ContextStatus,
+    TurnResult,
+    TurnStatus,
+)
 from ki_dev.loop import (
     AgentBuildMode,
     AgentReviewer,
@@ -57,6 +62,10 @@ class Executor:
         self.calls += 1
         assert request.budget is not None
         return self.result
+
+    def measure_context(self, session_id):
+        del session_id
+        return ContextMeasurement(ContextStatus.UNSUPPORTED)
 
 
 def runtime(tmp_path, builder, reviewer, **kwargs):

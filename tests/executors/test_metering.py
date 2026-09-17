@@ -8,6 +8,7 @@ import pytest
 
 from ki_dev.executors import ClaudeCliAdapter, CodexCliAdapter, Effort
 from ki_dev.executors.contract import (
+    ContextStatus,
     TurnBudget,
     TurnRequest,
     TurnResult,
@@ -156,24 +157,41 @@ def _request():
     )
 
 
-def test_large_context_stops_before_runner(monkeypatch):
+def test_claude_measure_context_reports_real_value(monkeypatch):
+    """Die Kontextvorpruefung ist keine Aufgabe des Adapters mehr
+    (ki-dev-ablauf-agu): ``measure_context`` liefert nur den
+    Messwert, ohne den naechsten Aufruf selbst zu verhindern."""
     monkeypatch.setattr(
         "ki_dev.executors.claude_cli.claude_context_tokens",
         lambda *_: 90_000,
     )
-    runner = FakeRunner()
-    result = ClaudeCliAdapter(runner=runner).send_turn(_request())
-    assert not runner.calls
-    assert not result.ok
-    assert "Sitzungskontext" in result.error
-    assert result.usage["cost_usd"] == 0
+    measurement = ClaudeCliAdapter().measure_context("session")
+    assert measurement.status is ContextStatus.MEASURED
+    assert measurement.tokens == 90_000
 
 
-def test_bounded_claude_uses_native_limits_and_timeout(monkeypatch):
+def test_claude_measure_context_reports_unavailable_explicitly(
+    monkeypatch,
+):
+    def _raise(*_args):
+        raise ValueError("Claude-Sitzung hat keinen Verbrauchsnachweis")
+
     monkeypatch.setattr(
-        "ki_dev.executors.claude_cli.claude_context_tokens",
-        lambda *_: 20_000,
+        "ki_dev.executors.claude_cli.claude_context_tokens", _raise
     )
+    measurement = ClaudeCliAdapter().measure_context("session")
+    assert measurement.status is ContextStatus.UNAVAILABLE
+    assert measurement.tokens is None
+    assert "Verbrauchsnachweis" in measurement.detail
+
+
+def test_codex_measure_context_is_explicitly_unsupported():
+    measurement = CodexCliAdapter().measure_context("session")
+    assert measurement.status is ContextStatus.UNSUPPORTED
+    assert measurement.tokens is None
+
+
+def test_bounded_claude_uses_native_limits_and_timeout():
     runner = FakeRunner(_result(_claude()))
     result = ClaudeCliAdapter(runner=runner).send_turn(_request())
     assert result.ok

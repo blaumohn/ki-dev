@@ -12,7 +12,12 @@ import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
-from .contract import TurnRequest, TurnResult
+from .contract import (
+    ContextMeasurement,
+    ContextStatus,
+    TurnRequest,
+    TurnResult,
+)
 from .process import DEFAULT_TIMEOUT_S, run_cli_turn
 
 ProcessRunner = Callable[..., TurnResult]
@@ -65,3 +70,9 @@ class CliAdapter(ABC):
 
     def message_stdin(self, request: TurnRequest) -> str:
         return request.message
+
+    def measure_context(self, session_id: str) -> ContextMeasurement:
+        """Sitzungsbezogener Kontextmesswert; ``UNSUPPORTED`` als
+        sicherer Standard fuer Adapter ohne eigene Messung."""
+        del session_id
+        return ContextMeasurement(ContextStatus.UNSUPPORTED)

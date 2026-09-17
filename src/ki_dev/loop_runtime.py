@@ -20,6 +20,7 @@ from ki_dev.deltas import (
     StepDeltaAssessment,
     assess_step_delta,
 )
+from ki_dev.executors.contract import ContextStatus
 from ki_dev.loop import (
     AgentBuildMode,
     AgentReviewer,
@@ -469,6 +470,9 @@ class LoopRuntime:
                     if pending["kind"] == "build"
                     else self.reviewer
                 )
+                blocker = self._context_guard(pending["kind"], actor)
+                if blocker is not None:
+                    return self._safety_stop(state, blocker)
                 call_id = f"{operation_id}-{uuid.uuid4().hex}"
                 try:
                     self._ledger.reserve(
@@ -520,6 +524,47 @@ class LoopRuntime:
             )
         self.store.write_artifact(operation_id, value)
         return self._accept_artifact(state, pending, value)
+
+    def _context_guard(
+        self, role: str, actor: BuildMode | Reviewer
+    ) -> str | None:
+        """Kontextgrenze technisch pruefen, bevor ein Aufruf reserviert
+        wird (ki-dev-ablauf-agu).
+
+        Der Adapter liefert nur einen Messwert; Freigabe und Halt
+        entscheidet ausschliesslich diese Orchestrierung, nie eine
+        Selbsteinschaetzung des Agenten. ``UNSUPPORTED`` (z. B. Codex)
+        ist kein Blocker: das ist ein bekannter, dokumentierter
+        Adaptergrenzfall, keine ungeklaerte Situation. ``UNAVAILABLE``
+        dagegen ist ein Blocker: die Messung ist fuer diesen Executor
+        vorgesehen, aber gerade nicht belegbar, und ein unbelegter
+        Kontext gilt nicht als klein.
+        """
+        if not isinstance(actor, (AgentBuildMode, AgentReviewer)):
+            return None
+        budget = actor.budget
+        if budget is None:
+            return None
+        measurement = actor.executor.measure_context(actor.session_id)
+        origin = (
+            f"{role} (executor={actor.executor.name}, "
+            f"session={actor.session_id})"
+        )
+        if measurement.status is ContextStatus.UNSUPPORTED:
+            return None
+        if measurement.status is ContextStatus.UNAVAILABLE:
+            return (
+                f"Kontextmessung fuer {origin} nicht verfuegbar: "
+                f"{measurement.detail}; kein Aufruf ohne Nachweis"
+            )
+        if measurement.tokens >= budget.max_context_tokens:
+            return (
+                f"Kontextgrenze erreicht fuer {origin}: gemessen "
+                f"{measurement.tokens} >= Grenze "
+                f"{budget.max_context_tokens} "
+                f"(Quelle: {measurement.status.value})"
+            )
+        return None
 
     def _metered_operation(
         self, state: LoopGraphState, pending: dict[str, object]

@@ -10,7 +10,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from .base import CliAdapter
-from .contract import TurnRequest, TurnResult, TurnStatus
+from .contract import (
+    ContextMeasurement,
+    ContextStatus,
+    TurnRequest,
+    TurnResult,
+)
 from .metering import claude_context_tokens, claude_result
 
 # Lokal verifizierter Bezugsstand der dokumentierten CLI-Syntax.
@@ -18,7 +23,14 @@ VERIFIED_CLI_VERSION = "2.1.272"
 
 
 class ClaudeCliAdapter(CliAdapter):
-    """Setzt eine vorbereitete Claude-Code-Sitzung einen Turn fort."""
+    """Setzt eine vorbereitete Claude-Code-Sitzung einen Turn fort.
+
+    Die Kontextvorpruefung selbst ist keine Aufgabe dieses Adapters
+    mehr: ``measure_context`` liefert nur den Messwert, Freigabe/Halt
+    entscheidet die technische Orchestrierung (``loop_runtime``,
+    ki-dev-ablauf-agu). Ein Adapter darf ueber sein eigenes Ergebnis
+    nicht selbst befinden, ob der naechste Aufruf stattfindet.
+    """
 
     name = "claude-cli"
     verified_cli_version = VERIFIED_CLI_VERSION
@@ -27,36 +39,18 @@ class ClaudeCliAdapter(CliAdapter):
     def default_executable(self) -> str:
         return "claude"
 
+    def measure_context(self, session_id: str) -> ContextMeasurement:
+        try:
+            tokens = claude_context_tokens(
+                session_id, Path.home() / ".claude/projects"
+            )
+        except (OSError, ValueError) as exc:
+            return ContextMeasurement(
+                ContextStatus.UNAVAILABLE, detail=str(exc)
+            )
+        return ContextMeasurement(ContextStatus.MEASURED, tokens=tokens)
+
     def send_turn(self, request: TurnRequest) -> TurnResult:
-        if request.budget is not None:
-            try:
-                tokens = claude_context_tokens(
-                    request.session_id, Path.home() / ".claude/projects"
-                )
-                if tokens >= request.budget.max_context_tokens:
-                    raise ValueError(
-                        f"Sitzungskontext {tokens} >= Grenze "
-                        f"{request.budget.max_context_tokens}; "
-                        "Kontext vor Fortsetzung klaeren"
-                    )
-            except (OSError, ValueError) as exc:
-                return TurnResult(
-                    TurnStatus.START_ERROR,
-                    None,
-                    "",
-                    "",
-                    (),
-                    0.0,
-                    error=str(exc),
-                    usage={
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "cache_read_input_tokens": 0,
-                        "cache_creation_input_tokens": 0,
-                        "num_turns": 0,
-                        "cost_usd": 0.0,
-                    },
-                )
         result = super().send_turn(request)
         return claude_result(result) if request.budget else result
 

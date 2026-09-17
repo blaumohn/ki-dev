@@ -108,6 +108,55 @@ class TurnRequest:
             raise TypeError("budget muss ein TurnBudget sein")
 
 
+class ContextStatus(StrEnum):
+    """Herkunft eines Kontextmesswerts, disjunkt von der Zahl selbst.
+
+    Eine fehlende oder nicht unterstuetzte Messung ist damit technisch
+    von einem tatsaechlich gemessenen kleinen Kontext unterscheidbar;
+    keiner der beiden Faelle darf als ``0`` durchgereicht werden.
+    """
+
+    MEASURED = "measured"
+    UNSUPPORTED = "unsupported"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class ContextMeasurement:
+    """Sitzungsbezogener Kontextmesswert eines Executors.
+
+    ``UNSUPPORTED`` heisst: dieser Executor bietet grundsaetzlich
+    keine Kontextmessung (z. B. Codex, siehe ``docs/cli-adapters.md``).
+    ``UNAVAILABLE`` heisst: eine Messung ist vorgesehen, aber fuer
+    diese Sitzung gerade nicht lesbar (fehlende, mehrdeutige oder
+    ungueltige lokale Ablage). Nur ``MEASURED`` traegt ``tokens``.
+    """
+
+    status: ContextStatus
+    tokens: int | None = None
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, ContextStatus):
+            raise TypeError(
+                "ContextMeasurement.status muss ein ContextStatus sein"
+            )
+        if self.status is ContextStatus.MEASURED:
+            if (
+                isinstance(self.tokens, bool)
+                or not isinstance(self.tokens, int)
+                or self.tokens < 0
+            ):
+                raise ValueError(
+                    "ContextMeasurement.tokens muss bei MEASURED "
+                    "eine nicht negative Ganzzahl sein"
+                )
+        elif self.tokens is not None:
+            raise ValueError(
+                "ContextMeasurement.tokens ist nur bei MEASURED erlaubt"
+            )
+
+
 @dataclass(frozen=True)
 class TurnResult:
     """Einheitliches Ergebnis eines Turn-Prozesses.
@@ -140,3 +189,7 @@ class Executor(Protocol):
     name: str
 
     def send_turn(self, request: TurnRequest) -> TurnResult: ...
+
+    def measure_context(
+        self, session_id: str
+    ) -> ContextMeasurement: ...

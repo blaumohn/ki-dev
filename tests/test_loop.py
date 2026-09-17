@@ -18,7 +18,12 @@ from ki_dev.deltas import (
     VcsRef,
 )
 from ki_dev.executors import Effort
-from ki_dev.executors.contract import TurnResult, TurnStatus
+from ki_dev.executors.contract import (
+    ContextMeasurement,
+    ContextStatus,
+    TurnResult,
+    TurnStatus,
+)
 from ki_dev.loop import (
     AgentBuildMode,
     BuildReport,
@@ -301,6 +306,10 @@ def test_build_prompt_includes_acceptance_criteria():
         def send_turn(self, request):
             self.requests.append(request)
             return TurnResult(TurnStatus.OK, 0, "erledigt", "", (), 0.0)
+
+        def measure_context(self, session_id):
+            del session_id
+            return ContextMeasurement(ContextStatus.UNSUPPORTED)
 
     executor = RecordingExecutor()
     build = AgentBuildMode(executor, "build-session", "m", Effort.LOW)

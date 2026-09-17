@@ -20,6 +20,8 @@ import pytest
 from plumbum import CommandNotFound, local
 
 from ki_dev.executors.contract import (
+    ContextMeasurement,
+    ContextStatus,
     Effort,
     TurnRequest,
     TurnResult,
@@ -84,6 +86,10 @@ class FakeExecutor:
                 "cache_creation_input_tokens": 0,
             },
         )
+
+    def measure_context(self, session_id: str) -> ContextMeasurement:
+        del session_id
+        return ContextMeasurement(ContextStatus.UNSUPPORTED)
 
 
 def _git(repo: Path, *args: str) -> None:
