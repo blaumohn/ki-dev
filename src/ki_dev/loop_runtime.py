@@ -82,6 +82,7 @@ from ki_dev.review_context import (
 )
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.session_handoff import build_handoff
+from ki_dev.usage_accounting import UsageAttribution, UsagePurpose
 
 
 class LoopResumeError(RuntimeError):
@@ -488,6 +489,9 @@ class LoopRuntime:
                             actor, (AgentBuildMode, AgentReviewer)
                         )
                         else None,
+                        attribution=self._usage_attribution(
+                            state, pending, actor
+                        ),
                     )
                 except SafetyStop as exc:
                     return self._safety_stop(state, str(exc))
@@ -689,6 +693,28 @@ class LoopRuntime:
             f"beobachteter kontoweiter Verbrauch seit Rollenbaseline "
             f"im aktuellen Fenster {delta:g} Prozentpunkte >= Budget "
             f"{allowed:g}"
+        )
+
+    def _usage_attribution(
+        self, state, pending, actor
+    ) -> UsageAttribution:
+        # Explicit task identity, never inferred from prose or graph
+        # revision.
+        binding = self.store.load_manifest().get("usage_task", {})
+        if pending["kind"] == "review":
+            purpose = UsagePurpose.REVIEW
+        elif state["round_id"] > 1:
+            purpose = UsagePurpose.REPAIR
+        else:
+            purpose = UsagePurpose.IMPLEMENTATION
+        return UsageAttribution(
+            bead_id=binding.get("bead_id"),
+            task_revision=binding.get("task_revision"),
+            family_id=binding.get("family_id"),
+            family_revision=binding.get("family_revision"),
+            parent_bead_id=binding.get("parent_bead_id"),
+            role=pending["kind"], purpose=purpose,
+            session_id=getattr(actor, "session_id", None),
         )
 
     def _metered_operation(

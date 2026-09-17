@@ -27,8 +27,11 @@ Architekturquelle: docs/architecture/tokenmessung-estimatoren.de.md.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 
 
 class UsageStatus(StrEnum):
@@ -56,14 +59,18 @@ class UsageStatus(StrEnum):
 
 
 class CounterScope(StrEnum):
-    """Ob ein Tokenwert genau einen Request oder eine kumulierte
-    Sitzungssumme beschreibt. Messvertrag: "Kontextbelegung eines
-    Requests, kumulierte Eingabetokens ueber viele Requests und
-    Kontingentprozent sind unterschiedliche Messgroessen" -- diese
-    Klasse deckt nur die ersten beiden ab; Kontingent bleibt
-    ``QuotaMeasurement`` in ``executors/contract.py``."""
+    """Ob ein Tokenwert genau einen Modell-Request, eine ganze CLI-
+    Turnantwort (moeglicherweise mehrere interne Requests, z. B. durch
+    Werkzeugnutzung) oder eine kumulierte Sitzungssumme beschreibt.
+    Messvertrag: "Kontextbelegung eines Requests, kumulierte
+    Eingabetokens ueber viele Requests und Kontingentprozent sind
+    unterschiedliche Messgroessen"; "CLI-Gesamtsummen und darin
+    enthaltene Einzelrequests dienen dem Abgleich, nicht einer
+    doppelten Buchung". Kontingent bleibt ``QuotaMeasurement`` in
+    ``executors/contract.py``."""
 
     PER_REQUEST = "per_request"
+    CALL_TOTAL = "call_total"
     CUMULATIVE_SESSION = "cumulative_session"
 
 
@@ -215,6 +222,21 @@ def _nonneg_int(value: object) -> int | None:
     return value
 
 
+def _measured_or_partial(
+    version: str | None, version_field: str
+) -> tuple[UsageStatus, str]:
+    """Messvertrag: "unbekannte Version ist kein implizit gueltiger
+    Messwert". Ohne Version bleiben die Zahlen erhalten (kein
+    Verwerfen), der Status sinkt aber von MEASURED auf PARTIAL."""
+    if version:
+        return UsageStatus.MEASURED, ""
+    return (
+        UsageStatus.PARTIAL,
+        f"{version_field} unbekannt; Messwert nicht als vollstaendig "
+        "verifiziert eingestuft",
+    )
+
+
 # --- Claude: CLI-Turnergebnis (``claude -p --output-format json``,
 # das "result"-Ereignis; flache Felder, siehe
 # executors/metering.py:_claude_usage). ---
@@ -228,7 +250,10 @@ def normalize_claude_cli_result(
     session_id: str | None = None,
     observed_at: float | None = None,
 ) -> UsageEvent:
-    scope = CounterScope.PER_REQUEST
+    # Ein CLI-Aufruf kann intern mehrere Modell-Requests umfassen
+    # (z. B. Werkzeugnutzung); das "result"-Ereignis ist deren
+    # Gesamtsumme, kein Einzel-Request (siehe CounterScope-Docstring).
+    scope = CounterScope.CALL_TOTAL
     if not isinstance(usage, dict):
         return _unavailable(
             "claude",
@@ -266,8 +291,9 @@ def normalize_claude_cli_result(
         cache_creation=fields["cache_creation_input_tokens"],
         output=fields["output_tokens"],
     )
+    status, note = _measured_or_partial(cli_version, "cli_version")
     return UsageEvent(
-        UsageStatus.MEASURED,
+        status,
         "claude",
         "cli_result",
         scope,
@@ -276,6 +302,7 @@ def normalize_claude_cli_result(
         session_id=session_id,
         observed_at=observed_at,
         tokens=tokens,
+        detail=note,
     )
 
 
@@ -287,6 +314,7 @@ def normalize_claude_cli_result(
 def normalize_claude_session_message_usage(
     usage: object,
     *,
+    schema_version: str | None = None,
     confirmed_model: str | None = None,
     session_id: str | None = None,
     request_id: str | None = None,
@@ -299,6 +327,7 @@ def normalize_claude_session_message_usage(
             "session_message",
             scope,
             "usage fehlt oder ist kein Objekt",
+            schema_version=schema_version,
             confirmed_model=confirmed_model,
             session_id=session_id,
             request_id=request_id,
@@ -319,6 +348,7 @@ def normalize_claude_session_message_usage(
             "session_message",
             scope,
             "Tokenzaehler fehlt oder ist ungueltig",
+            schema_version=schema_version,
             confirmed_model=confirmed_model,
             session_id=session_id,
             request_id=request_id,
@@ -355,6 +385,7 @@ def normalize_claude_session_message_usage(
             "claude",
             "session_message",
             scope,
+            schema_version=schema_version,
             confirmed_model=confirmed_model,
             session_id=session_id,
             request_id=request_id,
@@ -367,16 +398,21 @@ def normalize_claude_session_message_usage(
             ),
             detail=f"Unterkategorien widerspruechlich: {exc}",
         )
+    status, note = _measured_or_partial(
+        schema_version, "schema_version"
+    )
     return UsageEvent(
-        UsageStatus.MEASURED,
+        status,
         "claude",
         "session_message",
         scope,
+        schema_version=schema_version,
         confirmed_model=confirmed_model,
         session_id=session_id,
         request_id=request_id,
         event_time=event_time,
         tokens=tokens,
+        detail=note,
     )
 
 
@@ -393,7 +429,10 @@ def normalize_codex_turn_usage(
     session_id: str | None = None,
     observed_at: float | None = None,
 ) -> UsageEvent:
-    scope = CounterScope.PER_REQUEST
+    # Ein CLI-Turn kann intern mehrere Modell-Requests umfassen (z. B.
+    # Werkzeugnutzung); ``turn.completed`` ist deren Gesamtsumme, kein
+    # Einzel-Request (siehe CounterScope-Docstring).
+    scope = CounterScope.CALL_TOTAL
     if not isinstance(usage, dict):
         return _unavailable(
             "codex",
@@ -430,8 +469,9 @@ def normalize_codex_turn_usage(
         cache_creation=0,
         output=output,
     )
+    status, note = _measured_or_partial(cli_version, "cli_version")
     return UsageEvent(
-        UsageStatus.MEASURED,
+        status,
         "codex",
         "cli_turn_completed",
         scope,
@@ -440,6 +480,7 @@ def normalize_codex_turn_usage(
         session_id=session_id,
         observed_at=observed_at,
         tokens=tokens,
+        detail=note,
     )
 
 
@@ -474,8 +515,6 @@ def normalize_codex_token_count_usage(
     input_total = _nonneg_int(info_usage.get("input_tokens"))
     cached = _nonneg_int(info_usage.get("cached_input_tokens"))
     output = _nonneg_int(info_usage.get("output_tokens"))
-    reasoning = _nonneg_int(info_usage.get("reasoning_output_tokens"))
-    reported_total = _nonneg_int(info_usage.get("total_tokens"))
     if (
         input_total is None
         or cached is None
@@ -491,13 +530,55 @@ def normalize_codex_token_count_usage(
             session_id=session_id,
             event_time=event_time,
         )
-    tokens = TokenCounts(
-        fresh_input=input_total - cached,
-        cache_read=cached,
-        cache_creation=0,
-        output=output,
-        reasoning_output=reasoning,
+    reasoning = _nonneg_int(info_usage.get("reasoning_output_tokens"))
+    try:
+        tokens = TokenCounts(
+            fresh_input=input_total - cached,
+            cache_read=cached,
+            cache_creation=0,
+            output=output,
+            reasoning_output=reasoning,
+        )
+    except ValueError as exc:
+        # reasoning_output_tokens > output_tokens: die Unterkategorie
+        # ist unglaubwuerdig, die Hauptkategorien bleiben es nicht.
+        tokens = TokenCounts(
+            fresh_input=input_total - cached,
+            cache_read=cached,
+            cache_creation=0,
+            output=output,
+        )
+        return UsageEvent(
+            UsageStatus.PARTIAL,
+            "codex",
+            source,
+            scope,
+            cli_version=cli_version,
+            session_id=session_id,
+            event_time=event_time,
+            tokens=tokens,
+            detail=f"reasoning_output_tokens widerspruechlich: {exc}",
+        )
+    total_raw = info_usage.get("total_tokens")
+    reported_total = _nonneg_int(total_raw)
+    total_present_but_invalid = (
+        total_raw is not None and reported_total is None
     )
+    if total_present_but_invalid:
+        return UsageEvent(
+            UsageStatus.PARTIAL,
+            "codex",
+            source,
+            scope,
+            cli_version=cli_version,
+            session_id=session_id,
+            event_time=event_time,
+            tokens=tokens,
+            detail=(
+                "gemeldetes total_tokens ist kein gueltiger nicht "
+                f"negativer Ganzzahlwert: {total_raw!r}"
+            ),
+        )
     if reported_total is not None and reported_total != tokens.total:
         # Empirisch beobachtete Anomalie (echte lokale Rollouts):
         # last_token_usage kann bei Compaction/Kontextereignissen alle
@@ -521,8 +602,9 @@ def normalize_codex_token_count_usage(
                 "Kontextereignis"
             ),
         )
+    status, note = _measured_or_partial(cli_version, "cli_version")
     return UsageEvent(
-        UsageStatus.MEASURED,
+        status,
         "codex",
         source,
         scope,
@@ -530,4 +612,184 @@ def normalize_codex_token_count_usage(
         session_id=session_id,
         event_time=event_time,
         tokens=tokens,
+        detail=note,
+    )
+
+
+# --- Sparsame JSONL-Extraktion (wu0.2-Akzeptanzkriterien 2/3):
+# vollstaendiger, zustandsloser Einzelscan je Aufruf. Ein
+# inkrementeller Index bleibt optionale spaetere Beschleunigung
+# (Akzeptanzkriterium 5); ein zustandsloser Vollscan ist von sich aus
+# idempotent, da er ausschliesslich vom aktuellen Dateiinhalt abhaengt
+# und keinen Lesefortschritt speichert. ---
+
+
+@dataclass(frozen=True)
+class LenientJsonlRead:
+    """Ergebnis eines toleranten Volldurchlaufs einer JSONL-Datei.
+
+    ``incomplete_last_line`` heisst: die Datei endet nicht auf einen
+    Zeilenumbruch, die letzte Zeile wird also vermutlich noch
+    geschrieben und bleibt unverarbeitet -- ein erneuter Aufruf nach
+    weiterem Schreiben liest sie vollstaendig nach. ``corrupt_lines``
+    sind 1-basierte Zeilennummern abgeschlossener, aber nicht als
+    JSON-Objekt lesbarer Zeilen: sichtbar gemacht, nicht stillschweigend
+    uebersprungen, ohne den restlichen Scan abzubrechen.
+    """
+
+    rows: tuple[dict, ...]
+    corrupt_lines: tuple[int, ...]
+    incomplete_last_line: bool
+
+
+def read_jsonl_lenient(path: Path) -> LenientJsonlRead:
+    text = path.read_text(encoding="utf-8")
+    incomplete_last_line = bool(text) and not text.endswith("\n")
+    lines = text.split("\n")
+    # Bei vollstaendigem Text erzeugt der abschliessende Zeilenumbruch
+    # einen leeren letzten Split; bei unvollstaendigem Text ist die
+    # letzte Zeile noch nicht fertig geschrieben. Beide werden gleich
+    # verworfen, nicht als Nutzzeile geparst.
+    if incomplete_last_line or (lines and lines[-1] == ""):
+        lines = lines[:-1]
+    rows: list[dict] = []
+    corrupt: list[int] = []
+    for number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            corrupt.append(number)
+            continue
+        if not isinstance(row, dict):
+            corrupt.append(number)
+            continue
+        rows.append(row)
+    return LenientJsonlRead(
+        tuple(rows), tuple(corrupt), incomplete_last_line
+    )
+
+
+def _iso_to_epoch(value: object) -> float | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        ).timestamp()
+    except ValueError:
+        return None
+
+
+@dataclass(frozen=True)
+class CodexRolloutScan:
+    """Aus einer lokalen Codex-Rollout-Datei extrahierte
+    Verbrauchsereignisse: ein ``UsageEvent`` je ``token_count``-
+    Ereignis mit ``last_token_usage`` (PER_REQUEST) sowie zusaetzlich
+    genau ein ``UsageEvent`` fuer die zeitlich juengste
+    ``total_token_usage``-Momentaufnahme (CUMULATIVE_SESSION,
+    Ereignisreihenfolge in der Datei ist nicht garantiert, siehe
+    executors/metering.py:_latest_five_hour_window)."""
+
+    events: tuple[UsageEvent, ...]
+    corrupt_lines: tuple[int, ...]
+    incomplete_last_line: bool
+
+
+def read_codex_rollout_usage(
+    path: Path, *, cli_version: str | None = None
+) -> CodexRolloutScan:
+    read = read_jsonl_lenient(path)
+    events: list[UsageEvent] = []
+    latest_total: tuple[float, object] | None = None
+    for row in read.rows:
+        if row.get("type") != "event_msg":
+            continue
+        payload = row.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != (
+            "token_count"
+        ):
+            continue
+        event_time = _iso_to_epoch(row.get("timestamp"))
+        info = payload.get("info")
+        info = info if isinstance(info, dict) else {}
+        last_usage = info.get("last_token_usage")
+        if last_usage is not None:
+            events.append(
+                normalize_codex_token_count_usage(
+                    last_usage,
+                    scope=CounterScope.PER_REQUEST,
+                    cli_version=cli_version,
+                    event_time=event_time,
+                )
+            )
+        total_usage = info.get("total_token_usage")
+        if (
+            total_usage is not None
+            and event_time is not None
+            and (latest_total is None or event_time > latest_total[0])
+        ):
+            latest_total = (event_time, total_usage)
+    if latest_total is not None:
+        event_time, total_usage = latest_total
+        events.append(
+            normalize_codex_token_count_usage(
+                total_usage,
+                scope=CounterScope.CUMULATIVE_SESSION,
+                cli_version=cli_version,
+                event_time=event_time,
+            )
+        )
+    return CodexRolloutScan(
+        tuple(events), read.corrupt_lines, read.incomplete_last_line
+    )
+
+
+@dataclass(frozen=True)
+class ClaudeSessionScan:
+    """Aus einer lokalen Claude-Sitzungstranskript-Datei extrahierte
+    Verbrauchsereignisse: ein ``UsageEvent`` je Assistant-Nachricht,
+    dedupliziert per Nachrichten-ID (Streaming kann dieselbe
+    Modellantwort auf mehrere Zeilen aufteilen, siehe
+    scripts/analyze_claude_usage.py). ``<synthetic>``-Modellantworten
+    (keine echte Messung) werden ausgelassen."""
+
+    events: tuple[UsageEvent, ...]
+    corrupt_lines: tuple[int, ...]
+    incomplete_last_line: bool
+
+
+def read_claude_session_usage(path: Path) -> ClaudeSessionScan:
+    read = read_jsonl_lenient(path)
+    by_key: dict[object, dict] = {}
+    fallback_index = 0
+    for row in read.rows:
+        if row.get("type") != "assistant":
+            continue
+        message = row.get("message")
+        if not isinstance(message, dict):
+            continue
+        if message.get("model") == "<synthetic>":
+            continue
+        if message.get("usage") is None:
+            continue
+        message_id = message.get("id")
+        if not isinstance(message_id, str) or not message_id:
+            fallback_index += 1
+            message_id = f"_row_{fallback_index}"
+        by_key[message_id] = row
+    events = tuple(
+        normalize_claude_session_message_usage(
+            row["message"].get("usage"),
+            schema_version=row.get("version"),
+            confirmed_model=row["message"].get("model"),
+            session_id=row.get("sessionId"),
+            request_id=row.get("requestId"),
+            event_time=_iso_to_epoch(row.get("timestamp")),
+        )
+        for row in by_key.values()
+    )
+    return ClaudeSessionScan(
+        events, read.corrupt_lines, read.incomplete_last_line
     )

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -93,6 +96,32 @@ class RunStore:
             messages.append(cast(dict[str, object], value))
         return messages
 
+    @contextmanager
+    def usage_lock(self):
+        """One lock for reservations, results and evidence across
+        local runs."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        with (self.root / ".usage.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
+    def write_usage(self, call_id: str, value: dict) -> None:
+        if (
+            not call_id
+            or Path(call_id).name != call_id
+            or call_id in {".", ".."}
+        ):
+            raise RunStoreError("ungueltiger Aufrufbezug")
+        digest = hashlib.sha256(_canonical_json(value)).hexdigest()
+        self._write_once(
+            self.run_dir / "usage" / call_id / f"{digest}.json", value
+        )
+
+    def load_usage(self, call_id: str) -> list[dict]:
+        return [self._load_json(path) for path in sorted(
+            (self.run_dir / "usage" / call_id).glob("*.json")
+        )]
+
     def _write_once(self, path: Path, value: object) -> None:
         encoded = _canonical_json(value)
         if path.exists():
@@ -111,7 +140,17 @@ class RunStore:
                 handle.write(encoded)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temporary, path)
+            # Atomic create-if-absent: competing writers must never
+            # overwrite an immutable artifact after both passed the
+            # existence check.
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                if path.read_bytes() != encoded:
+                    raise RunStoreError(
+                        "persistierter Eintrag widerspricht "
+                        f"Wiederholung: {path}"
+                    ) from None
             directory = os.open(path.parent, os.O_RDONLY)
             try:
                 os.fsync(directory)

@@ -7,11 +7,19 @@ import json
 import math
 import os
 import tempfile
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 from ki_dev.executors.contract import TurnResult, TurnStatus
 from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.usage import CounterScope, UsageEvent
+from ki_dev.usage_accounting import (
+    UsageAttribution,
+    UsagePurpose,
+    UsageReport,
+    observation,
+    reconcile_call,
+)
 
 
 @dataclass(frozen=True)
@@ -103,13 +111,21 @@ class CallLedger:
         operation: str,
         metered: bool,
         provider: str | None = None,
+        *,
+        attribution: UsageAttribution | None = None,
     ) -> None:
         limits = self.limits()
         directory = self.store.run_dir / "calls"
         directory.mkdir(parents=True, exist_ok=True)
-        with (directory / ".lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            self._reserve(call_id, operation, metered, limits, provider)
+        with self.store.usage_lock():
+            self._reserve(
+                call_id,
+                operation,
+                metered,
+                limits,
+                provider,
+                attribution,
+            )
 
     def _reserve(
         self,
@@ -118,6 +134,7 @@ class CallLedger:
         metered: bool,
         limits: SafetyLimits,
         provider: str | None,
+        attribution: UsageAttribution | None,
     ) -> None:
         starts = sorted(
             (self.store.run_dir / "calls").glob("*-start.json")
@@ -159,6 +176,22 @@ class CallLedger:
                     )
                 )
                 cost += usage.get("cost_usd", 0.0)
+        report = self._usage_report()
+        for call in report.calls:
+            # attribution_missing/start_missing sind fehlende
+            # Provenienz, keine widerspruechliche Bilanz -- sie
+            # bleiben im Bericht sichtbar, sperren aber keine
+            # weitere Reservierung.
+            blocking = set(call.gaps) - {
+                "attribution_missing",
+                "start_missing",
+            }
+            if blocking:
+                raise SafetyStop(
+                    "Verbrauchsabgleich unvollstaendig: "
+                    + ", ".join(sorted(blocking))
+                )
+        tokens = report.total
         if tokens >= limits.max_total_tokens:
             raise SafetyStop(f"Token-Grenze erreicht: {tokens}")
         if cost >= limits.max_claude_cost_usd:
@@ -172,6 +205,9 @@ class CallLedger:
                 "operation": operation,
                 "metered": metered,
                 "provider": provider,
+                "attribution": (
+                    asdict(attribution) if attribution else None
+                ),
             },
         )
 
@@ -183,16 +219,182 @@ class CallLedger:
     ) -> None:
         if result is not None and result.usage is not None:
             validate_usage(result.usage)
-        self._write(
-            call_id,
-            "result",
-            {
+        with self.store.usage_lock():
+            self._write(call_id, "result", {
                 "status": result.status.value if result else "local",
                 "duration_s": result.duration_s if result else None,
                 "usage": result.usage if result else None,
                 "error": error or (result.error if result else None),
-            },
+            })
+
+    def record_usage(
+        self,
+        call_id: str,
+        event: UsageEvent,
+        evidence_ref: str,
+        *,
+        summary: bool = False,
+        baseline: UsageEvent | None = None,
+    ) -> None:
+        """Attach compact evidence without resolving an unknown
+        external effect.
+
+        Cumulative counters require an explicit, same-session
+        baseline and describe the whole call interval; they are
+        never individual requests.
+        """
+        if (
+            event.counter_scope == CounterScope.CUMULATIVE_SESSION
+            and not summary
+        ):
+            raise ValueError(
+                "cumulative counters must be call summaries"
+            )
+        value = observation(
+            event, evidence_ref, summary=summary, baseline=baseline
         )
+        with self.store.usage_lock():
+            if (
+                not call_id
+                or Path(call_id).name != call_id
+                or call_id in {".", ".."}
+            ):
+                raise RunStoreError("ungueltiger Aufrufbezug")
+            self.store._load_json(
+                self.store.run_dir / "calls" / f"{call_id}-start.json"
+            )
+            # Request identity belongs to exactly one call, even
+            # across runs. Paths and observation times are
+            # provenance, not identity.
+            for path in self.store.root.glob("*/usage/*/*.json"):
+                same_call = (
+                    path.parent.name == call_id
+                    and path.parents[2] == self.store.run_dir
+                )
+                if same_call:
+                    continue
+                old = self.store._load_json(path)
+                other = old["event"]
+                if (event.provider, event.session_id) != (
+                    other["provider"],
+                    other["session_id"],
+                ):
+                    continue
+                if evidence_ref == old["evidence_ref"]:
+                    raise SafetyStop(
+                        "Verbrauchsbeleg bereits einem anderen "
+                        "Aufruf zugeordnet"
+                    )
+                if (
+                    not summary
+                    and not old["summary"]
+                    and event.request_id
+                    and event.request_id == other["request_id"]
+                ):
+                    raise SafetyStop(
+                        "Request bereits einem anderen Aufruf "
+                        "zugeordnet"
+                    )
+                if (
+                    baseline
+                    and old["baseline"]
+                    and event.event_time is not None
+                    and baseline.event_time is not None
+                    and other["event_time"] is not None
+                    and old["baseline"]["event_time"] is not None
+                    and max(
+                        baseline.event_time,
+                        old["baseline"]["event_time"],
+                    )
+                    < min(event.event_time, other["event_time"])
+                ):
+                    raise SafetyStop(
+                        "Ueberlappende kumulative Aufrufintervalle"
+                    )
+            self.store.write_usage(call_id, value)
+
+    def usage_report(
+        self,
+        *,
+        family_id: str | None = None,
+        family_revision: str | None = None,
+    ) -> UsageReport:
+        """Read one consistent projection; family reports include all
+        local runs."""
+        with self.store.usage_lock():
+            if family_id is None:
+                return self._usage_report()
+            calls = []
+            for path in sorted(self.store.root.glob("*/calls")):
+                other_store = RunStore(
+                    self.store.root, path.parent.name
+                )
+                report = CallLedger(other_store)._usage_report()
+                calls.extend(
+                    call
+                    for call in report.calls
+                    if call.attribution
+                    and call.attribution.family_id == family_id
+                    and (
+                        family_revision is None
+                        or call.attribution.family_revision
+                        == family_revision
+                    )
+                )
+            return UsageReport(tuple(calls))
+
+    def _usage_report(self) -> UsageReport:
+        calls_dir = self.store.run_dir / "calls"
+        start_ids = {
+            path.name.removesuffix("-start.json")
+            for path in calls_dir.glob("*-start.json")
+        }
+        # Ergebnisnachweise ohne Startdatei (z. B. Altdaten aus vor der
+        # Reservierungspflicht) bleiben sichtbar statt stillschweigend
+        # ausgelassen zu werden (reconcile_call markiert sie als
+        # start_missing statt sie als gemessen auszugeben).
+        result_ids = {
+            path.name.removesuffix("-result.json")
+            for path in calls_dir.glob("*-result.json")
+        }
+        calls = []
+        for call_id in sorted(start_ids | result_ids):
+            start_path = calls_dir / f"{call_id}-start.json"
+            start = (
+                self.store._load_json(start_path)
+                if start_path.exists()
+                else None
+            )
+            result_path = calls_dir / f"{call_id}-result.json"
+            result = (
+                self.store._load_json(result_path)
+                if result_path.exists()
+                else None
+            )
+            if result and result.get("usage") is not None:
+                validate_usage(result["usage"])
+            binding = start.get("attribution") if start else None
+            attribution = (
+                UsageAttribution(
+                    **{
+                        **binding,
+                        "purpose": UsagePurpose(binding["purpose"]),
+                    }
+                )
+                if binding
+                else None
+            )
+            calls.append(
+                reconcile_call(
+                    self.store.run_id,
+                    call_id,
+                    start,
+                    result,
+                    self.store.load_usage(call_id),
+                    attribution,
+                )
+            )
+        return UsageReport(tuple(calls))
 
     def reconcile(self, call_id: str, artifact: object) -> None:
         start = self.store._load_json(
@@ -376,25 +578,8 @@ def recorded_usage(store: RunStore) -> tuple[int, float]:
     ``CallLedger._reserve``; hier zaehlt nur bereits abgeschlossener,
     gueltiger Verbrauch, ohne unvollstaendige Aufrufe zu beanstanden.
     """
-    tokens = 0
-    cost = 0.0
-    for path in sorted((store.run_dir / "calls").glob("*-result.json")):
-        usage = store._load_json(path).get("usage")
-        if not isinstance(usage, dict):
-            continue
-        tokens += sum(
-            value
-            for key in (
-                "input_tokens",
-                "output_tokens",
-                "cache_read_input_tokens",
-                "cache_creation_input_tokens",
-            )
-            if isinstance(value := usage.get(key), int)
-        )
-        if isinstance(value := usage.get("cost_usd"), (int, float)):
-            cost += value
-    return tokens, cost
+    report = CallLedger(store).usage_report()
+    return report.total, sum(call.cost_usd for call in report.calls)
 
 
 def validate_usage(usage: object) -> None:

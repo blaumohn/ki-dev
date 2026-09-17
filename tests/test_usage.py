@@ -9,6 +9,8 @@ in diesen Tests sind erfunden, ihre Struktur/Beziehungen nicht.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from ki_dev.usage import (
@@ -20,6 +22,9 @@ from ki_dev.usage import (
     normalize_claude_session_message_usage,
     normalize_codex_token_count_usage,
     normalize_codex_turn_usage,
+    read_claude_session_usage,
+    read_codex_rollout_usage,
+    read_jsonl_lenient,
 )
 
 
@@ -137,10 +142,18 @@ class TestClaudeCliResult:
         assert event.status is UsageStatus.MEASURED
         assert event.provider == "claude"
         assert event.source == "cli_result"
-        assert event.counter_scope is CounterScope.PER_REQUEST
+        # Ein CLI-Aufruf kann intern mehrere Modell-Requests umfassen
+        # (Werkzeugnutzung); das result-Ereignis ist deren Summe.
+        assert event.counter_scope is CounterScope.CALL_TOTAL
         assert event.tokens == TokenCounts(10, 500, 30, 20)
         assert event.cli_version == "2.1.272"
         assert event.session_id == "s1"
+
+    def test_missing_cli_version_is_partial_not_measured(self):
+        event = normalize_claude_cli_result(self._usage())
+        assert event.status is UsageStatus.PARTIAL
+        assert event.tokens == TokenCounts(10, 500, 30, 20)
+        assert "cli_version" in event.detail
 
     def test_missing_usage_is_unavailable(self):
         event = normalize_claude_cli_result(None)
@@ -185,7 +198,9 @@ class TestClaudeSessionMessageUsage:
 
     def test_rich_usage_is_measured_with_subcategories(self):
         event = normalize_claude_session_message_usage(
-            self._usage(), confirmed_model="claude-haiku-4-5-20251001"
+            self._usage(),
+            schema_version="1.2.3",
+            confirmed_model="claude-haiku-4-5-20251001",
         )
         assert event.status is UsageStatus.MEASURED
         assert event.tokens.reasoning_output == 30
@@ -197,10 +212,18 @@ class TestClaudeSessionMessageUsage:
         usage = self._usage()
         del usage["cache_creation"]
         del usage["output_tokens_details"]
-        event = normalize_claude_session_message_usage(usage)
+        event = normalize_claude_session_message_usage(
+            usage, schema_version="1.2.3"
+        )
         assert event.status is UsageStatus.MEASURED
         assert event.tokens.reasoning_output is None
         assert event.tokens.cache_creation_ephemeral_5m is None
+
+    def test_missing_schema_version_is_partial_not_measured(self):
+        event = normalize_claude_session_message_usage(self._usage())
+        assert event.status is UsageStatus.PARTIAL
+        assert event.tokens.reasoning_output == 30
+        assert "schema_version" in event.detail
 
     def test_inconsistent_ephemeral_split_is_partial_not_dropped(self):
         usage = self._usage(
@@ -209,7 +232,9 @@ class TestClaudeSessionMessageUsage:
                 "ephemeral_1h_input_tokens": 999,
             }
         )
-        event = normalize_claude_session_message_usage(usage)
+        event = normalize_claude_session_message_usage(
+            usage, schema_version="1.2.3"
+        )
         assert event.status is UsageStatus.PARTIAL
         # Hauptkategorien bleiben erhalten, nur die widerspruechliche
         # Unterkategorie wird nicht uebernommen.
@@ -229,12 +254,27 @@ class TestCodexTurnUsage:
                 "input_tokens": 100,
                 "cached_input_tokens": 40,
                 "output_tokens": 15,
-            }
+            },
+            cli_version="0.154.0",
         )
         assert event.status is UsageStatus.MEASURED
+        # Ein Turn kann intern mehrere Modell-Requests umfassen
+        # (Werkzeugnutzung); turn.completed ist deren Summe.
+        assert event.counter_scope is CounterScope.CALL_TOTAL
         assert event.tokens.fresh_input == 60
         assert event.tokens.cache_read == 40
         assert event.tokens.output == 15
+
+    def test_missing_cli_version_is_partial_not_measured(self):
+        event = normalize_codex_turn_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+            }
+        )
+        assert event.status is UsageStatus.PARTIAL
+        assert event.tokens.fresh_input == 60
 
     def test_cache_greater_than_input_is_unavailable(self):
         event = normalize_codex_turn_usage(
@@ -263,11 +303,64 @@ class TestCodexTokenCountUsage:
                 "total_tokens": 115,
             },
             scope=CounterScope.PER_REQUEST,
+            cli_version="0.154.0",
         )
         assert event.status is UsageStatus.MEASURED
         assert event.source == "rollout_last_token_usage"
         assert event.tokens.fresh_input == 60
         assert event.tokens.reasoning_output == 3
+
+    def test_missing_cli_version_is_partial_not_measured(self):
+        event = normalize_codex_token_count_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+                "total_tokens": 115,
+            },
+            scope=CounterScope.PER_REQUEST,
+        )
+        assert event.status is UsageStatus.PARTIAL
+        assert "cli_version" in event.detail
+
+    def test_reasoning_greater_than_output_is_partial_not_raised(self):
+        """Ein widerspruechlicher reasoning_output_tokens-Wert darf die
+        Normalisierung nicht mit ValueError abbrechen (P1-Befund);
+        die Hauptkategorien bleiben trotzdem erhalten."""
+        event = normalize_codex_token_count_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+                "reasoning_output_tokens": 999,
+                "total_tokens": 75,
+            },
+            scope=CounterScope.PER_REQUEST,
+            cli_version="0.154.0",
+        )
+        assert event.status is UsageStatus.PARTIAL
+        assert event.tokens.fresh_input == 60
+        assert event.tokens.reasoning_output is None
+        assert "reasoning_output_tokens" in event.detail
+
+    def test_present_but_invalid_total_is_not_silently_ignored(self):
+        """Ein vorhandenes, aber typwidriges total_tokens darf nicht wie
+        ein fehlendes Feld behandelt werden (P1-Befund): beides fuehrt
+        sonst zu MEASURED, obwohl die Quelle intern widerspruechlich
+        ist."""
+        event = normalize_codex_token_count_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+                "total_tokens": "not-a-number",
+            },
+            scope=CounterScope.PER_REQUEST,
+            cli_version="0.154.0",
+        )
+        assert event.status is UsageStatus.PARTIAL
+        assert event.tokens.fresh_input == 60
+        assert "total_tokens" in event.detail
 
     def test_cumulative_scope_uses_total_source_name(self):
         event = normalize_codex_token_count_usage(
@@ -305,3 +398,279 @@ class TestCodexTokenCountUsage:
             None, scope=CounterScope.PER_REQUEST
         )
         assert event.status is UsageStatus.UNAVAILABLE
+
+
+class TestReadJsonlLenient:
+    """wu0.2-Akzeptanzkriterium 3: unvollstaendige letzte Zeile wird
+    spaeter erneut gelesen, kaputte innere Zeilen werden sichtbar,
+    Mehrfachlesen ist idempotent (zustandsloser Vollscan)."""
+
+    def test_complete_file_reads_all_rows(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"a": 1}\n{"a": 2}\n')
+        result = read_jsonl_lenient(path)
+        assert result.rows == ({"a": 1}, {"a": 2})
+        assert result.corrupt_lines == ()
+        assert result.incomplete_last_line is False
+
+    def test_incomplete_last_line_is_excluded_not_corrupt(
+        self, tmp_path
+    ):
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"a": 1}\n{"a": 2, "b"')
+        result = read_jsonl_lenient(path)
+        assert result.rows == ({"a": 1},)
+        assert result.corrupt_lines == ()
+        assert result.incomplete_last_line is True
+
+    def test_reread_after_completion_picks_up_the_line(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"a": 1}\n{"a": 2, "b"')
+        assert read_jsonl_lenient(path).rows == ({"a": 1},)
+        with path.open("a") as handle:
+            handle.write(': 3}\n')
+        result = read_jsonl_lenient(path)
+        assert result.rows == ({"a": 1}, {"a": 2, "b": 3})
+        assert result.incomplete_last_line is False
+
+    def test_corrupt_inner_line_is_visible_and_does_not_abort(
+        self, tmp_path
+    ):
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"a": 1}\nnot json\n{"a": 3}\n')
+        result = read_jsonl_lenient(path)
+        assert result.rows == ({"a": 1}, {"a": 3})
+        assert result.corrupt_lines == (2,)
+
+    def test_non_object_line_is_corrupt(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text('[1, 2]\n{"a": 1}\n')
+        result = read_jsonl_lenient(path)
+        assert result.rows == ({"a": 1},)
+        assert result.corrupt_lines == (1,)
+
+    def test_repeated_reads_are_idempotent(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"a": 1}\nnot json\n{"a": 3}')
+        first = read_jsonl_lenient(path)
+        second = read_jsonl_lenient(path)
+        assert first == second
+
+
+def _rollout_line(**kwargs):
+    row = {
+        "type": "event_msg",
+        "timestamp": "2026-04-04T09:00:00.000Z",
+        "payload": {"type": "token_count", "info": {}},
+    }
+    row.update(kwargs)
+    return json.dumps(row)
+
+
+class TestReadCodexRolloutUsage:
+    """Reale Rollout-Struktur (empirisch verifiziert, siehe
+    usage.py-Moduldoc): mehrere last_token_usage-Ereignisse pro
+    Request, total_token_usage kumulativ ueber die Sitzung."""
+
+    def _info(self, **overrides):
+        value = {
+            "last_token_usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+                "total_tokens": 115,
+            },
+            "total_token_usage": {
+                "input_tokens": 300,
+                "cached_input_tokens": 40,
+                "output_tokens": 45,
+                "total_tokens": 345,
+            },
+        }
+        value.update(overrides)
+        return value
+
+    def test_extracts_per_request_and_latest_cumulative_event(
+        self, tmp_path
+    ):
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            _rollout_line(
+                timestamp="2026-04-04T09:00:00.000Z",
+                payload={
+                    "type": "token_count",
+                    "info": self._info(),
+                },
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(path, cli_version="0.154.0")
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        cumulative = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].tokens.fresh_input == 60
+        assert len(cumulative) == 1
+        assert cumulative[0].tokens.fresh_input == 260
+
+    def test_unsorted_events_keep_latest_cumulative_by_time(
+        self, tmp_path
+    ):
+        """Zeilenreihenfolge ist keine Zeitreihenfolge (siehe
+        executors/metering.py:_latest_five_hour_window): die zeitlich
+        juengere Zeile steht hier zuerst in der Datei."""
+        newer = self._info(
+            total_token_usage={
+                "input_tokens": 900,
+                "cached_input_tokens": 0,
+                "output_tokens": 90,
+                "total_tokens": 990,
+            }
+        )
+        older = self._info()
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            _rollout_line(
+                timestamp="2026-04-04T10:00:00.000Z",
+                payload={"type": "token_count", "info": newer},
+            )
+            + "\n"
+            + _rollout_line(
+                timestamp="2026-04-04T09:00:00.000Z",
+                payload={"type": "token_count", "info": older},
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(path)
+        cumulative = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert len(cumulative) == 1
+        assert cumulative[0].tokens.fresh_input == 900
+
+    def test_non_token_count_lines_are_ignored(self, tmp_path):
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            json.dumps({"type": "session_meta", "payload": {}}) + "\n"
+        )
+        scan = read_codex_rollout_usage(path)
+        assert scan.events == ()
+
+    def test_corrupt_and_incomplete_lines_are_surfaced(self, tmp_path):
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            "not json\n"
+            + _rollout_line(payload={"type": "token_count", "info": {}})
+            + "\n{incomplete"
+        )
+        scan = read_codex_rollout_usage(path)
+        assert scan.corrupt_lines == (1,)
+        assert scan.incomplete_last_line is True
+
+
+def _assistant_row(**kwargs):
+    row = {
+        "type": "assistant",
+        "sessionId": "sess-1",
+        "requestId": "req-1",
+        "version": "2.1.272",
+        "timestamp": "2026-04-04T09:00:00.000Z",
+        "message": {
+            "id": "msg-1",
+            "model": "claude-haiku-4-5-20251001",
+            "usage": {
+                "input_tokens": 4,
+                "output_tokens": 50,
+                "cache_read_input_tokens": 1000,
+                "cache_creation_input_tokens": 12,
+            },
+        },
+    }
+    row.update(kwargs)
+    return json.dumps(row)
+
+
+class TestReadClaudeSessionUsage:
+    """Streaming kann dieselbe Modellantwort ueber mehrere Zeilen mit
+    identischer message.id aufteilen (siehe
+    scripts/analyze_claude_usage.py); nur die letzte Zeile zaehlt."""
+
+    def test_streaming_duplicates_are_deduplicated_by_message_id(
+        self, tmp_path
+    ):
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            _assistant_row()
+            + "\n"
+            + _assistant_row(
+                message={
+                    "id": "msg-1",
+                    "model": "claude-haiku-4-5-20251001",
+                    "usage": {
+                        "input_tokens": 4,
+                        "output_tokens": 999,
+                        "cache_read_input_tokens": 1000,
+                        "cache_creation_input_tokens": 12,
+                    },
+                }
+            )
+            + "\n"
+        )
+        scan = read_claude_session_usage(path)
+        assert len(scan.events) == 1
+        assert scan.events[0].tokens.output == 999
+
+    def test_synthetic_model_is_skipped(self, tmp_path):
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            _assistant_row(
+                message={
+                    "id": "msg-2",
+                    "model": "<synthetic>",
+                    "usage": {"input_tokens": 0},
+                }
+            )
+            + "\n"
+        )
+        scan = read_claude_session_usage(path)
+        assert scan.events == ()
+
+    def test_row_fields_are_threaded_into_the_event(self, tmp_path):
+        path = tmp_path / "session.jsonl"
+        path.write_text(_assistant_row() + "\n")
+        scan = read_claude_session_usage(path)
+        assert len(scan.events) == 1
+        event = scan.events[0]
+        assert event.session_id == "sess-1"
+        assert event.request_id == "req-1"
+        assert event.schema_version == "2.1.272"
+        assert event.confirmed_model == "claude-haiku-4-5-20251001"
+        assert event.status is UsageStatus.MEASURED
+
+    def test_missing_message_id_is_kept_not_dropped(self, tmp_path):
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            _assistant_row(
+                message={
+                    "model": "claude-haiku-4-5-20251001",
+                    "usage": {
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                    },
+                }
+            )
+            + "\n"
+        )
+        scan = read_claude_session_usage(path)
+        assert len(scan.events) == 1
