@@ -1009,3 +1009,179 @@ class TestNachreviewDf44275:
             cli_version=123,  # type: ignore[arg-type]
         )
         assert event.status is UsageStatus.PARTIAL
+
+
+class TestNachreview3ac1ebe:
+    """Regressionstests zu den drei Befunden aus dem Nachreview von
+    3ac1ebe (siehe Beads ki-dev-ablauf-wu0.2, vierter Nachreview)."""
+
+    def test_requests_recognized_again_after_reset(self, tmp_path):
+        """[P2] Nach einem Rueckgang (115 -> 0) muss ein neuer Request
+        oberhalb des NEUEN, niedrigeren Standes wieder erkannt werden
+        (115 -> 0 -> 11): die Vergleichsbasis darf nicht am
+        historischen Hoechststand haengen bleiben."""
+
+        def line(ts, total, last_output=None):
+            info = {
+                "total_token_usage": {
+                    "input_tokens": total,
+                    "cached_input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": total,
+                }
+            }
+            if last_output is not None:
+                info["last_token_usage"] = {
+                    "input_tokens": last_output,
+                    "cached_input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": last_output,
+                }
+            return _rollout_line(
+                timestamp=ts,
+                payload={"type": "token_count", "info": info},
+            )
+
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            line("2026-04-04T09:00:00.000Z", 115, last_output=115)
+            + "\n"
+            + line("2026-04-04T09:05:00.000Z", 0)
+            + "\n"
+            + line("2026-04-04T09:10:00.000Z", 11, last_output=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 11]
+        cumulative = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert cumulative[0].status is UsageStatus.PARTIAL
+        assert "gesunken" in cumulative[0].detail
+
+    def test_duplicate_without_cumulative_evidence_not_double_counted(
+        self, tmp_path
+    ):
+        """[P2] Ohne jeden kumulativen Beleg (kein total_token_usage
+        ueberhaupt) ist Inhaltsgleichheit mit der unmittelbar
+        vorangegangenen Zeile das einzige verfuegbare Duplikatsignal
+        -- zwei identische last_token_usage-Zeilen ohne total_token_
+        usage duerfen nicht als zwei Requests gezaehlt werden."""
+        info = {
+            "last_token_usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "output_tokens": 15,
+                "total_tokens": 115,
+            },
+        }
+        path = tmp_path / "rollout.jsonl"
+        line = _rollout_line(
+            timestamp="2026-04-04T09:00:00.000Z",
+            payload={"type": "token_count", "info": info},
+        )
+        other_time_line = _rollout_line(
+            timestamp="2026-04-04T09:05:00.000Z",
+            payload={"type": "token_count", "info": info},
+        )
+        path.write_text(line + "\n" + other_time_line + "\n")
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].tokens.total == 115
+
+    def test_distinct_content_without_cumulative_both_count(
+        self, tmp_path
+    ):
+        """Gegenprobe: unterscheidet sich der Inhalt, zaehlen beide
+        Requests, auch ohne kumulativen Beleg."""
+
+        def line(ts, total):
+            return _rollout_line(
+                timestamp=ts,
+                payload={
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": total,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": total,
+                        }
+                    },
+                },
+            )
+
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            line("2026-04-04T09:00:00.000Z", 100)
+            + "\n"
+            + line("2026-04-04T09:05:00.000Z", 200)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 2
+
+    def test_invalid_latest_summary_is_not_replaced_by_older_valid_one(
+        self, tmp_path
+    ):
+        """[P2] Folgt auf eine gueltige Summe eine typwidrige (der
+        Schluessel total_token_usage ist z. B. ein String statt eines
+        Objekts), muss diese ungueltige, juengste Beobachtung sichtbar
+        bleiben -- nicht stillschweigend durch die aeltere gueltige
+        Summe ersetzt werden."""
+        valid = _rollout_line(
+            timestamp="2026-04-04T09:00:00.000Z",
+            payload={
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 0,
+                        "output_tokens": 15,
+                        "total_tokens": 115,
+                    }
+                },
+            },
+        )
+        invalid = _rollout_line(
+            timestamp="2026-04-04T09:05:00.000Z",
+            payload={
+                "type": "token_count",
+                "info": {"total_token_usage": "kaputt"},
+            },
+        )
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(valid + "\n" + invalid + "\n")
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        cumulative = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert len(cumulative) == 1
+        assert cumulative[0].status is UsageStatus.UNAVAILABLE

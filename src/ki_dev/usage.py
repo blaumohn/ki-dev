@@ -811,16 +811,26 @@ def _codex_token_count_snapshots(
 def read_codex_rollout_usage(
     path: Path, *, cli_version: str | None = None
 ) -> CodexRolloutScan:
-    """last_token_usage zaehlt nur als neuer Request, wenn der
-    gepaarte total_token_usage seit dem vorherigen Ereignis
-    tatsaechlich gewachsen ist -- Zeitstempel oder Inhalt allein
-    belegen keinen neuen Request (empirisch an echten Rollouts
-    bestaetigt: identischer last_token_usage-Inhalt ging in allen
-    beobachteten Faellen mit unveraendertem total_token_usage einher,
-    nie mit Wachstum). Ein Rueckgang irgendwo in der zeitlich
+    """last_token_usage zaehlt als neuer Request, wenn entweder das
+    gepaarte total_token_usage seit dem vorherigen Ereignis gewachsen
+    ist, oder -- ohne einen solchen kumulativen Beleg -- sein Inhalt
+    vom unmittelbar vorangegangenen last_token_usage abweicht.
+    Zeitstempel allein belegt nie einen neuen Request; ein fehlender
+    kumulativer Beleg belegt nie eine sichere Dopplung (empirisch an
+    echten Rollouts bestaetigt: identischer last_token_usage-Inhalt
+    ging in allen beobachteten Faellen mit unveraendertem
+    total_token_usage einher, nie mit Wachstum). Die
+    Vergleichsbasis fuer Wachstum ist immer der zeitlich zuletzt
+    beobachtete Wert, nicht das historische Maximum -- nach einem
+    Reset muessen Requests oberhalb des neuen, niedrigeren Standes
+    wieder erkannt werden. Ein Rueckgang irgendwo in der zeitlich
     geordneten Folge bleibt sichtbar, auch wenn der Zaehler danach
     wieder waechst (Messvertrag: "Zaehlerreset/-rueckgang ... haben
-    explizite Ergebnisse").
+    explizite Ergebnisse"). Die zeitlich juengste Beobachtung eines
+    ``total_token_usage``-Schluessels zaehlt als "letzte Summe",
+    unabhaengig davon, ob ihr Inhalt gueltig ist -- eine spaetere
+    ungueltige Beobachtung darf nicht stillschweigend durch eine
+    aeltere gueltige ersetzt werden.
     """
     read = read_jsonl_lenient(path)
     file_session_id, file_cli_version = _codex_session_meta(read.rows)
@@ -829,9 +839,11 @@ def read_codex_rollout_usage(
 
     events: list[UsageEvent] = []
     prev_cumulative: int | None = None
+    prev_last_content: str | None = None
     reset_detected = False
-    latest_total_usage: dict | None = None
+    latest_total_usage: object = None
     latest_total_time: float | None = None
+    latest_total_seen = False
     for event_time, info in ordered:
         total_usage = info.get("total_token_usage")
         raw_total = (
@@ -839,18 +851,36 @@ def read_codex_rollout_usage(
             if isinstance(total_usage, dict)
             else None
         )
-        is_new_request = (
-            raw_total is None
-            or prev_cumulative is None
-            or raw_total > prev_cumulative
-        )
-        if raw_total is not None and prev_cumulative is not None:
-            if raw_total < prev_cumulative:
-                reset_detected = True
-            prev_cumulative = max(prev_cumulative, raw_total)
-        elif raw_total is not None:
-            prev_cumulative = raw_total
         last_usage = info.get("last_token_usage")
+        last_content = (
+            json.dumps(last_usage, sort_keys=True)
+            if last_usage is not None
+            else None
+        )
+        if raw_total is not None:
+            is_new_request = (
+                prev_cumulative is None or raw_total > prev_cumulative
+            )
+        else:
+            # Ohne kumulativen Beleg ist Inhaltsgleichheit mit der
+            # unmittelbar vorangegangenen Zeile das einzig verfuegbare
+            # Duplikatsignal; abweichender Inhalt zaehlt als neu,
+            # Gleichheit taeuscht ohne Beleg keine Dopplung vor,
+            # sondern nur eine bereits gesehene Beobachtung.
+            is_new_request = last_content != prev_last_content
+        if raw_total is not None:
+            if (
+                prev_cumulative is not None
+                and raw_total < prev_cumulative
+            ):
+                reset_detected = True
+            # Zuletzt beobachteter Wert, nicht das historische
+            # Maximum: nach einem Reset muss die Vergleichsbasis neu
+            # beginnen, sonst verschwinden Requests oberhalb des
+            # neuen, aber unterhalb des alten Standes spurlos.
+            prev_cumulative = raw_total
+        if last_content is not None:
+            prev_last_content = last_content
         if last_usage is not None and is_new_request:
             events.append(
                 normalize_codex_token_count_usage(
@@ -861,9 +891,10 @@ def read_codex_rollout_usage(
                     event_time=event_time,
                 )
             )
-        if isinstance(total_usage, dict):
+        if "total_token_usage" in info:
             latest_total_usage = total_usage
             latest_total_time = event_time
+            latest_total_seen = True
     # Nicht zeitlich einordenbare Ereignisse: last_token_usage laesst
     # sich nicht gegen eine Reihenfolge pruefen, bleibt aber erhalten
     # statt stillschweigend verworfen zu werden.
@@ -879,7 +910,7 @@ def read_codex_rollout_usage(
                     event_time=None,
                 )
             )
-    if latest_total_usage is not None:
+    if latest_total_seen:
         event = normalize_codex_token_count_usage(
             latest_total_usage,
             scope=CounterScope.CUMULATIVE_SESSION,
