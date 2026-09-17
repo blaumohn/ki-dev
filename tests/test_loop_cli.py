@@ -79,6 +79,29 @@ def test_status_reads_persisted_state_without_advancing(tmp_path):
     assert reviewer.calls == 1
 
 
+def test_status_works_with_relative_runs_dir(tmp_path, monkeypatch):
+    """0we: der CLI-Standard ``--runs-dir .ki-dev/runs`` ist relativ;
+    ``as_uri()`` braucht aber einen absoluten Pfad."""
+    builder = FakeBuilder()
+    reviewer = FakeReviewer([ReviewAction.NEEDS_DECISION])
+    monkeypatch.chdir(tmp_path)
+    relative_runs_dir = Path(".ki-dev/runs")
+    with LoopRuntime(
+        RunStore(relative_runs_dir, "run-relative"),
+        builder,
+        reviewer,
+        StaticEvidenceCollector((_context(1),)),
+        StaticFinalizer(),
+    ) as runtime:
+        waiting = runtime.start(_task("run-relative"), Limits())
+    _add_configuration(relative_runs_dir, "run-relative")
+
+    result = status_run("run-relative", runs_dir=relative_runs_dir)
+
+    assert result.status == "waiting_decision"
+    assert result.round_id == waiting.round_id
+
+
 def test_status_reports_missing_run_clearly(tmp_path):
     with pytest.raises(RunStoreError):
         status_run("does-not-exist", runs_dir=tmp_path)

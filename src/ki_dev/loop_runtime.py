@@ -759,30 +759,38 @@ class LoopRuntime:
             next_run = decode_run_state(
                 cast(dict[str, object], update["run_state"])
             )
-            return {
-                **update,
-                "pending_operation": None,
-                "status": "paused_interactive"
-                if next_run.state.phase is Phase.PAUSED_INTERACTIVE
-                else "running",
-                "last_error": cast(str | None, artifact.get("detail")),
-            }
+            detail = cast(str | None, artifact.get("detail"))
+            return self._write_handoff_if_stopped(
+                state,
+                {
+                    **update,
+                    "pending_operation": None,
+                    "status": "paused_interactive"
+                    if next_run.state.phase is Phase.PAUSED_INTERACTIVE
+                    else "running",
+                    "last_error": detail,
+                },
+                detail or "Abschlusspruefung fehlgeschlagen",
+            )
         if kind == "integrate":
             ok = artifact.get("ok") is True
             update = self._transition(run, IntegrationCompleted(ok))
             next_run = decode_run_state(
                 cast(dict[str, object], update["run_state"])
             )
-            return {
-                **update,
-                "pending_operation": None,
-                "status": "passed"
-                if next_run.state.phase is Phase.PASSED
-                else "paused_interactive",
-                "last_error": None
-                if ok
-                else cast(str | None, artifact.get("detail")),
-            }
+            detail = cast(str | None, artifact.get("detail"))
+            return self._write_handoff_if_stopped(
+                state,
+                {
+                    **update,
+                    "pending_operation": None,
+                    "status": "passed"
+                    if next_run.state.phase is Phase.PASSED
+                    else "paused_interactive",
+                    "last_error": None if ok else detail,
+                },
+                detail or "Integration fehlgeschlagen",
+            )
         decision_doc = cast(dict[str, object], artifact["decision"])
         decision = _decode_decision(decision_doc)
         self.store.write_message(cast(str, pending["id"]), decision_doc)
@@ -1065,8 +1073,11 @@ def read_run_status(store: RunStore) -> LoopRunResult:
 def _read_checkpoint_tuple(store: RunStore):
     with tempfile.TemporaryDirectory() as scratch:
         copy_path = Path(scratch) / store.checkpoint_path.name
+        # as_uri() verlangt einen absoluten Pfad; --runs-dir ist im
+        # CLI-Standard (".ki-dev/runs") relativ.
+        absolute_checkpoint = store.checkpoint_path.resolve()
         source = sqlite3.connect(
-            f"{store.checkpoint_path.as_uri()}?mode=ro", uri=True
+            f"{absolute_checkpoint.as_uri()}?mode=ro", uri=True
         )
         try:
             _backup_snapshot(source, copy_path)

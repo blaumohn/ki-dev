@@ -524,6 +524,12 @@ def test_failed_final_verification_never_passes_and_can_resume(tmp_path):
     assert paused.status == "paused_interactive"
     assert paused.phase is Phase.PAUSED_INTERACTIVE
     assert "final_verification_failed" in paused.detail
+    # ucq (wiedereroeffnet): auch eine fehlgeschlagene Abschlusspruefung
+    # muss eine Sitzungsuebergabe schreiben.
+    handoffs = list(
+        (tmp_path / "run-final-drift" / "handoff").glob("*.json")
+    )
+    assert len(handoffs) == 1
 
     finalizer.fail_verify = False
     with LoopRuntime(
@@ -565,3 +571,29 @@ def test_resume_rechecks_integration_after_crash_without_artifact(tmp_path):
     assert result.status == "passed"
     assert finalizer.calls == 2
     assert finalizer.effect_count == 1
+
+
+def test_failed_integration_pauses_and_writes_handoff(tmp_path):
+    """ucq (wiedereroeffnet): eine fachlich fehlgeschlagene Integration
+    (nicht nur ein Prozessabsturz) muss ebenfalls eine
+    Sitzungsuebergabe schreiben, nicht nur pausieren."""
+    finalizer = StaticFinalizer(fail_integrate=True)
+    with LoopRuntime(
+        RunStore(tmp_path, "run-integrate-fail"),
+        FakeBuilder(),
+        FakeReviewer([ReviewAction.PASS]),
+        StaticEvidenceCollector((_context(1),)),
+        finalizer,
+    ) as runtime:
+        result = runtime.start(_task("run-integrate-fail"), Limits())
+
+    assert result.status == "paused_interactive"
+    assert "integration_failed" in result.detail
+    handoffs = list(
+        (tmp_path / "run-integrate-fail" / "handoff").glob("*.json")
+    )
+    assert len(handoffs) == 1
+    assert (
+        json.loads(handoffs[0].read_text())["needed_decision"]
+        == "fake integrate"
+    )

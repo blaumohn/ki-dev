@@ -74,18 +74,30 @@ abgeleiteten Garantien (siehe Verbrauchsschutz-Abschnitt in
 
 ## Testnachweis
 
-652 Tests gruen (mehrfach wiederholt, keine Flakes beobachtet); Ruff fuer
+654 Tests gruen (mehrfach wiederholt, keine Flakes beobachtet); Ruff fuer
 alle in p0h geaenderten Dateien ohne Befund. Kein Docker-/Containerlauf und
 kein bezahlter CLI-Aufruf Teil dieses Nachweises.
 
-Ein unabhaengiger Review dieser Commits fand vier weitere Befunde, die vor
-dieser Startfreigabe noch behoben wurden: eine SQLite-Snapshot-Race beim
-Statuslesen (jetzt ueber die Online-Backup-API statt manueller
-WAL-/Hauptdatei-Kopie, `ki-dev-ablauf-re0`), fehlende Abnahmekriterien im
-Bauauftrag (`ygq`), ein Reviewer-`ESCALATE`, das die Sitzungsuebergabe
-umging (`ucq`), sowie eine fehlende Validierung von `status`/`round_id`
-beim Statuslesen (`8to`). Alle vier sind in Beads geschlossen und durch
-Regressionstests abgedeckt.
+Zwei unabhaengige Reviewrunden dieser Commits fanden fuenf Befunde
+(einer davon -- `ucq` -- nach einer ersten Behebung nochmal
+wiedereroeffnet), die vor dieser Startfreigabe behoben wurden:
+
+1. Eine SQLite-Snapshot-Race beim Statuslesen -- jetzt ueber die
+   Online-Backup-API statt manueller WAL-/Hauptdatei-Kopie (`re0`).
+2. Fehlende Abnahmekriterien im Bauauftrag -- jetzt auch dort gelistet,
+   nicht nur im Reviewer-Prompt (`ygq`).
+3. Ein Reviewer-`ESCALATE`, das die Sitzungsuebergabe umging (`ucq`,
+   nach Wiedereroeffnung auch fuer fehlgeschlagene Abschlusspruefung und
+   Integration behoben -- alle Pausepfade schreiben jetzt einheitlich
+   ueber `_write_handoff_if_stopped`).
+4. Fehlende Validierung von `status`/`round_id` beim Statuslesen
+   (`8to`).
+5. `ki-dev loop status` scheiterte mit dem relativen CLI-Standardpfad
+   `--runs-dir .ki-dev/runs`, da `Path.as_uri()` einen absoluten Pfad
+   verlangt (`0we`); mit echtem `ki-dev`-CLI-Aufruf verifiziert.
+
+Alle sechs sind in Beads geschlossen und durch Regressionstests
+abgedeckt.
 
 ## Bekannte Grenzen vor uar.2
 
