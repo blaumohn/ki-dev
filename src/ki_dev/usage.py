@@ -808,25 +808,74 @@ def _codex_token_count_snapshots(
     return ordered, unordered
 
 
+def _codex_confirmed_request(
+    last_usage: object,
+    event_time: float | None,
+    *,
+    cli_version: str | None,
+    session_id: str | None,
+) -> UsageEvent:
+    return normalize_codex_token_count_usage(
+        last_usage,
+        scope=CounterScope.PER_REQUEST,
+        cli_version=cli_version,
+        session_id=session_id,
+        event_time=event_time,
+    )
+
+
+def _codex_unconfirmed_request(
+    pending: dict, *, cli_version: str | None, session_id: str | None
+) -> UsageEvent:
+    """Ein last_token_usage, fuer das nie ein eigener oder spaeter
+    passender kumulativer Beleg auftauchte: Zahlen bleiben erhalten
+    (kein Verwerfen), aber MEASURED waere hier mehr Sicherheit als
+    tatsaechlich vorhanden -- eine gleich teure, echte zweite
+    Anfrage laesst sich ohne kumulativen Beleg nicht ausschliessen."""
+    event = _codex_confirmed_request(
+        pending["last_usage"],
+        pending["event_time"],
+        cli_version=cli_version,
+        session_id=session_id,
+    )
+    if event.status is UsageStatus.MEASURED:
+        return replace(
+            event,
+            status=UsageStatus.PARTIAL,
+            detail=(
+                "last_token_usage ohne eigenen oder spaeter "
+                "bestaetigenden kumulativen Beleg beobachtet; eine "
+                "gleich teure, echte zweite Anfrage ist ohne "
+                "kumulativen Beleg nicht auszuschliessen"
+            ),
+        )
+    return event
+
+
 def read_codex_rollout_usage(
     path: Path, *, cli_version: str | None = None
 ) -> CodexRolloutScan:
-    """last_token_usage zaehlt als neuer Request, wenn entweder das
-    gepaarte total_token_usage seit dem vorherigen Ereignis gewachsen
-    ist, oder -- ohne einen solchen kumulativen Beleg -- sein Inhalt
-    vom unmittelbar vorangegangenen last_token_usage abweicht.
-    Zeitstempel allein belegt nie einen neuen Request; ein fehlender
-    kumulativer Beleg belegt nie eine sichere Dopplung (empirisch an
-    echten Rollouts bestaetigt: identischer last_token_usage-Inhalt
+    """Ein Ereignis mit eigenem, vom vorherigen Stand abweichendem
+    total_token_usage (Wachstum oder Reset) bestaetigt sein
+    last_token_usage direkt und eigenstaendig -- auch nach einem
+    Reset, denn die neue, niedrigere Zaehlerbasis ist selbst ein
+    gueltiger Beleg fuer das, was seither dazukam. Bleibt der Zaehler
+    dagegen unveraendert, ist nichts Neues dazugekommen. Fehlt der
+    kumulative Beleg fuer ein Ereignis ganz, bleibt sein
+    last_token_usage als "unbestaetigt" (``pending``) vorgemerkt: ein
+    spaeteres Ereignis mit direkt bestaetigtem Beleg und identischem
+    Inhalt loest es auf (dieselbe Beobachtung, kein zusaetzlicher
+    Request), abweichender Inhalt oder das Dateiende schliessen es
+    stattdessen als PARTIAL ab. Reiner Zeitstempel- oder
+    Inhaltsvergleich allein belegt nie einen neuen Request (empirisch
+    an echten Rollouts bestaetigt: identischer last_token_usage-Inhalt
     ging in allen beobachteten Faellen mit unveraendertem
-    total_token_usage einher, nie mit Wachstum). Die
-    Vergleichsbasis fuer Wachstum ist immer der zeitlich zuletzt
-    beobachtete Wert, nicht das historische Maximum -- nach einem
-    Reset muessen Requests oberhalb des neuen, niedrigeren Standes
-    wieder erkannt werden. Ein Rueckgang irgendwo in der zeitlich
-    geordneten Folge bleibt sichtbar, auch wenn der Zaehler danach
-    wieder waechst (Messvertrag: "Zaehlerreset/-rueckgang ... haben
-    explizite Ergebnisse"). Die zeitlich juengste Beobachtung eines
+    total_token_usage einher, nie mit Wachstum).
+
+    Ein Rueckgang irgendwo in der zeitlich geordneten Folge bleibt am
+    Ende sichtbar, auch wenn der Zaehler danach wieder waechst
+    (Messvertrag: "Zaehlerreset/-rueckgang ... haben explizite
+    Ergebnisse"). Die zeitlich juengste Beobachtung eines
     ``total_token_usage``-Schluessels zaehlt als "letzte Summe",
     unabhaengig davon, ob ihr Inhalt gueltig ist -- eine spaetere
     ungueltige Beobachtung darf nicht stillschweigend durch eine
@@ -839,7 +888,7 @@ def read_codex_rollout_usage(
 
     events: list[UsageEvent] = []
     prev_cumulative: int | None = None
-    prev_last_content: str | None = None
+    pending: dict | None = None
     reset_detected = False
     latest_total_usage: object = None
     latest_total_time: float | None = None
@@ -857,44 +906,72 @@ def read_codex_rollout_usage(
             if last_usage is not None
             else None
         )
-        if raw_total is not None:
-            is_new_request = (
-                prev_cumulative is None or raw_total > prev_cumulative
-            )
-        else:
-            # Ohne kumulativen Beleg ist Inhaltsgleichheit mit der
-            # unmittelbar vorangegangenen Zeile das einzig verfuegbare
-            # Duplikatsignal; abweichender Inhalt zaehlt als neu,
-            # Gleichheit taeuscht ohne Beleg keine Dopplung vor,
-            # sondern nur eine bereits gesehene Beobachtung.
-            is_new_request = last_content != prev_last_content
-        if raw_total is not None:
-            if (
-                prev_cumulative is not None
-                and raw_total < prev_cumulative
-            ):
-                reset_detected = True
-            # Zuletzt beobachteter Wert, nicht das historische
-            # Maximum: nach einem Reset muss die Vergleichsbasis neu
-            # beginnen, sonst verschwinden Requests oberhalb des
-            # neuen, aber unterhalb des alten Standes spurlos.
-            prev_cumulative = raw_total
-        if last_content is not None:
-            prev_last_content = last_content
-        if last_usage is not None and is_new_request:
-            events.append(
-                normalize_codex_token_count_usage(
-                    last_usage,
-                    scope=CounterScope.PER_REQUEST,
-                    cli_version=effective_cli_version,
-                    session_id=file_session_id,
-                    event_time=event_time,
+        if (
+            raw_total is not None
+            and prev_cumulative is not None
+            and raw_total < prev_cumulative
+        ):
+            reset_detected = True
+        directly_confirmed = (
+            raw_total is not None and raw_total != prev_cumulative
+        )
+        if directly_confirmed:
+            if last_usage is not None:
+                if (
+                    pending is not None
+                    and pending["content"] != last_content
+                ):
+                    events.append(
+                        _codex_unconfirmed_request(
+                            pending,
+                            cli_version=effective_cli_version,
+                            session_id=file_session_id,
+                        )
+                    )
+                events.append(
+                    _codex_confirmed_request(
+                        last_usage,
+                        event_time,
+                        cli_version=effective_cli_version,
+                        session_id=file_session_id,
+                    )
                 )
-            )
+                pending = None
+        elif (
+            raw_total is None
+            and last_usage is not None
+            and (pending is None or pending["content"] != last_content)
+        ):
+            if pending is not None:
+                events.append(
+                    _codex_unconfirmed_request(
+                        pending,
+                        cli_version=effective_cli_version,
+                        session_id=file_session_id,
+                    )
+                )
+            pending = {
+                "last_usage": last_usage,
+                "event_time": event_time,
+                "content": last_content,
+            }
+        # Sonst (raw_total is None und last_usage inhaltsgleich mit dem
+        # noch offenen, unbestaetigten Pending): dieselbe Beobachtung,
+        # nichts Neues zu tun.
+        if raw_total is not None:
+            prev_cumulative = raw_total
         if "total_token_usage" in info:
             latest_total_usage = total_usage
             latest_total_time = event_time
             latest_total_seen = True
+    if pending is not None:
+        events.append(
+            _codex_unconfirmed_request(
+                pending,
+                cli_version=effective_cli_version,
+                session_id=file_session_id,
+            )
+        )
     # Nicht zeitlich einordenbare Ereignisse: last_token_usage laesst
     # sich nicht gegen eine Reihenfolge pruefen, bleibt aber erhalten
     # statt stillschweigend verworfen zu werden.

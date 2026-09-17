@@ -936,14 +936,28 @@ class TestNachreviewDf44275:
                         "cached_input_tokens": 40,
                         "output_tokens": 15,
                         "total_tokens": 115,
-                    }
+                    },
+                    # Eigener kumulativer Beleg macht dieses Ereignis
+                    # direkt bestaetigt; dieser Test prueft session_id/
+                    # cli_version-Uebernahme, nicht Bestaetigungsstatus.
+                    "total_token_usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 40,
+                        "output_tokens": 15,
+                        "total_tokens": 115,
+                    },
                 },
             },
         )
         path.write_text(meta + "\n" + usage_line + "\n")
         scan = read_codex_rollout_usage(path)
-        assert len(scan.events) == 1
-        event = scan.events[0]
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        event = per_request[0]
         assert event.session_id == "sess-abc"
         assert event.cli_version == "0.154.0"
         assert event.status is UsageStatus.MEASURED
@@ -1185,3 +1199,146 @@ class TestNachreview3ac1ebe:
         ]
         assert len(cumulative) == 1
         assert cumulative[0].status is UsageStatus.UNAVAILABLE
+
+
+class TestNachreviewAf4cf95:
+    """Regressionstests zu den zwei Befunden aus dem Nachreview von
+    af4cf95 (siehe Beads ki-dev-ablauf-wu0.2, fuenfter Nachreview)."""
+
+    def test_missing_then_confirmed_summary_merges_not_doubles(
+        self, tmp_path
+    ):
+        """[P2] Summe 115/Request 115, dann Summe fehlt/Request 11,
+        dann Summe 126/Request erneut 11: die dritte Zeile bestaetigt
+        per eigenem kumulativem Beleg (126 = 115 + 11) dieselbe
+        Beobachtung wie die zweite -- das darf nicht als dritter,
+        zusaetzlicher Request gezaehlt werden (115 + 11, nicht 137)."""
+
+        def line(ts, total=None, last=None):
+            info = {}
+            if total is not None:
+                info["total_token_usage"] = {
+                    "input_tokens": total,
+                    "cached_input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": total,
+                }
+            if last is not None:
+                info["last_token_usage"] = {
+                    "input_tokens": last,
+                    "cached_input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": last,
+                }
+            return _rollout_line(
+                timestamp=ts,
+                payload={"type": "token_count", "info": info},
+            )
+
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            line("2026-04-04T09:00:00.000Z", total=115, last=115)
+            + "\n"
+            + line("2026-04-04T09:05:00.000Z", last=11)
+            + "\n"
+            + line("2026-04-04T09:10:00.000Z", total=126, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 11]
+        assert per_request[1].status is UsageStatus.MEASURED
+        cumulative = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert cumulative[0].tokens.total == 126
+
+    def test_own_summary_after_reset_is_kept_as_separate_request(
+        self, tmp_path
+    ):
+        """[P2] Summen 115 -> 11 -> 22 mit je eigenem Requestwert 115,
+        11, 11: jedes Ereignis traegt seinen EIGENEN kumulativen Beleg
+        (auch der Reset auf 11 selbst), beide Requests nach dem ersten
+        muessen erhalten bleiben -- nicht nur "115, 11", sondern
+        "115, 11, 11" (137 gesamt)."""
+
+        def line(ts, total, last):
+            return _rollout_line(
+                timestamp=ts,
+                payload={
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": total,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": total,
+                        },
+                        "last_token_usage": {
+                            "input_tokens": last,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": last,
+                        },
+                    },
+                },
+            )
+
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            line("2026-04-04T09:00:00.000Z", 115, 115)
+            + "\n"
+            + line("2026-04-04T09:05:00.000Z", 11, 11)
+            + "\n"
+            + line("2026-04-04T09:10:00.000Z", 22, 11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 11, 11]
+        assert all(
+            e.status is UsageStatus.MEASURED for e in per_request
+        )
+
+    def test_unconfirmed_pending_at_end_of_file_is_partial(
+        self, tmp_path
+    ):
+        """Gegenprobe: bleibt ein last_token_usage bis Dateiende ohne
+        jeden kumulativen Beleg, wird es als PARTIAL abgeschlossen,
+        nicht verworfen und nicht als MEASURED behauptet."""
+        info = {
+            "last_token_usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 100,
+            }
+        }
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            _rollout_line(
+                timestamp="2026-04-04T09:00:00.000Z",
+                payload={"type": "token_count", "info": info},
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        assert len(scan.events) == 1
+        assert scan.events[0].status is UsageStatus.PARTIAL
+        assert scan.events[0].tokens.total == 100
