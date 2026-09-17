@@ -168,6 +168,8 @@ konfigurierbare Standardgrenzen:
 | `safety_limits.max_claude_cost_usd` | 3 | Summe der von Claude gemeldeten API-Kostenwerte |
 | `safety_limits.max_failed_corrections` | 2 | Nach zwei abgelehnten Korrekturen kein weiterer automatischer Bau |
 | `safety_limits.max_stagnant_changes` | 3 | Bei so vielen CHANGES in Folge an derselben `requirement_ref` (die aktuelle Runde eingeschlossen) kein weiterer automatischer Bau |
+| `safety_limits.min_remaining_percent` | 10 | Zentrale, rollenunabhaengige Schutzreserve des Fuenfstundenkontingents (siehe unten); betrifft nicht `max_claude_cost_usd` (bezahlte Zusatznutzung) |
+| `budget.max_usage_delta_percentage_points` je Rolle | 20 | Aufgaben-Delta-Budget des Fuenfstundenkontingents (siehe unten) |
 | `build.budget.max_turns` / `review.budget.max_turns` | 12 | Native Claude-Turn-Grenze pro Aufruf |
 | `budget.max_budget_usd` je Rolle | 1 | Native Claude-Kostengrenze pro Aufruf |
 | `budget.max_context_tokens` je Rolle | 80.000 | Kontextvorpruefung durch die Orchestrierung vor jedem Bau-/Review-Aufruf und bei Resume (siehe unten) |
@@ -180,14 +182,37 @@ Beispiel fuer eine bewusst kleinere Schranke auf oberster Konfigurationsebene:
   "max_agent_calls": 4,
   "max_total_tokens": 500000,
   "max_claude_cost_usd": 2,
-  "max_failed_corrections": 1
+  "max_failed_corrections": 1,
+  "min_remaining_percent": 10
 }
 ```
 
-Die Rolle kann ein `budget`-Objekt mit den vier oben genannten Feldern
-enthalten. Nicht angegebene Werte erhalten die Standardwerte; wirksame
-Rollenbudgets und Laufgrenzen werden beim Start im Manifest gespeichert.
-Diese Werte sind Betriebsvorgaben, keine berechneten Abo-Prozentgrenzen.
+Die Rolle kann ein `budget`-Objekt mit den fuenf oben genannten Feldern
+(inklusive `max_usage_delta_percentage_points`) enthalten. Nicht
+angegebene Werte erhalten die Standardwerte; wirksame Rollenbudgets und
+Laufgrenzen werden beim Start im Manifest gespeichert. `safety_limits`
+ist ein vollstaendiger Satz: ein Altlauf, dessen gespeichertes Manifest
+`min_remaining_percent` noch nicht enthaelt, startet nicht automatisch
+neu (siehe `CallLedger.limits`).
+
+`max_agent_calls`, `max_total_tokens`, `max_claude_cost_usd`,
+`max_failed_corrections` und `max_stagnant_changes` sind konservative
+Betriebsvorgaben, keine aus dem Abo abgeleiteten Werte -- ein CLI-Aufruf
+kann viele interne Modellanfragen enthalten, und diese Zaehler bilden
+weder das verbleibende Kontokontingent noch dessen Anteil ab. Ein
+frueherer Lauf hat trotz greifender Zaehler das tatsaechliche
+Fuenfstundenkontingent erreicht (`rate_limit`/HTTP 429/`five_hour`,
+siehe [uar-2-02-verbrauch.md](ki-dev/uar-2-02-verbrauch.md)).
+`max_usage_delta_percentage_points` und `min_remaining_percent` sind
+deshalb keine weiteren Tokenzaehler, sondern echte, vom Executor
+gemeldete Prozentgroessen des Kontokontingents; siehe
+"Fuenfstundenkontingent-Vorpruefung" unten. Eine erste Fassung dieser
+Pruefung mass einen absoluten Kontostand-Schwellenwert
+(`max_five_hour_used_percent`, ki-dev-ablauf-hju); das war
+inkonsistent mit jedem anderen Feld dieser Tabelle (alle sind
+kumulative Budgets ab Laufstart, keine Kontostand-Momentaufnahmen) und
+wurde durch das unten beschriebene Delta-/Reserve-Paar ersetzt
+(ki-dev-ablauf-dqv).
 
 ### Kontextvorpruefung
 
@@ -217,6 +242,112 @@ einen Sitzungswechsel, und automatische Sitzungsrotation ist nicht
 Teil dieses Mechanismus (siehe "Kompakte Sitzungsuebergabe" oben).
 Resume prueft den dann aktuellen Messwert erneut, nicht den
 urspruenglichen.
+
+### Fuenfstundenkontingent-Vorpruefung
+
+Vor jedem Bau-/Review-Aufruf und bei Resume misst der zustaendige
+Adapter (`Executor.measure_quota(session_id)`) den zuletzt bekannten
+Verbrauchsanteil des rollierenden Fuenfstundenfensters des
+Kontokontingents; **Freigabe, Halt und Persistenz entscheidet
+ausschliesslich die Orchestrierung** (`loop_runtime._quota_guard`),
+nie eine Selbsteinschaetzung des Agenten. Ein Adapter liefert nur den
+Messwert.
+
+Zwei unabhaengige, gemeinsam ausgegebene Pausengruende (keine
+Kurzschluss-Auswertung -- eine erreichte Grenze verdeckt nicht, dass
+auch die andere greift, `loop_runtime._call_guards`):
+
+1. **Aufgaben-Delta-Budget** (`budget.max_usage_delta_percentage_points`,
+   je Rolle): wie viele Prozentpunkte das beobachtete, kontoweite
+   Kontingent seit der Basislinie dieser Rolle im aktuellen
+   Fuenfstundenfenster gewachsen ist. Ein konservatives Pausesignal,
+   keine exakte Zurechnung -- paralleler Verbrauch derselben Rolle
+   *und* anderer Sitzungen desselben Kontos zaehlt mit (das
+   Kontingent ist kontoweit, siehe unten).
+2. **Zentrale Schutzreserve** (`safety_limits.min_remaining_percent`):
+   haelt an, sobald fuer diese Rolle kaum noch Kontingent uebrig ist,
+   unabhaengig vom Aufgabenbudget.
+
+Beides ist eine Pause-Schwelle vor dem naechsten Aufruf, keine harte
+Echtzeitgrenze: ein einzelner Aufruf kann sie ueberschreiten, da er
+nicht unterbrochen werden kann.
+
+Anders als bei der Kontextvorpruefung gibt es hier keinen Status, der
+einen Aufruf freigibt, ausser einem tatsaechlichen Messwert -- fuer ein
+Kontokontingent gibt es keine sichere Annahme "kein Nachweis = ok":
+
+| Herkunft (`QuotaStatus`) | Bedeutung | Wirkung |
+| --- | --- | --- |
+| `measured` | echter, vom Executor gemeldeter Prozentwert | Delta- und Reserve-Pruefung wie oben |
+| `unsupported` | dieser Adapter liefert (noch) keinen verbrauchsfreien, nicht-interaktiven Nachweis (aktuell `claude-cli`, siehe [cli-adapters.md](cli-adapters.md)) | haelt an, als eigene Ursache "Messwert fehlt" gemeldet -- kein unbedenklicher Adaptergrenzfall wie bei der Kontextvorpruefung |
+| `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (z. B. Codex-Rollout fehlt/mehrdeutig oder Messwert abgelaufen) | haelt an, ebenfalls als "Messwert fehlt" gemeldet, nie vermischt mit "Budget/Reserve erreicht" |
+
+`codex-cli` liest dazu verbrauchsfrei die lokale Rollout-Ablage unter
+`~/.codex/sessions/JJJJ/MM/TT/rollout-*-<session_id>.jsonl` und nimmt
+das `token_count`-Ereignis mit dem 5h-Fenster (`window_minutes == 300`).
+Das Kontingent ist **kontoweit, nicht sitzungsgebunden**: die eigene
+Sitzung einer Rolle kann laenger nicht mit der API gesprochen haben,
+waehrend eine andere Sitzung desselben Kontos es zwischenzeitlich
+weiter verbraucht hat -- ein noch nicht abgelaufenes Fenster beweist
+keinen aktuellen Kontostand. Gemessen wird deshalb das zeitlich
+juengste `token_count`-Ereignis ueber ALLE lokalen Rollouts, nicht nur
+die der eigenen Sitzung; `session_id` bleibt eine Gueltigkeitspruefung,
+nicht die Messquelle (`metering.codex_quota`). Die Suche liest jede
+Rollout-Datei vollstaendig, ohne Fruehabbruch nach Datei-
+Aenderungszeit: eine Beziehung zwischen der Aenderungszeit einer Datei
+und dem in ihrem Inhalt stehenden Ereignis-Zeitstempel ist technisch
+nicht garantiert (Kopien, Wiederherstellung, verzoegertes Schreiben)
+und traegt deshalb keine Suchbegrenzung, solange eine solche Beziehung
+nicht nachweisbar gilt. Der Vergleich laeuft -- sowohl zwischen
+Dateien als auch innerhalb einer einzelnen Datei -- ueber geparste
+Zeitwerte, nicht ueber die Zeitstempel-Strings selbst
+(unterschiedliche Nachkommastellen-Laenge sortiert als Text falsch,
+`...:00Z` nach `...:00.500Z`, obwohl Ersteres frueher ist) und nicht
+ueber die physische Zeilenreihenfolge (eine chronologisch sortierte
+Zeilenfolge innerhalb einer Rollout-Datei ist technisch nicht
+garantiert).
+
+Drei zusaetzliche Bedingungen, bevor ein Messwert als Nachweis gilt:
+ein Messwert, dessen Fenster laut `resets_at` bereits zurueckgesetzt
+ist, gilt nicht als `0`, sondern als `unavailable`; ein Messwert mit
+einem Ereignis-Zeitstempel merklich nach der aktuellen Zeit (jenseits
+einer kleinen Uhrtoleranz, `CLOCK_SKEW_TOLERANCE_S`) gilt als
+unplausibel, nicht als "besonders frisch"; und ein Messwert gilt nur
+bis `MAX_MEASUREMENT_AGE_S` (Standard 1800 s) nach seinem eigenen
+Ereignis-Zeitstempel als hinreichend aktuell -- ein noch nicht
+abgelaufenes Fenster allein beweist keine Aktualitaet, ein Messwert
+kann Stunden alt und trotzdem technisch "im Fenster" sein. Diese
+Altersschwelle begrenzt Unsicherheit, garantiert aber keinen
+tatsaechlich aktuellen Kontostand; ohne live abfragbaren Kontostand
+(siehe oben, `claude-cli`) ist mehr lokal nicht beweisbar. Die
+Kontozuordnung der durchsuchten lokalen Ablage (`CODEX_HOME` bildet
+durchgehend genau ein Konto ab) ist eine dokumentierte, technisch
+nicht pruefbare Betriebsvoraussetzung -- weder `session_meta` noch
+`rate_limits` tragen ein Kontomerkmal; die Altersschwelle mindert
+dieses Risiko zusaetzlich, da nur kuerzlich aktive Daten ueberhaupt
+als Nachweis akzeptiert werden.
+
+Die Basislinie fuer das Delta-Budget ist rollengebunden, liegt unter
+`<run>/quota/<rolle>.json` und ueberlebt Resume unveraendert
+(`loop_safety.QuotaBaseline`). Ein echter Fensterrollover (`resets_at`
+steigt gegenueber der gespeicherten Basislinie) setzt sie bewusst neu
+auf `0` -- das Kontingent hat sich real erneuert, ein neues Budget pro
+Fenster ist beabsichtigt, kein kumulatives Aufgabenbudget ueber
+Fenstergrenzen hinweg. Ein `resets_at`, das gegenueber der Basislinie
+*zurueckgeht*, ist dagegen kein legitimer neuer Fensterstand, sondern
+ein widerspruechlicher Messwert und wird als eigener Pausengrund
+gemeldet, nicht als stiller Reset uebernommen.
+
+`claude-cli` hat aktuell keinen verifizierten, verbrauchsfreien,
+nicht-interaktiven Messweg: Claude Code liefert den Prozentwert nur an
+ein interaktives `statusLine`-Skript und `/usage`; die lokale
+Sitzungsablage traegt das Feld auch bei Erfolg nicht, sondern nur
+reaktiv im Fehlerfall (`quotaLimits` bei HTTP 429) -- zu spaet fuer
+eine Vorabpruefung. Ein Bau- oder Review-Lauf mit `claude-cli` haelt
+deshalb bereits vor dem ersten Aufruf an, bis ein solcher Messweg
+existiert und getestet ist. **Ein `claude-cli`-Lauf gilt bis dahin
+nicht als gegen das Fuenfstundenkontingent abgesichert**, unabhaengig
+von `max_total_tokens` (ki-dev-ablauf-hju, ueberarbeitet in dqv).
 
 `calls/` enthaelt unveraenderliche Start- und Ergebnisbelege mit
 Verbrauch, Dauer und Fehlergrund. Die Reservierung vor einem Aufruf

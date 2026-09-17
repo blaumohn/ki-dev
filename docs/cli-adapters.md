@@ -15,18 +15,22 @@ Typen und keinerlei Claude-/Codex-spezifische Argumente.
 | Typ | Zweck |
 | --- | --- |
 | `TurnRequest` | Eingabe: `session_id`, `message`, `model`, `effort`, optional `budget` |
-| `TurnBudget` | Interne Claude-Turn-/Kosten-/Kontextgrenzen und gemeinsamer Timeout |
+| `TurnBudget` | Interne Claude-Turn-/Kosten-/Kontextgrenzen, gemeinsamer Timeout und `max_usage_delta_percentage_points` (Aufgaben-Delta-Budget des 5h-Kontingents, siehe unten) |
 | `Effort` | `LOW` / `MEDIUM` / `HIGH` |
 | `TurnResult` | Ausgabe: `status`, `exit_code`, `stdout`, `stderr`, `argv`, `duration_s`, `error`, optional `usage` |
 | `TurnStatus` | `OK` / `NONZERO_EXIT` / `TIMEOUT` / `START_ERROR` |
 | `ContextMeasurement` | Sitzungsbezogener Kontextmesswert: `status` (`ContextStatus`), optional `tokens`, `detail` |
 | `ContextStatus` | `MEASURED` / `UNSUPPORTED` / `UNAVAILABLE` |
-| `Executor` | Protokoll mit `name`, `send_turn(request) -> TurnResult` und `measure_context(session_id) -> ContextMeasurement` |
+| `QuotaMeasurement` | Kontobezogener 5h-Kontingentmesswert: `status` (`QuotaStatus`), optional `used_percent`, `resets_at`, `detail` |
+| `QuotaStatus` | `MEASURED` / `UNSUPPORTED` / `UNAVAILABLE` -- anders als `ContextStatus` blockieren hier alle drei Nicht-"unter Grenze"-Faelle |
+| `Executor` | Protokoll mit `name`, `send_turn(request) -> TurnResult`, `measure_context(session_id) -> ContextMeasurement` und `measure_quota(session_id) -> QuotaMeasurement` |
 
-Ein Adapter liefert mit `measure_context` nur den Messwert. Freigabe,
-Halt und Persistenz einer erreichten Kontextgrenze entscheidet
-ausschliesslich die Orchestrierung (`loop_runtime._context_guard`,
-siehe [loop-runtime.de.md](loop-runtime.de.md#kontextvorpruefung)),
+Ein Adapter liefert mit `measure_context`/`measure_quota` nur den
+Messwert. Freigabe, Halt und Persistenz einer erreichten Kontext- oder
+Kontingentgrenze entscheidet ausschliesslich die Orchestrierung
+(`loop_runtime._context_guard`/`_quota_guard`, siehe
+[loop-runtime.de.md](loop-runtime.de.md#kontextvorpruefung) und
+[loop-runtime.de.md](loop-runtime.de.md#fuenfstundenkontingent-vorpruefung)),
 nie der Adapter selbst und nie eine Selbsteinschaetzung des Agenten.
 
 `TurnStatus` ist disjunkt: Erfolg, Nicht-null-Exit, Timeout und
@@ -121,6 +125,19 @@ ob das den naechsten Aufruf verhindert, entscheidet ausschliesslich
 die Orchestrierung (siehe oben), nicht dieser Adapter. Das Lesen
 selbst startet keinen Prozess und ist verbrauchsfrei.
 
+`measure_quota(session_id)` liefert unveraendert den `UNSUPPORTED`-
+Standard aus `CliAdapter`: Claude Code meldet den 5h-Kontingentanteil
+(`rate_limits.five_hour.used_percentage`) nachweislich nur an ein
+interaktives `statusLine`-Skript und `/usage` (Claude-Code-Changelog
+2.1.80); die lokale Sitzungsablage traegt das Feld auch bei Erfolg
+nicht, sondern nur reaktiv im Fehlerfall (`quotaLimits` bei HTTP 429,
+also erst nachdem das Kontingent bereits erreicht ist). Ohne
+verifizierten, verbrauchsfreien, nicht-interaktiven Messweg bleibt
+dieser Adapter bei `UNSUPPORTED`, statt eine ungeprüfte Messquelle zu
+erfinden. Anders als bei `measure_context` blockiert das hier jeden
+weiteren Aufruf (siehe
+[loop-runtime.de.md](loop-runtime.de.md#fuenfstundenkontingent-vorpruefung)).
+
 Das JSON-Resultat liefert Antworttext und `usage` getrennt. Auch bei
 Exitcode 0 gelten `is_error`, ein Fehler-`subtype` oder
 `permission_denials` als Nicht-Erfolg. Fehlende Pflichtdaten werden
@@ -172,6 +189,48 @@ keinen Aufruf (siehe
 [loop-runtime.de.md](loop-runtime.de.md#kontextvorpruefung)) --
 anders als `UNAVAILABLE`, das eine vorgesehene, aber fehlgeschlagene
 Messung waere.
+
+`measure_quota` liest dagegen verbrauchsfrei die lokale Rollout-Ablage
+unter `~/.codex/sessions/JJJJ/MM/TT/rollout-*-<session_id>.jsonl`
+(`metering.codex_quota`) -- nachgewiesen fuer `codex exec`
+(Sitzungsherkunft `codex_exec` im `session_meta`-Ereignis) ebenso wie
+fuer interaktive Sitzungen. Codex schreibt dort periodisch ein
+`token_count`-Ereignis mit einer `rate_limits`-Momentaufnahme
+(`primary`/`secondary`, je `used_percent`/`window_minutes`/
+`resets_at`); das 5h-Fenster ist das mit `window_minutes == 300`, nicht
+positional `primary`. Das Kontingent ist kontoweit, nicht
+sitzungsgebunden: gemessen wird das zeitlich juengste
+`token_count`-Ereignis ueber alle lokalen Rollouts, nicht nur die der
+uebergebenen `session_id` -- deren eigene Rollout-Datei dient nur als
+Gueltigkeitspruefung (genau eine bekannte Sitzung), nicht als
+Messquelle, da eine laenger inaktive eigene Sitzung sonst einen zu
+niedrigen, veralteten Wert liefern wuerde. Die Suche (`metering.
+_freshest_account_window`) liest jede Rollout-Datei vollstaendig, ohne
+Fruehabbruch nach Datei-Aenderungszeit: eine Beziehung zwischen der
+Aenderungszeit einer Datei und dem in ihrem Inhalt stehenden
+Ereignis-Zeitstempel ist technisch nicht garantiert (Kopien,
+Wiederherstellung, verzoegertes Schreiben) und traegt deshalb keine
+Suchbegrenzung. Der Vergleich laeuft -- zwischen Dateien und innerhalb
+einer Datei -- ueber geparste Zeitwerte, nicht ueber die Zeitstempel-
+Strings (unterschiedliche Nachkommastellen-Laenge sortiert als Text
+falsch) und nicht ueber die physische Zeilenreihenfolge (eine
+chronologisch sortierte Zeilenfolge ist technisch nicht garantiert).
+
+Drei weitere Bedingungen, bevor ein Messwert als Nachweis gilt: ein
+`resets_at` in der Vergangenheit ergibt `UNAVAILABLE` statt eines
+veralteten Werts als `0`; ein Ereignis-Zeitstempel merklich in der
+Zukunft (jenseits `CLOCK_SKEW_TOLERANCE_S`) gilt als unplausibel,
+nicht als "besonders frisch"; und der Messwert muss juenger als
+`MAX_MEASUREMENT_AGE_S` (Standard 1800 s) sein -- ein noch nicht
+abgelaufenes Fenster allein beweist keine Aktualitaet. Die
+Kontozuordnung der durchsuchten Ablage (`CODEX_HOME` bildet
+durchgehend ein Konto ab) ist eine dokumentierte, technisch nicht
+pruefbare Betriebsvoraussetzung; weder `session_meta` noch
+`rate_limits` tragen ein Kontomerkmal, die Altersschwelle mindert das
+Risiko zusaetzlich. Anders als bei `measure_context` blockiert ein
+fehlender, veralteter oder zu alter Nachweis hier den naechsten Aufruf
+(siehe
+[loop-runtime.de.md](loop-runtime.de.md#fuenfstundenkontingent-vorpruefung)).
 
 ## Effort im Turn-Vertrag
 

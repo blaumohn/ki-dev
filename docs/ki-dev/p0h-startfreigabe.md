@@ -57,6 +57,25 @@ Ueberschreibung im Manifest persistieren wuerde):
 }
 ```
 
+Nachtrag 2026-09-17 (`ki-dev-ablauf-hju`, nach diesem Stand): ein
+weiteres Feld `max_five_hour_used_percent` (Standard 80.0) ist
+hinzugekommen; ein Altlauf-Manifest ohne dieses Feld startet seither
+nicht mehr automatisch neu (siehe
+[loop-runtime.de.md](../loop-runtime.de.md#verbrauchsschutz)). Ein
+`claude-cli`-Bau-/Review-Lauf ist davon zusaetzlich betroffen: er haelt
+vor dem ersten Aufruf an, bis ein verifizierter Kontingent-Messweg fuer
+Claude existiert.
+
+Zweiter Nachtrag 2026-09-17 (`ki-dev-ablauf-dqv`, ersetzt den
+vorigen Nachtrag): `max_five_hour_used_percent` (absoluter
+Kontostand-Schwellenwert) existiert nicht mehr. An seiner Stelle
+stehen `safety_limits.min_remaining_percent` (zentrale
+Schutzreserve, Standard 10.0) und, je Rolle,
+`budget.max_usage_delta_percentage_points` (Aufgaben-Delta-Budget,
+Standard 20.0) -- siehe
+[loop-runtime.de.md](../loop-runtime.de.md#fuenfstundenkontingent-vorpruefung).
+Die `claude-cli`-Folge aus dem ersten Nachtrag gilt unveraendert.
+
 Effektive Rollen-Budgets (`build`/`review`, gleicher Standard fuer beide):
 
 ```json
