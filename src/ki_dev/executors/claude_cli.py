@@ -13,6 +13,8 @@ from .base import CliAdapter
 from .contract import (
     ContextMeasurement,
     ContextStatus,
+    QuotaMeasurement,
+    QuotaStatus,
     TurnRequest,
     TurnResult,
 )
@@ -49,6 +51,30 @@ class ClaudeCliAdapter(CliAdapter):
                 ContextStatus.UNAVAILABLE, detail=str(exc)
             )
         return ContextMeasurement(ContextStatus.MEASURED, tokens=tokens)
+
+    def measure_quota(self, session_id: str) -> QuotaMeasurement:
+        """Kein verbrauchsfreier, nicht-interaktiver Nachweis bekannt.
+
+        Claude Code liefert ``rate_limits.five_hour.used_percentage``
+        nachweislich nur an ein interaktives ``statusLine``-Skript und
+        ``/usage`` (Claude-Code-Changelog 2.1.80); die lokale
+        Sitzungsablage (``~/.claude/projects/*/<session_id>.jsonl``)
+        traegt dieses Feld auch bei Erfolg nicht, sondern nur reaktiv
+        im Fehlerfall (``quotaLimits`` bei HTTP 429) -- zu spaet fuer
+        eine Vorabpruefung. Solange kein verbrauchsfreier,
+        nicht-interaktiver Messweg verifiziert ist, bleibt dieser
+        Executor ``UNSUPPORTED``; anders als bei ``measure_context``
+        blockiert das hier jeden weiteren Aufruf, siehe
+        ``QuotaStatus`` (ki-dev-ablauf-hju).
+        """
+        del session_id
+        return QuotaMeasurement(
+            QuotaStatus.UNSUPPORTED,
+            detail=(
+                "claude-cli liefert keinen verbrauchsfreien, "
+                "nicht-interaktiven 5h-Kontingentmesswert"
+            ),
+        )
 
     def send_turn(self, request: TurnRequest) -> TurnResult:
         result = super().send_turn(request)

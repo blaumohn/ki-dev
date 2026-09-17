@@ -11,6 +11,8 @@ from ki_dev.executors import Effort
 from ki_dev.executors.contract import (
     ContextMeasurement,
     ContextStatus,
+    QuotaMeasurement,
+    QuotaStatus,
     TurnResult,
     TurnStatus,
 )
@@ -28,13 +30,14 @@ from ki_dev.loop_runtime import (
 )
 from ki_dev.loop_safety import (
     CallLedger,
+    QuotaBaseline,
     SafetyLimits,
     SafetyStop,
     stagnation_reason,
 )
 from ki_dev.machine import Limits
 from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.run_store import RunStore
+from ki_dev.run_store import RunStore, RunStoreError
 from tests.test_loop_runtime import (
     FakeBuilder,
     FakeReviewer,
@@ -66,6 +69,14 @@ class Executor:
     def measure_context(self, session_id):
         del session_id
         return ContextMeasurement(ContextStatus.UNSUPPORTED)
+
+    def measure_quota(self, session_id):
+        del session_id
+        return QuotaMeasurement(
+            QuotaStatus.MEASURED,
+            used_percent=0.0,
+            resets_at=9_999_999_999,
+        )
 
 
 def runtime(tmp_path, builder, reviewer, **kwargs):
@@ -446,6 +457,7 @@ def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
             "max_budget_usd": 1.0,
             "max_context_tokens": 80_000,
             "timeout_s": 180.0,
+            "max_usage_delta_percentage_points": 20.0,
         }
 
 
@@ -469,3 +481,68 @@ def test_role_configuration_cannot_disable_bounds(override):
                 **override,
             }
         )
+
+
+def test_quota_baseline_first_measurement_returns_zero_delta(tmp_path):
+    store = RunStore(tmp_path, "run-x")
+    baseline = QuotaBaseline(store)
+    assert (
+        baseline.delta_percent("build", 40.0, resets_at=1000) == 0.0
+    )
+
+
+def test_quota_baseline_same_window_returns_growth(tmp_path):
+    store = RunStore(tmp_path, "run-x")
+    baseline = QuotaBaseline(store)
+    baseline.delta_percent("build", 40.0, resets_at=1000)
+    assert baseline.delta_percent("build", 55.0, resets_at=1000) == 15.0
+
+
+def test_quota_baseline_window_rollover_resets_to_zero(tmp_path):
+    """Ein anderes ``resets_at`` heisst: das Kontingent hat sich real
+    erneuert. Ohne Rollover-Erkennung wuerde ein niedriger neuer
+    Messwert gegen eine alte, hohe Basislinie faelschlich als grosser
+    negativer oder -- im umgekehrten Fall wie hier -- ein frischer,
+    tatsaechlich kleiner Verbrauch faelschlich als grosses Delta
+    gegen eine alte, sehr niedrige Basislinie erscheinen."""
+    store = RunStore(tmp_path, "run-x")
+    baseline = QuotaBaseline(store)
+    baseline.delta_percent("build", 1.0, resets_at=1000)
+    # Fenster wechselt (anderes resets_at); ohne Reset waere das
+    # Delta 15.0 - 1.0 = 14.0 statt der korrekten 0.0 fuer ein
+    # frisches Fenster.
+    assert baseline.delta_percent("build", 15.0, resets_at=2000) == 0.0
+
+
+def test_quota_baseline_persists_across_new_instance_same_store(
+    tmp_path,
+):
+    """Die Basislinie ueberlebt Resume/Prozessneustart unveraendert,
+    solange das Fenster dasselbe bleibt (kein stiller Reset)."""
+    store = RunStore(tmp_path, "run-x")
+    QuotaBaseline(store).delta_percent("build", 40.0, resets_at=1000)
+    fresh = QuotaBaseline(RunStore(tmp_path, "run-x"))
+    assert fresh.delta_percent("build", 48.0, resets_at=1000) == 8.0
+
+
+def test_quota_baseline_is_independent_per_role(tmp_path):
+    store = RunStore(tmp_path, "run-x")
+    baseline = QuotaBaseline(store)
+    baseline.delta_percent("build", 10.0, resets_at=1000)
+    baseline.delta_percent("review", 70.0, resets_at=1000)
+    assert baseline.delta_percent("build", 12.0, resets_at=1000) == 2.0
+    assert (
+        baseline.delta_percent("review", 74.0, resets_at=1000) == 4.0
+    )
+
+
+def test_quota_baseline_rejects_resets_at_regression(tmp_path):
+    """Ein resets_at UNTER der gespeicherten Basislinie ist kein
+    legitimer neuer Fensterstand (ein echter Rollover erhoeht
+    resets_at immer), sondern ein widerspruechlicher Messwert --
+    er wird gemeldet, nicht als stiller Reset uebernommen."""
+    store = RunStore(tmp_path, "run-x")
+    baseline = QuotaBaseline(store)
+    baseline.delta_percent("build", 50.0, resets_at=2000)
+    with pytest.raises(RunStoreError, match="widerspruechlich"):
+        baseline.delta_percent("build", 5.0, resets_at=1000)

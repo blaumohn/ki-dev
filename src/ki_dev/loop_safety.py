@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import math
+import os
+import tempfile
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -13,11 +16,24 @@ from ki_dev.run_store import RunStore, RunStoreError
 
 @dataclass(frozen=True)
 class SafetyLimits:
+    """Laufweite Verbrauchsgrenzen.
+
+    ``min_remaining_percent`` ist eine eigenstaendige, vom
+    Aufgabenbudget unabhaengige Schutzreserve des Kontokontingents
+    (Schwellenwert, nicht Messwert): sie haelt an, sobald fuer eine
+    Rolle noch so wenig Fuenfstundenkontingent uebrig ist, unabhaengig
+    davon, wie viel diese Aufgabe selbst schon verbraucht hat. Das
+    davon getrennte Aufgaben-Delta-Budget lebt pro Rolle in
+    ``TurnBudget.max_usage_delta_percentage_points``
+    (ki-dev-ablauf-dqv).
+    """
+
     max_agent_calls: int = 6
     max_total_tokens: int = 1_000_000
     max_claude_cost_usd: float = 3.0
     max_failed_corrections: int = 2
     max_stagnant_changes: int = 3
+    min_remaining_percent: float = 10.0
 
     def __post_init__(self) -> None:
         for name in (
@@ -41,6 +57,15 @@ class SafetyLimits:
         ):
             raise ValueError(
                 "max_claude_cost_usd muss positiv und endlich sein"
+            )
+        remaining = self.min_remaining_percent
+        if (
+            type(remaining) not in (int, float)
+            or not math.isfinite(remaining)
+            or not (0 <= remaining < 100)
+        ):
+            raise ValueError(
+                "min_remaining_percent muss in [0, 100) liegen"
             )
 
 
@@ -206,6 +231,97 @@ class CallLedger:
             raise RunStoreError("ungueltiger Aufrufbezug")
         path = self.store.run_dir / "calls" / f"{call_id}-{suffix}.json"
         self.store._write_once(path, value)
+
+
+class QuotaBaseline:
+    """Rollengebundene Basislinie fuer das Aufgaben-Delta-Budget
+    (ki-dev-ablauf-dqv).
+
+    Anders als ``CallLedger`` ist dieser Zustand bewusst veraenderlich:
+    eine neue Fensterrunde (anderes ``resets_at``) ersetzt die alte
+    Basislinie, statt sie wie einen unveraenderlichen Nachweis
+    abzulehnen -- das Kontingent hat sich real erneuert, ein neues
+    Delta-Budget pro Fenster ist beabsichtigt, kein Bug. Die Datei
+    liegt unter ``<run>/quota/<role>.json``, an ``run_dir`` und damit
+    an genau diese Aufgabe gebunden (ein ``run_id`` steht durchgehend
+    fuer eine Aufgabe); sie ueberlebt Resume und Prozessneustart
+    unveraendert, solange das Fenster dasselbe bleibt.
+    """
+
+    def __init__(self, store: RunStore) -> None:
+        self.store = store
+
+    def delta_percent(
+        self, role: str, used_percent: float, resets_at: int
+    ) -> float:
+        """Beobachtetes kontoweites Wachstum seit Baseline dieser
+        Rolle; setzt bei erster Messung oder einem echten
+        Fensterrollover neu auf ``0`` zurueck. Konservatives
+        Pausesignal, keine exakte Zurechnung: paralleler fremder
+        Verbrauch auf demselben Konto zaehlt mit.
+
+        Ein echter Rollover erhoeht ``resets_at`` immer (das naechste
+        Fensterende liegt spaeter als das vorige); ein ``resets_at``
+        *unter* der gespeicherten Basislinie ist kein legitimer neuer
+        Fensterstand, sondern ein widerspruechlicher Messwert (z. B.
+        eine veraltete, zwischenzeitlich ueberholte lokale Ablage).
+        Ein solcher Widerspruch wird gemeldet, nicht als stiller Reset
+        uebernommen (Leitlinie 'Fallbacks verdecken keine Fehler',
+        ki-dev-ablauf-dqv-Nachreview)."""
+        if not role or Path(role).name != role:
+            raise ValueError("ungueltige Rollenbezeichnung")
+        directory = self.store.run_dir / "quota"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{role}.json"
+        with (directory / f".{role}.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            baseline = self._read(path)
+            if baseline is None or resets_at > baseline["resets_at"]:
+                self._replace(
+                    path,
+                    {
+                        "used_percent": used_percent,
+                        "resets_at": resets_at,
+                    },
+                )
+                return 0.0
+            if resets_at == baseline["resets_at"]:
+                return used_percent - baseline["used_percent"]
+            raise RunStoreError(
+                f"widerspruechliche Kontingent-Basislinie fuer "
+                f"Rolle {role!r}: resets_at ging von "
+                f"{baseline['resets_at']} auf {resets_at} zurueck"
+            )
+
+    def _read(self, path: Path) -> dict[str, object] | None:
+        if not path.exists():
+            return None
+        baseline = self.store._load_json(path)
+        if (
+            not isinstance(baseline, dict)
+            or type(baseline.get("used_percent")) not in (int, float)
+            or type(baseline.get("resets_at")) is not int
+        ):
+            raise RunStoreError(
+                f"ungueltige Kontingent-Basislinie: {path}"
+            )
+        return baseline
+
+    @staticmethod
+    def _replace(path: Path, value: dict[str, object]) -> None:
+        encoded = json.dumps(value, sort_keys=True).encode() + b"\n"
+        descriptor, temporary = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
 
 
 def stagnation_reason(

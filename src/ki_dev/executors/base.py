@@ -15,6 +15,8 @@ from collections.abc import Callable
 from .contract import (
     ContextMeasurement,
     ContextStatus,
+    QuotaMeasurement,
+    QuotaStatus,
     TurnRequest,
     TurnResult,
 )
@@ -76,3 +78,12 @@ class CliAdapter(ABC):
         sicherer Standard fuer Adapter ohne eigene Messung."""
         del session_id
         return ContextMeasurement(ContextStatus.UNSUPPORTED)
+
+    def measure_quota(self, session_id: str) -> QuotaMeasurement:
+        """Fuenfstundenkontingent-Messwert; ``UNSUPPORTED`` als
+        sicherer Standard fuer Adapter ohne eigenen Nachweis. Anders
+        als bei ``measure_context`` blockiert dieser Standard jeden
+        weiteren Aufruf (siehe ``QuotaStatus``), statt ihn
+        freizugeben."""
+        del session_id
+        return QuotaMeasurement(QuotaStatus.UNSUPPORTED)

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,7 @@ import pytest
 from ki_dev.executors import ClaudeCliAdapter, CodexCliAdapter, Effort
 from ki_dev.executors.contract import (
     ContextStatus,
+    QuotaStatus,
     TurnBudget,
     TurnRequest,
     TurnResult,
@@ -17,6 +20,7 @@ from ki_dev.executors.contract import (
 from ki_dev.executors.metering import (
     claude_context_tokens,
     claude_result,
+    codex_quota,
     codex_result,
 )
 
@@ -191,6 +195,465 @@ def test_codex_measure_context_is_explicitly_unsupported():
     assert measurement.tokens is None
 
 
+def _token_count_line(
+    *,
+    used_percent: float,
+    resets_at: int,
+    window_minutes: int = 300,
+    timestamp: str = "2026-09-17T10:07:56.544Z",
+) -> dict:
+    """Rollout-Zeile im echten, lokal beobachteten Codex-Schema
+    (``originator: codex_exec``, Ereignis ``token_count``) -- keine
+    erfundene Struktur, siehe ki-dev-ablauf-hju."""
+    return {
+        "timestamp": timestamp,
+        "ordinal": 435,
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "total_token_usage": {
+                    "input_tokens": 3_050_487,
+                    "cached_input_tokens": 2_942_592,
+                    "cache_write_input_tokens": 0,
+                    "output_tokens": 11_448,
+                    "reasoning_output_tokens": 3_683,
+                    "total_tokens": 3_061_935,
+                },
+                "last_token_usage": {
+                    "input_tokens": 112_884,
+                    "cached_input_tokens": 112_384,
+                    "cache_write_input_tokens": 0,
+                    "output_tokens": 161,
+                    "reasoning_output_tokens": 58,
+                    "total_tokens": 113_045,
+                },
+                "model_context_window": 258_400,
+            },
+            "rate_limits": {
+                "limit_id": "codex",
+                "limit_name": None,
+                "primary": {
+                    "used_percent": used_percent,
+                    "window_minutes": window_minutes,
+                    "resets_at": resets_at,
+                },
+                "secondary": {
+                    "used_percent": 28.0,
+                    "window_minutes": 10_080,
+                    "resets_at": resets_at + 500_000,
+                },
+                "credits": {
+                    "has_credits": False,
+                    "unlimited": False,
+                    "balance": "0",
+                },
+                "individual_limit": None,
+                "spend_control_reached": None,
+                "plan_type": "plus",
+                "rate_limit_reached_type": None,
+            },
+        },
+    }
+
+
+def _rollout_path(root: Path, session_id: str) -> Path:
+    directory = root / "2026" / "09" / "17"
+    directory.mkdir(parents=True, exist_ok=True)
+    return (
+        directory / f"rollout-2026-09-17T09-10-35-{session_id}.jsonl"
+    )
+
+
+def _rollout(
+    root: Path,
+    session_id: str,
+    *,
+    used_percent: float,
+    resets_at: int,
+    window_minutes: int = 300,
+    timestamp: str = "2026-09-17T10:07:56.544Z",
+) -> None:
+    _rollout_path(root, session_id).write_text(
+        json.dumps(
+            _token_count_line(
+                used_percent=used_percent,
+                resets_at=resets_at,
+                window_minutes=window_minutes,
+                timestamp=timestamp,
+            )
+        )
+        + "\n"
+    )
+
+
+def _rollout_lines(
+    root: Path, session_id: str, lines: list[dict]
+) -> None:
+    """Wie ``_rollout``, aber mehrere Zeilen in physischer
+    Reihenfolge -- fuer Tests, die eine nicht chronologisch sortierte
+    Zeilenfolge innerhalb einer Datei simulieren."""
+    _rollout_path(root, session_id).write_text(
+        "".join(json.dumps(line) + "\n" for line in lines)
+    )
+
+
+def _iso(epoch: float) -> str:
+    return (
+        datetime.fromtimestamp(epoch, tz=UTC)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _epoch(timestamp: str) -> float:
+    return datetime.fromisoformat(
+        timestamp.replace("Z", "+00:00")
+    ).timestamp()
+
+
+def _touch(path: Path, mtime: float) -> None:
+    os.utime(path, (mtime, mtime))
+
+
+def _rollout_without_quota(root: Path, session_id: str) -> Path:
+    """Rollout-Datei ohne token_count-Ereignis -- z.B. eine Sitzung,
+    die noch keine Kontingentmessung geschrieben hat."""
+    directory = root / "2026" / "09" / "17"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"rollout-2026-09-17T09-10-35-{session_id}.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-09-17T09:10:35.000Z",
+                "type": "event_msg",
+                "payload": {"type": "task_started"},
+            }
+        )
+        + "\n"
+    )
+    return path
+
+
+def test_codex_quota_reads_last_five_hour_snapshot(tmp_path):
+    _rollout(
+        tmp_path, "thread-1", used_percent=13.0, resets_at=9_999_999_999
+    )
+    now = _epoch("2026-09-17T10:07:56.544Z") + 10
+    assert codex_quota("thread-1", tmp_path, now=now) == (
+        13.0,
+        9_999_999_999,
+    )
+
+
+def test_codex_quota_rejects_expired_snapshot_instead_of_zero(tmp_path):
+    """Ein Messwert aus einem bereits zurueckgesetzten Fenster ist kein
+    Nachweis fuer den aktuellen Verbrauch (Claude-Changelog 2.1.x kennt
+    denselben Fehlerfall fuer Statuszeilen)."""
+    _rollout(tmp_path, "thread-1", used_percent=13.0, resets_at=100)
+    with pytest.raises(ValueError, match="abgelaufen"):
+        codex_quota("thread-1", tmp_path, now=200)
+
+
+def test_codex_quota_requires_the_five_hour_window_not_position(
+    tmp_path,
+):
+    _rollout(
+        tmp_path,
+        "thread-1",
+        used_percent=13.0,
+        resets_at=9_999_999_999,
+        window_minutes=10_080,
+    )
+    with pytest.raises(ValueError, match="5h-Fenster"):
+        codex_quota("thread-1", tmp_path, now=0)
+
+
+def test_codex_quota_missing_rollout_is_a_stop(tmp_path):
+    with pytest.raises(ValueError, match="fehlt"):
+        codex_quota("thread-1", tmp_path)
+
+
+def test_codex_quota_uses_freshest_snapshot_not_own_stale_session(
+    tmp_path,
+):
+    """Das Kontingent ist kontoweit, nicht sitzungsgebunden: eine
+    Rolle, deren eigene Sitzung laenger nicht mit der API gesprochen
+    hat, darf keinen veralteten, zu niedrigen Wert liefern, waehrend
+    eine andere Sitzung desselben Kontos das Kontingent
+    zwischenzeitlich weiter verbraucht hat."""
+    _rollout(
+        tmp_path,
+        "thread-own",
+        used_percent=10.0,
+        resets_at=9_999_999_999,
+        timestamp="2026-09-17T08:00:00.000Z",
+    )
+    _rollout(
+        tmp_path,
+        "thread-other",
+        used_percent=95.0,
+        resets_at=9_999_999_999,
+        timestamp="2026-09-17T10:00:00.000Z",
+    )
+    now = _epoch("2026-09-17T10:00:00.000Z") + 10
+    assert codex_quota("thread-own", tmp_path, now=now) == (
+        95.0,
+        9_999_999_999,
+    )
+
+
+def test_codex_quota_ignores_own_stale_snapshot_when_it_is_older(
+    tmp_path,
+):
+    """Symmetrischer Fall: die eigene Sitzung ist die juengste --
+    Vorrang bleibt unabhaengig davon, welche Sitzung geprueft wird."""
+    _rollout(
+        tmp_path,
+        "thread-own",
+        used_percent=95.0,
+        resets_at=9_999_999_999,
+        timestamp="2026-09-17T10:00:00.000Z",
+    )
+    _rollout(
+        tmp_path,
+        "thread-other",
+        used_percent=10.0,
+        resets_at=9_999_999_999,
+        timestamp="2026-09-17T08:00:00.000Z",
+    )
+    now = _epoch("2026-09-17T10:00:00.000Z") + 10
+    assert codex_quota("thread-own", tmp_path, now=now) == (
+        95.0,
+        9_999_999_999,
+    )
+
+
+def test_codex_quota_is_not_excluded_by_many_newer_files_without_it(
+    tmp_path,
+):
+    """Ein fester Dateien-Deckel waehlt Kandidaten nach Datei-
+    Aenderungszeit vor, den Treffer aber nach Ereigniszeit aus --
+    zwei verschiedene Kriterien. Viele neuere Dateien OHNE
+    Kontingentmessung duerfen die Datei mit der tatsaechlich
+    einzigen/juengsten Messung nicht aus der Suche verdraengen
+    (ki-dev-ablauf-dqv-Nachreview, lokal reproduziert)."""
+    now = 2_000_000_000.0
+    _rollout(
+        tmp_path,
+        "thread-real",
+        used_percent=95.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 300),
+    )
+    _touch(
+        tmp_path
+        / "2026"
+        / "09"
+        / "17"
+        / "rollout-2026-09-17T09-10-35-thread-real.jsonl",
+        now - 250,
+    )
+    for i in range(25):
+        path = _rollout_without_quota(tmp_path, f"thread-noise-{i}")
+        _touch(path, now - i)
+    assert codex_quota("thread-real", tmp_path, now=now) == (
+        95.0,
+        int(now) + 10_000,
+    )
+
+
+def test_codex_quota_prefers_newer_event_despite_older_mtime(tmp_path):
+    """Ein Ereignis-Zeitstempel im Dateiinhalt muss nicht kleiner als
+    die Datei-Aenderungszeit sein (Kopien, Wiederherstellung,
+    verzoegertes Schreiben); die Suche darf sich darauf nicht
+    verlassen. Datei A hat die juengere mtime, aber den aelteren
+    Messwert; Datei B umgekehrt -- das tatsaechlich juengste Ereignis
+    (Datei B) muss trotzdem gewinnen (ki-dev-ablauf-dqv-Nachreview,
+    lokal reproduziert)."""
+    now = 2_000_000_000.0
+    _rollout(
+        tmp_path,
+        "thread-a",
+        used_percent=10.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 500),
+    )
+    _touch(
+        tmp_path
+        / "2026"
+        / "09"
+        / "17"
+        / "rollout-2026-09-17T09-10-35-thread-a.jsonl",
+        now - 10,
+    )
+    _rollout(
+        tmp_path,
+        "thread-b",
+        used_percent=95.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 50),
+    )
+    _touch(
+        tmp_path
+        / "2026"
+        / "09"
+        / "17"
+        / "rollout-2026-09-17T09-10-35-thread-b.jsonl",
+        now - 400,
+    )
+    assert codex_quota("thread-a", tmp_path, now=now) == (
+        95.0,
+        int(now) + 10_000,
+    )
+
+
+def test_codex_quota_compares_timestamps_as_time_not_text(tmp_path):
+    """'...:00Z' sortiert lexikografisch NACH '...:00.500Z' ('.' <
+    'Z' in ASCII), obwohl Ersteres 500ms frueher ist. Der Vergleich
+    muss ueber geparste Zeitwerte laufen, nicht ueber die Zeitstempel-
+    Strings (ki-dev-ablauf-dqv-Nachreview, lokal reproduziert)."""
+    earlier_ts = "2026-09-17T05:00:00Z"
+    later_ts = "2026-09-17T05:00:00.500Z"
+    assert later_ts < earlier_ts  # als Text irrefuehrend sortiert
+    now = _epoch(later_ts) + 10
+    _rollout(
+        tmp_path,
+        "thread-earlier",
+        used_percent=10.0,
+        resets_at=int(now) + 10_000,
+        timestamp=earlier_ts,
+    )
+    _rollout(
+        tmp_path,
+        "thread-later",
+        used_percent=95.0,
+        resets_at=int(now) + 10_000,
+        timestamp=later_ts,
+    )
+    assert codex_quota("thread-earlier", tmp_path, now=now) == (
+        95.0,
+        int(now) + 10_000,
+    )
+
+
+def test_codex_quota_picks_max_timestamp_within_a_single_file(
+    tmp_path,
+):
+    """Innerhalb einer Datei gewinnt der groesste geparste Zeitwert,
+    nicht die physisch letzte Zeile -- eine chronologisch sortierte
+    Zeilenfolge ist technisch nicht garantiert. Zeile 1 traegt den
+    juengeren Zeitstempel, Zeile 2 (spaeter in der Datei) einen
+    aelteren -- der juengere Wert muss trotzdem gewinnen
+    (ki-dev-ablauf-dqv-Nachreview, lokal reproduziert)."""
+    now = _epoch("2026-09-17T05:00:00.500Z") + 10
+    _rollout_lines(
+        tmp_path,
+        "thread-1",
+        [
+            _token_count_line(
+                used_percent=95.0,
+                resets_at=int(now) + 10_000,
+                timestamp="2026-09-17T05:00:00.500Z",
+            ),
+            _token_count_line(
+                used_percent=10.0,
+                resets_at=int(now) + 10_000,
+                timestamp="2026-09-17T05:00:00Z",
+            ),
+        ],
+    )
+    assert codex_quota("thread-1", tmp_path, now=now) == (
+        95.0,
+        int(now) + 10_000,
+    )
+
+
+def test_codex_quota_rejects_future_timestamp(tmp_path):
+    """Ein Zeitstempel merklich nach 'now' ist kein Uhrenversatz mehr,
+    sondern ein unplausibler Wert -- ein negatives Alter darf die
+    Altersschwelle nicht unkritisch bestehen (ki-dev-ablauf-dqv-
+    Nachreview, lokal reproduziert)."""
+    now = 2_000_000_000.0
+    _rollout(
+        tmp_path,
+        "thread-1",
+        used_percent=50.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now + 3600),
+    )
+    with pytest.raises(ValueError, match="Zukunft"):
+        codex_quota("thread-1", tmp_path, now=now)
+
+
+def test_codex_quota_accepts_a_recent_event(tmp_path):
+    now = 2_000_000_000.0
+    _rollout(
+        tmp_path,
+        "thread-1",
+        used_percent=50.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 60),
+    )
+    assert codex_quota("thread-1", tmp_path, now=now) == (
+        50.0,
+        int(now) + 10_000,
+    )
+
+
+def test_codex_quota_rejects_stale_event_despite_unexpired_window(
+    tmp_path,
+):
+    """Ein Fenster, das laut resets_at noch nicht abgelaufen ist,
+    beweist keine Aktualitaet: ein mehrere Stunden alter Messwert wird
+    nicht mehr als Naeherung des aktuellen Kontostands akzeptiert
+    (ki-dev-ablauf-dqv-Nachreview, lokal reproduziert)."""
+    now = 2_000_000_000.0
+    _rollout(
+        tmp_path,
+        "thread-1",
+        used_percent=50.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 7200),
+    )
+    with pytest.raises(ValueError, match="zu alt"):
+        codex_quota("thread-1", tmp_path, now=now)
+
+
+def test_codex_measure_quota_reports_real_value(monkeypatch):
+    monkeypatch.setattr(
+        "ki_dev.executors.codex_cli.codex_quota",
+        lambda *_: (42.0, 9_999_999_999),
+    )
+    measurement = CodexCliAdapter().measure_quota("session")
+    assert measurement.status is QuotaStatus.MEASURED
+    assert measurement.used_percent == 42.0
+    assert measurement.resets_at == 9_999_999_999
+
+
+def test_codex_measure_quota_reports_unavailable_explicitly(
+    monkeypatch,
+):
+    def _raise(*_args):
+        raise ValueError("Codex-Rollout hat keine 5h-Kontingentmessung")
+
+    monkeypatch.setattr(
+        "ki_dev.executors.codex_cli.codex_quota", _raise
+    )
+    measurement = CodexCliAdapter().measure_quota("session")
+    assert measurement.status is QuotaStatus.UNAVAILABLE
+    assert "Kontingentmessung" in measurement.detail
+
+
+def test_claude_measure_quota_is_explicitly_unsupported():
+    """Kein verbrauchsfreier, nicht-interaktiver Messweg bei Claude
+    verifiziert (ki-dev-ablauf-hju); anders als bei ``measure_context``
+    blockiert das den naechsten Aufruf (siehe ``_quota_guard``)."""
+    measurement = ClaudeCliAdapter().measure_quota("session")
+    assert measurement.status is QuotaStatus.UNSUPPORTED
+    assert measurement.used_percent is None
+
+
 def test_bounded_claude_uses_native_limits_and_timeout():
     runner = FakeRunner(_result(_claude()))
     result = ClaudeCliAdapter(runner=runner).send_turn(_request())
@@ -262,8 +725,17 @@ def test_codex_missing_or_failed_turn_never_passes(text):
         {"max_budget_usd": float("nan")},
         {"timeout_s": float("inf")},
         {"max_context_tokens": -1},
+        {"max_usage_delta_percentage_points": 0},
+        {"max_usage_delta_percentage_points": 101},
+        {"max_usage_delta_percentage_points": float("nan")},
     ],
 )
 def test_invalid_budgets_rejected(kwargs):
     with pytest.raises(ValueError):
         TurnBudget(**kwargs)
+
+
+def test_valid_usage_delta_budget_accepted():
+    assert TurnBudget(
+        max_usage_delta_percentage_points=100.0
+    ).max_usage_delta_percentage_points == 100.0

@@ -23,6 +23,8 @@ from ki_dev.executors.contract import (
     ContextMeasurement,
     ContextStatus,
     Effort,
+    QuotaMeasurement,
+    QuotaStatus,
     TurnRequest,
     TurnResult,
     TurnStatus,
@@ -90,6 +92,14 @@ class FakeExecutor:
     def measure_context(self, session_id: str) -> ContextMeasurement:
         del session_id
         return ContextMeasurement(ContextStatus.UNSUPPORTED)
+
+    def measure_quota(self, session_id: str) -> QuotaMeasurement:
+        del session_id
+        return QuotaMeasurement(
+            QuotaStatus.MEASURED,
+            used_percent=0.0,
+            resets_at=9_999_999_999,
+        )
 
 
 def _git(repo: Path, *args: str) -> None:

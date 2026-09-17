@@ -20,7 +20,7 @@ from ki_dev.deltas import (
     StepDeltaAssessment,
     assess_step_delta,
 )
-from ki_dev.executors.contract import ContextStatus
+from ki_dev.executors.contract import ContextStatus, QuotaStatus
 from ki_dev.loop import (
     AgentBuildMode,
     AgentReviewer,
@@ -39,6 +39,7 @@ from ki_dev.loop import (
 )
 from ki_dev.loop_safety import (
     CallLedger,
+    QuotaBaseline,
     SafetyLimits,
     SafetyStop,
     stagnation_reason,
@@ -79,7 +80,7 @@ from ki_dev.review_context import (
     ProjectionLimits,
     project_review_context,
 )
-from ki_dev.run_store import RunStore
+from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.session_handoff import build_handoff
 
 
@@ -156,6 +157,7 @@ class LoopRuntime:
             )
         self._invocation_id = uuid.uuid4().hex
         self._ledger = CallLedger(self.store)
+        self._quota_baseline = QuotaBaseline(self.store)
         self.store.run_dir.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(
             self.store.checkpoint_path, check_same_thread=False
@@ -470,7 +472,7 @@ class LoopRuntime:
                     if pending["kind"] == "build"
                     else self.reviewer
                 )
-                blocker = self._context_guard(pending["kind"], actor)
+                blocker = self._call_guards(pending["kind"], actor)
                 if blocker is not None:
                     return self._safety_stop(state, blocker)
                 call_id = f"{operation_id}-{uuid.uuid4().hex}"
@@ -524,6 +526,23 @@ class LoopRuntime:
             )
         self.store.write_artifact(operation_id, value)
         return self._accept_artifact(state, pending, value)
+
+    def _call_guards(
+        self, role: str, actor: BuildMode | Reviewer
+    ) -> str | None:
+        """Alle zutreffenden Pausengruende vor einem Aufruf gemeinsam
+        ausgeben, keine Kurzschluss-Auswertung: eine erreichte
+        Kontextgrenze verdeckt nicht, dass auch das Kontingent knapp
+        ist, und umgekehrt (ki-dev-ablauf-dqv)."""
+        blockers = [
+            blocker
+            for blocker in (
+                self._context_guard(role, actor),
+                self._quota_guard(role, actor),
+            )
+            if blocker is not None
+        ]
+        return "; ".join(blockers) if blockers else None
 
     def _context_guard(
         self, role: str, actor: BuildMode | Reviewer
@@ -579,6 +598,98 @@ class LoopRuntime:
         else:
             blocker = None
         return blocker
+
+    def _quota_guard(
+        self, role: str, actor: BuildMode | Reviewer
+    ) -> str | None:
+        """Fuenfstundenkontingent technisch pruefen, bevor ein Aufruf
+        reserviert wird (ki-dev-ablauf-hju, ueberarbeitet in dqv).
+
+        Zwei unabhaengige, gemeinsam ausgegebene Pausengruende, keine
+        Kurzschluss-Auswertung (eine Pruefung kann die andere nicht
+        verdecken):
+
+        1. Aufgaben-Delta-Budget (``actor.budget.
+           max_usage_delta_percentage_points``, pro Rolle): wie viele
+           Prozentpunkte das beobachtete, kontoweite
+           Fuenfstundenkontingent seit der Baseline dieser Rolle
+           gewachsen ist (``QuotaBaseline.delta_percent``). Ein
+           konservatives Pausesignal, keine exakte Zurechnung --
+           paralleler fremder Verbrauch auf demselben Konto zaehlt mit.
+        2. Zentrale Schutzreserve (``safety_limits.
+           min_remaining_percent``): haelt an, sobald fuer diese Rolle
+           kaum noch Kontingent uebrig ist, unabhaengig vom
+           Aufgabenbudget.
+
+        Beides ist eine Pause-Schwelle vor dem naechsten Aufruf, keine
+        harte Echtzeitgrenze: ein einzelner Aufruf kann sie
+        ueberschreiten, da er nicht unterbrochen werden kann.
+
+        Wie bei der Kontextvorpruefung gibt es hier keinen Status, der
+        einen Aufruf freigibt, ausser einem tatsaechlichen Messwert:
+        fuer das Kontokontingent gibt es keine sichere Annahme "kein
+        Nachweis = ok". ``UNSUPPORTED`` blockiert deshalb -- anders als
+        bei ``measure_context`` -- ebenso wie ``UNAVAILABLE``, und wird
+        als eigene, von "Budget erschoepft" klar unterschiedene Ursache
+        gemeldet. Das ist eine bewusste, dokumentierte Betriebsfolge:
+        ein Executor ohne verifizierten, verbrauchsfreien Messweg
+        (aktuell ``claude-cli``) haelt vor jedem Aufruf an, bis ein
+        solcher Messweg existiert und getestet ist.
+
+        ``self._ledger.limits()`` kann bei einem Altlauf ohne
+        ``min_remaining_percent`` im Manifest ``SafetyStop`` werfen;
+        anders als bei ``_ledger.reserve`` gibt es hier keinen
+        umschliessenden ``try/except`` in ``_progress_operation``, die
+        Ausnahme wird deshalb hier selbst in einen Blocker-Text
+        uebersetzt statt unbehandelt aus dem Graph-Tick zu entkommen.
+        """
+        if not isinstance(actor, (AgentBuildMode, AgentReviewer)):
+            return None
+        try:
+            limits = self._ledger.limits()
+        except SafetyStop as exc:
+            return str(exc)
+        measurement = actor.executor.measure_quota(actor.session_id)
+        origin = (
+            f"{role} (executor={actor.executor.name}, "
+            f"session={actor.session_id})"
+        )
+        if measurement.status is not QuotaStatus.MEASURED:
+            return _quota_missing_reason(origin, measurement)
+        reasons = [
+            reason
+            for reason in (
+                _quota_reserve_reason(origin, measurement, limits),
+                self._quota_delta_reason(
+                    origin, measurement, role, actor.budget
+                ),
+            )
+            if reason is not None
+        ]
+        return "; ".join(reasons) if reasons else None
+
+    def _quota_delta_reason(
+        self,
+        origin: str,
+        measurement: object,
+        role: str,
+        budget: object,
+    ) -> str | None:
+        try:
+            delta = self._quota_baseline.delta_percent(
+                role, measurement.used_percent, measurement.resets_at
+            )
+        except RunStoreError as exc:
+            return f"Kontingent-Basislinie fuer {origin}: {exc}"
+        allowed = budget.max_usage_delta_percentage_points
+        if delta < allowed:
+            return None
+        return (
+            f"Aufgaben-Delta-Budget erreicht fuer {origin}: "
+            f"beobachteter kontoweiter Verbrauch seit Rollenbaseline "
+            f"im aktuellen Fenster {delta:g} Prozentpunkte >= Budget "
+            f"{allowed:g}"
+        )
 
     def _metered_operation(
         self, state: LoopGraphState, pending: dict[str, object]
@@ -1127,6 +1238,27 @@ def read_run_status(store: RunStore) -> LoopRunResult:
             f"Lauf {store.run_id} ist unvollstaendig: {last_error}"
         ) from last_error
     raise LoopResumeError(f"Lauf {store.run_id} fehlt")
+
+
+def _quota_missing_reason(origin: str, measurement: object) -> str:
+    detail = f": {measurement.detail}" if measurement.detail else ""
+    return (
+        f"Fuenfstundenkontingent-Messwert fuer {origin} fehlt "
+        f"({measurement.status.value}){detail}; kein Aufruf ohne "
+        "Nachweis"
+    )
+
+
+def _quota_reserve_reason(
+    origin: str, measurement: object, limits: SafetyLimits
+) -> str | None:
+    remaining = 100.0 - measurement.used_percent
+    if remaining > limits.min_remaining_percent:
+        return None
+    return (
+        f"Schutzreserve unterschritten fuer {origin}: verbleibend "
+        f"{remaining:g}% <= Reserve {limits.min_remaining_percent:g}%"
+    )
 
 
 def _read_checkpoint_tuple(store: RunStore):

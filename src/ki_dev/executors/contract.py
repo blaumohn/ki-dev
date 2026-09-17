@@ -38,12 +38,21 @@ class TurnStatus(StrEnum):
 
 @dataclass(frozen=True)
 class TurnBudget:
-    """Grenzen eines CLI-Aufrufs, keine Abo-Kontingentschaetzung."""
+    """Grenzen eines CLI-Aufrufs.
+
+    ``max_usage_delta_percentage_points`` ist die einzige Ausnahme:
+    das erlaubte Wachstum des beobachteten Fuenfstundenkontingents
+    dieser Rolle seit ihrer Baseline (``loop_safety.QuotaBaseline``),
+    in Prozentpunkten -- ein kontoweiter, konservativer Naeherungswert
+    fuer den Verbrauch dieser Aufgabe, keine exakte Zurechnung (siehe
+    ``loop_runtime._quota_guard``, ki-dev-ablauf-dqv).
+    """
 
     max_turns: int = 12
     max_budget_usd: float = 1.0
     max_context_tokens: int = 80_000
     timeout_s: float = 180.0
+    max_usage_delta_percentage_points: float = 20.0
 
     def __post_init__(self) -> None:
         for name in ("max_turns", "max_context_tokens"):
@@ -62,6 +71,16 @@ class TurnBudget:
                 raise ValueError(
                     f"{name} muss positiv und endlich sein"
                 )
+        delta = self.max_usage_delta_percentage_points
+        if (
+            type(delta) not in (int, float)
+            or not math.isfinite(delta)
+            or not (0 < delta <= 100)
+        ):
+            raise ValueError(
+                "max_usage_delta_percentage_points muss in "
+                "(0, 100] Prozentpunkten liegen"
+            )
 
 
 @dataclass(frozen=True)
@@ -157,6 +176,77 @@ class ContextMeasurement:
             )
 
 
+class QuotaStatus(StrEnum):
+    """Herkunft eines Fuenfstundenkontingent-Messwerts.
+
+    Anders als ``ContextStatus`` gibt es hier keinen Status, der einen
+    Aufruf freigibt, ausser einem tatsaechlichen Messwert unter der
+    Grenze: fuer das Kontokontingent gibt es keine sichere Annahme
+    "klein/unbekannt = ok" wie bei einem kurzen Sitzungskontext.
+    ``UNSUPPORTED`` heisst deshalb hier nicht "kein Blocker", sondern
+    "dieser Executor liefert (noch) keinen Nachweis" -- die
+    Orchestrierung haelt in beiden Nicht-MEASURED-Faellen an
+    (ki-dev-ablauf-hju).
+    """
+
+    MEASURED = "measured"
+    UNSUPPORTED = "unsupported"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class QuotaMeasurement:
+    """Kontobezogener Fuenfstundenkontingent-Messwert eines Executors.
+
+    ``used_percent`` ist der Anteil des rollierenden
+    Fuenfstundenfensters, den das Konto laut Executor bereits
+    verbraucht hat (0..100), nicht ein aus Tokenzahlen geschaetzter
+    Wert. ``resets_at`` (Unix-Sekunden) identifiziert das Fenster
+    dieses Messwerts und macht einen Fensterrollover erkennbar (siehe
+    ``loop_safety.QuotaBaseline``). Nur ``MEASURED`` traegt beide
+    Felder; ein veralteter Messwert (``resets_at`` in der
+    Vergangenheit) zaehlt nicht als ``MEASURED`` mit ``0``, sondern als
+    ``UNAVAILABLE`` (siehe Adapterimplementierung).
+    """
+
+    status: QuotaStatus
+    used_percent: float | None = None
+    resets_at: int | None = None
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, QuotaStatus):
+            raise TypeError(
+                "QuotaMeasurement.status muss ein QuotaStatus sein"
+            )
+        if self.status is QuotaStatus.MEASURED:
+            if (
+                type(self.used_percent) not in (int, float)
+                or not math.isfinite(self.used_percent)
+                or self.used_percent < 0
+            ):
+                raise ValueError(
+                    "QuotaMeasurement.used_percent muss bei MEASURED "
+                    "eine nicht negative, endliche Zahl sein"
+                )
+            if type(self.resets_at) is not int:
+                raise ValueError(
+                    "QuotaMeasurement.resets_at muss bei MEASURED "
+                    "eine Ganzzahl sein"
+                )
+        else:
+            if self.used_percent is not None:
+                raise ValueError(
+                    "QuotaMeasurement.used_percent ist nur bei "
+                    "MEASURED erlaubt"
+                )
+            if self.resets_at is not None:
+                raise ValueError(
+                    "QuotaMeasurement.resets_at ist nur bei MEASURED "
+                    "erlaubt"
+                )
+
+
 @dataclass(frozen=True)
 class TurnResult:
     """Einheitliches Ergebnis eines Turn-Prozesses.
@@ -193,3 +283,5 @@ class Executor(Protocol):
     def measure_context(
         self, session_id: str
     ) -> ContextMeasurement: ...
+
+    def measure_quota(self, session_id: str) -> QuotaMeasurement: ...

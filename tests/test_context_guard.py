@@ -13,6 +13,8 @@ from ki_dev.executors import Effort
 from ki_dev.executors.contract import (
     ContextMeasurement,
     ContextStatus,
+    QuotaMeasurement,
+    QuotaStatus,
     TurnBudget,
     TurnResult,
     TurnStatus,
@@ -37,6 +39,11 @@ class ControlledExecutor:
         self.name = name
         self.response = response
         self.measurement = ContextMeasurement(ContextStatus.UNSUPPORTED)
+        self.quota = QuotaMeasurement(
+            QuotaStatus.MEASURED,
+            used_percent=0.0,
+            resets_at=9_999_999_999,
+        )
         self.calls = 0
 
     def send_turn(self, request):
@@ -61,6 +68,10 @@ class ControlledExecutor:
     def measure_context(self, session_id: str) -> ContextMeasurement:
         del session_id
         return self.measurement
+
+    def measure_quota(self, session_id: str) -> QuotaMeasurement:
+        del session_id
+        return self.quota
 
 
 def _task(run_id: str) -> LoopTask:
@@ -104,7 +115,7 @@ def _agents(build_executor, review_executor):
     return build, review
 
 
-def _runtime(tmp_path, run_id, build, review):
+def _runtime(tmp_path, run_id, build, review, **kwargs):
     contexts = tuple(_context(i) for i in range(1, 4))
     return LoopRuntime(
         RunStore(tmp_path, run_id),
@@ -112,6 +123,7 @@ def _runtime(tmp_path, run_id, build, review):
         review,
         StaticEvidenceCollector(contexts),
         StaticFinalizer(),
+        **kwargs,
     )
 
 
