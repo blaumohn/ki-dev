@@ -538,33 +538,36 @@ class LoopRuntime:
         Adaptergrenzfall, keine ungeklaerte Situation. ``UNAVAILABLE``
         dagegen ist ein Blocker: die Messung ist fuer diesen Executor
         vorgesehen, aber gerade nicht belegbar, und ein unbelegter
-        Kontext gilt nicht als klein.
+        Kontext gilt nicht als klein. Ein fehlendes Rollenbudget ist
+        keine gueltige Konfiguration und wird nicht stillschweigend
+        als Freigabe behandelt, sondern schlaegt hier direkt fehl
+        (``AttributeError``), statt den Aufruf ungeprueft zuzulassen.
         """
         if not isinstance(actor, (AgentBuildMode, AgentReviewer)):
-            return None
-        budget = actor.budget
-        if budget is None:
             return None
         measurement = actor.executor.measure_context(actor.session_id)
         origin = (
             f"{role} (executor={actor.executor.name}, "
             f"session={actor.session_id})"
         )
-        if measurement.status is ContextStatus.UNSUPPORTED:
-            return None
         if measurement.status is ContextStatus.UNAVAILABLE:
-            return (
+            blocker = (
                 f"Kontextmessung fuer {origin} nicht verfuegbar: "
                 f"{measurement.detail}; kein Aufruf ohne Nachweis"
             )
-        if measurement.tokens >= budget.max_context_tokens:
-            return (
+        elif (
+            measurement.status is ContextStatus.MEASURED
+            and measurement.tokens >= actor.budget.max_context_tokens
+        ):
+            blocker = (
                 f"Kontextgrenze erreicht fuer {origin}: gemessen "
                 f"{measurement.tokens} >= Grenze "
-                f"{budget.max_context_tokens} "
+                f"{actor.budget.max_context_tokens} "
                 f"(Quelle: {measurement.status.value})"
             )
-        return None
+        else:
+            blocker = None
+        return blocker
 
     def _metered_operation(
         self, state: LoopGraphState, pending: dict[str, object]

@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from ki_dev.executors import Effort
 from ki_dev.executors.contract import (
     ContextMeasurement,
@@ -293,3 +295,30 @@ def test_resume_rechecks_context_instead_of_reusing_old_measurement(
     # Bauversuch), nur die Review-Rolle wird erneut geprueft.
     assert build_executor.calls == 1
     assert review_executor.calls == 1
+
+
+def test_missing_role_budget_fails_loudly_instead_of_silent_release(
+    tmp_path,
+):
+    """xf2: ein fehlendes Rollenbudget ist keine gueltige
+    Konfiguration und darf die Kontextpruefung nicht stillschweigend
+    umgehen (Leitlinie 'Fallbacks verdecken keine Fehler'). Die
+    normale CLI-Konfiguration liefert immer ein TurnBudget; dieser
+    Zustand entsteht nur durch einen ungueltig zusammengesetzten
+    direkten Runtime-/Agent-Aufruf."""
+    build_executor = ControlledExecutor("claude-cli", "Bau erledigt")
+    build_executor.measurement = ContextMeasurement(
+        ContextStatus.MEASURED, tokens=90_000
+    )
+    review_executor = ControlledExecutor(
+        "claude-cli", _review_json("run-ctx-no-budget", 1, "PASS")
+    )
+    build, review = _agents(build_executor, review_executor)
+    build.budget = None
+
+    with pytest.raises(AttributeError), _runtime(
+        tmp_path, "run-ctx-no-budget", build, review
+    ) as runtime:
+        runtime.start(_task("run-ctx-no-budget"), Limits())
+
+    assert build_executor.calls == 0
