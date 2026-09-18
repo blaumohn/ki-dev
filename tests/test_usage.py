@@ -1342,3 +1342,179 @@ class TestNachreviewAf4cf95:
         assert len(scan.events) == 1
         assert scan.events[0].status is UsageStatus.PARTIAL
         assert scan.events[0].tokens.total == 100
+
+
+class TestNachreview7431ea6:
+    """Regressionstests zu den drei Befunden aus dem Nachreview von
+    7431ea6 (siehe Beads ki-dev-ablauf-wu0.2, sechster Nachreview)."""
+
+    def _line(self, ts, total=None, last=None):
+        info = {}
+        if total is not None:
+            info["total_token_usage"] = {
+                "input_tokens": total,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": total,
+            }
+        if last is not None:
+            info["last_token_usage"] = {
+                "input_tokens": last,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": last,
+            }
+        return _rollout_line(
+            timestamp=ts, payload={"type": "token_count", "info": info}
+        )
+
+    def test_growth_covering_both_keeps_both_equal_requests(
+        self, tmp_path
+    ):
+        """[P2] (115,115) -> (fehlt,11) -> (137,11): der Zuwachs von
+        22 deckt zwei 11er-Anfragen ab, nicht nur eine -- beide
+        muessen erhalten bleiben (137 gesamt, nicht 126)."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", last=11)
+            + "\n"
+            + self._line("2026-04-04T09:10:00.000Z", total=137, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 11, 11]
+        assert all(
+            e.status is UsageStatus.MEASURED for e in per_request
+        )
+
+    def test_growth_covering_only_one_still_merges(self, tmp_path):
+        """Gegenprobe (unveraendert aus dem fuenften Nachreview):
+        (115,115) -> (fehlt,11) -> (126,11) -- der Zuwachs von 11
+        deckt nur eine Anfrage ab, beide Beobachtungen sind dieselbe
+        (126 gesamt, nicht 137)."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", last=11)
+            + "\n"
+            + self._line("2026-04-04T09:10:00.000Z", total=126, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 11]
+
+    def test_unchanged_summary_resolves_open_pending(self, tmp_path):
+        """[P2] (115,115) -> (fehlt,115) -> (115,115): der dritte
+        Beleg zeigt unveraendertes Wachstum und widerlegt damit das
+        offene Pending -- nur ein Request, keine zusaetzliche PARTIAL-
+        Verdopplung derselben Beobachtung."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", last=115)
+            + "\n"
+            + self._line(
+                "2026-04-04T09:10:00.000Z", total=115, last=115
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].tokens.total == 115
+
+    def test_unordered_without_summary_is_partial(self, tmp_path):
+        """[P2] Ein last_token_usage ohne Zeitstempel UND ohne
+        kumulativen Beleg muss genauso unbestaetigt (PARTIAL) bleiben
+        wie im zeitlich geordneten Pfad."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 0,
+                                "output_tokens": 0,
+                                "total_tokens": 100,
+                            }
+                        },
+                    },
+                }
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        assert len(scan.events) == 1
+        assert scan.events[0].status is UsageStatus.PARTIAL
+        assert scan.events[0].tokens.total == 100
+
+    def test_unordered_with_own_summary_is_measured(self, tmp_path):
+        """Gegenprobe: traegt ein zeitlich nicht einordenbares
+        Ereignis seinen eigenen, gueltigen kumulativen Beleg, ist es
+        in sich abgeschlossen bestaetigt (MEASURED)."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 0,
+                                "output_tokens": 0,
+                                "total_tokens": 100,
+                            },
+                            "total_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 0,
+                                "output_tokens": 0,
+                                "total_tokens": 100,
+                            },
+                        },
+                    },
+                }
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].status is UsageStatus.MEASURED

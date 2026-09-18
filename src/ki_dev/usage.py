@@ -852,6 +852,23 @@ def _codex_unconfirmed_request(
     return event
 
 
+def _codex_request_value(
+    last_usage: object,
+    *,
+    cli_version: str | None,
+    session_id: str | None,
+) -> int | None:
+    """Eigener gemeldeter Tokenwert eines last_token_usage, oder
+    ``None`` wenn er selbst nicht gueltig ist. Dient nur dem Vergleich
+    mit einem Summenzuwachs, nicht der Ausgabe."""
+    event = _codex_confirmed_request(
+        last_usage, None, cli_version=cli_version, session_id=session_id
+    )
+    if event.status is UsageStatus.MEASURED:
+        return event.tokens.total
+    return None
+
+
 def read_codex_rollout_usage(
     path: Path, *, cli_version: str | None = None
 ) -> CodexRolloutScan:
@@ -917,17 +934,46 @@ def read_codex_rollout_usage(
         )
         if directly_confirmed:
             if last_usage is not None:
-                if (
-                    pending is not None
-                    and pending["content"] != last_content
+                if pending is not None and pending["content"] == (
+                    last_content
                 ):
-                    events.append(
-                        _codex_unconfirmed_request(
-                            pending,
-                            cli_version=effective_cli_version,
-                            session_id=file_session_id,
-                        )
+                    # Gleicher Inhalt wie das offene Pending: nur dann
+                    # zusammenfuehren (ein Vorgang), wenn der Zuwachs
+                    # genau einer Beobachtung entspricht. Reicht er
+                    # fuer beide, sind es zwei echte, zufaellig gleich
+                    # teure Anfragen -- beide bleiben erhalten.
+                    growth = (
+                        raw_total - prev_cumulative
+                        if prev_cumulative is not None
+                        else None
                     )
+                    current_value = _codex_request_value(
+                        last_usage,
+                        cli_version=effective_cli_version,
+                        session_id=file_session_id,
+                    )
+                    if (
+                        growth is None
+                        or current_value is None
+                        or growth != current_value
+                    ):
+                        events.append(
+                            _codex_confirmed_request(
+                                pending["last_usage"],
+                                pending["event_time"],
+                                cli_version=effective_cli_version,
+                                session_id=file_session_id,
+                            )
+                        )
+                else:
+                    if pending is not None:
+                        events.append(
+                            _codex_unconfirmed_request(
+                                pending,
+                                cli_version=effective_cli_version,
+                                session_id=file_session_id,
+                            )
+                        )
                 events.append(
                     _codex_confirmed_request(
                         last_usage,
@@ -937,10 +983,15 @@ def read_codex_rollout_usage(
                     )
                 )
                 pending = None
-        elif (
-            raw_total is None
-            and last_usage is not None
-            and (pending is None or pending["content"] != last_content)
+        elif raw_total is not None:
+            # Bestaetigtes Nicht-Wachstum
+            # (raw_total == prev_cumulative): widerlegt ein offenes
+            # Pending, statt es unbestaetigt zu lassen -- der Zaehler
+            # hat sich nachweislich nicht veraendert, also kann
+            # seitdem nichts Neues dazugekommen sein.
+            pending = None
+        elif last_usage is not None and (
+            pending is None or pending["content"] != last_content
         ):
             if pending is not None:
                 events.append(
@@ -977,14 +1028,34 @@ def read_codex_rollout_usage(
     # statt stillschweigend verworfen zu werden.
     for info in unordered:
         last_usage = info.get("last_token_usage")
-        if last_usage is not None:
+        if last_usage is None:
+            continue
+        unordered_total = info.get("total_token_usage")
+        has_own_total = (
+            isinstance(unordered_total, dict)
+            and _nonneg_int(unordered_total.get("total_tokens"))
+            is not None
+        )
+        if has_own_total:
+            # Eigener, in sich abgeschlossener Beleg (unabhaengig von
+            # jeder Reihenfolge pruefbar): direkt bestaetigt.
             events.append(
-                normalize_codex_token_count_usage(
+                _codex_confirmed_request(
                     last_usage,
-                    scope=CounterScope.PER_REQUEST,
+                    None,
                     cli_version=effective_cli_version,
                     session_id=file_session_id,
-                    event_time=None,
+                )
+            )
+        else:
+            # Kein Zeitstempel UND kein eigener kumulativer Beleg --
+            # genauso unbestaetigt wie im zeitlich geordneten Pfad,
+            # nicht stillschweigend als sicher gemessen ausgeben.
+            events.append(
+                _codex_unconfirmed_request(
+                    {"last_usage": last_usage, "event_time": None},
+                    cli_version=effective_cli_version,
+                    session_id=file_session_id,
                 )
             )
     if latest_total_seen:
