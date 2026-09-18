@@ -601,16 +601,22 @@ def _codex_checked_counts(
     return tokens, None
 
 
-def _codex_valid_total(usage: object) -> int | None:
-    """Gesamtwert eines total_token_usage oder last_token_usage, nur
-    wenn es strukturell voll gueltig ist -- sonst ist es kein Beleg
+def _codex_valid_counts(usage: object) -> TokenCounts | None:
+    """Tokenkategorien eines total_token_usage oder last_token_usage,
+    nur wenn es strukturell voll gueltig ist -- sonst kein Beleg
     (Summe) bzw. nicht vergleichbar (Requestwert). Unabhaengig von der
     CLI-Version; geordneter und zeitstempelloser Pfad nutzen dieselbe
     Pruefung."""
     tokens, problem = _codex_checked_counts(usage)
     if tokens is None or problem is not None:
         return None
-    return tokens.total
+    return tokens
+
+
+def _codex_valid_total(usage: object) -> int | None:
+    """Gesamtwert, siehe _codex_valid_counts."""
+    counts = _codex_valid_counts(usage)
+    return counts.total if counts is not None else None
 
 
 _COVERAGE_CONTRADICTION = (
@@ -618,6 +624,174 @@ _COVERAGE_CONTRADICTION = (
     "last_token_usage-Wert desselben Ereignisses; widerspruechlicher "
     "Beleg, Request nicht bestaetigt"
 )
+
+_CATEGORY_REGRESSION = (
+    "mindestens eine Tokenkategorie (Input, Cache-Lesen, Output oder "
+    "vorhandenes Reasoning) ist trotz wachsender Gesamtsumme "
+    "irgendwo in der zeitlich geordneten Folge gesunken; "
+    "widerspruechlich, nicht unveraendert vertrauenswuerdig"
+)
+
+_REPEATED_READING = (
+    "identische total_token_usage- und last_token_usage-Werte ohne "
+    "eigenen Zeitstempel bereits anderswo (geordnet oder "
+    "zeitstempellos) bestaetigt; kein Beleg fuer einen "
+    "zusaetzlichen Request"
+)
+
+_CATEGORY_FIELDS = (
+    "fresh_input",
+    "cache_read",
+    "cache_creation",
+    "output",
+)
+
+
+def _codex_category_coverage(
+    prev: TokenCounts | None, raw: TokenCounts
+) -> dict[str, int]:
+    """Was raw an neuem Verbrauch je Kategorie belegt. Wachstum oder
+    Reset wird einmal fuer die ganze Beobachtung entschieden (an der
+    Gesamtsumme, wie beim bisherigen skalaren Beleg) und dann auf
+    jede Kategorie gleich angewendet -- bei Reset bzw. erster Summe
+    deren eigener Wert, sonst ihr Zuwachs (nie negativ). Eine
+    einzelne schrumpfende Kategorie darf sich damit nicht als
+    "neue Basis" verkleiden, waehrend die Gesamtsumme waechst
+    (Finding [P2] Zeile 934)."""
+    is_reset = prev is None or raw.total < prev.total
+    coverage = {
+        name: (
+            getattr(raw, name)
+            if is_reset
+            else max(0, getattr(raw, name) - getattr(prev, name))
+        )
+        for name in _CATEGORY_FIELDS
+    }
+    if raw.reasoning_output is not None:
+        prev_reasoning = (
+            prev.reasoning_output if prev is not None else None
+        )
+        coverage["reasoning_output"] = (
+            raw.reasoning_output
+            if is_reset or prev_reasoning is None
+            else max(0, raw.reasoning_output - prev_reasoning)
+        )
+    return coverage
+
+
+def _codex_coverage_meets(
+    coverage: dict[str, int], current: TokenCounts, factor: int
+) -> bool:
+    """Ob die Kategoriendeckung mindestens ``factor`` volle
+    Requestvektoren von ``current`` traegt -- je Kategorie einzeln,
+    eine andere Kategorie darf keine ausgleichen (Messvertrag:
+    Providersemantik erhalten). Fuer gemeinsam bestaetigte Requests
+    (``factor`` > 1) muss die Deckung fuer alle zusammen reichen,
+    nicht nur ihre Gesamtsumme (Finding [P2] Zeile 1260)."""
+    if any(
+        coverage.get(name, 0) < factor * getattr(current, name)
+        for name in _CATEGORY_FIELDS
+    ):
+        return False
+    return not (
+        current.reasoning_output is not None
+        and coverage.get("reasoning_output", 0)
+        < factor * current.reasoning_output
+    )
+
+
+def _codex_coverage_covers(
+    coverage: dict[str, int], current: TokenCounts
+) -> bool:
+    """Ob jede vom Request beanspruchte Kategorie durch die belegte
+    Kategoriendeckung gedeckt ist, siehe _codex_coverage_meets."""
+    return _codex_coverage_meets(coverage, current, 1)
+
+
+def _codex_coverage_matches(
+    coverage: dict[str, int], current: TokenCounts, factor: int
+) -> bool:
+    """Ob die Kategoriendeckung je Kategorie genau ``factor`` volle
+    Requestvektoren von ``current`` ausmacht -- nicht nur mindestens
+    (fuer die Unterscheidung "ein" vs. "zwei gleich teure Requests"
+    an einer gemeinsamen Zaehlerdifferenz, Finding [P2] Zeile
+    1260)."""
+    if any(
+        coverage.get(name, 0) != factor * getattr(current, name)
+        for name in _CATEGORY_FIELDS
+    ):
+        return False
+    return not (
+        current.reasoning_output is not None
+        and coverage.get("reasoning_output", 0)
+        != factor * current.reasoning_output
+    )
+
+
+def _codex_category_regression(
+    prev: TokenCounts | None, raw: TokenCounts
+) -> bool:
+    """Ob irgendeine Kategorie -- einschliesslich vorhandenem
+    Reasoning -- gegenueber dem vorherigen gueltigen Stand gesunken
+    ist, auch wenn die Gesamtsumme waechst (Finding [P2] Zeile
+    934)."""
+    if prev is None:
+        return False
+    if any(
+        getattr(raw, name) < getattr(prev, name)
+        for name in _CATEGORY_FIELDS
+    ):
+        return True
+    return (
+        raw.reasoning_output is not None
+        and prev.reasoning_output is not None
+        and raw.reasoning_output < prev.reasoning_output
+    )
+
+
+def _codex_counts_signature(
+    counts: TokenCounts,
+) -> dict[str, int | None]:
+    """Identitaet ueber die normalisierten Kategorien statt die rohe
+    Darstellung -- Grundlage fuer _codex_reading_signature."""
+    return {
+        "fresh_input": counts.fresh_input,
+        "cache_read": counts.cache_read,
+        "cache_creation": counts.cache_creation,
+        "output": counts.output,
+        "reasoning_output": counts.reasoning_output,
+    }
+
+
+def _codex_reading_signature(
+    total_usage: object, last_usage: object
+) -> str:
+    """Identitaet einer token_count-Beobachtung (Summe und
+    Requestwert zusammen), ueber die normalisierten Kategorien --
+    nicht die rohe Darstellung. Ein redundantes, aber konsistentes
+    Feld wie total_tokens aendert die Identitaet nicht (Finding [P2]
+    Zeile 721): zwei Beobachtungen mit identischen Kategorien sind
+    ohne eigenen Zeitstempel/Identitaetsbeleg dieselbe Beobachtung,
+    kein zusaetzlicher Request (Finding [P2] Zeile 1232). Strukturell
+    ungueltige Werte fallen auf ihre Rohform zurueck -- dafuer gibt es
+    ohnehin keinen belastbaren Identitaetsbeleg."""
+    total_counts = _codex_valid_counts(total_usage)
+    last_counts = _codex_valid_counts(last_usage)
+    return json.dumps(
+        {
+            "total": (
+                _codex_counts_signature(total_counts)
+                if total_counts is not None
+                else total_usage
+            ),
+            "last": (
+                _codex_counts_signature(last_counts)
+                if last_counts is not None
+                else last_usage
+            ),
+        },
+        sort_keys=True,
+    )
 
 
 def normalize_codex_token_count_usage(
@@ -876,6 +1050,81 @@ def _codex_unconfirmed_request(
     return event
 
 
+def _codex_untimed_request_events(
+    unordered: list[dict],
+    spent_signatures: set[str],
+    *,
+    cli_version: str | None,
+    session_id: str | None,
+) -> list[UsageEvent]:
+    """Zeitstempellose token_count-Ereignisse (siehe
+    _codex_token_count_snapshots): last_token_usage laesst sich nicht
+    gegen eine Reihenfolge pruefen, bleibt aber erhalten statt
+    stillschweigend verworfen zu werden. Jeder Beleg ist nur gegen
+    sich selbst pruefbar (kein Zaehlerabschnitt, derselbe
+    Beleg-Vertrag wie im geordneten Pfad: nur eine strukturell voll
+    gueltige Summe zaehlt und muss den eigenen Requestwert je
+    Kategorie decken). Eine mit dem geordneten Pfad oder einer
+    weiteren zeitstempellosen Beobachtung identische Summe/
+    Requestwert-Kombination ist dagegen kein zusaetzlicher
+    Identitaetsbeleg (Finding [P2] Zeile 1232): ``spent_signatures``
+    wird ueber beide Pfade geteilt und hier fortgeschrieben."""
+    events: list[UsageEvent] = []
+    for info in unordered:
+        last_usage = info.get("last_token_usage")
+        if last_usage is None:
+            continue
+        total_usage = info.get("total_token_usage")
+        own_counts = _codex_valid_counts(total_usage)
+        own_last_counts = _codex_valid_counts(last_usage)
+        if own_counts is None:
+            # Kein Zeitstempel UND kein eigener kumulativer Beleg --
+            # genauso unbestaetigt wie im zeitlich geordneten Pfad,
+            # nicht stillschweigend als sicher gemessen ausgeben.
+            events.append(
+                _codex_unconfirmed_request(
+                    {"last_usage": last_usage, "event_time": None},
+                    cli_version=cli_version,
+                    session_id=session_id,
+                )
+            )
+        elif own_last_counts is not None and not _codex_coverage_covers(
+            _codex_category_coverage(None, own_counts), own_last_counts
+        ):
+            events.append(
+                _codex_unconfirmed_request(
+                    {"last_usage": last_usage, "event_time": None},
+                    cli_version=cli_version,
+                    session_id=session_id,
+                    detail=_COVERAGE_CONTRADICTION,
+                )
+            )
+        else:
+            signature = _codex_reading_signature(
+                total_usage, last_usage
+            )
+            if signature in spent_signatures:
+                events.append(
+                    _codex_unconfirmed_request(
+                        {"last_usage": last_usage, "event_time": None},
+                        cli_version=cli_version,
+                        session_id=session_id,
+                        detail=_REPEATED_READING,
+                    )
+                )
+            else:
+                spent_signatures.add(signature)
+                events.append(
+                    _codex_confirmed_request(
+                        last_usage,
+                        None,
+                        cli_version=cli_version,
+                        session_id=session_id,
+                    )
+                )
+    return events
+
+
 def read_codex_rollout_usage(
     path: Path, *, cli_version: str | None = None
 ) -> CodexRolloutScan:
@@ -912,6 +1161,8 @@ def read_codex_rollout_usage(
 
     events: list[UsageEvent] = []
     prev_cumulative: int | None = None
+    prev_counts: TokenCounts | None = None
+    spent_signatures: set[str] = set()
     pending: dict | None = None
     # Inhalt des im aktuellen Zaehlerabschnitt direkt bestaetigten
     # last_token_usage. Nur innerhalb dieses Abschnitts gilt eine
@@ -922,6 +1173,7 @@ def read_codex_rollout_usage(
     # Zahlenwert (derselbe Wert, aber ein anderer Abschnitt).
     last_confirmed_content: str | None = None
     reset_detected = False
+    category_regression_detected = False
     invalid_total_count = 0
     latest_total_usage: object = None
     latest_total_time: float | None = None
@@ -931,7 +1183,8 @@ def read_codex_rollout_usage(
         # Nur eine strukturell voll gueltige Summe ist ein Beleg; eine
         # ungueltige zaehlt fuer die Request-Erkennung wie eine
         # fehlende und wird am Ende an der Gesamtsumme sichtbar.
-        raw_total = _codex_valid_total(total_usage)
+        raw_counts = _codex_valid_counts(total_usage)
+        raw_total = raw_counts.total if raw_counts is not None else None
         if "total_token_usage" in info and raw_total is None:
             invalid_total_count += 1
         last_usage = info.get("last_token_usage")
@@ -946,30 +1199,38 @@ def read_codex_rollout_usage(
             and raw_total < prev_cumulative
         ):
             reset_detected = True
+        if (
+            raw_counts is not None
+            and prev_counts is not None
+            and _codex_category_regression(prev_counts, raw_counts)
+        ):
+            category_regression_detected = True
         directly_confirmed = (
             raw_total is not None and raw_total != prev_cumulative
         )
         if directly_confirmed:
             last_confirmed_content = None
-        current_value = (
-            _codex_valid_total(last_usage)
+        current_counts = (
+            _codex_valid_counts(last_usage)
             if last_usage is not None
             else None
         )
-        # Was die Summe dieses Ereignisses an neuem Verbrauch belegt:
-        # bei Wachstum der Zuwachs, sonst (erste Summe oder Reset auf
-        # eine neue Zaehlerbasis) die Summe selbst.
-        coverage = (
-            raw_total - prev_cumulative
-            if raw_total is not None
-            and prev_cumulative is not None
-            and raw_total > prev_cumulative
-            else raw_total
+        # Was die Summe dieses Ereignisses je Kategorie an neuem
+        # Verbrauch belegt: bei Wachstum deren Zuwachs, sonst (erste
+        # Summe oder Reset auf eine neue Zaehlerbasis) die Kategorie
+        # selbst.
+        category_coverage = (
+            _codex_category_coverage(prev_counts, raw_counts)
+            if raw_counts is not None
+            else None
         )
         if (
             directly_confirmed
-            and current_value is not None
-            and coverage < current_value
+            and current_counts is not None
+            and category_coverage is not None
+            and not _codex_coverage_covers(
+                category_coverage, current_counts
+            )
         ):
             # Widerspruch: die kumulative Summe enthaelt jeden Request,
             # ihr Zuwachs (bzw. nach Reset die neue Basis) kann also
@@ -1056,21 +1317,44 @@ def read_codex_rollout_usage(
                         if prev_cumulative is not None
                         else None
                     )
+                    # Ob die Deckung "ein" oder "zwei" Requests
+                    # ausmacht, entscheidet sich je Kategorie, nicht
+                    # an der Gesamtsumme (Finding [P2] Zeile 1260):
+                    # sonst kann eine fremde Kategorie eine zweite
+                    # Anfrage vortaeuschen.
                     confirmed_two = (
                         growth is not None
-                        and current_value is not None
-                        and growth == 2 * current_value
+                        and current_counts is not None
+                        and category_coverage is not None
+                        and _codex_coverage_matches(
+                            category_coverage, current_counts, 2
+                        )
                     )
-                    confirmed_one = current_value is not None and (
-                        growth == current_value
-                        or (
-                            growth is None
-                            and current_value
-                            <= raw_total
-                            < 2 * current_value
+                    confirmed_one = (
+                        current_counts is not None
+                        and category_coverage is not None
+                        and (
+                            (
+                                growth is not None
+                                and _codex_coverage_matches(
+                                    category_coverage, current_counts, 1
+                                )
+                            )
+                            or (
+                                growth is None
+                                and not _codex_coverage_meets(
+                                    category_coverage, current_counts, 2
+                                )
+                            )
                         )
                     )
                     if confirmed_two:
+                        spent_signatures.add(
+                            _codex_reading_signature(
+                                pending["total_usage"],
+                                pending["last_usage"],
+                            )
+                        )
                         events.append(
                             _codex_confirmed_request(
                                 pending["last_usage"],
@@ -1096,6 +1380,9 @@ def read_codex_rollout_usage(
                                 session_id=file_session_id,
                             )
                         )
+                spent_signatures.add(
+                    _codex_reading_signature(total_usage, last_usage)
+                )
                 events.append(
                     _codex_confirmed_request(
                         last_usage,
@@ -1160,6 +1447,7 @@ def read_codex_rollout_usage(
                         "event_time": event_time,
                         "content": last_content,
                         "anchored": True,
+                        "total_usage": total_usage,
                     }
                     if last_usage is not None
                     else None
@@ -1179,12 +1467,14 @@ def read_codex_rollout_usage(
                 "last_usage": last_usage,
                 "event_time": event_time,
                 "content": last_content,
+                "total_usage": total_usage,
             }
         # Sonst (raw_total is None und last_usage inhaltsgleich mit dem
         # noch offenen, unbestaetigten Pending): dieselbe Beobachtung,
         # nichts Neues zu tun.
         if raw_total is not None:
             prev_cumulative = raw_total
+            prev_counts = raw_counts
         if "total_token_usage" in info:
             latest_total_usage = total_usage
             latest_total_time = event_time
@@ -1200,46 +1490,14 @@ def read_codex_rollout_usage(
     # Nicht zeitlich einordenbare Ereignisse: last_token_usage laesst
     # sich nicht gegen eine Reihenfolge pruefen, bleibt aber erhalten
     # statt stillschweigend verworfen zu werden.
-    for info in unordered:
-        last_usage = info.get("last_token_usage")
-        if last_usage is None:
-            continue
-        # Derselbe Beleg-Vertrag wie im geordneten Pfad: nur eine
-        # strukturell voll gueltige Summe zaehlt, und sie muss den
-        # eigenen Requestwert decken (die Summe enthaelt jeden Request).
-        own_total = _codex_valid_total(info.get("total_token_usage"))
-        own_value = _codex_valid_total(last_usage)
-        if own_total is None:
-            # Kein Zeitstempel UND kein eigener kumulativer Beleg --
-            # genauso unbestaetigt wie im zeitlich geordneten Pfad,
-            # nicht stillschweigend als sicher gemessen ausgeben.
-            events.append(
-                _codex_unconfirmed_request(
-                    {"last_usage": last_usage, "event_time": None},
-                    cli_version=effective_cli_version,
-                    session_id=file_session_id,
-                )
-            )
-        elif own_value is not None and own_total < own_value:
-            events.append(
-                _codex_unconfirmed_request(
-                    {"last_usage": last_usage, "event_time": None},
-                    cli_version=effective_cli_version,
-                    session_id=file_session_id,
-                    detail=_COVERAGE_CONTRADICTION,
-                )
-            )
-        else:
-            # Eigener, in sich abgeschlossener Beleg (unabhaengig von
-            # jeder Reihenfolge pruefbar): direkt bestaetigt.
-            events.append(
-                _codex_confirmed_request(
-                    last_usage,
-                    None,
-                    cli_version=effective_cli_version,
-                    session_id=file_session_id,
-                )
-            )
+    events.extend(
+        _codex_untimed_request_events(
+            unordered,
+            spent_signatures,
+            cli_version=effective_cli_version,
+            session_id=file_session_id,
+        )
+    )
     if latest_total_seen:
         event = normalize_codex_token_count_usage(
             latest_total_usage,
@@ -1257,6 +1515,8 @@ def read_codex_rollout_usage(
                 "seither wieder gewachsen ist; nicht unveraendert "
                 "vertrauenswuerdig"
             )
+        if category_regression_detected:
+            notes.append(_CATEGORY_REGRESSION)
         if invalid_total_count > (
             1 if _codex_valid_total(latest_total_usage) is None else 0
         ):

@@ -732,12 +732,20 @@ class TestNachreviewDf44275:
             "total_tokens": 115,
         }
         last.update(last_overrides)
+        # total_token_usage muss dieselbe Kategorienaufteilung wie
+        # last_token_usage decken (kumulative Summe enthaelt jeden
+        # Request je Kategorie, nicht nur in der Gesamtsumme) --
+        # sonst kein realistischer Beleg (siehe wu0.2-Nachreview
+        # 2c69ddc, Finding [P2] Zeile 934).
+        factor = total_tokens // last["total_tokens"]
         return {
             "last_token_usage": last,
             "total_token_usage": {
-                "input_tokens": total_tokens,
-                "cached_input_tokens": 0,
-                "output_tokens": 0,
+                "input_tokens": last["input_tokens"] * factor,
+                "cached_input_tokens": (
+                    last["cached_input_tokens"] * factor
+                ),
+                "output_tokens": last["output_tokens"] * factor,
                 "total_tokens": total_tokens,
             },
         }
