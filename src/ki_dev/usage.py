@@ -533,28 +533,16 @@ def normalize_codex_turn_usage(
 # executors/metering.py:codex_quota und Moduldoc oben). ---
 
 
-def normalize_codex_token_count_usage(
+def _codex_checked_counts(
     info_usage: object,
-    *,
-    scope: CounterScope,
-    cli_version: str | None = None,
-    session_id: str | None = None,
-    event_time: float | None = None,
-) -> UsageEvent:
-    source = (
-        "rollout_last_token_usage"
-        if scope is CounterScope.PER_REQUEST
-        else "rollout_total_token_usage"
-    )
+) -> tuple[TokenCounts | None, str | None]:
+    """Strukturpruefung eines Codex-Usage-Objekts, unabhaengig von
+    der CLI-Version: ``(None, Grund)`` wenn keine Zaehler lesbar sind,
+    ``(Zaehler, Grund)`` wenn sie lesbar, aber nicht voll
+    vertrauenswuerdig sind, ``(Zaehler, None)`` wenn voll gueltig."""
     if not isinstance(info_usage, dict):
-        return _unavailable(
-            "codex",
-            source,
-            scope,
-            "token_count-Nutzdaten fehlen oder sind kein Objekt",
-            cli_version=cli_version,
-            session_id=session_id,
-            event_time=event_time,
+        return None, (
+            "token_count-Nutzdaten fehlen oder sind kein Objekt"
         )
     input_total = _nonneg_int(info_usage.get("input_tokens"))
     cached = _nonneg_int(info_usage.get("cached_input_tokens"))
@@ -565,14 +553,8 @@ def normalize_codex_token_count_usage(
         or output is None
         or cached > input_total
     ):
-        return _unavailable(
-            "codex",
-            source,
-            scope,
-            "Tokenzaehler fehlt, ist ungueltig oder Cache > Input",
-            cli_version=cli_version,
-            session_id=session_id,
-            event_time=event_time,
+        return None, (
+            "Tokenzaehler fehlt, ist ungueltig oder Cache > Input"
         )
     reasoning = _nonneg_int(info_usage.get("reasoning_output_tokens"))
     try:
@@ -586,43 +568,22 @@ def normalize_codex_token_count_usage(
     except ValueError as exc:
         # reasoning_output_tokens > output_tokens: die Unterkategorie
         # ist unglaubwuerdig, die Hauptkategorien bleiben es nicht.
-        tokens = TokenCounts(
-            fresh_input=input_total - cached,
-            cache_read=cached,
-            cache_creation=0,
-            output=output,
-        )
-        return UsageEvent(
-            UsageStatus.PARTIAL,
-            "codex",
-            source,
-            scope,
-            cli_version=cli_version,
-            session_id=session_id,
-            event_time=event_time,
-            tokens=tokens,
-            detail=f"reasoning_output_tokens widerspruechlich: {exc}",
+        return (
+            TokenCounts(
+                fresh_input=input_total - cached,
+                cache_read=cached,
+                cache_creation=0,
+                output=output,
+            ),
+            f"reasoning_output_tokens widerspruechlich: {exc}",
         )
     total_raw = info_usage.get("total_tokens")
     reported_total = _nonneg_int(total_raw)
-    total_present_but_invalid = (
-        total_raw is not None and reported_total is None
-    )
-    if total_present_but_invalid:
-        return UsageEvent(
-            UsageStatus.PARTIAL,
-            "codex",
-            source,
-            scope,
-            cli_version=cli_version,
-            session_id=session_id,
-            event_time=event_time,
-            tokens=tokens,
-            detail=(
-                "gemeldetes total_tokens ist kein gueltiger nicht "
-                "negativer Ganzzahlwert (Typ: "
-                f"{_describe_invalid(total_raw)})"
-            ),
+    if total_raw is not None and reported_total is None:
+        return tokens, (
+            "gemeldetes total_tokens ist kein gueltiger nicht "
+            "negativer Ganzzahlwert (Typ: "
+            f"{_describe_invalid(total_raw)})"
         )
     if reported_total is not None and reported_total != tokens.total:
         # Empirisch beobachtete Anomalie (echte lokale Rollouts):
@@ -631,6 +592,59 @@ def normalize_codex_token_count_usage(
         # eine alte, ungleich Null-Summe traegt. Die Einzelwerte
         # werden trotzdem mitgeliefert (nicht durch 0 ersetzt), aber
         # als nicht voll vertrauenswuerdig gekennzeichnet.
+        return tokens, (
+            "gemeldetes total_tokens "
+            f"({reported_total}) passt nicht zu Einzelwerten "
+            f"({tokens.total}); moeglich bei Compaction/"
+            "Kontextereignis"
+        )
+    return tokens, None
+
+
+def _codex_valid_total(usage: object) -> int | None:
+    """Gesamtwert eines total_token_usage oder last_token_usage, nur
+    wenn es strukturell voll gueltig ist -- sonst ist es kein Beleg
+    (Summe) bzw. nicht vergleichbar (Requestwert). Unabhaengig von der
+    CLI-Version; geordneter und zeitstempelloser Pfad nutzen dieselbe
+    Pruefung."""
+    tokens, problem = _codex_checked_counts(usage)
+    if tokens is None or problem is not None:
+        return None
+    return tokens.total
+
+
+_COVERAGE_CONTRADICTION = (
+    "kumulative Summe bzw. ihr Zuwachs ist kleiner als der eigene "
+    "last_token_usage-Wert desselben Ereignisses; widerspruechlicher "
+    "Beleg, Request nicht bestaetigt"
+)
+
+
+def normalize_codex_token_count_usage(
+    info_usage: object,
+    *,
+    scope: CounterScope,
+    cli_version: str | None = None,
+    session_id: str | None = None,
+    event_time: float | None = None,
+) -> UsageEvent:
+    source = (
+        "rollout_last_token_usage"
+        if scope is CounterScope.PER_REQUEST
+        else "rollout_total_token_usage"
+    )
+    tokens, problem = _codex_checked_counts(info_usage)
+    if tokens is None:
+        return _unavailable(
+            "codex",
+            source,
+            scope,
+            problem,
+            cli_version=cli_version,
+            session_id=session_id,
+            event_time=event_time,
+        )
+    if problem is not None:
         return UsageEvent(
             UsageStatus.PARTIAL,
             "codex",
@@ -640,12 +654,7 @@ def normalize_codex_token_count_usage(
             session_id=session_id,
             event_time=event_time,
             tokens=tokens,
-            detail=(
-                "gemeldetes total_tokens "
-                f"({reported_total}) passt nicht zu Einzelwerten "
-                f"({tokens.total}); moeglich bei Compaction/"
-                "Kontextereignis"
-            ),
+            detail=problem,
         )
     status, note = _measured_or_partial(
         "codex", cli_version, "cli_version"
@@ -854,24 +863,17 @@ def _codex_unconfirmed_request(
                 "kumulativen Beleg nicht auszuschliessen"
             ),
         )
+    if detail is not None:
+        # Schon aus anderem Grund (z. B. unbekannte Version) nicht
+        # MEASURED: die zusaetzliche Diagnose ergaenzt, statt
+        # verloren zu gehen.
+        return replace(
+            event,
+            detail="; ".join(
+                part for part in (detail, event.detail) if part
+            ),
+        )
     return event
-
-
-def _codex_request_value(
-    last_usage: object,
-    *,
-    cli_version: str | None,
-    session_id: str | None,
-) -> int | None:
-    """Eigener gemeldeter Tokenwert eines last_token_usage, oder
-    ``None`` wenn er selbst nicht gueltig ist. Dient nur dem Vergleich
-    mit einem Summenzuwachs, nicht der Ausgabe."""
-    event = _codex_confirmed_request(
-        last_usage, None, cli_version=cli_version, session_id=session_id
-    )
-    if event.status is UsageStatus.MEASURED:
-        return event.tokens.total
-    return None
 
 
 def read_codex_rollout_usage(
@@ -911,23 +913,27 @@ def read_codex_rollout_usage(
     events: list[UsageEvent] = []
     prev_cumulative: int | None = None
     pending: dict | None = None
-    # (Zaehlerstand, Inhalt) des zuletzt direkt bestaetigten
-    # last_token_usage. Nur bei genau diesem Zaehlerstand gilt eine
-    # Wiederholung desselben Inhalts als "bereits ausgegeben"; jeder
-    # spaetere Zaehlerwechsel -- auch durch ein reines Summenereignis
-    # ohne last_token_usage -- entwertet ihn damit automatisch.
-    last_confirmed: tuple[int, str] | None = None
+    # Inhalt des im aktuellen Zaehlerabschnitt direkt bestaetigten
+    # last_token_usage. Nur innerhalb dieses Abschnitts gilt eine
+    # Wiederholung desselben Inhalts als "bereits ausgegeben". Jeder
+    # Wechsel der gueltigen Summe beginnt einen neuen Abschnitt und
+    # verwirft ihn -- auch ein reines Summenereignis ohne
+    # last_token_usage und auch ein Reset zurueck auf denselben
+    # Zahlenwert (derselbe Wert, aber ein anderer Abschnitt).
+    last_confirmed_content: str | None = None
     reset_detected = False
+    invalid_total_count = 0
     latest_total_usage: object = None
     latest_total_time: float | None = None
     latest_total_seen = False
     for event_time, info in ordered:
         total_usage = info.get("total_token_usage")
-        raw_total = (
-            _nonneg_int(total_usage.get("total_tokens"))
-            if isinstance(total_usage, dict)
-            else None
-        )
+        # Nur eine strukturell voll gueltige Summe ist ein Beleg; eine
+        # ungueltige zaehlt fuer die Request-Erkennung wie eine
+        # fehlende und wird am Ende an der Gesamtsumme sichtbar.
+        raw_total = _codex_valid_total(total_usage)
+        if "total_token_usage" in info and raw_total is None:
+            invalid_total_count += 1
         last_usage = info.get("last_token_usage")
         last_content = (
             json.dumps(last_usage, sort_keys=True)
@@ -943,12 +949,10 @@ def read_codex_rollout_usage(
         directly_confirmed = (
             raw_total is not None and raw_total != prev_cumulative
         )
+        if directly_confirmed:
+            last_confirmed_content = None
         current_value = (
-            _codex_request_value(
-                last_usage,
-                cli_version=effective_cli_version,
-                session_id=file_session_id,
-            )
+            _codex_valid_total(last_usage)
             if last_usage is not None
             else None
         )
@@ -971,8 +975,7 @@ def read_codex_rollout_usage(
             # ihr Zuwachs (bzw. nach Reset die neue Basis) kann also
             # nie kleiner als dessen eigener Wert sein. Ein solches
             # Ereignis ist kein Beleg fuer sein last_token_usage -- es
-            # bleibt
-            # sichtbar, aber als unvollstaendig mit Diagnose. Ein
+            # bleibt sichtbar, aber als unvollstaendig mit Diagnose. Ein
             # inhaltsgleiches offenes Pending ist dieselbe Beobachtung
             # und geht darin auf; ein abweichendes bleibt eigenstaendig
             # unbestaetigt.
@@ -1001,17 +1004,30 @@ def read_codex_rollout_usage(
                     observation,
                     cli_version=effective_cli_version,
                     session_id=file_session_id,
-                    detail=(
-                        "kumulative Summe bzw. ihr Zuwachs ist "
-                        "kleiner als der eigene last_token_usage-Wert "
-                        "desselben Ereignisses; "
-                        "widerspruechlicher Beleg, Request nicht "
-                        "bestaetigt"
-                    ),
+                    detail=_COVERAGE_CONTRADICTION,
                 )
             )
             pending = None
         elif directly_confirmed:
+            if (
+                last_usage is None
+                and pending is not None
+                and pending.get("anchored")
+            ):
+                # Reiner Summenwechsel: ein bei gueltiger Summe
+                # beobachtetes Pending gehoert zu seinem (jetzt
+                # beendeten) Zaehlerabschnitt und wird von diesem
+                # Wechsel nicht bestaetigt -- es bleibt unbestaetigt
+                # und verschmilzt nicht mit Lesungen des neuen
+                # Abschnitts.
+                events.append(
+                    _codex_unconfirmed_request(
+                        pending,
+                        cli_version=effective_cli_version,
+                        session_id=file_session_id,
+                    )
+                )
+                pending = None
             if last_usage is not None:
                 if pending is not None and pending["content"] == (
                     last_content
@@ -1088,14 +1104,14 @@ def read_codex_rollout_usage(
                         session_id=file_session_id,
                     )
                 )
-                last_confirmed = (raw_total, last_content)
+                last_confirmed_content = last_content
                 pending = None
         elif raw_total is not None:
             # Bestaetigtes Nicht-Wachstum (raw_total ==
             # prev_cumulative): es ist nichts Neues dazugekommen. Ob
             # das last_token_usage dieses Ereignisses schon ausgegeben
             # ist, haengt davon ab, wozu es passt:
-            # - zum bei genau diesem Zaehlerstand bestaetigten Inhalt:
+            # - zum im aktuellen Zaehlerabschnitt bestaetigten Inhalt:
             #   Wiederholung einer bereits ausgegebenen Lesung. Ein
             #   inhaltsgleiches Pending ist dieselbe Lesung und
             #   entfaellt; ein abweichendes bleibt davon unerklaert und
@@ -1107,9 +1123,9 @@ def read_codex_rollout_usage(
             # - zu keinem von beiden: eine neue, unbelegte Beobachtung;
             #   ein abweichendes Pending wird als unbestaetigt
             #   abgeschlossen, die neue wird vorgemerkt.
-            if last_usage is not None and last_confirmed == (
-                raw_total,
-                last_content,
+            if (
+                last_usage is not None
+                and last_content == last_confirmed_content
             ):
                 if (
                     pending is not None
@@ -1143,6 +1159,7 @@ def read_codex_rollout_usage(
                         "last_usage": last_usage,
                         "event_time": event_time,
                         "content": last_content,
+                        "anchored": True,
                     }
                     if last_usage is not None
                     else None
@@ -1187,44 +1204,38 @@ def read_codex_rollout_usage(
         last_usage = info.get("last_token_usage")
         if last_usage is None:
             continue
-        unordered_total = info.get("total_token_usage")
-        # Derselbe Validierungsvertrag wie jede andere normalisierte
-        # Summe (siehe latest_total_usage unten): ein blosses
-        # gueltiges total_tokens-Feld reicht nicht. Nur ein voll
-        # bestaetigter Beleg (MEASURED -- gueltige Einzelzaehler,
-        # total_tokens passt zu ihnen, bekannte cli_version) zaehlt
-        # als eigenstaendiger Nachweis; PARTIAL (z. B. total_tokens
-        # widerspricht den Einzelzaehlern, oder ist selbst ungueltig)
-        # ist genauso wenig belastbar wie UNAVAILABLE.
-        has_own_total = (
-            isinstance(unordered_total, dict)
-            and normalize_codex_token_count_usage(
-                unordered_total,
-                scope=CounterScope.CUMULATIVE_SESSION,
-                cli_version=effective_cli_version,
-                session_id=file_session_id,
-                event_time=None,
-            ).status
-            is UsageStatus.MEASURED
-        )
-        if has_own_total:
-            # Eigener, in sich abgeschlossener Beleg (unabhaengig von
-            # jeder Reihenfolge pruefbar): direkt bestaetigt.
-            events.append(
-                _codex_confirmed_request(
-                    last_usage,
-                    None,
-                    cli_version=effective_cli_version,
-                    session_id=file_session_id,
-                )
-            )
-        else:
+        # Derselbe Beleg-Vertrag wie im geordneten Pfad: nur eine
+        # strukturell voll gueltige Summe zaehlt, und sie muss den
+        # eigenen Requestwert decken (die Summe enthaelt jeden Request).
+        own_total = _codex_valid_total(info.get("total_token_usage"))
+        own_value = _codex_valid_total(last_usage)
+        if own_total is None:
             # Kein Zeitstempel UND kein eigener kumulativer Beleg --
             # genauso unbestaetigt wie im zeitlich geordneten Pfad,
             # nicht stillschweigend als sicher gemessen ausgeben.
             events.append(
                 _codex_unconfirmed_request(
                     {"last_usage": last_usage, "event_time": None},
+                    cli_version=effective_cli_version,
+                    session_id=file_session_id,
+                )
+            )
+        elif own_value is not None and own_total < own_value:
+            events.append(
+                _codex_unconfirmed_request(
+                    {"last_usage": last_usage, "event_time": None},
+                    cli_version=effective_cli_version,
+                    session_id=file_session_id,
+                    detail=_COVERAGE_CONTRADICTION,
+                )
+            )
+        else:
+            # Eigener, in sich abgeschlossener Beleg (unabhaengig von
+            # jeder Reihenfolge pruefbar): direkt bestaetigt.
+            events.append(
+                _codex_confirmed_request(
+                    last_usage,
+                    None,
                     cli_version=effective_cli_version,
                     session_id=file_session_id,
                 )
@@ -1237,16 +1248,39 @@ def read_codex_rollout_usage(
             session_id=file_session_id,
             event_time=latest_total_time,
         )
-        if reset_detected and event.status is UsageStatus.MEASURED:
+        notes = []
+        if reset_detected:
+            notes.append(
+                "kumulativer Zaehler ist an mindestens einer "
+                "Stelle der zeitlich geordneten Folge in dieser "
+                "Datei gesunken (Reset/Compaction), auch wenn er "
+                "seither wieder gewachsen ist; nicht unveraendert "
+                "vertrauenswuerdig"
+            )
+        if invalid_total_count > (
+            1 if _codex_valid_total(latest_total_usage) is None else 0
+        ):
+            # Ungueltig war nicht (nur) die juengste Summe selbst --
+            # deren Diagnose steht schon im Ereignis --, sondern eine
+            # fruehere: sie belegt keinen Request, darf aber nicht
+            # unsichtbar werden.
+            notes.append(
+                "mindestens eine fruehere total_token_usage-"
+                "Momentaufnahme in dieser Datei war strukturell "
+                "ungueltig und wurde nicht als Beleg verwendet"
+            )
+        if notes:
+            # Alle zutreffenden Ursachen verketten, keine verdraengt
+            # die andere oder die eigene Diagnose des Ereignisses.
             event = replace(
                 event,
-                status=UsageStatus.PARTIAL,
-                detail=(
-                    "kumulativer Zaehler ist an mindestens einer "
-                    "Stelle der zeitlich geordneten Folge in dieser "
-                    "Datei gesunken (Reset/Compaction), auch wenn er "
-                    "seither wieder gewachsen ist; nicht unveraendert "
-                    "vertrauenswuerdig"
+                status=(
+                    UsageStatus.PARTIAL
+                    if event.status is UsageStatus.MEASURED
+                    else event.status
+                ),
+                detail="; ".join(
+                    part for part in (event.detail, *notes) if part
                 ),
             )
         events.append(event)

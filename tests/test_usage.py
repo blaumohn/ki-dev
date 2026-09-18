@@ -2023,46 +2023,348 @@ def _codex_usage(value):
     }
 
 
+class TestNachreview007a8ff:
+    """Regressionstests zu den drei Befunden aus dem Review von
+    007a8ff (siehe Beads ki-dev-ablauf-wu0.2, achter Nachreview)."""
+
+    _line = TestNachreview19b6e88._line
+    _per_request = TestNachreview19b6e88Folgerunde._per_request
+
+    def test_reset_to_same_level_invalidates_confirmation(
+        self, tmp_path
+    ):
+        """[P2] (115,115) -> (200,fehlt) -> (115,fehlt) -> (115,115):
+        derselbe Zahlenwert nach einem Reset ist ein anderer
+        Zaehlerabschnitt -- die alte Bestaetigung bei 115 darf die
+        letzte Beobachtung nicht unterdruecken."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115),
+            self._line("2026-04-04T09:05:00.000Z", total=200),
+            self._line("2026-04-04T09:10:00.000Z", total=115),
+            self._line("2026-04-04T09:15:00.000Z", total=115, last=115),
+        )
+        assert [e.tokens.total for e in per_request] == [115, 115]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+        ]
+
+    def test_unordered_total_below_request_value_is_partial(
+        self, tmp_path
+    ):
+        """[P2] Ohne Zeitstempel: eine intern gueltige Summe 5 deckt
+        einen Request 11 nicht -- PARTIAL mit Diagnose, wie im
+        geordneten Pfad."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": _codex_usage(11),
+                            "total_token_usage": _codex_usage(5),
+                        },
+                    },
+                }
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [11]
+        assert per_request[0].status is UsageStatus.PARTIAL
+        assert "kleiner" in per_request[0].detail
+
+    def test_invalid_intermediate_total_does_not_confirm(
+        self, tmp_path
+    ):
+        """[P2] Ein Summenobjekt nur mit total_tokens (ohne
+        Einzelzaehler) ist kein Beleg: der 11er-Request bleibt
+        unbestaetigt sichtbar, auch wenn spaeter eine gueltige Summe
+        folgt."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            _rollout_line(
+                timestamp="2026-04-04T09:00:00.000Z",
+                payload={
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {"total_tokens": 11},
+                        "last_token_usage": _codex_usage(11),
+                    },
+                },
+            )
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", total=22, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [11, 11]
+        assert [e.status for e in per_request] == [
+            UsageStatus.PARTIAL,
+            UsageStatus.MEASURED,
+        ]
+
+
+    def test_unconfirmed_value_does_not_cross_summary_change(
+        self, tmp_path
+    ):
+        """Gleiche Klasse wie Befund 1: (115,115) -> (115,11) ->
+        (200,fehlt) -> (200,11). Der 11er bei Stand 115 wird vom
+        Wechsel auf 200 (Zuwachs 85) nicht bestaetigt; die 11 bei
+        Stand 200 ist ein anderer Zaehlerabschnitt -- zwei
+        unbestaetigte Lesungen, nicht eine."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115),
+            self._line("2026-04-04T09:05:00.000Z", total=115, last=11),
+            self._line("2026-04-04T09:10:00.000Z", total=200),
+            self._line("2026-04-04T09:15:00.000Z", total=200, last=11),
+        )
+        assert [e.tokens.total for e in per_request] == [115, 11, 11]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+            UsageStatus.PARTIAL,
+        ]
+
+    def test_unconfirmed_value_merges_with_confirming_change(
+        self, tmp_path
+    ):
+        """Gegenprobe: (0,fehlt) -> (0,5) -> (5,5) -- der Wechsel auf
+        5 (Zuwachs genau 5) bestaetigt die zuvor unbestaetigte Lesung;
+        eine MEASURED-Anfrage, keine zweite."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=0),
+            self._line("2026-04-04T09:05:00.000Z", total=0, last=5),
+            self._line("2026-04-04T09:10:00.000Z", total=5, last=5),
+        )
+        assert [e.tokens.total for e in per_request] == [5]
+        assert per_request[0].status is UsageStatus.MEASURED
+
+    def test_unknown_version_merges_confirmed_repetition(
+        self, tmp_path
+    ):
+        """Festgelegt: der Vergleichswert eines Requests ist
+        unabhaengig von der CLI-Version. (fehlt,11) -> (11,11) ohne
+        bekannte Version ist genau eine Lesung (PARTIAL wegen
+        Version), nicht zwei."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", last=11)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", total=11, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(path, cli_version=None)
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [11]
+        assert per_request[0].status is UsageStatus.PARTIAL
+
+    def test_unknown_version_keeps_contradiction_detail(
+        self, tmp_path
+    ):
+        """Die Widerspruchs-Diagnose darf nicht verloren gehen, nur
+        weil das Ereignis ohnehin schon (wegen unbekannter Version)
+        PARTIAL ist."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", total=5, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(path, cli_version=None)
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].status is UsageStatus.PARTIAL
+        assert "kleiner" in per_request[0].detail
+        assert "cli_version" in per_request[0].detail
+
+    def test_reset_and_invalid_intermediate_both_visible(
+        self, tmp_path
+    ):
+        """(115) -> (ungueltig 11) -> (50) -> (200): Rueckgang und
+        ungueltige Zwischensumme muessen beide in der Diagnose der
+        Gesamtsumme stehen."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", total=115)
+            + "\n"
+            + _rollout_line(
+                timestamp="2026-04-04T09:05:00.000Z",
+                payload={
+                    "type": "token_count",
+                    "info": {"total_token_usage": {"total_tokens": 11}},
+                },
+            )
+            + "\n"
+            + self._line("2026-04-04T09:10:00.000Z", total=50)
+            + "\n"
+            + self._line("2026-04-04T09:15:00.000Z", total=200)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        (cumulative,) = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.CUMULATIVE_SESSION
+        ]
+        assert cumulative.status is UsageStatus.PARTIAL
+        assert "gesunken" in cumulative.detail
+        assert "ungueltig" in cumulative.detail
+
+_VALUES = [0, 5, 11, 22, 115, 126, 200]
+
+# Ein Rollout-Schritt: (Summe, Requestwert, mit Zeitstempel). Summe ist
+# None (fehlt), ("ok", v) (voll gueltig) oder ("bad", v) (nur
+# total_tokens, ohne Einzelzaehler -- strukturell ungueltig).
 _rollout_steps = st.lists(
     st.tuples(
-        st.one_of(st.none(), st.sampled_from([0, 5, 11, 22, 115, 126])),
+        st.one_of(
+            st.none(),
+            st.tuples(
+                st.sampled_from(["ok", "bad"]), st.sampled_from(_VALUES)
+            ),
+        ),
         st.one_of(st.none(), st.sampled_from([5, 11, 115])),
-    ).filter(lambda step: step != (None, None)),
+        # ueberwiegend mit Zeitstempel, einzelne ohne
+        st.sampled_from([True, True, True, False]),
+    ).filter(lambda step: step[:2] != (None, None)),
     min_size=1,
-    max_size=5,
+    max_size=6,
 )
 
 
-@settings(max_examples=300, deadline=None)
+def _rollout_step_line(index, total, last, ordered):
+    info = {}
+    if total is not None:
+        kind, value = total
+        info["total_token_usage"] = (
+            _codex_usage(value)
+            if kind == "ok"
+            else {"total_tokens": value}
+        )
+    if last is not None:
+        info["last_token_usage"] = _codex_usage(last)
+    row = {
+        "type": "event_msg",
+        "payload": {"type": "token_count", "info": info},
+    }
+    if ordered:
+        row["timestamp"] = f"2026-04-04T09:{index:02d}:00.000Z"
+    return json.dumps(row)
+
+
+def _rollout_oracle(steps):
+    """Unabhaengig von der Implementierung aus den Eingaben
+    abgeleitete Schranken (nur voll gueltige Summen zaehlen als
+    Beleg):
+
+    - ``budget``: was die Summen hoechstens an MEASURED-Requests
+      belegen -- im geordneten Pfad Zuwachs bzw. nach Reset/erster
+      Summe die neue Basis, ohne Zeitstempel die eigene Summe.
+    - ``minimum``: je Requestwert die Mindestzahl an Ausgaben. Jeder
+      Wechsel der gueltigen Summe (auch ein Reset zurueck auf
+      denselben Zahlenwert) beginnt einen neuen Zaehlerabschnitt.
+      Eine Beobachtung mit gueltiger Summe gehoert zu ihrem Abschnitt
+      und verschmilzt nur innerhalb davon -- oder, solange sie
+      unbestaetigt ist, mit genau dem Ereignis, dessen Summenwechsel
+      den naechsten Abschnitt beginnt."""
+    budget = 0
+    previous = None
+    segment = 0
+    # Wert -> Abschnitte mit Beobachtung / mit bestaetigendem Ereignis
+    # (Summenwechsel) / mit Beobachtung bei unveraenderter Summe
+    seen: dict[int, set[int]] = {}
+    opening: dict[int, set[int]] = {}
+    unchanged: dict[int, set[int]] = {}
+    for total, last, ordered in steps:
+        valid = (
+            total[1] if total is not None and total[0] == "ok" else None
+        )
+        if not ordered:
+            if valid is not None and last is not None:
+                budget += valid
+            continue
+        changed = valid is not None and valid != previous
+        if changed:
+            segment += 1
+            budget += (
+                valid - previous
+                if previous is not None and valid > previous
+                else valid
+            )
+            previous = valid
+        if valid is not None and last is not None:
+            seen.setdefault(last, set()).add(segment)
+            target = opening if changed else unchanged
+            target.setdefault(last, set()).add(segment)
+    minimum = {
+        value: len(segments)
+        - sum(
+            1
+            for seg in unchanged.get(value, set())
+            if seg + 1 in opening.get(value, set())
+        )
+        for value, segments in seen.items()
+    }
+    return budget, minimum
+
+
+@settings(max_examples=500, deadline=None)
 @given(steps=_rollout_steps)
 def test_codex_rollout_request_invariants(steps):
     """Invarianten statt Einzelbeispielen (die Nachreview-Runden zu
     wu0.2 haben gezeigt, dass Einzelfall-Korrekturen neue
-    Gegenbeispiele erzeugen):
+    Gegenbeispiele erzeugen). Deckt geordneten und zeitstempellosen
+    Pfad, gueltige und ungueltige Summen sowie Resets ab:
 
     1. Keine beobachtete last_token_usage-Lesung verschwindet
-       stillschweigend -- jeder Wert erscheint mindestens einmal.
+       stillschweigend -- jeder Wert erscheint mindestens einmal, und
+       mindestens so oft, wie er in verschiedenen Zaehlerabschnitten
+       mit gueltiger Summe beobachtet wurde.
     2. Die MEASURED-Requests zusammen uebersteigen nie, was die
-       Summen belegen (Zuwachs, bzw. nach Reset/erster Summe die
-       neue Basis).
-    3. Mehrfachlesen ist idempotent.
-    4. Keine Vervielfachung: hoechstens so viele Requests wie
-       beobachtete last_token_usage-Lesungen (jedes Ereignis gibt
-       hoechstens sich selbst und ein frueheres Pending aus)."""
-    lines = []
-    for index, (total, last) in enumerate(steps):
-        info = {}
-        if total is not None:
-            info["total_token_usage"] = _codex_usage(total)
-        if last is not None:
-            info["last_token_usage"] = _codex_usage(last)
-        lines.append(
-            _rollout_line(
-                timestamp=f"2026-04-04T09:0{index}:00.000Z",
-                payload={"type": "token_count", "info": info},
-            )
-        )
-    with tempfile.TemporaryDirectory() as tmp:
+       gueltigen Summen belegen.
+    3. Keine Vervielfachung: hoechstens so viele Requests wie
+       beobachtete last_token_usage-Lesungen.
+    4. Mehrfachlesen ist idempotent.
+    5. Eine strukturell ungueltige Summe ist kein Beleg: die
+       Request-Ergebnisse sind dieselben wie ganz ohne diese Summe.
+    6. Gesamtsumme: gab es im geordneten Pfad einen Rueckgang oder
+       eine ungueltige Summe, ist sie nie MEASURED, und ihre Diagnose
+       nennt jede zutreffende Ursache (keine verdraengt die andere)."""
+
+    def scan_steps(steps, tmp):
+        lines = [
+            _rollout_step_line(index, total, last, ordered)
+            for index, (total, last, ordered) in enumerate(steps)
+        ]
         path = Path(tmp) / "rollout.jsonl"
         path.write_text("\n".join(lines) + "\n")
         scan = read_codex_rollout_usage(
@@ -2071,29 +2373,58 @@ def test_codex_rollout_request_invariants(steps):
         assert scan == read_codex_rollout_usage(
             path, cli_version=CODEX_VERIFIED_VERSION
         )
-    per_request = [
+        return scan
+
+    without_bad = [
+        (None if total is not None and total[0] == "bad" else total,)
+        + step[1:]
+        for step in steps
+        for total in [step[0]]
+    ]
+    def requests(scan):
+        return [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        scan = scan_steps(steps, tmp)
+        per_request = requests(scan)
+        assert per_request == requests(scan_steps(without_bad, tmp))
+    cumulative = [
         e
         for e in scan.events
-        if e.counter_scope is CounterScope.PER_REQUEST
+        if e.counter_scope is CounterScope.CUMULATIVE_SESSION
     ]
-    observed = {last for _, last in steps if last is not None}
-    assert len(per_request) <= sum(
-        1 for _, last in steps if last is not None
+    ordered_totals = [
+        total for total, _, ordered in steps if ordered and total
+    ]
+    valid_ordered = [v for kind, v in ordered_totals if kind == "ok"]
+    had_reset = any(
+        later < earlier
+        for earlier, later in zip(
+            valid_ordered, valid_ordered[1:], strict=False
+        )
     )
-    assert observed <= {e.tokens.total for e in per_request}
-    covered = 0
-    previous = None
-    for total, _ in steps:
-        if total is None:
-            continue
-        if previous is None or total < previous:
-            covered += total
-        elif total > previous:
-            covered += total - previous
-        previous = total
+    had_bad = any(kind == "bad" for kind, _ in ordered_totals)
+    assert len(cumulative) == (1 if ordered_totals else 0)
+    if had_reset or had_bad:
+        assert cumulative[0].status is not UsageStatus.MEASURED
+    if had_reset:
+        assert "gesunken" in cumulative[0].detail
+    if had_bad:
+        assert "ungueltig" in cumulative[0].detail
+    lasts = [last for _, last, _ in steps if last is not None]
+    budget, minimum = _rollout_oracle(steps)
+    output_values = [e.tokens.total for e in per_request]
+    assert set(lasts) <= set(output_values)
+    for value, count in minimum.items():
+        assert output_values.count(value) >= count
+    assert len(per_request) <= len(lasts)
     measured = sum(
         e.tokens.total
         for e in per_request
         if e.status is UsageStatus.MEASURED
     )
-    assert measured <= covered
+    assert measured <= budget
