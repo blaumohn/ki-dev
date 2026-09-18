@@ -10,8 +10,12 @@ in diesen Tests sind erfunden, ihre Struktur/Beziehungen nicht.
 from __future__ import annotations
 
 import json
+import tempfile
+from pathlib import Path
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from ki_dev.executors.claude_cli import (
     VERIFIED_CLI_VERSION as CLAUDE_VERIFIED_VERSION,
@@ -1518,3 +1522,578 @@ class TestNachreview7431ea6:
         ]
         assert len(per_request) == 1
         assert per_request[0].status is UsageStatus.MEASURED
+
+
+class TestNachreview19b6e88:
+    """Regressionstests zu den drei Befunden aus dem Nachreview von
+    19b6e88 (siehe Beads ki-dev-ablauf-wu0.2, siebter Nachreview)."""
+
+    def _line(self, ts, total=None, last=None):
+        info = {}
+        if total is not None:
+            info["total_token_usage"] = {
+                "input_tokens": total,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": total,
+            }
+        if last is not None:
+            info["last_token_usage"] = {
+                "input_tokens": last,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": last,
+            }
+        return _rollout_line(
+            timestamp=ts, payload={"type": "token_count", "info": info}
+        )
+
+    def test_missing_baseline_does_not_confirm_duplicate(
+        self, tmp_path
+    ):
+        """[P2] (fehlend,11) -> (11,11): ohne vorherigen Zaehlerstand
+        ist der Zuwachs unbekannt, aber schon die absolute Summe (11)
+        schliesst "zwei 11er-Anfragen" (bräuchte 22) aus -- bei
+        identischem Inhalt bleibt nur "derselbe Vorgang" uebrig.
+        Erwartet: genau eine MEASURED-Anfrage, keine PARTIAL-
+        Verdopplung."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", last=11)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", total=11, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].status is UsageStatus.MEASURED
+        assert per_request[0].tokens.total == 11
+
+    def test_missing_baseline_with_ambiguous_total_stays_partial(
+        self, tmp_path
+    ):
+        """Gegenprobe: (fehlend,11) -> (30,11) -- die absolute Summe
+        (30) ist gross genug, dass "zwei 11er-Anfragen" (22) rechnerisch
+        nicht ausgeschlossen ist, aber auch nicht belegt (30 != 22).
+        Die Zuordnung bleibt ungeklaert -- das Pending muss als
+        PARTIAL sichtbar bleiben statt MEASURED bestaetigt zu werden."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", last=11)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", total=30, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [11, 11]
+        assert [e.status for e in per_request] == [
+            UsageStatus.PARTIAL,
+            UsageStatus.MEASURED,
+        ]
+
+    def test_insufficient_growth_does_not_confirm_duplicate(
+        self, tmp_path
+    ):
+        """[P2] (115,115) -> (fehlt,11) -> (120,11): der Zuwachs von 5
+        deckt weder eine noch zwei 11er-Anfragen -- die Zuordnung ist
+        ungeklaert, das Pending darf nicht als zweite MEASURED-Anfrage
+        bestaetigt werden."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", last=11)
+            + "\n"
+            + self._line("2026-04-04T09:10:00.000Z", total=120, last=11)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        measured_elevens = [
+            e
+            for e in per_request
+            if e.status is UsageStatus.MEASURED and e.tokens.total == 11
+        ]
+        # Folgerunde: der Zuwachs (5) deckt nicht einmal den eigenen
+        # Requestwert (11) -- widerspruechlicher Beleg, also gar keine
+        # MEASURED-Bestaetigung; die Wiederholung zaehlt nicht doppelt.
+        assert measured_elevens == []
+        assert [e.tokens.total for e in per_request] == [115, 11]
+        assert per_request[1].status is UsageStatus.PARTIAL
+
+    def test_unchanged_summary_keeps_differing_pending_visible(
+        self, tmp_path
+    ):
+        """[P2] (115,115) -> (fehlt,11) -> (115,115): die unveraenderte
+        Summe belegt nur, dass sich der Zaehler nicht veraendert hat --
+        nicht, dass der abweichende 11er-Pending-Wert dieselbe
+        Beobachtung wie der 115er-Request ist. Der 11er-Wert muss
+        sichtbar bleiben (als unbestaetigt), nicht verschwinden."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", last=11)
+            + "\n"
+            + self._line(
+                "2026-04-04T09:10:00.000Z", total=115, last=115
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 11]
+        assert per_request[0].status is UsageStatus.MEASURED
+        assert per_request[1].status is UsageStatus.PARTIAL
+
+    def test_unordered_summary_without_individual_counters_is_partial(
+        self, tmp_path
+    ):
+        """[P2] Ein unordered total_token_usage, das nur total_tokens
+        traegt (keine der erforderlichen Einzelzaehler input_tokens/
+        cached_input_tokens/output_tokens), ist kein eigenstaendiger
+        Beleg -- er muss denselben Validierungsvertrag erfuellen wie
+        jede andere normalisierte Summe und darf last_token_usage
+        nicht stillschweigend zu MEASURED befoerdern."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 0,
+                                "output_tokens": 0,
+                                "total_tokens": 100,
+                            },
+                            "total_token_usage": {
+                                "total_tokens": 100,
+                            },
+                        },
+                    },
+                }
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].status is UsageStatus.PARTIAL
+
+    def test_unordered_summary_with_inconsistent_total_is_not_own_beleg(
+        self, tmp_path
+    ):
+        """Ein unordered total_token_usage mit gueltigen Einzelzaehlern,
+        aber einem intern widersprechenden total_tokens (ungueltiger
+        Typ), erfuellt denselben Vertrag wie jede andere normalisierte
+        Summe nicht (dort PARTIAL statt MEASURED) und darf deshalb
+        genauso wenig als eigenstaendiger Beleg zaehlen wie ein ganz
+        fehlender total_tokens-Wert."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 0,
+                                "output_tokens": 0,
+                                "total_tokens": 100,
+                            },
+                            "total_token_usage": {
+                                "input_tokens": 5,
+                                "cached_input_tokens": 0,
+                                "output_tokens": 5,
+                                "total_tokens": "abc",
+                            },
+                        },
+                    },
+                }
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert len(per_request) == 1
+        assert per_request[0].status is UsageStatus.PARTIAL
+
+    def test_unchanged_summary_tracks_new_differing_value_as_pending(
+        self, tmp_path
+    ):
+        """[Nachreview-Folgefund] (115,115) -> (fehlt,11) -> (115,99):
+        beim dritten Ereignis ist die Summe unveraendert, aber last=99
+        passt weder zum offenen Pending (11) noch zum zuletzt
+        bestaetigten Inhalt (115) -- es ist eine dritte, eigenstaendig
+        unbelegte Beobachtung und muss selbst sichtbar bleiben (als
+        neues Pending), statt beim Verwerfen des alten Pendings
+        ebenfalls zu verschwinden."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115)
+            + "\n"
+            + self._line("2026-04-04T09:05:00.000Z", last=11)
+            + "\n"
+            + self._line("2026-04-04T09:10:00.000Z", total=115, last=99)
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 11, 99]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+            UsageStatus.PARTIAL,
+        ]
+
+    def test_unchanged_summary_merge_does_not_recreate_pending(
+        self, tmp_path
+    ):
+        """(115,115) -> (200,85) -> (fehlt,115) -> (200,115): das
+        vierte Ereignis wiederholt das offene, noch nicht ausgegebene
+        Pending (115) -- es wird damit zusammengefuehrt (kein zweites
+        Pending, keine Doppelzaehlung), bleibt aber als genau eine
+        unbestaetigte Beobachtung sichtbar. Der laengst ueberholte
+        Inhalt aus Ereignis 1 (Zaehlerstand 115, nicht mehr 200) darf
+        es weder bestaetigen noch unterdruecken."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line(
+                "2026-04-04T09:00:00.000Z", total=115, last=115
+            )
+            + "\n"
+            + self._line(
+                "2026-04-04T09:05:00.000Z", total=200, last=85
+            )
+            + "\n"
+            + self._line("2026-04-04T09:10:00.000Z", last=115)
+            + "\n"
+            + self._line(
+                "2026-04-04T09:15:00.000Z", total=200, last=115
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 85, 115]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+        ]
+
+    def test_unchanged_summary_stale_content_match_stays_visible(
+        self, tmp_path
+    ):
+        """(115,115) -> (200,85) -> (200,115): die dritte Beobachtung
+        hat denselben Inhalt wie die laengst ueberholte erste (bei
+        Zaehlerstand 115), nicht wie die aktuell gueltige zweite (bei
+        Zaehlerstand 200) -- die Uebereinstimmung ist zufaellig und
+        darf die neue Beobachtung nicht stillschweigend
+        unterdruecken."""
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            self._line(
+                "2026-04-04T09:00:00.000Z", total=115, last=115
+            )
+            + "\n"
+            + self._line(
+                "2026-04-04T09:05:00.000Z", total=200, last=85
+            )
+            + "\n"
+            + self._line(
+                "2026-04-04T09:10:00.000Z", total=200, last=115
+            )
+            + "\n"
+        )
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        per_request = [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+        assert [e.tokens.total for e in per_request] == [115, 85, 115]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+        ]
+
+
+class TestNachreview19b6e88Folgerunde:
+    """Regressionstests zu den drei Befunden aus der Pruefung des
+    Arbeitsbaums nach dem Nachreview von 19b6e88 (siehe Beads
+    ki-dev-ablauf-wu0.2, siebter Nachreview)."""
+
+    _line = TestNachreview19b6e88._line
+
+    def _per_request(self, tmp_path, *lines):
+        path = tmp_path / "rollout.jsonl"
+        path.write_text("".join(line + "\n" for line in lines))
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        return scan, [
+            e
+            for e in scan.events
+            if e.counter_scope is CounterScope.PER_REQUEST
+        ]
+
+    def test_repeated_unconfirmed_value_stays_visible(self, tmp_path):
+        """[P2] (115,115) -> (115,11) -> (115,11): die Wiederholung
+        wird mit dem noch nicht ausgegebenen Pending zusammengefuehrt,
+        loescht es aber nicht -- genau ein 11er bleibt als PARTIAL
+        sichtbar."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115),
+            self._line("2026-04-04T09:05:00.000Z", total=115, last=11),
+            self._line("2026-04-04T09:10:00.000Z", total=115, last=11),
+        )
+        assert [e.tokens.total for e in per_request] == [115, 11]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+        ]
+
+    def test_repeated_confirmed_value_still_merges(self, tmp_path):
+        """Gegenprobe (Vertrag des sechsten Nachreviews):
+        (115,115) -> (fehlt,115) -> (115,115) bleibt genau ein
+        MEASURED-Eintrag -- die Wiederholung passt zum bei genau
+        diesem Zaehlerstand bestaetigten Inhalt."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115),
+            self._line("2026-04-04T09:05:00.000Z", last=115),
+            self._line("2026-04-04T09:10:00.000Z", total=115, last=115),
+        )
+        assert [e.tokens.total for e in per_request] == [115]
+        assert per_request[0].status is UsageStatus.MEASURED
+
+    def test_pure_summary_growth_invalidates_confirmed_content(
+        self, tmp_path
+    ):
+        """[P2] (115,115) -> (200,fehlt) -> (200,115): der bei Stand
+        115 bestaetigte Inhalt gilt bei Stand 200 nicht mehr als
+        bereits ausgegeben -- die letzte Beobachtung bleibt als
+        unbestaetigt sichtbar statt unterdrueckt zu werden."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115),
+            self._line("2026-04-04T09:05:00.000Z", total=200),
+            self._line("2026-04-04T09:10:00.000Z", total=200, last=115),
+        )
+        assert [e.tokens.total for e in per_request] == [115, 115]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+        ]
+
+    def test_summary_below_request_value_is_not_confirmation(
+        self, tmp_path
+    ):
+        """[P2] (fehlt,11) -> (5,11): eine Summe kleiner als der
+        eigene Requestwert widerspricht sich selbst -- kein Request
+        darf MEASURED sein, der Widerspruch ist per Diagnose sichtbar
+        und die inhaltsgleiche Wiederholung zaehlt nicht doppelt."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", last=11),
+            self._line("2026-04-04T09:05:00.000Z", total=5, last=11),
+        )
+        assert [e.tokens.total for e in per_request] == [11]
+        assert per_request[0].status is UsageStatus.PARTIAL
+        assert "kleiner" in per_request[0].detail
+
+    def test_summary_below_request_value_after_baseline(self, tmp_path):
+        """Derselbe Widerspruch mit vorhandener Vergleichsbasis
+        (Rueckgang auf 5 bei Request 11): ebenfalls keine
+        Bestaetigung; ein abweichendes offenes Pending bleibt
+        eigenstaendig unbestaetigt."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115),
+            self._line("2026-04-04T09:05:00.000Z", last=7),
+            self._line("2026-04-04T09:10:00.000Z", total=5, last=11),
+        )
+        assert [e.tokens.total for e in per_request] == [115, 7, 11]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+            UsageStatus.PARTIAL,
+        ]
+
+    def test_reset_to_exact_request_value_still_confirms(
+        self, tmp_path
+    ):
+        """Gegenprobe: (115,115) -> (11,11) -- nach einem Reset deckt
+        die neue Summe den Request genau; das bleibt eine direkte
+        Bestaetigung."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115),
+            self._line("2026-04-04T09:05:00.000Z", total=11, last=11),
+        )
+        assert [e.tokens.total for e in per_request] == [115, 11]
+        assert all(
+            e.status is UsageStatus.MEASURED for e in per_request
+        )
+
+    def test_growth_below_request_value_is_not_confirmation(
+        self, tmp_path
+    ):
+        """Dieselbe Invariante bei vorhandener Vergleichsbasis:
+        (115,115) -> (120,11) -- der Zuwachs 5 deckt den Request 11
+        nicht; kein MEASURED fuer den 11er."""
+        _, per_request = self._per_request(
+            tmp_path,
+            self._line("2026-04-04T09:00:00.000Z", total=115, last=115),
+            self._line("2026-04-04T09:05:00.000Z", total=120, last=11),
+        )
+        assert [e.tokens.total for e in per_request] == [115, 11]
+        assert [e.status for e in per_request] == [
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+        ]
+
+
+def _codex_usage(value):
+    return {
+        "input_tokens": value,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": value,
+    }
+
+
+_rollout_steps = st.lists(
+    st.tuples(
+        st.one_of(st.none(), st.sampled_from([0, 5, 11, 22, 115, 126])),
+        st.one_of(st.none(), st.sampled_from([5, 11, 115])),
+    ).filter(lambda step: step != (None, None)),
+    min_size=1,
+    max_size=5,
+)
+
+
+@settings(max_examples=300, deadline=None)
+@given(steps=_rollout_steps)
+def test_codex_rollout_request_invariants(steps):
+    """Invarianten statt Einzelbeispielen (die Nachreview-Runden zu
+    wu0.2 haben gezeigt, dass Einzelfall-Korrekturen neue
+    Gegenbeispiele erzeugen):
+
+    1. Keine beobachtete last_token_usage-Lesung verschwindet
+       stillschweigend -- jeder Wert erscheint mindestens einmal.
+    2. Die MEASURED-Requests zusammen uebersteigen nie, was die
+       Summen belegen (Zuwachs, bzw. nach Reset/erster Summe die
+       neue Basis).
+    3. Mehrfachlesen ist idempotent.
+    4. Keine Vervielfachung: hoechstens so viele Requests wie
+       beobachtete last_token_usage-Lesungen (jedes Ereignis gibt
+       hoechstens sich selbst und ein frueheres Pending aus)."""
+    lines = []
+    for index, (total, last) in enumerate(steps):
+        info = {}
+        if total is not None:
+            info["total_token_usage"] = _codex_usage(total)
+        if last is not None:
+            info["last_token_usage"] = _codex_usage(last)
+        lines.append(
+            _rollout_line(
+                timestamp=f"2026-04-04T09:0{index}:00.000Z",
+                payload={"type": "token_count", "info": info},
+            )
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "rollout.jsonl"
+        path.write_text("\n".join(lines) + "\n")
+        scan = read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+        assert scan == read_codex_rollout_usage(
+            path, cli_version=CODEX_VERIFIED_VERSION
+        )
+    per_request = [
+        e
+        for e in scan.events
+        if e.counter_scope is CounterScope.PER_REQUEST
+    ]
+    observed = {last for _, last in steps if last is not None}
+    assert len(per_request) <= sum(
+        1 for _, last in steps if last is not None
+    )
+    assert observed <= {e.tokens.total for e in per_request}
+    covered = 0
+    previous = None
+    for total, _ in steps:
+        if total is None:
+            continue
+        if previous is None or total < previous:
+            covered += total
+        elif total > previous:
+            covered += total - previous
+        previous = total
+    measured = sum(
+        e.tokens.total
+        for e in per_request
+        if e.status is UsageStatus.MEASURED
+    )
+    assert measured <= covered

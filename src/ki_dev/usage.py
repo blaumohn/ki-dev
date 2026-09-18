@@ -825,7 +825,11 @@ def _codex_confirmed_request(
 
 
 def _codex_unconfirmed_request(
-    pending: dict, *, cli_version: str | None, session_id: str | None
+    pending: dict,
+    *,
+    cli_version: str | None,
+    session_id: str | None,
+    detail: str | None = None,
 ) -> UsageEvent:
     """Ein last_token_usage, fuer das nie ein eigener oder spaeter
     passender kumulativer Beleg auftauchte: Zahlen bleiben erhalten
@@ -842,7 +846,8 @@ def _codex_unconfirmed_request(
         return replace(
             event,
             status=UsageStatus.PARTIAL,
-            detail=(
+            detail=detail
+            or (
                 "last_token_usage ohne eigenen oder spaeter "
                 "bestaetigenden kumulativen Beleg beobachtet; eine "
                 "gleich teure, echte zweite Anfrage ist ohne "
@@ -906,6 +911,12 @@ def read_codex_rollout_usage(
     events: list[UsageEvent] = []
     prev_cumulative: int | None = None
     pending: dict | None = None
+    # (Zaehlerstand, Inhalt) des zuletzt direkt bestaetigten
+    # last_token_usage. Nur bei genau diesem Zaehlerstand gilt eine
+    # Wiederholung desselben Inhalts als "bereits ausgegeben"; jeder
+    # spaetere Zaehlerwechsel -- auch durch ein reines Summenereignis
+    # ohne last_token_usage -- entwertet ihn damit automatisch.
+    last_confirmed: tuple[int, str] | None = None
     reset_detected = False
     latest_total_usage: object = None
     latest_total_time: float | None = None
@@ -932,35 +943,130 @@ def read_codex_rollout_usage(
         directly_confirmed = (
             raw_total is not None and raw_total != prev_cumulative
         )
-        if directly_confirmed:
+        current_value = (
+            _codex_request_value(
+                last_usage,
+                cli_version=effective_cli_version,
+                session_id=file_session_id,
+            )
+            if last_usage is not None
+            else None
+        )
+        # Was die Summe dieses Ereignisses an neuem Verbrauch belegt:
+        # bei Wachstum der Zuwachs, sonst (erste Summe oder Reset auf
+        # eine neue Zaehlerbasis) die Summe selbst.
+        coverage = (
+            raw_total - prev_cumulative
+            if raw_total is not None
+            and prev_cumulative is not None
+            and raw_total > prev_cumulative
+            else raw_total
+        )
+        if (
+            directly_confirmed
+            and current_value is not None
+            and coverage < current_value
+        ):
+            # Widerspruch: die kumulative Summe enthaelt jeden Request,
+            # ihr Zuwachs (bzw. nach Reset die neue Basis) kann also
+            # nie kleiner als dessen eigener Wert sein. Ein solches
+            # Ereignis ist kein Beleg fuer sein last_token_usage -- es
+            # bleibt
+            # sichtbar, aber als unvollstaendig mit Diagnose. Ein
+            # inhaltsgleiches offenes Pending ist dieselbe Beobachtung
+            # und geht darin auf; ein abweichendes bleibt eigenstaendig
+            # unbestaetigt.
+            same_as_pending = (
+                pending is not None
+                and pending["content"] == last_content
+            )
+            if pending is not None and not same_as_pending:
+                events.append(
+                    _codex_unconfirmed_request(
+                        pending,
+                        cli_version=effective_cli_version,
+                        session_id=file_session_id,
+                    )
+                )
+            observation = (
+                pending
+                if same_as_pending
+                else {
+                    "last_usage": last_usage,
+                    "event_time": event_time,
+                }
+            )
+            events.append(
+                _codex_unconfirmed_request(
+                    observation,
+                    cli_version=effective_cli_version,
+                    session_id=file_session_id,
+                    detail=(
+                        "kumulative Summe bzw. ihr Zuwachs ist "
+                        "kleiner als der eigene last_token_usage-Wert "
+                        "desselben Ereignisses; "
+                        "widerspruechlicher Beleg, Request nicht "
+                        "bestaetigt"
+                    ),
+                )
+            )
+            pending = None
+        elif directly_confirmed:
             if last_usage is not None:
                 if pending is not None and pending["content"] == (
                     last_content
                 ):
-                    # Gleicher Inhalt wie das offene Pending: nur dann
-                    # zusammenfuehren (ein Vorgang), wenn der Zuwachs
-                    # genau einer Beobachtung entspricht. Reicht er
-                    # fuer beide, sind es zwei echte, zufaellig gleich
-                    # teure Anfragen -- beide bleiben erhalten.
+                    # Gleicher Inhalt wie das offene Pending: die Hoehe
+                    # des Summenzuwachses entscheidet, welche der drei
+                    # Deutungen zutrifft. Deckt er genau eine
+                    # Beobachtung, ist es derselbe Vorgang (Pending
+                    # entfaellt stillschweigend). Deckt er genau zwei,
+                    # sind es zwei echte, zufaellig gleich teure
+                    # Anfragen (beide bleiben erhalten). Fehlt die
+                    # Vergleichsbasis (kein vorheriger Zaehlerstand),
+                    # laesst sich "zwei" trotzdem ausschliessen, wenn
+                    # schon die absolute Summe kleiner als das
+                    # Doppelte ist (der Zuwachs kann die Summe nie
+                    # uebersteigen); dass sie mindestens einen Request
+                    # deckt, ist oben bereits sichergestellt -- bei
+                    # identischem Inhalt bleibt dann nur "derselbe
+                    # Vorgang" als einzige Deutung uebrig. Passt weder
+                    # absolute Summe noch Zuwachs zu einer der beiden
+                    # Deutungen, ist die Zuordnung ungeklaert -- das
+                    # Pending bleibt sichtbar, aber nur als
+                    # unbestaetigt.
                     growth = (
                         raw_total - prev_cumulative
                         if prev_cumulative is not None
                         else None
                     )
-                    current_value = _codex_request_value(
-                        last_usage,
-                        cli_version=effective_cli_version,
-                        session_id=file_session_id,
+                    confirmed_two = (
+                        growth is not None
+                        and current_value is not None
+                        and growth == 2 * current_value
                     )
-                    if (
-                        growth is None
-                        or current_value is None
-                        or growth != current_value
-                    ):
+                    confirmed_one = current_value is not None and (
+                        growth == current_value
+                        or (
+                            growth is None
+                            and current_value
+                            <= raw_total
+                            < 2 * current_value
+                        )
+                    )
+                    if confirmed_two:
                         events.append(
                             _codex_confirmed_request(
                                 pending["last_usage"],
                                 pending["event_time"],
+                                cli_version=effective_cli_version,
+                                session_id=file_session_id,
+                            )
+                        )
+                    elif not confirmed_one:
+                        events.append(
+                            _codex_unconfirmed_request(
+                                pending,
                                 cli_version=effective_cli_version,
                                 session_id=file_session_id,
                             )
@@ -982,14 +1088,65 @@ def read_codex_rollout_usage(
                         session_id=file_session_id,
                     )
                 )
+                last_confirmed = (raw_total, last_content)
                 pending = None
         elif raw_total is not None:
-            # Bestaetigtes Nicht-Wachstum
-            # (raw_total == prev_cumulative): widerlegt ein offenes
-            # Pending, statt es unbestaetigt zu lassen -- der Zaehler
-            # hat sich nachweislich nicht veraendert, also kann
-            # seitdem nichts Neues dazugekommen sein.
-            pending = None
+            # Bestaetigtes Nicht-Wachstum (raw_total ==
+            # prev_cumulative): es ist nichts Neues dazugekommen. Ob
+            # das last_token_usage dieses Ereignisses schon ausgegeben
+            # ist, haengt davon ab, wozu es passt:
+            # - zum bei genau diesem Zaehlerstand bestaetigten Inhalt:
+            #   Wiederholung einer bereits ausgegebenen Lesung. Ein
+            #   inhaltsgleiches Pending ist dieselbe Lesung und
+            #   entfaellt; ein abweichendes bleibt davon unerklaert und
+            #   wird als unbestaetigt ausgegeben.
+            # - zum offenen Pending: Wiederholung einer noch nicht
+            #   ausgegebenen Lesung. Sie wird zusammengefuehrt, das
+            #   Pending bleibt aber offen -- mindestens eine
+            #   unbestaetigte Beobachtung muss erhalten bleiben.
+            # - zu keinem von beiden: eine neue, unbelegte Beobachtung;
+            #   ein abweichendes Pending wird als unbestaetigt
+            #   abgeschlossen, die neue wird vorgemerkt.
+            if last_usage is not None and last_confirmed == (
+                raw_total,
+                last_content,
+            ):
+                if (
+                    pending is not None
+                    and pending["content"] != last_content
+                ):
+                    events.append(
+                        _codex_unconfirmed_request(
+                            pending,
+                            cli_version=effective_cli_version,
+                            session_id=file_session_id,
+                        )
+                    )
+                pending = None
+            elif (
+                pending is not None
+                and last_usage is not None
+                and pending["content"] == last_content
+            ):
+                pass
+            else:
+                if pending is not None:
+                    events.append(
+                        _codex_unconfirmed_request(
+                            pending,
+                            cli_version=effective_cli_version,
+                            session_id=file_session_id,
+                        )
+                    )
+                pending = (
+                    {
+                        "last_usage": last_usage,
+                        "event_time": event_time,
+                        "content": last_content,
+                    }
+                    if last_usage is not None
+                    else None
+                )
         elif last_usage is not None and (
             pending is None or pending["content"] != last_content
         ):
@@ -1031,10 +1188,24 @@ def read_codex_rollout_usage(
         if last_usage is None:
             continue
         unordered_total = info.get("total_token_usage")
+        # Derselbe Validierungsvertrag wie jede andere normalisierte
+        # Summe (siehe latest_total_usage unten): ein blosses
+        # gueltiges total_tokens-Feld reicht nicht. Nur ein voll
+        # bestaetigter Beleg (MEASURED -- gueltige Einzelzaehler,
+        # total_tokens passt zu ihnen, bekannte cli_version) zaehlt
+        # als eigenstaendiger Nachweis; PARTIAL (z. B. total_tokens
+        # widerspricht den Einzelzaehlern, oder ist selbst ungueltig)
+        # ist genauso wenig belastbar wie UNAVAILABLE.
         has_own_total = (
             isinstance(unordered_total, dict)
-            and _nonneg_int(unordered_total.get("total_tokens"))
-            is not None
+            and normalize_codex_token_count_usage(
+                unordered_total,
+                scope=CounterScope.CUMULATIVE_SESSION,
+                cli_version=effective_cli_version,
+                session_id=file_session_id,
+                event_time=None,
+            ).status
+            is UsageStatus.MEASURED
         )
         if has_own_total:
             # Eigener, in sich abgeschlossener Beleg (unabhaengig von
