@@ -84,6 +84,27 @@ Adapterinstanz ueberschreibbar.
 betraegt 180 Sekunden und begrenzt den Adaptertimeout zusaetzlich.
 Alle Zeit- und Kostengrenzen muessen positiv und endlich sein.
 
+### Versionsprobe teilt sich die Zeitgrenze mit dem Turn
+
+Modul: `ki_dev.executors.base` (`CliAdapter.send_metered_turn`)
+
+Ein budgetierter Turn (`TurnRequest.budget` gesetzt) fuehrt vor dem
+eigentlichen Prozessaufruf `<cli> --version` aus, um die tatsaechlich
+ausgefuehrte CLI-Version nachzuweisen (siehe `verified_cli_version`
+unten) statt sie aus dem gepinnten Bezugsstand zu behaupten. Probe und
+Turn teilen sich EINE gemeinsame Zeitgrenze (`budget.timeout_s`, siehe
+oben) statt sie zu verdoppeln:
+
+* Die Probe erhaelt hoechstens `VERSION_PROBE_TIMEOUT_S = 10` Sekunden
+  (eine lokale Versionsausgabe braucht keine Modell-/
+  Netzwerklaufzeit).
+* Der Turn erhaelt danach nur noch die verbleibende Restzeit der
+  Rollen-Frist, nicht erneut die volle Frist.
+* Ist die Frist bereits durch die Probe aufgebraucht, startet kein
+  Turn-Prozess mehr; das Ergebnis ist `TurnStatus.TIMEOUT` ohne
+  `claude_result()`/`codex_result()`-Nachbearbeitung (die ist fuer ein
+  tatsaechliches Prozessergebnis gebaut).
+
 ## ClaudeCliAdapter
 
 Verwendete CLI: **Claude Code CLI** (`claude`), nachweisbar per

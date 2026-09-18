@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import os
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
@@ -19,10 +20,20 @@ from .contract import (
     QuotaStatus,
     TurnRequest,
     TurnResult,
+    TurnStatus,
 )
 from .process import DEFAULT_TIMEOUT_S, run_cli_turn
 
 ProcessRunner = Callable[..., TurnResult]
+
+# Kurze eigene Frist fuer die ``--version``-Probe (R5, ki-dev-ablauf-
+# wu0.3): eine lokale Versionsausgabe braucht keine Modell-/
+# Netzwerklaufzeit wie ein Turn. Ohne eigene Frist wuerde eine
+# haengende Probe mit dem vollen Rollen-Timeout rechnen und den
+# nachfolgenden Turn zusaetzlich zu dessen eigener Frist verzoegern
+# (docs/cli-adapters.md: "der kleinere Wert aus Rollen-Timeout und
+# Budget gilt" -- EIN gemeinsamer Prozesstimeout, keine Verdopplung).
+VERSION_PROBE_TIMEOUT_S = 10.0
 
 
 class CliAdapter(ABC):
@@ -48,18 +59,75 @@ class CliAdapter(ABC):
         self._runner = runner
 
     def send_turn(self, request: TurnRequest) -> TurnResult:
+        return self._run_process(
+            request, self._bound_timeout_s(request)
+        )
+
+    def _run_process(
+        self, request: TurnRequest, timeout_s: float
+    ) -> TurnResult:
         argv = [self.executable, *self.build_argv(request)]
         return self._runner(
             argv,
             stdin=self.message_stdin(request),
-            timeout_s=min(self.timeout_s, request.budget.timeout_s)
-            if request.budget
-            else self.timeout_s,
+            timeout_s=timeout_s,
             cwd=request.workdir,
-            env={**os.environ, **request.env}
-            if request.env
-            else None,
+            env=self._merged_env(request),
         )
+
+    def send_metered_turn(
+        self, request: TurnRequest
+    ) -> tuple[str | None, TurnResult, bool]:
+        """Versionsprobe und Turn eines budgetierten Aufrufs teilen
+        sich EINE gemeinsame Zeitgrenze (R5, ki-dev-ablauf-wu0.3):
+        die Probe zaehrt vom selben Rollen-Budget statt es zusaetzlich
+        zum Turn zu verlaengern. Ist das Budget nach der Probe bereits
+        aufgebraucht, startet kein Turn mehr.
+
+        Das dritte Rueckgabefeld ist explizit, ob ein Turn-Prozess
+        ueberhaupt gestartet wurde: der Aufrufer darf das TurnResult
+        eines nicht gestarteten Turns nicht an ``claude_result()``/
+        ``codex_result()`` weiterreichen -- deren Erfolgs-/
+        Fehlerauswertung ist fuer ein tatsaechliches Prozessergebnis
+        gebaut und wuerde ``TurnStatus.TIMEOUT`` sonst stillschweigend
+        auf ``NONZERO_EXIT`` abbilden (siehe ``TurnStatus``-Docstring:
+        die vier Status sind bewusst disjunkt)."""
+        total = self._bound_timeout_s(request)
+        start = time.monotonic()
+        cli_version = self.probe_executed_version(
+            request, min(VERSION_PROBE_TIMEOUT_S, total)
+        )
+        remaining = total - (time.monotonic() - start)
+        if remaining <= 0:
+            result = self._deadline_exhausted_by_probe(total)
+            return cli_version, result, False
+        return cli_version, self._run_process(request, remaining), True
+
+    def _deadline_exhausted_by_probe(self, total: float) -> TurnResult:
+        return TurnResult(
+            status=TurnStatus.TIMEOUT,
+            exit_code=None,
+            stdout="",
+            stderr="",
+            argv=(),
+            duration_s=total,
+            error=(
+                f"Versionsprobe hat die gemeinsame Zeitgrenze von "
+                f"{total:g}s verbraucht; kein Turn gestartet"
+            ),
+        )
+
+    def _bound_timeout_s(self, request: TurnRequest) -> float:
+        return (
+            min(self.timeout_s, request.budget.timeout_s)
+            if request.budget
+            else self.timeout_s
+        )
+
+    def _merged_env(
+        self, request: TurnRequest
+    ) -> dict[str, str] | None:
+        return {**os.environ, **request.env} if request.env else None
 
     @property
     @abstractmethod
@@ -72,6 +140,44 @@ class CliAdapter(ABC):
 
     def message_stdin(self, request: TurnRequest) -> str:
         return request.message
+
+    def probe_executed_version(
+        self, request: TurnRequest, timeout_s: float
+    ) -> str | None:
+        """Tatsaechlich ausgefuehrte CLI-Version per ``--version``
+        nachweisen (R2, ki-dev-ablauf-wu0.3): ``verified_cli_version``
+        ist nur ein gepinnter Bezugsstand, kein Laufzeitnachweis.
+
+        Laeuft mit demselben ``cwd``/``env`` wie der nachfolgende Turn
+        (``send_turn``): sonst koennte ein blosser Programmname
+        (``self.executable``) ueber ``PATH`` je nach Umgebung auf ein
+        anderes Programm aufloesen als das tatsaechlich ausgefuehrte,
+        und die Probe waere kein Nachweis fuer diesen Turn.
+        ``timeout_s`` ist eine eigene, vom Aufrufer begrenzte Frist
+        (siehe ``send_metered_turn``), kein Rollen-Budget.
+
+        Ein fehlgeschlagener oder nicht auswertbarer Probe-Aufruf
+        liefert ``None`` statt eines Rueckfalls auf den Pin -- eine
+        unbekannte Version bleibt ueber den Messvertrag
+        (``usage._measured_or_partial``) ein ``PARTIAL``-, kein
+        angeblich gemessener ``MEASURED``-Beleg.
+        """
+        probe = self._runner(
+            [self.executable, "--version"],
+            stdin="",
+            timeout_s=timeout_s,
+            cwd=request.workdir,
+            env=self._merged_env(request),
+        )
+        if probe.status is not TurnStatus.OK:
+            return None
+        return self.parse_version(probe.stdout)
+
+    def parse_version(self, raw: str) -> str | None:
+        """Extrahiert die Versionsziffer aus ``--version``; je
+        Adapter ueberschrieben (providerspezifisches Ausgabeformat)."""
+        text = raw.strip()
+        return text or None
 
     def measure_context(self, session_id: str) -> ContextMeasurement:
         """Sitzungsbezogener Kontextmesswert; ``UNSUPPORTED`` als

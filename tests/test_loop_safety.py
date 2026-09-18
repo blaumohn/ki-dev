@@ -38,6 +38,12 @@ from ki_dev.loop_safety import (
 from ki_dev.machine import Limits
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.usage import (
+    CounterScope,
+    TokenCounts,
+    UsageEvent,
+    UsageStatus,
+)
 from tests.test_loop_runtime import (
     FakeBuilder,
     FakeReviewer,
@@ -135,6 +141,218 @@ def test_agent_failure_pauses_immediately_and_keeps_usage(
     ):
         run.resume()
     assert executor.calls == 1
+
+
+@pytest.mark.parametrize("role", ["build", "review"])
+def test_agent_failure_still_records_normalized_usage_event(
+    tmp_path, role
+):
+    """Ein vorgegebenes Fake-Event wird auch im Abbruchpfad verbucht.
+    Die Adapterintegration prueft test_turn_usage_integration.py.
+    """
+    # Dieselben Kategorienwerte wie ``USAGE`` (der Legacy-Nachweis aus
+    # demselben Turn): in der echten Anbindung stammen beide aus
+    # derselben Rohantwort und duerfen sich nie widersprechen (siehe
+    # tests/test_usage_accounting.py,
+    # test_claude_call_total_summary_reconciles_with_legacy_usage).
+    # ``provider="fake"`` deckt sich mit ``Executor.name`` ("fake" ist
+    # in ``PROVIDER_FAMILY_BY_EXECUTOR`` nicht abgebildet und bleibt
+    # deshalb sich selbst gleich).
+    event = UsageEvent(
+        UsageStatus.MEASURED,
+        "fake",
+        "cli_result",
+        CounterScope.CALL_TOTAL,
+        cli_version="2.1.272",
+        session_id=role,
+        tokens=TokenCounts(
+            fresh_input=10,
+            cache_read=100,
+            cache_creation=30,
+            output=20,
+        ),
+    )
+    executor = Executor(
+        TurnResult(
+            TurnStatus.NONZERO_EXIT,
+            1,
+            "",
+            "rate_limit: five_hour",
+            (),
+            2.0,
+            error="session limit",
+            usage=USAGE,
+            usage_event=event,
+        )
+    )
+    builder = (
+        AgentBuildMode(executor, "build", "model", Effort.LOW)
+        if role == "build"
+        else FakeBuilder()
+    )
+    reviewer = (
+        AgentReviewer(executor, "review", "model", Effort.LOW)
+        if role == "review"
+        else FakeReviewer([ReviewAction.PASS])
+    )
+    with runtime(tmp_path, builder, reviewer) as run:
+        run.start(_task("guard"), Limits(process_retries=3))
+
+    report = CallLedger(RunStore(tmp_path, "guard")).usage_report()
+    assert report.total == event.tokens.total
+    recorded = [call for call in report.calls if call.evidence_refs]
+    assert len(recorded) == 1
+    assert set(recorded[0].gaps) <= {"attribution_missing"}
+
+
+def test_successful_review_turn_records_usage_event(tmp_path):
+    """Ein vorgegebenes Fake-Event wird im Erfolgspfad verbucht.
+    Die Adapterintegration prueft test_turn_usage_integration.py.
+    """
+    event = UsageEvent(
+        UsageStatus.MEASURED,
+        "fake",
+        "cli_result",
+        CounterScope.CALL_TOTAL,
+        cli_version="2.1.272",
+        session_id="review",
+        tokens=TokenCounts(
+            fresh_input=10,
+            cache_read=100,
+            cache_creation=30,
+            output=20,
+        ),
+    )
+    review_json = json.dumps(
+        {
+            "run_id": "guard",
+            "round_id": 1,
+            "action": ReviewAction.PASS.value,
+            "detail": "",
+            "requirement_ref": None,
+        }
+    )
+    executor = Executor(
+        TurnResult(
+            TurnStatus.OK,
+            0,
+            review_json,
+            "",
+            (),
+            1.0,
+            usage=USAGE,
+            usage_event=event,
+        )
+    )
+    builder = FakeBuilder()
+    reviewer = AgentReviewer(executor, "review", "model", Effort.LOW)
+    with runtime(tmp_path, builder, reviewer) as run:
+        result = run.start(_task("guard"), Limits())
+
+    assert result.status == "passed"
+    store = RunStore(tmp_path, "guard")
+    ledger = CallLedger(store)
+    report = ledger.usage_report()
+    assert report.total == event.tokens.total
+    recorded = [call for call in report.calls if call.evidence_refs]
+    assert len(recorded) == 1
+    assert recorded[0].reconciliation == "summary_only"
+    assert set(recorded[0].gaps) <= {"attribution_missing"}
+
+    # Beweis, dass diese Gaps tatsaechlich nicht blockieren: eine
+    # weitere Reservierung bleibt moeglich.
+    ledger.reserve("call-danach", "review", True, "fake")
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_reservation_stays_locked_between_record_usage_and_finish(
+    tmp_path, monkeypatch, failed
+):
+    """ki-dev-ablauf-wu0.3 Nachreview: ``finish()`` (das die
+    "ungeklaert"-Sperre aus ``reserve()`` loescht) darf erst NACH dem
+    Verbrauchsbeleg geschrieben werden -- sonst rutscht eine
+    Reservierung in genau diesem Fenster durch, obwohl ein
+    PARTIAL-Beleg sie sperren muesste; ein Prozessabbruch dazwischen
+    liesse diese Sperrinformation dauerhaft fehlen. Betrifft
+    ``LoopRuntime._metered_operation`` in beiden Zweigen (Erfolg und
+    Fehlerpfad).
+    """
+    event = UsageEvent(
+        UsageStatus.PARTIAL,
+        "fake",
+        "cli_result",
+        CounterScope.CALL_TOTAL,
+        cli_version="0.0.0",
+        session_id="build",
+        tokens=TokenCounts(
+            fresh_input=10,
+            cache_read=100,
+            cache_creation=30,
+            output=20,
+        ),
+    )
+    result = (
+        TurnResult(
+            TurnStatus.NONZERO_EXIT,
+            1,
+            "",
+            "rate_limit: five_hour",
+            (),
+            2.0,
+            error="session limit",
+            usage=USAGE,
+            usage_event=event,
+        )
+        if failed
+        else TurnResult(
+            TurnStatus.OK,
+            0,
+            "fertig",
+            "",
+            (),
+            1.0,
+            usage=USAGE,
+            usage_event=event,
+        )
+    )
+    executor = Executor(result)
+    builder = AgentBuildMode(executor, "build", "model", Effort.LOW)
+    reviewer = FakeReviewer([ReviewAction.PASS])
+
+    # Fuer jeden ``finish()``-Aufruf festhalten, ob der Verbrauchs-
+    # beleg fuer denselben ``call_id`` in diesem Moment bereits auf
+    # der Platte steht. Bei richtiger Reihenfolge (Beleg vor
+    # ``finish()``) ist das fuer jeden Aufruf, der am Ende ueberhaupt
+    # einen Beleg bekommt, immer schon der Fall -- bei der im Befund
+    # beschriebenen falschen Reihenfolge (``finish()`` vor dem Beleg)
+    # waere es an dieser Stelle noch ``False``.
+    entries: list[tuple[str, bool]] = []
+    original = CallLedger.finish
+
+    def spy(self, call_id_arg, *args, **kwargs):
+        value = original(self, call_id_arg, *args, **kwargs)
+        entries.append(
+            (call_id_arg, bool(self.store.load_usage(call_id_arg)))
+        )
+        return value
+
+    monkeypatch.setattr(CallLedger, "finish", spy)
+
+    with runtime(tmp_path, builder, reviewer) as run:
+        run.start(_task("guard"), Limits(process_retries=3))
+
+    report = CallLedger(RunStore(tmp_path, "guard")).usage_report()
+    recorded_ids = {
+        call.call_id for call in report.calls if call.evidence_refs
+    }
+    assert recorded_ids
+    for call_id, had_usage_when_finished in entries:
+        if call_id in recorded_ids:
+            assert had_usage_when_finished, (
+                f"finish() fuer {call_id} lief vor dem "
+                "Verbrauchsbeleg -- Sperrinformation kann bei einem "
+                "Prozessabbruch dazwischen verloren gehen"
+            )
 
 
 def test_two_failed_corrections_stop_before_fourth_build(tmp_path):
@@ -486,9 +704,7 @@ def test_role_configuration_cannot_disable_bounds(override):
 def test_quota_baseline_first_measurement_returns_zero_delta(tmp_path):
     store = RunStore(tmp_path, "run-x")
     baseline = QuotaBaseline(store)
-    assert (
-        baseline.delta_percent("build", 40.0, resets_at=1000) == 0.0
-    )
+    assert baseline.delta_percent("build", 40.0, resets_at=1000) == 0.0
 
 
 def test_quota_baseline_same_window_returns_growth(tmp_path):
@@ -531,9 +747,7 @@ def test_quota_baseline_is_independent_per_role(tmp_path):
     baseline.delta_percent("build", 10.0, resets_at=1000)
     baseline.delta_percent("review", 70.0, resets_at=1000)
     assert baseline.delta_percent("build", 12.0, resets_at=1000) == 2.0
-    assert (
-        baseline.delta_percent("review", 74.0, resets_at=1000) == 4.0
-    )
+    assert baseline.delta_percent("review", 74.0, resets_at=1000) == 4.0
 
 
 def test_quota_baseline_rejects_resets_at_regression(tmp_path):

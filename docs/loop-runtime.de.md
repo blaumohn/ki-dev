@@ -173,7 +173,7 @@ konfigurierbare Standardgrenzen:
 | `build.budget.max_turns` / `review.budget.max_turns` | 12 | Native Claude-Turn-Grenze pro Aufruf |
 | `budget.max_budget_usd` je Rolle | 1 | Native Claude-Kostengrenze pro Aufruf |
 | `budget.max_context_tokens` je Rolle | 80.000 | Kontextvorpruefung durch die Orchestrierung vor jedem Bau-/Review-Aufruf und bei Resume (siehe unten) |
-| `budget.timeout_s` je Rolle | 180 s | Prozesstimeout fuer beide Adapter; der kleinere Wert aus Rollen-Timeout und Budget gilt |
+| `budget.timeout_s` je Rolle | 180 s | Prozesstimeout fuer beide Adapter; der kleinere Wert aus Rollen-Timeout und Budget gilt. Eine vorgeschaltete CLI-Versionsprobe teilt sich diese Frist mit dem Turn, statt sie zu verdoppeln (siehe [cli-adapters.md](cli-adapters.md#versionsprobe-teilt-sich-die-zeitgrenze-mit-dem-turn)) |
 
 Beispiel fuer eine bewusst kleinere Schranke auf oberster Konfigurationsebene:
 

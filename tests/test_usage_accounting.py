@@ -17,10 +17,17 @@ from dataclasses import asdict
 
 import pytest
 
+from ki_dev.executors.claude_cli import (
+    VERIFIED_CLI_VERSION as CLAUDE_VERIFIED_CLI_VERSION,
+)
 from ki_dev.executors.contract import TurnResult, TurnStatus
 from ki_dev.loop_safety import CallLedger, SafetyLimits, SafetyStop
 from ki_dev.run_store import RunStore
-from ki_dev.usage import normalize_codex_turn_usage
+from ki_dev.usage import (
+    UsageStatus,
+    normalize_claude_cli_result,
+    normalize_codex_turn_usage,
+)
 
 # Deckungsgleich mit _codex_event()'s normalisierten Kategorien, damit
 # der Legacy-Verbrauchsnachweis (finish/TurnResult.usage) und der neue
@@ -110,6 +117,68 @@ def test_distinct_evidence_on_different_calls_is_allowed(tmp_path):
 
     report = ledger.usage_report()
     assert report.total == 2 * _codex_event().tokens.total
+
+
+def test_claude_call_total_summary_reconciles_with_legacy_usage(
+    tmp_path,
+):
+    """Ein aus dem echten CLI-Turnergebnis normalisierter
+    UsageEvent (ki-dev-ablauf-wu0.3-Anbindung) muss mit dem
+    bestehenden Legacy-Verbrauchsnachweis (finish/TurnResult.usage)
+    aus demselben Turn konfliktfrei uebereinstimmen -- sonst sperrt
+    ``summary_conflict``/``reconciliation_gap`` jede weitere
+    Reservierung dauerhaft."""
+    ledger = _ledger(tmp_path)
+    event = normalize_claude_cli_result(
+        TURN_USAGE,
+        cli_version=CLAUDE_VERIFIED_CLI_VERSION,
+        session_id="sess-1",
+    )
+
+    ledger.reserve("call-1", "build", True, "claude-cli")
+    ledger.record_usage("call-1", event, "turn:call-1", summary=True)
+    _finish_metered(ledger, "call-1")
+
+    report = ledger.usage_report()
+    assert len(report.calls) == 1
+    call = report.calls[0]
+    # Kein Einzelrequest-Beleg in diesem Ausbauschritt (ki-dev-ablauf-
+    # wu0.3, AC3 bleibt offen) -- "summary_only" ist deshalb das
+    # erwartete, nicht blockierende Ergebnis, nicht "matched".
+    assert call.reconciliation == "summary_only"
+    assert set(call.gaps) <= {"attribution_missing"}
+
+    # Beweis, dass die Gaps tatsaechlich nicht blockieren: eine
+    # weitere Reservierung bleibt moeglich.
+    ledger.reserve("call-2", "build", True, "claude-cli")
+
+
+def test_partial_call_total_keeps_counts_and_blocks_next_reservation(
+    tmp_path,
+):
+    """CALL_TOTAL allein garantiert keine Freigabe: unbekannte
+    Version bedeutet PARTIAL mit sichtbaren Zaehlern und Sperre.
+    """
+    ledger = _ledger(tmp_path)
+    event = normalize_claude_cli_result(
+        TURN_USAGE, cli_version="999.999.999", session_id="sess-1"
+    )
+    assert event.status is UsageStatus.PARTIAL
+    ledger.reserve("call-1", "build", True, "claude-cli")
+    _finish_metered(ledger, "call-1")
+    ledger.record_usage("call-1", event, "turn:call-1", summary=True)
+
+    report = ledger.usage_report()
+    assert report.total == 115
+    assert report.calls[0].counts == {
+        "fresh_input": 100,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "output": 15,
+    }
+    assert "measurement_incomplete" in report.calls[0].gaps
+    with pytest.raises(SafetyStop, match="measurement_incomplete"):
+        ledger.reserve("call-2", "build", True, "claude-cli")
 
 
 def test_result_without_start_file_is_visible_gap_not_dropped(tmp_path):

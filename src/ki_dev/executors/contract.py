@@ -11,7 +11,13 @@ import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    # Nur fuer Typpruefung: ``ki_dev.usage`` importiert seinerseits
+    # ueber die Adapter zurueck auf dieses Modul (Versionskonstanten),
+    # ein Modulimport hier wuerde einen Zyklus schliessen.
+    from ki_dev.usage import UsageEvent
 
 
 class Effort(StrEnum):
@@ -266,6 +272,12 @@ class TurnResult:
     duration_s: float
     error: str | None = None
     usage: dict[str, int | float] | None = None
+    # Normalisierter Gegenwert zu ``usage`` (ki-dev-ablauf-wu0.3):
+    # dieselbe rohe Provider-Antwort, nur ueber den versionierten
+    # Messvertrag aus ``ki_dev.usage`` normalisiert, statt ueber das
+    # hiesige Ad-hoc-Feldschema. Beide beschreiben denselben Turn und
+    # duerfen sich nie widersprechen.
+    usage_event: UsageEvent | None = None
 
     @property
     def ok(self) -> bool:

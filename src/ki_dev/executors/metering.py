@@ -12,7 +12,12 @@ from pathlib import Path
 from .contract import TurnResult, TurnStatus
 
 
-def claude_result(result: TurnResult) -> TurnResult:
+def claude_result(
+    result: TurnResult,
+    *,
+    session_id: str | None = None,
+    cli_version: str | None = None,
+) -> TurnResult:
     """Budget- und Berechtigungsabbrueche trotz Exitcode 0 erkennen."""
     if not result.stdout.strip():
         return missing_result(result)
@@ -50,14 +55,45 @@ def claude_result(result: TurnResult) -> TurnResult:
                 status=TurnStatus.NONZERO_EXIT,
                 stdout=text,
                 usage=usage,
+                usage_event=_claude_usage_event(
+                    usage, session_id, cli_version
+                ),
                 error=detail[:2000],
             )
-        return replace(result, stdout=text, usage=_claude_usage(value))
+        usage = _claude_usage(value)
+        return replace(
+            result,
+            stdout=text,
+            usage=usage,
+            usage_event=_claude_usage_event(
+                usage, session_id, cli_version
+            ),
+        )
     except (ValueError, TypeError) as exc:
         return missing_result(result, str(exc))
 
 
-def codex_result(result: TurnResult) -> TurnResult:
+def _claude_usage_event(
+    usage, session_id: str | None, cli_version: str | None
+):
+    if usage is None:
+        return None
+    # Lokaler Import: ``ki_dev.usage`` importiert ueber die Adapter
+    # zurueck auf dieses Modul (Versionskonstanten); ein Modulimport
+    # auf Dateiebene wuerde einen Ringimport schliessen.
+    from ki_dev.usage import normalize_claude_cli_result
+
+    return normalize_claude_cli_result(
+        usage, cli_version=cli_version, session_id=session_id
+    )
+
+
+def codex_result(
+    result: TurnResult,
+    *,
+    session_id: str | None = None,
+    cli_version: str | None = None,
+) -> TurnResult:
     """JSONL trennt Agentenantwort, Verbrauch und Turn-Fehler."""
     try:
         events = [
@@ -74,14 +110,8 @@ def codex_result(result: TurnResult) -> TurnResult:
             if e.get("type") in ("error", "turn.failed")
         ]
         if failures or not result.ok:
-            return replace(
-                result,
-                status=TurnStatus.NONZERO_EXIT,
-                error=(
-                    json.dumps(failures, ensure_ascii=False)
-                    if failures
-                    else result.error or result.stderr
-                )[:2000],
+            return _codex_failure_result(
+                result, completed, failures, session_id, cli_version
             )
         if len(completed) != 1:
             raise ValueError(
@@ -90,16 +120,7 @@ def codex_result(result: TurnResult) -> TurnResult:
         source = completed[0]["usage"]
         if not isinstance(source, dict):
             raise ValueError("Codex-usage ist kein Objekt")
-        input_tokens = _count(source, "input_tokens")
-        cached = _count(source, "cached_input_tokens")
-        if cached > input_tokens:
-            raise ValueError("Cache-Tokens groesser als Input")
-        usage = {
-            "input_tokens": input_tokens - cached,
-            "cache_read_input_tokens": cached,
-            "cache_creation_input_tokens": 0,
-            "output_tokens": _count(source, "output_tokens"),
-        }
+        usage = _codex_usage_from_source(source)
         messages = []
         for event in events:
             if event.get("type") == "item.completed":
@@ -115,9 +136,98 @@ def codex_result(result: TurnResult) -> TurnResult:
                     messages.append(text)
         if not messages:
             raise ValueError("Codex-Agentenantwort fehlt")
-        return replace(result, stdout=messages[-1], usage=usage)
+        return replace(
+            result,
+            stdout=messages[-1],
+            usage=usage,
+            usage_event=_codex_usage_event(
+                source, session_id, cli_version
+            ),
+        )
     except (ValueError, TypeError, KeyError) as exc:
         return missing_result(result, str(exc))
+
+
+def _codex_usage_from_source(source: dict) -> dict[str, int]:
+    input_tokens = _count(source, "input_tokens")
+    cached = _count(source, "cached_input_tokens")
+    if cached > input_tokens:
+        raise ValueError("Cache-Tokens groesser als Input")
+    return {
+        "input_tokens": input_tokens - cached,
+        "cache_read_input_tokens": cached,
+        "cache_creation_input_tokens": 0,
+        "output_tokens": _count(source, "output_tokens"),
+    }
+
+
+def _codex_failure_result(
+    result: TurnResult,
+    completed: list[dict],
+    failures: list[dict],
+    session_id: str | None,
+    cli_version: str | None,
+) -> TurnResult:
+    """Ein fehlgeschlagener Aufruf verwirft keinen bereits vorhandenen,
+    gueltigen ``turn.completed``-Summenbeleg (R1, ki-dev-ablauf-wu0.3).
+    Fehlt der Beleg oder ist er ungueltig, bleibt ``usage``/
+    ``usage_event`` ``None`` statt eines erfundenen Nullverbrauchs.
+
+    ``status`` bleibt der urspruengliche Nicht-Erfolgsstatus (z. B.
+    ``TIMEOUT``/``START_ERROR`` eines real abgebrochenen Prozesses)
+    und wird nur bei ``OK`` auf ``NONZERO_EXIT`` herabgestuft (Exitcode
+    0, aber inhaltlicher Fehler/`failures` in der JSONL) -- sonst
+    wuerde ein Timeout stillschweigend als Nicht-Null-Exit erscheinen,
+    entgegen der eigenen ``TurnStatus``-Vertragsaussage ("bewusst
+    disjunkt", siehe ``contract.py``; Review-Nachtrag 2026-09-18
+    12:50, ki-dev-ablauf-wu0.3)."""
+    status = (
+        TurnStatus.NONZERO_EXIT
+        if result.status is TurnStatus.OK
+        else result.status
+    )
+    usage = None
+    usage_event = None
+    usage_note = None
+    if len(completed) == 1:
+        source = completed[0].get("usage")
+        if isinstance(source, dict):
+            try:
+                usage = _codex_usage_from_source(source)
+            except ValueError as exc:
+                usage_note = f"; turn.completed-usage ungueltig: {exc}"
+            else:
+                usage_event = _codex_usage_event(
+                    source, session_id, cli_version
+                )
+    error = (
+        json.dumps(failures, ensure_ascii=False)
+        if failures
+        else result.error or result.stderr
+    )[:2000]
+    return replace(
+        result,
+        status=status,
+        usage=usage,
+        usage_event=usage_event,
+        error=error + (usage_note or ""),
+    )
+
+
+def _codex_usage_event(
+    source, session_id: str | None, cli_version: str | None
+):
+    # Lokaler Import: ``ki_dev.usage`` importiert ueber die Adapter
+    # zurueck auf dieses Modul (Versionskonstanten); ein Modulimport
+    # auf Dateiebene wuerde einen Ringimport schliessen. Bewusst die
+    # rohe, noch nicht um Cache bereinigte Quelle -- der Messvertrag
+    # erwartet Codex' Rohfeldschema (``input_tokens`` inkl. Cache),
+    # nicht das hiesige, bereits umgerechnete ``usage``-Schema.
+    from ki_dev.usage import normalize_codex_turn_usage
+
+    return normalize_codex_turn_usage(
+        source, cli_version=cli_version, session_id=session_id
+    )
 
 
 def claude_context_tokens(session_id: str, root: Path) -> int:

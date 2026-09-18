@@ -7,6 +7,7 @@ installierte, bereits angemeldete ``claude``-CLI.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .base import CliAdapter
@@ -22,6 +23,10 @@ from .metering import claude_context_tokens, claude_result
 
 # Lokal verifizierter Bezugsstand der dokumentierten CLI-Syntax.
 VERIFIED_CLI_VERSION = "2.1.272"
+
+# Beobachtetes Format von ``claude --version``, z. B.
+# "2.1.272 (Claude Code)".
+_VERSION_OUTPUT = re.compile(r"^(\S+)\s+\(Claude Code\)")
 
 
 class ClaudeCliAdapter(CliAdapter):
@@ -76,9 +81,21 @@ class ClaudeCliAdapter(CliAdapter):
             ),
         )
 
+    def parse_version(self, raw: str) -> str | None:
+        match = _VERSION_OUTPUT.match(raw.strip())
+        return match.group(1) if match else None
+
     def send_turn(self, request: TurnRequest) -> TurnResult:
-        result = super().send_turn(request)
-        return claude_result(result) if request.budget else result
+        if not request.budget:
+            return super().send_turn(request)
+        cli_version, result, turn_ran = self.send_metered_turn(request)
+        if not turn_ran:
+            return result
+        return claude_result(
+            result,
+            session_id=request.session_id,
+            cli_version=cli_version,
+        )
 
     def build_argv(self, request: TurnRequest) -> list[str]:
         # Die Claude-CLI kennt ``--effort`` nativ (verifiziert mit

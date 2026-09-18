@@ -7,6 +7,7 @@ installierte, bereits angemeldete ``codex``-CLI.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .base import CliAdapter
@@ -20,6 +21,10 @@ from .metering import codex_quota, codex_result
 
 # Lokal verifizierter Bezugsstand der dokumentierten CLI-Syntax.
 VERIFIED_CLI_VERSION = "0.154.0"
+
+# Beobachtetes Format von ``codex --version``, z. B.
+# "codex-cli 0.154.0".
+_VERSION_OUTPUT = re.compile(r"^codex-cli\s+(\S+)")
 
 
 class CodexCliAdapter(CliAdapter):
@@ -59,9 +64,21 @@ class CodexCliAdapter(CliAdapter):
             resets_at=resets_at,
         )
 
+    def parse_version(self, raw: str) -> str | None:
+        match = _VERSION_OUTPUT.match(raw.strip())
+        return match.group(1) if match else None
+
     def send_turn(self, request: TurnRequest) -> TurnResult:
-        result = super().send_turn(request)
-        return codex_result(result) if request.budget else result
+        if not request.budget:
+            return super().send_turn(request)
+        cli_version, result, turn_ran = self.send_metered_turn(request)
+        if not turn_ran:
+            return result
+        return codex_result(
+            result,
+            session_id=request.session_id,
+            cli_version=cli_version,
+        )
 
     def build_argv(self, request: TurnRequest) -> list[str]:
         # ``-`` weist ``codex exec`` an, den Prompt von stdin zu

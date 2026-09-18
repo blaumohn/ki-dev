@@ -82,6 +82,7 @@ from ki_dev.review_context import (
 )
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.session_handoff import build_handoff
+from ki_dev.usage import UsageStatus
 from ki_dev.usage_accounting import UsageAttribution, UsagePurpose
 
 
@@ -735,6 +736,15 @@ class LoopRuntime:
         try:
             value = self._execute_operation(state, pending)
         except Exception as exc:
+            # Verbrauch zuerst verbuchen, ``finish()`` (loescht die
+            # "ungeklaert"-Sperre aus ``reserve()``) erst danach: sonst
+            # kann eine Reservierung zwischen beiden Schreibvorgaengen
+            # -- oder nach einem Prozessabbruch dazwischen -- durch-
+            # rutschen, obwohl ein PARTIAL-Beleg sie sperren muesste.
+            try:
+                self._record_turn_usage(call_id, actor)
+            except Exception as usage_exc:
+                raise usage_exc from exc
             self._ledger.finish(
                 call_id,
                 getattr(actor, "last_result", None),
@@ -745,10 +755,45 @@ class LoopRuntime:
             ) and not isinstance(exc, LoopProtocolError):
                 raise SafetyStop(str(exc)) from exc
             raise
+        self._record_turn_usage(call_id, actor)
         self._ledger.finish(
             call_id, getattr(actor, "last_result", None), None
         )
         return value
+
+    def _record_turn_usage(
+        self, call_id: str, actor: BuildMode | Reviewer
+    ) -> None:
+        """Den vom Adapter aus dem echten Turnergebnis normalisierten
+        UsageEvent verbuchen (ki-dev-ablauf-wu0.3): derselbe reale
+        CLI-Turn, nicht ein Testfixture. Ein gueltiger, in sich
+        konsistenter ``MEASURED``-CALL_TOTAL-Summenbeleg ohne Baseline
+        loest laut Messvertrag (``usage.py``,
+        ``usage_accounting.reconcile_call``) keinen falschen Konflikt
+        aus, solange ``evidence_ref`` -- wie hier -- eindeutig an
+        ``call_id`` haengt (siehe tests/test_usage_accounting.py,
+        test_claude_call_total_summary_reconciles_with_legacy_usage).
+        Das gilt NICHT pauschal fuer jeden CALL_TOTAL-Beleg: ein
+        ``PARTIAL``-Beleg (z. B. nicht verifizierte CLI-Version) erzeugt
+        ueber ``usage_accounting.counters()`` bewusst den blockierenden
+        Gap ``measurement_incomplete`` -- das ist die bestehende,
+        konservative Sicherheitsregel, kein Fehler dieser Funktion
+        (siehe tests/test_usage_accounting.py,
+        test_partial_call_total_keeps_counts_and_blocks_next_reservation).
+        Fehlender/nicht messbarer Verbrauch ist fehlende Provenienz,
+        keine widerspruechliche Bilanz, und bleibt deshalb unverbucht
+        statt einen Fehler auszuloesen.
+        """
+        result = getattr(actor, "last_result", None)
+        event = result.usage_event if result is not None else None
+        if event is None or event.status not in (
+            UsageStatus.MEASURED,
+            UsageStatus.PARTIAL,
+        ):
+            return
+        self._ledger.record_usage(
+            call_id, event, f"turn:{call_id}", summary=True
+        )
 
     def _safety_stop(
         self, state: LoopGraphState, detail: str

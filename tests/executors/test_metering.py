@@ -23,8 +23,10 @@ from ki_dev.executors.metering import (
     codex_quota,
     codex_result,
 )
+from ki_dev.usage import CounterScope, TokenCounts, UsageStatus
 
 from .conftest import FakeRunner
+from .usage_fakes import write_usage_cli
 
 
 def _result(stdout, **kwargs):
@@ -655,13 +657,17 @@ def test_claude_measure_quota_is_explicitly_unsupported():
 
 
 def test_bounded_claude_uses_native_limits_and_timeout():
+    """calls[0] ist die --version-Probe (R5, ki-dev-ablauf-wu0.3,
+    VERSION_PROBE_TIMEOUT_S), calls[-1] der eigentliche Turn: er teilt
+    sich die Rollen-Frist mit der Probe statt sie zu verdoppeln, daher
+    knapp unter statt exakt 180."""
     runner = FakeRunner(_result(_claude()))
     result = ClaudeCliAdapter(runner=runner).send_turn(_request())
     assert result.ok
     assert runner.value_after("--output-format") == "json"
     assert runner.value_after("--max-turns") == "12"
     assert runner.value_after("--max-budget-usd") == "1.0"
-    assert runner.calls[0][2] == 180
+    assert 179 < runner.calls[-1][2] <= 180
 
 
 def _codex():
@@ -695,13 +701,310 @@ def _codex():
 
 
 def test_codex_usage_does_not_double_count_cached_input():
+    """calls[0] ist die --version-Probe (R5, ki-dev-ablauf-wu0.3,
+    VERSION_PROBE_TIMEOUT_S), calls[-1] der eigentliche Turn: er teilt
+    sich die Rollen-Frist mit der Probe statt sie zu verdoppeln, daher
+    knapp unter statt exakt 180."""
     runner = FakeRunner(_result(_codex()))
     result = CodexCliAdapter(runner=runner).send_turn(_request())
     assert result.stdout == '{"action":"PASS"}'
     assert result.usage["input_tokens"] == 100
     assert result.usage["cache_read_input_tokens"] == 900
     assert "--json" in runner.argv
-    assert runner.calls[0][2] == 180
+    assert 179 < runner.calls[-1][2] <= 180
+
+
+class _MonotonicSequence:
+    """Liefert vorgegebene ``time.monotonic()``-Werte der Reihe nach --
+    fuer deterministische Tests der geteilten Zeitgrenze aus
+    ``CliAdapter.send_metered_turn`` (R5, ki-dev-ablauf-wu0.3), ohne
+    tatsaechlich zu warten."""
+
+    def __init__(self, values):
+        self._values = iter(values)
+
+    def __call__(self):
+        return next(self._values)
+
+
+@pytest.mark.parametrize(
+    ("adapter_type", "turn_output"),
+    [(ClaudeCliAdapter, _claude()), (CodexCliAdapter, _codex())],
+    ids=["claude", "codex"],
+)
+def test_slow_version_probe_shrinks_turn_timeout_not_doubles_it(
+    monkeypatch, adapter_type, turn_output
+):
+    """R5: Probe und Turn teilen sich EINE Zeitgrenze. Eine 150s
+    dauernde Probe darf den Turn nicht erneut mit den vollen 180s
+    laufen lassen, sondern nur mit den verbleibenden 30s -- sonst kann
+    ein budgetierter Aufruf bis zu doppelt so lange dauern wie in
+    docs/cli-adapters.md dokumentiert."""
+    runner = FakeRunner(_result(turn_output))
+    monkeypatch.setattr(
+        "ki_dev.executors.base.time.monotonic",
+        _MonotonicSequence([0.0, 150.0]),
+    )
+    adapter_type(runner=runner).send_turn(_request())
+    assert len(runner.calls) == 2
+    assert runner.calls[0][2] == pytest.approx(10.0)
+    assert runner.calls[1][2] == pytest.approx(30.0)
+
+
+@pytest.mark.parametrize(
+    ("adapter_type", "turn_output"),
+    [(ClaudeCliAdapter, _claude()), (CodexCliAdapter, _codex())],
+    ids=["claude", "codex"],
+)
+def test_version_probe_exhausting_deadline_skips_the_turn(
+    monkeypatch, adapter_type, turn_output
+):
+    """R5: Ist das Rollen-Budget bereits durch die Probe aufgebraucht,
+    startet kein weiterer Prozess -- kein CLI-Aufruf, der die
+    dokumentierte gemeinsame Zeitgrenze insgesamt ueberschreitet. Das
+    TurnResult eines nicht gestarteten Turns geht NICHT durch
+    claude_result()/codex_result(): deren Erfolgs-/Fehlerauswertung
+    ist fuer ein tatsaechliches Prozessergebnis gebaut und wuerde
+    TurnStatus.TIMEOUT sonst auf NONZERO_EXIT abbilden -- die vier
+    TurnStatus-Werte sind laut Vertrag bewusst disjunkt."""
+    runner = FakeRunner(_result(turn_output))
+    monkeypatch.setattr(
+        "ki_dev.executors.base.time.monotonic",
+        _MonotonicSequence([0.0, 200.0]),
+    )
+    result = adapter_type(runner=runner).send_turn(_request())
+    assert len(runner.calls) == 1
+    assert not result.ok
+    assert result.status is TurnStatus.TIMEOUT
+    assert result.usage is None
+    assert result.usage_event is None
+
+
+class _SequencedRunner:
+    """Liefert vorgegebene TurnResults der Reihe nach -- fuer Tests,
+    die Probe- und Turn-Aufruf unterschiedlich beantworten muessen
+    (anders als ``FakeRunner``, das jedem Aufruf dasselbe Ergebnis
+    gibt)."""
+
+    def __init__(self, results):
+        self._results = iter(results)
+        self.calls: list[tuple[tuple[str, ...], str, float]] = []
+
+    def __call__(self, argv, *, stdin, timeout_s, **kwargs):
+        del kwargs
+        self.calls.append((tuple(argv), stdin, timeout_s))
+        return next(self._results)
+
+
+def _version_probe_result(provider: str) -> TurnResult:
+    stdout = (
+        f"{ClaudeCliAdapter.verified_cli_version} (Claude Code)"
+        if provider == "claude"
+        else f"codex-cli {CodexCliAdapter.verified_cli_version}"
+    )
+    return _result(stdout)
+
+
+@pytest.mark.parametrize(
+    ("adapter_type", "provider"),
+    [(ClaudeCliAdapter, "claude"), (CodexCliAdapter, "codex")],
+    ids=["claude", "codex"],
+)
+@pytest.mark.parametrize(
+    "turn_result",
+    [
+        TurnResult(
+            TurnStatus.TIMEOUT,
+            None,
+            "",
+            "",
+            (),
+            180.0,
+            error="Zeitueberschreitung nach 180s",
+        ),
+        TurnResult(
+            TurnStatus.START_ERROR,
+            None,
+            "",
+            "",
+            (),
+            0.0,
+            error="Prozessstart fehlgeschlagen: CLI nicht auffindbar",
+        ),
+    ],
+    ids=["timeout", "start_error"],
+)
+def test_real_process_failure_status_survives_result_postprocessing(
+    adapter_type, provider, turn_result
+):
+    """Review-Nachtrag 2026-09-18 12:50, ki-dev-ablauf-wu0.3: ein real
+    abgebrochener Turn-Prozess (TIMEOUT/START_ERROR, NACH einer
+    erfolgreichen Versionsprobe) darf claude_result()/codex_result()
+    nicht stillschweigend zu NONZERO_EXIT umdeuten -- die vier
+    TurnStatus-Werte sind laut Vertrag bewusst disjunkt. Anders als
+    ``test_version_probe_exhausting_deadline_skips_the_turn`` wird der
+    Turn hier tatsaechlich gestartet; nur sein Prozessergebnis ist ein
+    Nicht-Erfolg."""
+    runner = _SequencedRunner(
+        [_version_probe_result(provider), turn_result]
+    )
+    result = adapter_type(runner=runner).send_turn(_request())
+    assert len(runner.calls) == 2
+    assert result.status is turn_result.status
+    assert result.usage is None
+    assert result.usage_event is None
+
+
+@pytest.mark.parametrize(
+    ("exit_code", "with_error_event"),
+    [(7, False), (0, True)],
+)
+def test_codex_failure_preserves_completed_turn_usage(
+    exit_code, with_error_event
+):
+    """Ein fehlgeschlagener CLI-Aufruf darf einen bereits belegten
+    turn.completed-Verbrauch nicht verlieren (wu0.3/AC6).
+
+    Synthetischer Robustheitsfall, kein Nachweis einer real
+    beobachteten CLI-Ereignisfolge. Die Antwort selbst ist gueltig.
+    """
+    events = [
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "fertig"},
+        },
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 1000,
+                "cached_input_tokens": 900,
+                "output_tokens": 50,
+            },
+        }
+    ]
+    if with_error_event:
+        events.append({"type": "error", "message": "failed"})
+    raw = "\n".join(json.dumps(event) for event in events)
+    result = codex_result(
+        _result(
+            raw,
+            status=TurnStatus.OK
+            if exit_code == 0
+            else TurnStatus.NONZERO_EXIT,
+            exit_code=exit_code,
+        ),
+        session_id="session",
+        cli_version=CodexCliAdapter.verified_cli_version,
+    )
+
+    assert result.status is TurnStatus.NONZERO_EXIT
+    assert result.exit_code == exit_code
+    if result.usage is None:
+        pytest.fail("Codex-Verbrauch aus turn.completed ging verloren")
+    assert result.usage == {
+        "input_tokens": 100,
+        "cache_read_input_tokens": 900,
+        "cache_creation_input_tokens": 0,
+        "output_tokens": 50,
+    }
+    event = result.usage_event
+    assert event is not None
+    assert event.status is UsageStatus.MEASURED
+    assert event.provider == "codex"
+    assert event.source == "cli_turn_completed"
+    assert event.counter_scope is CounterScope.CALL_TOTAL
+    assert event.session_id == "session"
+    assert event.tokens == TokenCounts(100, 900, 0, 50)
+
+
+@pytest.mark.parametrize(
+    ("adapter_type", "provider", "turn_output", "expected_tokens"),
+    [
+        (
+            ClaudeCliAdapter,
+            "claude",
+            _claude(),
+            TokenCounts(10, 500, 30, 20),
+        ),
+        (
+            CodexCliAdapter,
+            "codex",
+            _codex(),
+            TokenCounts(100, 900, 0, 50),
+        ),
+    ],
+    ids=["claude", "codex"],
+)
+@pytest.mark.parametrize("verified", [True, False])
+def test_adapter_binds_usage_to_executed_cli_version(
+    tmp_path,
+    adapter_type,
+    provider,
+    turn_output,
+    expected_tokens,
+    verified,
+):
+    """Der gepinnte Bezugsstand ist kein Nachweis fuer die tatsaechlich
+    ausgefuehrte CLI-Version (wu0.3/AC5). Bei unbekannter Version
+    sind eine erklaerte Ablehnung VOR dem Turn oder ein PARTIAL-
+    Beleg MIT erhaltenen Zaehlern erlaubt. Der bekannte Stand muss
+    weiterhin einen gemessenen Turn erlauben.
+    """
+    version = (
+        adapter_type.verified_cli_version
+        if verified
+        else "999.999.999"
+    )
+    executable, trace = write_usage_cli(
+        tmp_path, provider, version, turn_output
+    )
+
+    request = replace(_request(), workdir=tmp_path)
+    result = adapter_type(executable=str(executable)).send_turn(request)
+    calls = trace.read_text().splitlines() if trace.exists() else []
+    assert "version" in calls
+    if not verified and "turn" not in calls:
+        assert not result.ok
+        assert result.error
+        assert result.usage is None
+        assert result.usage_event is None
+        return
+
+    assert calls.count("turn") == 1
+    if verified:
+        assert result.ok
+    event = result.usage_event
+    assert event is not None
+    assert event.cli_version == version
+    assert event.provider == provider
+    assert event.session_id == request.session_id
+    assert event.counter_scope is CounterScope.CALL_TOTAL
+    assert event.status is (
+        UsageStatus.MEASURED if verified else UsageStatus.PARTIAL
+    )
+    assert event.tokens == expected_tokens
+    assert result.usage is not None
+
+
+def test_codex_failure_without_usage_does_not_invent_zero_counts():
+    result = codex_result(
+        _result(json.dumps({
+            "type": "turn.failed",
+            "error": {"message": "quota"},
+        })),
+        session_id="session",
+        cli_version=CodexCliAdapter.verified_cli_version,
+    )
+    assert not result.ok
+    assert result.usage is None
+    event = result.usage_event
+    assert event is None or (
+        event.status in (
+            UsageStatus.UNAVAILABLE,
+            UsageStatus.UNSUPPORTED,
+        )
+        and event.tokens is None
+    )
 
 
 @pytest.mark.parametrize(
