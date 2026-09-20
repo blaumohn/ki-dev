@@ -469,3 +469,120 @@ def test_resubmitting_identical_evidence_for_same_call_keeps_balance(
     after = ledger.usage_report()
     assert after == before
     assert len(ledger.store.load_usage("call-1")) == 1
+
+
+def _bound_call(
+    ledger, call_id, purpose, amount, *, bead_id, evidence_ref=None
+):
+    """Call mit expliziter UsageAttribution ueber den bestehenden
+    Vertrag; kein Estimator, nur die Buchung."""
+    attribution = UsageAttribution(
+        bead_id=bead_id,
+        task_revision="rev-1",
+        family_id="ki-dev-ablauf-wu0.3",
+        family_revision="rev-1",
+        role=purpose.value,
+        purpose=purpose,
+        session_id=f"sess-{call_id}",
+        parent_bead_id="ki-dev-ablauf-wu0.3",
+    )
+    ledger.reserve(
+        call_id, "build", False, "codex-cli", attribution=attribution
+    )
+    event = normalize_codex_turn_usage(
+        {
+            "input_tokens": amount,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+        },
+        cli_version="0.154.0",
+        session_id=f"sess-{call_id}",
+    )
+    ledger.record_usage(
+        call_id, event, evidence_ref or f"evidence-{call_id}",
+        summary=True,
+    )
+    ledger.finish(call_id, None, None)
+    return event
+
+
+def test_shared_estimation_and_handoff_count_once_in_family(tmp_path):
+    """AC3, Schritt 4: gemeinsamer Schaetz-/Uebergabeaufwand wird nur
+    dem Elterncall (Eltern-Bead, eigener Lauf) zugerechnet; zwei
+    Kindlaeufe derselben Familie enthalten ihn nicht noch einmal.
+    Die Familienauswertung weist ihn genau einmal aus."""
+    parent = "ki-dev-ablauf-wu0.3"
+    shared = _ledger(tmp_path, "run-shared")
+    _bound_call(
+        shared, "est", UsagePurpose.ESTIMATION, 10, bead_id=parent
+    )
+    _bound_call(
+        shared, "hand", UsagePurpose.HANDOFF, 5, bead_id=parent
+    )
+    child_a = _ledger(tmp_path, "run-a")
+    _bound_call(
+        child_a, "impl-a", UsagePurpose.IMPLEMENTATION, 20,
+        bead_id="ki-dev-ablauf-wu0.3.1",
+    )
+    child_b = _ledger(tmp_path, "run-b")
+    _bound_call(
+        child_b, "impl-b", UsagePurpose.IMPLEMENTATION, 30,
+        bead_id="ki-dev-ablauf-wu0.3.2",
+    )
+    _bound_call(
+        child_b, "rev-b", UsagePurpose.REVIEW, 7,
+        bead_id="ki-dev-ablauf-wu0.3.2",
+    )
+
+    # Kindberichte enthalten keinen gemeinsamen Aufwand.
+    assert child_a.usage_report().by_purpose == {"implementation": 20}
+    assert child_b.usage_report().by_purpose == {
+        "implementation": 30,
+        "review": 7,
+    }
+
+    family = child_a.usage_report(family_id=parent)
+    assert family.total == 10 + 5 + 20 + 30 + 7
+    assert family.by_purpose == {
+        "estimation": 10,
+        "implementation": 50,
+        "review": 7,
+        "handoff": 5,
+    }
+    assert sorted(c.run_id for c in family.calls) == [
+        "run-a", "run-b", "run-b", "run-shared", "run-shared",
+    ]
+    # Wiederholtes Lesen und Lesen aus anderem Lauf aendert nichts.
+    assert shared.usage_report(family_id=parent) == family
+    assert child_b.usage_report(family_id=parent) == family
+
+
+def test_shared_effort_evidence_cannot_be_charged_to_child_call(
+    tmp_path,
+):
+    """Derselbe Schaetzbeleg darf nicht zusaetzlich einem Kindcall
+    zugerechnet werden (sonst wuerde er in der Familie vervielfacht)."""
+    ledger = _ledger(tmp_path)
+    event = _bound_call(
+        ledger, "est", UsagePurpose.ESTIMATION, 10,
+        bead_id="ki-dev-ablauf-wu0.3", evidence_ref="shared-est",
+    )
+    attribution = UsageAttribution(
+        bead_id="ki-dev-ablauf-wu0.3.1",
+        task_revision="rev-1",
+        family_id="ki-dev-ablauf-wu0.3",
+        family_revision="rev-1",
+        role="implementation",
+        purpose=UsagePurpose.IMPLEMENTATION,
+        session_id="sess-child",
+    )
+    ledger.reserve(
+        "child", "build", False, "codex-cli", attribution=attribution
+    )
+    with pytest.raises(SafetyStop, match="Verbrauchsbeleg"):
+        ledger.record_usage(
+            "child", event, "shared-est", summary=True
+        )
+    assert ledger.usage_report(
+        family_id="ki-dev-ablauf-wu0.3"
+    ).total == 10
