@@ -25,6 +25,7 @@ from ki_dev.repository_evidence import (
 from ki_dev.repository_finalization import RepositoryFinalizer
 from ki_dev.review_context import ProjectionLimits
 from ki_dev.run_store import RunStore
+from ki_dev.usage_accounting import metadata
 
 
 class LoopConfigError(ValueError):
@@ -47,6 +48,7 @@ def start_from_config(
         }
     actual_run_id = run_id or f"run-{uuid.uuid4().hex[:12]}"
     task = _task(config, actual_run_id)
+    usage_task = _usage_task(config)
     limits = _limits(config.get("limits", {}))
     projection = _projection(config.get("projection_limits", {}))
     with _runtime(
@@ -55,7 +57,17 @@ def start_from_config(
         return runtime.start(
             task,
             limits,
-            manifest_extra={"configuration": config},
+            manifest_extra={
+                "configuration": config,
+                # Nur bei explizit konfigurierter Aufgabenbindung; sonst
+                # bleibt die Zurechnung sichtbar unvollstaendig
+                # (attribution_missing) statt geraten zu werden.
+                **(
+                    {"usage_task": usage_task}
+                    if usage_task is not None
+                    else {}
+                ),
+            },
         )
 
 
@@ -149,6 +161,7 @@ def _task(config: dict[str, object], run_id: str) -> LoopTask:
         "projection_limits",
         "finalization",
         "safety_limits",
+        "usage_task",
     }
     extra = set(config) - expected
     if extra:
@@ -193,6 +206,61 @@ def _task(config: dict[str, object], run_id: str) -> LoopTask:
         )
     except (TypeError, ValueError) as exc:
         raise LoopConfigError(str(exc)) from exc
+
+
+_USAGE_TASK_REQUIRED = (
+    "bead_id",
+    "task_revision",
+    "family_id",
+    "family_revision",
+)
+_USAGE_TASK_FIELDS = frozenset(
+    (*_USAGE_TASK_REQUIRED, "parent_bead_id")
+)
+
+
+def _usage_task(config: dict[str, object]) -> dict[str, str] | None:
+    """Explizite Aufgabenbindung fuer die Verbrauchszurechnung.
+
+    ``None`` heisst: keine Bindung konfiguriert (die Zurechnung bleibt
+    dann sichtbar unvollstaendig). Ist ``usage_task`` gesetzt, verlangt
+    der Vertrag (v1-safety-contract.de.md, A) bead_id, task_revision,
+    family_id und family_revision; parent_bead_id ist optional. Die
+    Werte landen unveraendert im write-once-Manifest (Leser:
+    ``LoopRuntime._usage_attribution``); Resume liest sie von dort und
+    behaelt damit Revisionen und Laufbilanz. Entscheidung B (Vertrag
+    A/C): ein geaenderter Auftrag ist ein ausdruecklich freigegebener
+    neuer Lauf mit eigener run_id, eigenem Budget und frischen
+    Sitzungen; ``family_id`` verbindet die Laeufe im kumulativen
+    Familienbericht. Es gibt weder einen Revisionswechsel ueber
+    ``resume_run`` noch eine Revisionshistorie im Manifest.
+    """
+    if "usage_task" not in config:
+        return None
+    binding = _mapping(config["usage_task"], "usage_task")
+    extra = set(binding) - _USAGE_TASK_FIELDS
+    if extra:
+        raise LoopConfigError(
+            f"unbekannte usage_task-Felder: {sorted(extra)}"
+        )
+    missing = [k for k in _USAGE_TASK_REQUIRED if k not in binding]
+    if missing:
+        raise LoopConfigError(
+            f"usage_task ohne Pflichtfelder: {missing}"
+        )
+    result: dict[str, str] = {}
+    for key, item in binding.items():
+        # Dieselbe Regel wie UsageAttribution, damit ein Wert nicht erst
+        # bei der Aufrufreservierung mit ValueError scheitert.
+        try:
+            result[key] = cast(str, metadata(item))
+        except ValueError as exc:
+            raise LoopConfigError(f"usage_task.{key}: {exc}") from exc
+        if item is None:
+            raise LoopConfigError(
+                f"usage_task.{key} darf nicht null sein"
+            )
+    return result
 
 
 def _role(value: dict[str, object]) -> dict[str, object]:
