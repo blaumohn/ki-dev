@@ -1,0 +1,752 @@
+{
+  "schema_version": 1,
+  "policy_version": "v1/2",
+  "semantics": "First match per point; collect other failing reasons in row order, unique. No eval of expressions from configuration. Predicates are fixed implementation functions. Only non-OK failing rows contribute secondary_reasons. See ADR for decision-point lifecycle and evidence binding.",
+  "predicates": {
+    "allocation_insufficient": "required_call_tokens > min(B-M-R-P-C,call_cap_tokens) or required_call_tokens<=0; resume includes context allocation",
+    "sample_discontinuous": "sample.status == MEASUREMENT_DISCONTINUITY",
+    "sample_missing_after_grace": "tick/phase only: sample absent/non-OK/no total/no source age unless evaluate_tick and startup_grace_active and elapsed_s<startup_sample_timeout_s; never suppress discontinuity",
+    "sample_stale": "sample has source_age_s >= max_measurement_age_s",
+    "startup_grace_active": "evaluate_tick only, before first sample of this new call (also after resume), baseline and capability verified; false at admission/phase",
+    "tick_budget_reached": "M+R+P+C>B or M>=B or call_measured_tokens>=call_allocation_tokens",
+    "phase_budget_reached": "M+R+P+C>B or M>=B or call_measured_tokens>call_allocation_tokens",
+    "ledger_conflict": "RECONCILIATION_CONFLICT in budget.flags; disagreement with normalized boolean is INVALID_INPUT",
+    "ledger_reconciled": "prior calls reconciled with current evidence or missing final accounting validly conservatively charged; no unresolved reconciliation conflict",
+    "call_end_confirmed": "confirmed local process end for last call of completed phase; unknown external effect remains subject to existing guards"
+  },
+  "tables": {
+    "admit_start": [
+      {
+        "when": "operator_stop",
+        "decision": "BLOCK_START",
+        "reason": "OPERATOR_STOP"
+      },
+      {
+        "when": "not profile_valid",
+        "decision": "BLOCK_START",
+        "reason": "PROFILE_INVALID"
+      },
+      {
+        "when": "not control_known",
+        "decision": "BLOCK_START",
+        "reason": "UNKNOWN_CONTROL_STATE"
+      },
+      {
+        "when": "not input_valid",
+        "decision": "BLOCK_START",
+        "reason": "INVALID_INPUT"
+      },
+      {
+        "when": "ledger_conflict",
+        "decision": "BLOCK_START",
+        "reason": "MEASUREMENT_DISCONTINUITY"
+      },
+      {
+        "when": "not capability_verified",
+        "decision": "BLOCK_START",
+        "reason": "CAPABILITY_UNVERIFIED"
+      },
+      {
+        "when": "not binding_valid",
+        "decision": "BLOCK_START",
+        "reason": "BINDING_INVALID"
+      },
+      {
+        "when": "not baseline_verified",
+        "decision": "BLOCK_START",
+        "reason": "MEASUREMENT_MISSING"
+      },
+      {
+        "when": "not quota_valid",
+        "decision": "BLOCK_START",
+        "reason": "QUOTA_UNAVAILABLE"
+      },
+      {
+        "when": "not estimate_valid",
+        "decision": "BLOCK_START",
+        "reason": "ESTIMATE_INVALID"
+      },
+      {
+        "when": "split_required",
+        "decision": "BLOCK_START",
+        "reason": "SPLIT_REQUIRED"
+      },
+      {
+        "when": "allocation_insufficient",
+        "decision": "BLOCK_START",
+        "reason": "BUDGET_EXHAUSTED"
+      },
+      {
+        "when": "otherwise",
+        "decision": "CONTINUE",
+        "reason": "OK"
+      }
+    ],
+    "evaluate_tick": [
+      {
+        "when": "operator_stop",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "OPERATOR_STOP"
+      },
+      {
+        "when": "not profile_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "PROFILE_INVALID"
+      },
+      {
+        "when": "not control_known",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "UNKNOWN_CONTROL_STATE"
+      },
+      {
+        "when": "not input_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "INVALID_INPUT"
+      },
+      {
+        "when": "ledger_conflict",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "MEASUREMENT_DISCONTINUITY"
+      },
+      {
+        "when": "not binding_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "BINDING_INVALID"
+      },
+      {
+        "when": "elapsed_s >= call_timeout_s",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "CALL_TIMEOUT"
+      },
+      {
+        "when": "sample_discontinuous",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "MEASUREMENT_DISCONTINUITY"
+      },
+      {
+        "when": "sample_missing_after_grace",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "MEASUREMENT_MISSING"
+      },
+      {
+        "when": "sample_stale",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "MEASUREMENT_STALE"
+      },
+      {
+        "when": "tick_budget_reached",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "BUDGET_EXHAUSTED"
+      },
+      {
+        "when": "not quota_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "QUOTA_UNAVAILABLE"
+      },
+      {
+        "when": "loop_detected",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "LOOP_DETECTED"
+      },
+      {
+        "when": "project_error_expected",
+        "decision": "CONTINUE",
+        "reason": "OK"
+      },
+      {
+        "when": "otherwise",
+        "decision": "CONTINUE",
+        "reason": "OK"
+      }
+    ],
+    "on_phase_complete": [
+      {
+        "when": "operator_stop",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "OPERATOR_STOP"
+      },
+      {
+        "when": "not profile_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "PROFILE_INVALID"
+      },
+      {
+        "when": "not control_known",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "UNKNOWN_CONTROL_STATE"
+      },
+      {
+        "when": "not input_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "INVALID_INPUT"
+      },
+      {
+        "when": "ledger_conflict",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "MEASUREMENT_DISCONTINUITY"
+      },
+      {
+        "when": "not binding_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "BINDING_INVALID"
+      },
+      {
+        "when": "not call_end_confirmed",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "UNKNOWN_EFFECT"
+      },
+      {
+        "when": "elapsed_s >= call_timeout_s",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "CALL_TIMEOUT"
+      },
+      {
+        "when": "sample_discontinuous",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "MEASUREMENT_DISCONTINUITY"
+      },
+      {
+        "when": "sample_missing_after_grace",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "MEASUREMENT_MISSING"
+      },
+      {
+        "when": "sample_stale",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "MEASUREMENT_STALE"
+      },
+      {
+        "when": "phase_budget_reached",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "BUDGET_EXHAUSTED"
+      },
+      {
+        "when": "not quota_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "QUOTA_UNAVAILABLE"
+      },
+      {
+        "when": "loop_detected",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "LOOP_DETECTED"
+      },
+      {
+        "when": "not phase_valid",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "PHASE_INVALID"
+      },
+      {
+        "when": "not phase_transfer_fits",
+        "decision": "STOP_AND_PAUSE",
+        "reason": "BUDGET_EXHAUSTED"
+      },
+      {
+        "when": "otherwise",
+        "decision": "CONTINUE",
+        "reason": "OK"
+      }
+    ],
+    "admit_resume": [
+      {
+        "when": "operator_stop",
+        "decision": "BLOCK_RESUME",
+        "reason": "OPERATOR_STOP"
+      },
+      {
+        "when": "not profile_valid",
+        "decision": "BLOCK_RESUME",
+        "reason": "PROFILE_INVALID"
+      },
+      {
+        "when": "not control_known",
+        "decision": "BLOCK_RESUME",
+        "reason": "UNKNOWN_CONTROL_STATE"
+      },
+      {
+        "when": "not input_valid",
+        "decision": "BLOCK_RESUME",
+        "reason": "INVALID_INPUT"
+      },
+      {
+        "when": "ledger_conflict",
+        "decision": "BLOCK_RESUME",
+        "reason": "MEASUREMENT_DISCONTINUITY"
+      },
+      {
+        "when": "not resume_authorized",
+        "decision": "BLOCK_RESUME",
+        "reason": "RESUME_UNAUTHORIZED"
+      },
+      {
+        "when": "not resume_profile_approved",
+        "decision": "BLOCK_RESUME",
+        "reason": "PROFILE_INVALID"
+      },
+      {
+        "when": "not effect_resolved_or_bounded",
+        "decision": "BLOCK_RESUME",
+        "reason": "UNKNOWN_EFFECT"
+      },
+      {
+        "when": "not ledger_reconciled",
+        "decision": "BLOCK_RESUME",
+        "reason": "UNKNOWN_EFFECT"
+      },
+      {
+        "when": "not capability_verified",
+        "decision": "BLOCK_RESUME",
+        "reason": "CAPABILITY_UNVERIFIED"
+      },
+      {
+        "when": "not binding_valid",
+        "decision": "BLOCK_RESUME",
+        "reason": "BINDING_INVALID"
+      },
+      {
+        "when": "not baseline_verified",
+        "decision": "BLOCK_RESUME",
+        "reason": "MEASUREMENT_MISSING"
+      },
+      {
+        "when": "not quota_valid",
+        "decision": "BLOCK_RESUME",
+        "reason": "QUOTA_UNAVAILABLE"
+      },
+      {
+        "when": "not estimate_valid",
+        "decision": "BLOCK_RESUME",
+        "reason": "ESTIMATE_INVALID"
+      },
+      {
+        "when": "split_required",
+        "decision": "BLOCK_RESUME",
+        "reason": "SPLIT_REQUIRED"
+      },
+      {
+        "when": "allocation_insufficient",
+        "decision": "BLOCK_RESUME",
+        "reason": "BUDGET_EXHAUSTED"
+      },
+      {
+        "when": "loop_detected",
+        "decision": "BLOCK_RESUME",
+        "reason": "LOOP_DETECTED"
+      },
+      {
+        "when": "otherwise",
+        "decision": "CONTINUE",
+        "reason": "OK"
+      }
+    ]
+  },
+  "offline_cases": [
+    {
+      "id": "counter_delta",
+      "input": "baseline=100000,current=135000",
+      "expected": "call_total=35000",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.2.1"
+      ]
+    },
+    {
+      "id": "duplicate",
+      "input": "live=15000,live=15000,final=15000",
+      "expected": "total=15000",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.2.1"
+      ]
+    },
+    {
+      "id": "reset",
+      "input": "baseline=100000,current=90000",
+      "expected": "MEASUREMENT_DISCONTINUITY; no new value",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.6.1.2",
+        "ki-dev-ablauf-wu0.3.6.2.2"
+      ]
+    },
+    {
+      "id": "regression",
+      "input": "baseline=100000,last=135000,current=130000",
+      "expected": "MEASUREMENT_DISCONTINUITY; preserve 35000",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.6.1.2",
+        "ki-dev-ablauf-wu0.3.6.2.2"
+      ]
+    },
+    {
+      "id": "final_conflict",
+      "input": "live=15000,final=14000",
+      "expected": "conflict; preserve 15000",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.2.1"
+      ]
+    },
+    {
+      "id": "loop_priority",
+      "input": "loop_detected=true,project_error_expected=true",
+      "expected": "STOP_AND_PAUSE/LOOP_DETECTED",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "start_default",
+      "input": "all start checks pass",
+      "expected": "CONTINUE",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "resume_default",
+      "input": "sample=None; old ledger reconciled; new binding/baseline verified; all resume checks pass; explicit approval",
+      "expected": "CONTINUE",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "phase_default",
+      "input": "valid phase and sufficient transfer",
+      "expected": "CONTINUE",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "tick_default",
+      "input": "fresh measurement and budget",
+      "expected": "CONTINUE",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "unknown_control",
+      "input": "control_known=false at all four points",
+      "expected": "context-specific block/stop, UNKNOWN_CONTROL_STATE",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "missing_profile",
+      "input": "max_measurement_age_s absent",
+      "expected": "BLOCK_START/PROFILE_INVALID",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.5.1"
+      ]
+    },
+    {
+      "id": "stale_boundary",
+      "input": "source_age_s=max_measurement_age_s",
+      "expected": "STOP_AND_PAUSE/MEASUREMENT_STALE",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "unchanged_read",
+      "input": "repeat same source record later",
+      "expected": "source age increases on repeated reads; tokens unchanged; stale boundary eventually stops",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.6.1.2",
+        "ki-dev-ablauf-wu0.3.6.2.2"
+      ]
+    },
+    {
+      "id": "silent_process",
+      "input": "no hook until call_timeout_s",
+      "expected": "process stopped",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.1"
+      ]
+    },
+    {
+      "id": "first_sample",
+      "input": "no sample; elapsed=startup_sample_timeout_s",
+      "expected": "STOP_AND_PAUSE/MEASUREMENT_MISSING",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "budget_cap",
+      "input": "U=48000,factor=1.2,cap=50000",
+      "expected": "BLOCK_START; required=57600",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.4.1.2.1"
+      ]
+    },
+    {
+      "id": "phase_reserve",
+      "input": "remaining=12000,protected=5000,call_cap=8000,required=7000",
+      "expected": "allocation=7000",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.4.1.2.1"
+      ]
+    },
+    {
+      "id": "split_boundary",
+      "input": "U=X",
+      "expected": "eligible; other guards apply",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.4.1.2.1"
+      ]
+    },
+    {
+      "id": "split_exceeded",
+      "input": "U=90000,X=80000",
+      "expected": "SPLIT_REQUIRED",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.4.1.2.1"
+      ]
+    },
+    {
+      "id": "estimate",
+      "input": "uppers=30000/45000,compatible phases",
+      "expected": "U=45000",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.4.1.1"
+      ]
+    },
+    {
+      "id": "estimate_invalid",
+      "input": "missing estimator or assumptions differ",
+      "expected": "ESTIMATE_INVALID",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.4.1.1"
+      ]
+    },
+    {
+      "id": "replay",
+      "input": "replay reserve/sample/phase/charge events",
+      "expected": "same M/R/P/C",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.5"
+      ]
+    },
+    {
+      "id": "late_overflow",
+      "input": "measured exceeds reservation and B",
+      "expected": "preserve actual; stop; block next dispatch",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.5"
+      ]
+    },
+    {
+      "id": "crash_after_commit",
+      "input": "reservation durable; no result",
+      "expected": "UNKNOWN_EFFECT; no redispatch",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.4.1"
+      ]
+    },
+    {
+      "id": "charge_not_stop",
+      "input": "operator charge; process effect unresolved",
+      "expected": "BLOCK_RESUME/UNKNOWN_EFFECT",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.6"
+      ]
+    },
+    {
+      "id": "charge_reconcile",
+      "input": "charge=5000,final outstanding=4000",
+      "expected": "replace charge with measured 4000, no double count",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.6"
+      ]
+    },
+    {
+      "id": "tighten",
+      "input": "decrease cap below occupation",
+      "expected": "stop; no truncation",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.5.3"
+      ]
+    },
+    {
+      "id": "mode_change",
+      "input": "emergency quota_mode override",
+      "expected": "reject",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.5.3"
+      ]
+    },
+    {
+      "id": "foreign_hook",
+      "input": "wrong uid/binding/replayed sequence",
+      "expected": "reject and pause",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.4"
+      ]
+    },
+    {
+      "id": "secret_sentinel",
+      "input": "raw prompt/error contains sentinel",
+      "expected": "absent from output/diagnostics",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.4"
+      ]
+    },
+    {
+      "id": "legacy",
+      "input": "missing baseline/profile/binding",
+      "expected": "readable; start/resume blocked",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.4.1"
+      ]
+    },
+    {
+      "id": "process_tree",
+      "input": "TERM ignored by local fake child",
+      "expected": "KILL after grace; bounded wait",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.1"
+      ]
+    },
+    {
+      "id": "quota_expired",
+      "input": "manual proof expired",
+      "expected": "block start/resume; stop running tick",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "authorization",
+      "input": "mode enabled without approval ref",
+      "expected": "PROFILE_INVALID",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.5.1"
+      ]
+    },
+    {
+      "id": "provider_boundary",
+      "input": "new fake provider family",
+      "expected": "no changes in core policy/ledger",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.2.2"
+      ]
+    },
+    {
+      "id": "occupied_equal",
+      "input": "tick B=100,M=20,R=80,P=C=0,call_measured=20,call_allocation=100; all other checks pass",
+      "expected": "CONTINUE; reservation equality is allowed",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.10.1.5"
+      ]
+    },
+    {
+      "id": "tick_allocation_equal",
+      "input": "tick B=200,M=50,R=P=C=0,call_measured=50,call_allocation=50; other checks pass",
+      "expected": "STOP_AND_PAUSE/BUDGET_EXHAUSTED",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "phase_allocation_equal",
+      "input": "phase B=200,M=50,R=P=C=0,call_measured=50,call_allocation=50; confirmed success, fresh final proof, transfer fits, other checks pass",
+      "expected": "CONTINUE; preserve successful result; next call requires admission",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.10.1.2"
+      ]
+    },
+    {
+      "id": "phase_allocation_exceeded",
+      "input": "same as phase_allocation_equal but call_measured=M=51",
+      "expected": "STOP_AND_PAUSE/BUDGET_EXHAUSTED; preserve measured 51",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3"
+      ]
+    },
+    {
+      "id": "phase_budget_equal",
+      "input": "phase B=M=50,R=P=C=0,call_measured=call_allocation=50; confirmed success; other checks pass",
+      "expected": "STOP_AND_PAUSE/BUDGET_EXHAUSTED; successful result preserved, no TERM after exit",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.10.1.2"
+      ]
+    },
+    {
+      "id": "phase_end_clock",
+      "input": "phase confirmed end at elapsed_s=59,timeout=60; processing finishes at 65; final proof fresh at end, other checks pass",
+      "expected": "CONTINUE; use 59, not 65; elapsed_s=60 instead yields CALL_TIMEOUT",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.10.1.1",
+        "ki-dev-ablauf-wu0.10.1.2"
+      ]
+    },
+    {
+      "id": "phase_end_missing",
+      "input": "phase call_end_confirmed=false; other checks pass",
+      "expected": "STOP_AND_PAUSE/UNKNOWN_EFFECT",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.10.1.2"
+      ]
+    },
+    {
+      "id": "resume_without_live_sample",
+      "input": "resume sample=None,elapsed_s=0,call_measured=call_allocation=0; old ledger reconciled, new baseline verified, explicit approval and other checks pass",
+      "expected": "CONTINUE; no live sample of unstarted call required",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.3.4.2"
+      ]
+    },
+    {
+      "id": "resume_unreconciled",
+      "input": "resume ledger_reconciled=false; other checks pass",
+      "expected": "BLOCK_RESUME/UNKNOWN_EFFECT",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.3.4.2"
+      ]
+    },
+    {
+      "id": "resume_conservative",
+      "input": "resume previous missing final validly charged; effects ended, ledger reconciled, new baseline verified, sample=None, other checks pass",
+      "expected": "CONTINUE; C retained; charge is not measurement",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.3.4.2"
+      ]
+    },
+    {
+      "id": "resume_first_sample",
+      "input": "first tick of newly resumed call, no sample, verified new baseline/capability, all other checks pass",
+      "expected": "before startup deadline CONTINUE; at deadline STOP_AND_PAUSE/MEASUREMENT_MISSING",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.3.4.2"
+      ]
+    },
+    {
+      "id": "new_record_same_total",
+      "input": "new independently verified source record, unchanged total, newer evidenced source timestamp",
+      "expected": "new source age allowed; token amount unchanged",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.6.1.2",
+        "ki-dev-ablauf-wu0.3.6.2.2"
+      ]
+    },
+    {
+      "id": "conflict_blocks",
+      "input": "RECONCILIATION_CONFLICT persisted; matching ledger_conflict=true; other checks pass at all four points",
+      "expected": "context-specific block/stop MEASUREMENT_DISCONTINUITY; replay and charge do not clear conflict",
+      "owner_beads": [
+        "ki-dev-ablauf-wu0.3.2.1",
+        "ki-dev-ablauf-wu0.10.1.3",
+        "ki-dev-ablauf-wu0.3.4.1"
+      ]
+    }
+  ]
+}
