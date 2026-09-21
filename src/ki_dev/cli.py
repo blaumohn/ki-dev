@@ -9,6 +9,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from ki_dev.handoff_cli import handoff
 from ki_dev.loop_cli import (
     LoopConfigError,
     result_document,
@@ -32,6 +33,7 @@ loop_app = typer.Typer(
 )
 app.add_typer(loop_app, name="loop")
 app.add_typer(planning_app, name="planning")
+app.command("handoff")(handoff)
 
 
 def main() -> None:
