@@ -16,7 +16,7 @@ from tests.fake_bd import FakeBd
 
 runner = CliRunner()
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
-MAP = ["handoff", "--agent", "codex", "--session", SID]
+MAP = ["handoff", "map", "--agent", "codex", "--session", SID]
 
 
 @pytest.fixture
@@ -180,14 +180,18 @@ def test_truncated_json_fails_visibly(env):
 @pytest.mark.parametrize(
     "args",
     [
+        ["handoff", "map", "--agent", "codex"],
+        ["handoff", "map", "--session", SID],
+        ["handoff", "map", "--agent", "claude", "--session", SID],
+        ["handoff", "map", "--agent", "", "--session", SID],
+        ["handoff", "map", "--agent", "codex", "--session", "../x"],
+        ["handoff", "map", "--agent", "codex", "--session", "a*"],
+        ["handoff", "map", "--agent", "codex", "--session", ""],
+        ["handoff", "--agent", "codex", "--session", SID],
+        ["handoff", "x-1", "--agent", "codex", "--session", SID],
+        ["handoff", "map", "x-1", "--agent", "codex", "--session", SID],
         ["handoff", "--agent", "codex"],
         ["handoff", "--session", SID],
-        ["handoff", "--agent", "claude", "--session", SID],
-        ["handoff", "--agent", "", "--session", SID],
-        ["handoff", "--agent", "codex", "--session", "../x"],
-        ["handoff", "--agent", "codex", "--session", "a*"],
-        ["handoff", "--agent", "codex", "--session", ""],
-        ["handoff", "x-1", "--agent", "codex", "--session", SID],
         [
             "handoff",
             "--step",
@@ -197,7 +201,16 @@ def test_truncated_json_fails_visibly(env):
             "--session",
             SID,
         ],
-        ["handoff", "--step", "map", "--agent", "codex"],
+        [
+            "handoff",
+            "map",
+            "--step",
+            "map",
+            "--agent",
+            "codex",
+            "--session",
+            SID,
+        ],
     ],
 )
 def test_bad_calls_exit_2_before_any_effect(env, args):
@@ -209,14 +222,70 @@ def test_bad_calls_exit_2_before_any_effect(env, args):
     assert env.bd.get()["calls"] == []
 
 
-def test_invalid_environment_is_not_a_bad_call_but_an_error(
+def test_exact_contract_call_without_extra_words_works(env):
+    write_session(env.sessions, SID, dialog(1))
+    result = runner.invoke(
+        app,
+        ["handoff", "map", "--agent", "codex", "--session", SID],
+    )
+    assert result.exit_code == 0, result.stderr
+
+
+def _assert_clean_failure(result, env, *needles):
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert "Traceback" not in result.stdout + result.stderr
+    for needle in needles:
+        assert needle in result.stderr
+    assert env.bd.get()["calls"] == []
+    assert artifacts(env.work) == []
+
+
+def test_empty_sessions_dir_variable_is_a_visible_clean_error(
     env, monkeypatch
 ):
     write_session(env.sessions, SID, dialog(1))
     monkeypatch.setenv("KI_DEV_CODEX_SESSIONS_DIR", "")
     result = runner.invoke(app, MAP)
-    assert result.exit_code == 1
-    assert env.bd.get()["calls"] == []
+    _assert_clean_failure(
+        result, env, "KI_DEV_CODEX_SESSIONS_DIR ist gesetzt, aber leer"
+    )
+
+
+def test_missing_sessions_dir_is_a_visible_clean_error(
+    env, monkeypatch
+):
+    monkeypatch.setenv(
+        "KI_DEV_CODEX_SESSIONS_DIR", str(env.sessions / "fehlt")
+    )
+    _assert_clean_failure(
+        runner.invoke(app, MAP), env, "existiert nicht"
+    )
+
+
+def test_unreadable_session_file_is_sanitized(env):
+    directory = env.sessions / "2026" / "09" / "17"
+    directory.mkdir(parents=True)
+    (directory / f"rollout-2026-09-17T09-10-35-{SID}.jsonl").mkdir()
+    result = runner.invoke(app, MAP)
+    _assert_clean_failure(result, env, "nicht lesbar", "IsADirectory")
+    assert str(env.sessions) not in result.stderr
+
+
+@pytest.mark.parametrize("bad", [[], {}, 5, None, True])
+def test_odd_phase_types_are_t5_not_a_crash(env, bad):
+    rows = [user(1), assistant(2, phase=bad)]
+    write_session(env.sessions, SID, rows)
+    result = runner.invoke(app, MAP)
+    _assert_clean_failure(result, env, "T5", "payload.phase")
+
+
+def test_huge_ordinal_is_accepted_or_diagnosed_without_crash(env):
+    rows = [user(10**400), assistant(10**400 + 1)]
+    write_session(env.sessions, SID, rows)
+    result = runner.invoke(app, MAP)
+    assert isinstance(result.exception, (SystemExit, type(None)))
+    assert "Traceback" not in result.stdout + result.stderr
 
 
 def test_missing_and_ambiguous_session_exit_1(env):

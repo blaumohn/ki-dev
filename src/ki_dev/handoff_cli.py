@@ -22,12 +22,14 @@ from ki_dev.handoff import HandoffInvalidError, Step, render_handoff
 from ki_dev.handoff_map import map_handoff
 from ki_dev.handoff_source import HandoffSourceError
 
+MAP_WORD = "map"
+
 HELP = """\
 Zwei Formen; sie lassen sich nicht mischen.
 
 \b
 1. ki-dev handoff BEAD_ID --step STEP   (nur lesend)
-2. ki-dev handoff --agent codex --session SESSION_ID   (schreibt)
+2. ki-dev handoff map --agent codex --session SESSION_ID   (schreibt)
 
 Form 1 prüft einen Bead und gibt eine kopierbare Arbeitsübergabe aus.
 BEAD_ID ist die Beads-ID (z. B. projekt-42). --step ist erforderlich,
@@ -102,7 +104,7 @@ def handoff(
         ),
     ] = None,
 ) -> None:
-    if agent is not None or session is not None:
+    if agent is not None or session is not None or bead_id == MAP_WORD:
         _map_form(bead_id, step, agent, session)
     else:
         _bead_form(bead_id, step)
@@ -111,7 +113,7 @@ def handoff(
 def _bead_form(bead_id: str | None, step: Step | None) -> None:
     if bead_id is None or step is None:
         _fail(
-            "Aufruf: BEAD_ID --step STEP oder --agent codex "
+            "Aufruf: BEAD_ID --step STEP oder map --agent codex "
             "--session SESSION_ID",
             code=2,
         )
@@ -138,10 +140,16 @@ def _map_form(
     agent: str | None,
     session: str | None,
 ) -> None:
-    if bead_id is not None or step is not None:
+    if bead_id != MAP_WORD:
         _fail(
-            "--agent/--session lassen sich nicht mit BEAD_ID oder "
-            "--step mischen",
+            "Sitzungsform: ki-dev handoff map --agent codex --session "
+            "SESSION_ID (nicht mit BEAD_ID oder anderen "
+            "Positionsargumenten mischen)",
+            code=2,
+        )
+    if step is not None:
+        _fail(
+            "--step lässt sich nicht mit map --agent/--session mischen",
             code=2,
         )
     if agent is None or session is None:

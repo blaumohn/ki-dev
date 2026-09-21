@@ -56,7 +56,7 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 | Exit | Bedeutung |
 | --- | --- |
 | 0 | Übergabe auf stdout |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `--agent`/`--session`, anderer Anbieter als `codex`, ungültige Sitzungs-ID) oder Bead formal unvollständig; stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID) oder Bead formal unvollständig; stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
 | 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden, Fehler, Zeitüberschreitung, unerwartete Antwort). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
@@ -82,19 +82,22 @@ Die „Hinweis für den Menschen“-Zeile am Ende jeder Übergabe nennt nur den
 ## Codex-Sitzung als Quelle (`handoff map`)
 
 ```bash
-ki-dev handoff --agent codex --session SESSION_ID
+ki-dev handoff map --agent codex --session SESSION_ID
 ```
 
-Erschließt eine lokale Codex-Sitzung als Quelle für den Schritt `map`.
-`--agent` und `--session` sind beide erforderlich; `--agent` bezeichnet den
+Erschließt eine lokale Codex-Sitzung als Quelle für den Schritt `map`. Das
+Positionswort `map` ist Teil des Aufrufs und das einzige erlaubte
+Positionsargument. `--agent` und `--session` sind beide erforderlich; `--agent` bezeichnet den
 Anbieter der **Quellsitzung** (heute nur `codex`), nicht den späteren
 Kartierungsagenten. Es gibt kein Dateipfadargument und keine automatische Wahl
-der letzten Sitzung. Die Form lässt sich nicht mit `BEAD_ID` oder `--step`
-mischen (Exit 2, vor jeder Schreibwirkung).
+der letzten Sitzung. Die Form lässt sich nicht mit einer `BEAD_ID`, einem
+anderen Positionsargument oder `--step` mischen; auch `--agent`/`--session`
+ohne `map` wird abgelehnt (Exit 2, vor jeder Schreibwirkung).
 
 **Sitzungsordner:** `KI_DEV_CODEX_SESSIONS_DIR` (ausdrücklicher Ordner), sonst
 `CODEX_HOME/sessions`, sonst `~/.codex/sessions`. Ein gesetzter, aber leerer
-Wert ist ein Fehler. Die ID darf nur aus Buchstaben, Ziffern, `_` und `-`
+Wert ist ein Fehler (mit Klartextmeldung, ohne Traceback), ebenso ein nicht
+lesbarer Ordner oder eine nicht lesbare Sitzungsdatei. Die ID darf nur aus Buchstaben, Ziffern, `_` und `-`
 bestehen und muss genau eine Sitzung treffen.
 
 **Strenge Dialogprüfung:** Erwartet wird ein sauberer Wechsel aus

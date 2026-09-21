@@ -1,8 +1,11 @@
+import contextlib
 import hashlib
 import json
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from ki_dev.executors import codex_transcript
 from ki_dev.executors.codex_sessions import (
@@ -158,6 +161,24 @@ def test_bad_ordinals_are_reported(ordinal):
     text = problems_of(jsonl(rows).replace("Infinity", "1e999"))
     assert "T3" in text
     assert "Zeile 2 ordinal" in text
+
+
+def test_huge_integer_ordinals_are_valid_and_ordered_exactly():
+    rows = [assistant(10**400 + 1), user(10**400)]
+    messages = extract(rows).messages
+    assert [m.role for m in messages] == ["user", "assistant"]
+    assert messages[0].ordinal == 10**400
+
+
+def test_huge_duplicate_integer_ordinals_are_reported():
+    assert "ordinal doppelt" in problems_of(
+        [user(10**400), assistant(10**400)]
+    )
+
+
+def test_int_over_the_parser_digit_limit_is_invalid_json_not_a_crash():
+    text = jsonl([user(1)]) + '{"ordinal": ' + "9" * 5000 + "}\n"
+    assert "J1" in problems_of(text)
 
 
 def test_missing_ordinal_key_is_reported():
@@ -347,3 +368,53 @@ def test_request_validation_does_not_touch_the_environment(monkeypatch):
     monkeypatch.setenv("KI_DEV_CODEX_SESSIONS_DIR", "")
     with pytest.raises(TranscriptRequestError):
         read_session_transcript("codex", "../x")
+
+
+_JSON = st.recursive(
+    st.none()
+    | st.booleans()
+    | st.integers()
+    | st.floats(allow_nan=False, allow_infinity=False)
+    | st.text(max_size=8),
+    lambda inner: (
+        st.lists(inner, max_size=3)
+        | st.dictionaries(st.text(max_size=6), inner, max_size=3)
+    ),
+    max_leaves=6,
+)
+
+
+@given(
+    ordinal=_JSON,
+    phase=_JSON,
+    turn=_JSON,
+    content=_JSON,
+    item_type=_JSON,
+    role=_JSON,
+)
+def test_arbitrary_field_values_never_crash_the_parser(
+    ordinal, phase, turn, content, item_type, role
+):
+    user_row = user(1)
+    user_row["payload"]["item"]["type"] = item_type
+    user_row["payload"]["item"]["content"] = content
+    user_row["payload"]["turn_id"] = turn
+    assistant_row = assistant(ordinal, phase=phase)
+    assistant_row["payload"]["role"] = role
+    assistant_row["payload"]["content"] = content
+    with contextlib.suppress(TranscriptError):
+        extract([user_row, assistant_row])
+
+
+def test_config_and_file_errors_become_transcript_errors(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DEV_CODEX_SESSIONS_DIR", " ")
+    with pytest.raises(TranscriptError, match="gesetzt, aber leer"):
+        read_session_transcript("codex", SID)
+    monkeypatch.setenv("KI_DEV_CODEX_SESSIONS_DIR", str(tmp_path))
+    day = tmp_path / "2026" / "09" / "17"
+    day.mkdir(parents=True)
+    (day / f"rollout-x-{SID}.jsonl").mkdir()
+    with pytest.raises(TranscriptError, match="IsADirectoryError"):
+        read_session_transcript("codex", SID)

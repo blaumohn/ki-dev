@@ -40,11 +40,36 @@ _FORMAT_NOTE = (
 
 
 def read_codex_session(session_id: str) -> SessionTranscript:
-    """Ein-/Ausgabegrenze: Umgebung und Datei nur hier gelesen."""
+    """Ein-/Ausgabegrenze: Umgebung und Datei nur hier gelesen.
+
+    Erwartete Konfigurations- und Dateifehler werden zu bereinigten
+    ``TranscriptError``; Ausnahmetexte des Betriebssystems (Pfade)
+    gelangen nicht in die Meldung.
+    """
     validate_codex_session_id(session_id)
-    root = resolve_codex_sessions_dir(os.environ, Path.home())
-    rollout = _single_rollout(root, session_id)
-    return transcript_from_bytes(session_id, rollout.read_bytes())
+    try:
+        root = resolve_codex_sessions_dir(os.environ, Path.home())
+    except (ValueError, RuntimeError) as exc:
+        cause = _config_cause(exc)
+        raise TranscriptError(
+            (f"Codex-Sitzungsordner nicht bestimmbar: {cause}",)
+        ) from None
+    try:
+        rollout = _single_rollout(root, session_id)
+        data = rollout.read_bytes()
+    except OSError as exc:
+        raise TranscriptError(
+            (f"Codex-Sitzung nicht lesbar ({type(exc).__name__})",)
+        ) from None
+    return transcript_from_bytes(session_id, data)
+
+
+def _config_cause(exc: Exception) -> str:
+    # ValueError stammt aus resolve_codex_sessions_dir und nennt nur
+    # den Variablennamen; ein RuntimeError (kein Home) bleibt generisch.
+    if isinstance(exc, ValueError):
+        return str(exc)
+    return "Home-Verzeichnis unbekannt"
 
 
 def transcript_from_bytes(
@@ -206,7 +231,7 @@ def _assistant_hit(
     entry: dict, payload: dict, line: int, findings: _Findings
 ) -> _Hit | None:
     phase = payload.get("phase")
-    if phase not in _KNOWN_PHASES:
+    if not isinstance(phase, str) or phase not in _KNOWN_PHASES:
         _suspect(findings, line, "payload.phase")
         return None
     if phase not in _PHASES:
@@ -284,7 +309,9 @@ def _check_counts(hits: list[_Hit], findings: _Findings) -> None:
 
 
 def _valid_ordinal(value: object) -> bool:
-    return type(value) in (int, float) and math.isfinite(value)
+    if type(value) is int:
+        return True
+    return type(value) is float and math.isfinite(value)
 
 
 def _check_ordinals(hits: list[_Hit], findings: _Findings) -> bool:
