@@ -64,7 +64,7 @@ def transcript_from_bytes(
         parser_version=PARSER_VERSION,
         messages=messages,
         diagnostics={
-            "lines": len(lines),
+            "lines": data.count(b"\n") + (not data.endswith(b"\n")),
             "user_messages": _count(messages, "user"),
             "assistant_messages": _count(messages, "assistant"),
         },

@@ -56,8 +56,8 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 | Exit | Bedeutung |
 | --- | --- |
 | 0 | Übergabe auf stdout |
-| 2 | Aufruf unvollständig oder Bead formal unvollständig; stderr nennt die Feldpfade, z. B. `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
-| 1 | `bd` nicht lesbar (nicht gefunden, Fehler, Zeitüberschreitung, unerwartete Antwort); kurze Ursache auf stderr |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `--agent`/`--session`, anderer Anbieter als `codex`, ungültige Sitzungs-ID) oder Bead formal unvollständig; stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden, Fehler, Zeitüberschreitung, unerwartete Antwort). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
 Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen.

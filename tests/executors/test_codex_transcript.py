@@ -62,7 +62,7 @@ def test_extracts_normalized_messages_and_ignores_known_noise():
     assert transcript.messages[0].source_line == 4
     assert transcript.agent == "codex"
     assert transcript.diagnostics == {
-        "lines": len(rows) + 1,
+        "lines": len(rows),
         "user_messages": 2,
         "assistant_messages": 2,
     }
