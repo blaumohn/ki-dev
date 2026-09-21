@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
+from .codex_sessions import find_session_rollout
 from .contract import TurnResult, TurnStatus
 
 
@@ -328,11 +329,7 @@ def codex_quota(
     ueberhaupt als Nachweis akzeptiert (ki-dev-ablauf-hju, dreifach
     ueberarbeitet in dqv).
     """
-    if Path(session_id).name != session_id or not session_id:
-        raise ValueError("ungueltige Codex-session_id")
-    own = list(root.glob(f"*/*/*/rollout-*-{session_id}.jsonl"))
-    if len(own) != 1:
-        raise ValueError("Codex-Rollout fehlt oder ist mehrdeutig")
+    find_session_rollout(root, session_id)
     event_epoch, used_percent, resets_at = _freshest_account_window(
         root
     )

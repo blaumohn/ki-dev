@@ -12,11 +12,24 @@ from ki_dev.beads_reader import (
     InvalidBeadIdError,
     read_issue,
 )
+from ki_dev.beads_source import BeadsSourceError
+from ki_dev.executors.session_transcript import (
+    TranscriptError,
+    TranscriptRequestError,
+)
+from ki_dev.executors.transcript import validate_session_request
 from ki_dev.handoff import HandoffInvalidError, Step, render_handoff
+from ki_dev.handoff_map import map_handoff
+from ki_dev.handoff_source import HandoffSourceError
 
 HELP = """\
-Prüft einen Bead und gibt eine kopierbare Arbeitsübergabe aus.
+Zwei Formen; sie lassen sich nicht mischen.
 
+\b
+1. ki-dev handoff BEAD_ID --step STEP   (nur lesend)
+2. ki-dev handoff --agent codex --session SESSION_ID   (schreibt)
+
+Form 1 prüft einen Bead und gibt eine kopierbare Arbeitsübergabe aus.
 BEAD_ID ist die Beads-ID (z. B. projekt-42). --step ist erforderlich,
 es gibt keine automatische Auswahl.
 
@@ -39,24 +52,69 @@ kopieren (oder per Umleitung speichern) und in einer passenden
 getrennten Agentensitzung einfügen.
 
 \b
+Form 2 erschließt eine lokale Codex-Sitzung als Quelle für den Schritt
+map. --agent und --session sind beide erforderlich; --agent bezeichnet
+die Quellsitzung (nur codex), nicht den späteren Kartierungsagenten.
+Es gibt keinen Dateipfad und keine automatische Wahl der letzten
+Sitzung. Der Sitzungsordner kommt aus KI_DEV_CODEX_SESSIONS_DIR, sonst
+CODEX_HOME/sessions, sonst ~/.codex/sessions. Der Dialog wird streng
+geprüft (Benutzer/final_answer im Wechsel, ordinal eindeutig); jede
+Abweichung bricht ohne Ergebnis ab, Diagnosen nennen nur Prüfcode,
+Zeile und Feldpfad, nie Gesprächsinhalt. Schreibwirkung: normalisiertes
+Transkript unter .local/handoff/AGENT/SESSION_ID/, dazu ein Quellen-Bead
+per bd create (bei gleichem Stand wiederverwendet). stdout ist nur der
+kurze map-Auftrag. Serielle Nutzung; kein Agentenstart.
+
+\b
 Exit 0: Übergabe auf stdout. Exit 2: Aufruf falsch oder Bead formal
-unvollständig (Feldpfade auf stderr). Exit 1: bd nicht lesbar.
+unvollständig (Feldpfade auf stderr). Exit 1: bd nicht lesbar bzw.
+Sitzung/Quelle nicht verwendbar.
 """
 
 
 def handoff(
     bead_id: Annotated[
-        str, typer.Argument(metavar="BEAD_ID", help="Beads-ID.")
-    ],
+        str | None,
+        typer.Argument(metavar="[BEAD_ID]", help="Beads-ID."),
+    ] = None,
     step: Annotated[
-        Step,
+        Step | None,
         typer.Option(
             "--step",
             help="map | graph | materialize | build | review",
             show_default=False,
         ),
-    ],
+    ] = None,
+    agent: Annotated[
+        str | None,
+        typer.Option(
+            "--agent",
+            help="Anbieter der Quellsitzung (nur codex).",
+            show_default=False,
+        ),
+    ] = None,
+    session: Annotated[
+        str | None,
+        typer.Option(
+            "--session",
+            help="Sitzungs-ID der Quellsitzung.",
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
+    if agent is not None or session is not None:
+        _map_form(bead_id, step, agent, session)
+    else:
+        _bead_form(bead_id, step)
+
+
+def _bead_form(bead_id: str | None, step: Step | None) -> None:
+    if bead_id is None or step is None:
+        _fail(
+            "Aufruf: BEAD_ID --step STEP oder --agent codex "
+            "--session SESSION_ID",
+            code=2,
+        )
     try:
         issue = read_issue(bead_id, Path.cwd())
         text = render_handoff(issue, step)
@@ -71,6 +129,44 @@ def handoff(
         )
     except BeadsReadError as exc:
         _fail(f"Beads-Lesefehler: {exc}", code=1)
+    typer.echo(text, nl=False)
+
+
+def _map_form(
+    bead_id: str | None,
+    step: Step | None,
+    agent: str | None,
+    session: str | None,
+) -> None:
+    if bead_id is not None or step is not None:
+        _fail(
+            "--agent/--session lassen sich nicht mit BEAD_ID oder "
+            "--step mischen",
+            code=2,
+        )
+    if agent is None or session is None:
+        _fail("--agent und --session sind beide erforderlich", code=2)
+    try:
+        validate_session_request(agent, session)
+    except TranscriptRequestError as exc:
+        _fail(str(exc), code=2)
+    try:
+        text = map_handoff(agent, session, Path.cwd())
+    except TranscriptError as exc:
+        details = "\n".join(f"  {problem}" for problem in exc.problems)
+        _fail(f"Sitzung nicht verwendbar:\n{details}", code=1)
+    except (
+        BeadsSourceError,
+        BeadsReadError,
+        HandoffSourceError,
+    ) as exc:
+        _fail(f"Quellenübergabe fehlgeschlagen: {exc}", code=1)
+    except HandoffInvalidError as exc:
+        _fail(
+            "Quellen-Bead formal unvollständig: "
+            + ", ".join(exc.problems),
+            code=1,
+        )
     typer.echo(text, nl=False)
 
 

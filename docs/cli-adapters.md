@@ -253,6 +253,42 @@ fehlender, veralteter oder zu alter Nachweis hier den naechsten Aufruf
 (siehe
 [loop-runtime.de.md](loop-runtime.de.md#fuenfstundenkontingent-vorpruefung)).
 
+## Sitzungstranskripte (Adaptergrenze)
+
+`executors/transcript.py` liest die lokale Sitzung eines Anbieters als
+neutrales `SessionTranscript` (`agent`, `session_id`, `source_digest`,
+`parser_version`, Nachrichten mit `ordinal`, `role`, `text`,
+`source_line`, begrenzte Diagnosezaehler). Die Faehigkeit ist
+unabhaengig von `available_executors()`: sie haengt nur an
+`read_session_transcript(agent, session_id)` und einer eigenen
+Dispatch-Tabelle. Unterstuetzt ist nur `codex`; ein Claude-
+Transkriptfilter existiert nicht und wird erst bei Nachfrage ergaenzt.
+
+Alle Codex-Einzelheiten liegen in `codex_sessions.py` (ID-Regeln,
+Verzeichnis, Dateisuche) und `codex_transcript.py` (Filter, Pruefungen,
+Hash). Die Suche `find_session_rollout` teilt sich `codex_quota`; die
+kontoweite Quota-Semantik (`_freshest_account_window`) bleibt
+unveraendert.
+
+- **Verzeichnis:** `KI_DEV_CODEX_SESSIONS_DIR` (ausdruecklicher
+  Sitzungsordner), sonst `CODEX_HOME/sessions`, sonst
+  `~/.codex/sessions`. Ein gesetzter, aber leerer Wert ist ein Fehler.
+  Die Umgebung wird nur in `read_codex_session` gelesen.
+- **ID:** nur `[A-Za-z0-9][A-Za-z0-9_-]*`; keine Pfadseparatoren, keine
+  Glob-Metazeichen. Genau ein Treffer, kein neuester-Treffer-Fallback.
+- **Enger Eingangsvertrag:** Benutzer-`UserMessage` und Assistenten-
+  `final_answer` im strikten Wechsel; Pruefungen T1-T7 (beide Rollen,
+  gleiche Anzahl, endliches eindeutiges `ordinal`, Wechsel,
+  Beinahe-Treffer, leere Texte, `turn_id`-Paare) plus J1 (ungueltiges
+  JSON, auch als Teilzeile am Ende). Abweichungen sind Plausibilitaets-/
+  Formatfehler, kein bewiesener CLI-Versionswechsel; es gibt keine
+  Abschwaechung und keine stille Reparatur.
+- **Diagnosen:** nur Pruefcode, Zeile, Feldpfad und Zaehler, hoechstens
+  10 Faelle je Pruefung samt Zahl der ausgelassenen; nie
+  Gespraechsausschnitte oder Rohereignisse.
+- **Ein Lesevorgang:** Die Datei wird einmal als Bytes gelesen; Hash und
+  Extraktion beziehen sich auf genau diesen Stand.
+
 ## Effort im Turn-Vertrag
 
 Beide CLIs kennen einen eigenen Effort-Mechanismus: Codex ueber

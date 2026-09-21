@@ -1042,3 +1042,15 @@ def test_valid_usage_delta_budget_accepted():
     assert TurnBudget(
         max_usage_delta_percentage_points=100.0
     ).max_usage_delta_percentage_points == 100.0
+
+
+def test_codex_quota_shares_the_session_search_and_id_rules(tmp_path):
+    for bad in ("../x", "a*", "a?", "", "a/b"):
+        with pytest.raises(ValueError, match="ungueltig"):
+            codex_quota(bad, tmp_path)
+    _rollout(tmp_path, "thread-1", used_percent=1, resets_at=10)
+    _rollout_path(tmp_path, "thread-1").parent.joinpath(
+        "rollout-2026-09-17T09-10-36-thread-1.jsonl"
+    ).write_text("")
+    with pytest.raises(ValueError, match="mehrdeutig"):
+        codex_quota("thread-1", tmp_path, now=0)
