@@ -396,6 +396,22 @@ def test_fingerprint_changes_for_content_edit_after_rename(
     assert first.source_fingerprint != second.source_fingerprint
 
 
+def test_fingerprint_changes_for_edit_of_path_with_carriage_return(
+    tmp_path: Path,
+):
+    """subprocess text=True uebersetzt \\r in \\n (Universal Newlines);
+    ein Dateiname mit echtem \\r wuerde dann als nicht existierender
+    Pfad mit \\n gelesen und Inhaltsaenderungen blieben unbemerkt."""
+    repo = _repo(tmp_path)
+    cr_path = repo / "a\rb.txt"
+    cr_path.write_bytes(b"eins")
+    config = _ok_config("noop")
+    first = run_preflight(config, repo)
+    cr_path.write_bytes(b"zwei")
+    second = run_preflight(config, repo)
+    assert first.source_fingerprint != second.source_fingerprint
+
+
 # ---------------------------------------------------------------------
 # Ausführungsfehler außerhalb einzelner Befehle (Review P2)
 # ---------------------------------------------------------------------
@@ -494,6 +510,18 @@ def test_format_command_result_bounds_and_cleans_argv_and_name():
     line = format_command_result(item)
     assert "\x1b" not in line
     assert len(line) < 1000
+
+
+def test_format_command_result_quotes_argv_unambiguously():
+    """ " ".join(argv) macht ["a b"] und ["a", "b"] ununterscheidbar;
+    shlex-Quoting muss beide Faelle auseinanderhalten."""
+    one_arg = CommandResult("x", ("a b",), "pass", 0, "", omitted=False)
+    two_args = CommandResult(
+        "x", ("a", "b"), "pass", 0, "", omitted=False
+    )
+    assert format_command_result(one_arg) != format_command_result(
+        two_args
+    )
 
 
 # ---------------------------------------------------------------------

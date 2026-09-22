@@ -193,9 +193,9 @@ bleiben außen vor. Ein Git- oder Prüfartefaktfehler außerhalb eines
 einzelnen konfigurierten Befehls (z. B. kein Git-Repository,
 Artefaktverzeichnis nicht schreibbar, nicht dekodierbare Git-Ausgabe)
 erscheint als eigener kurzer `Vorlauf-Ausführungsfehler` statt eines
-unbehandelten Programmabbruchs; bereits gelaufene Befehle (einschließlich
-bestandener, nicht zurückgesetzter Korrekturen) werden dabei mit
-aufgeführt, nicht verworfen. Details stehen bei Bedarf als lokales
+unbehandelten Programmabbruchs; bereits gelaufene Befehle (bestanden wie
+fehlgeschlagen, jeweils nicht zurückgesetzt) werden dabei mit aufgeführt,
+nicht verworfen. Details stehen bei Bedarf als lokales
 Prüfartefakt unter `.local/handoff/preflight/` (nicht versioniert, kein
 Projektmemory).
 Ungültige Konfiguration oder ein formal unvollständiger Bead (Exit 2) werden

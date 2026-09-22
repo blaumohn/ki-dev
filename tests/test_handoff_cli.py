@@ -286,6 +286,23 @@ def test_review_preflight_reports_passed_correction_after_check_fails(
     assert "fails: FAIL" in result.stderr
 
 
+def test_review_preflight_repair_hint_covers_fail_not_only_pass(
+    bd, tmp_path, monkeypatch
+):
+    """Auch ein fehlgeschlagener Befehl kann den Arbeitsbaum bereits
+    veraendert haben (z. B. ein Formatter, der eine Datei aendert und
+    danach scheitert); der Hinweis darf nicht nur PASS erwaehnen."""
+    _preflight_project(
+        tmp_path,
+        checks=f"[{_command('fails', 'import sys; sys.exit(1)')}]",
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 1
+    assert "PASS wie" in result.stderr
+    assert "FAIL" in result.stderr
+
+
 def test_review_preflight_git_failure_is_reported_without_traceback(
     bd, tmp_path, monkeypatch
 ):

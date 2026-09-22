@@ -194,9 +194,9 @@ def _execution_error_finding(exc: PreflightExecutionError) -> str:
     """Git-/Artefaktfehler außerhalb eines einzelnen Befehls.
 
     Bereits gelaufene Befehle (``exc.partial_results``) dürfen dabei
-    nicht verlorengehen: Erfolgreiche Korrekturen können den
-    Arbeitsbaum schon verändert haben, ohne dass der Bericht das noch
-    zeigen könnte.
+    nicht verlorengehen: Sowohl bestandene als auch fehlgeschlagene
+    Korrekturen können den Arbeitsbaum schon verändert haben, ohne
+    dass der Bericht das noch zeigen könnte.
     """
     message = f"Vorlauf-Ausführungsfehler: {exc}"
     if exc.partial_results:
@@ -204,9 +204,9 @@ def _execution_error_finding(exc: PreflightExecutionError) -> str:
             format_command_result(item) for item in exc.partial_results
         ]
         message += (
-            "\nBereits gelaufene Befehle vor dem Fehler (erfolgreiche "
-            "PASS-Befehle wurden nicht automatisch zurückgesetzt):\n"
-            + "\n".join(lines)
+            "\nBereits gelaufene Befehle vor dem Fehler (PASS- wie "
+            "FAIL-Befehle können den Arbeitsbaum bereits verändert "
+            "haben; kein automatischer Rückbau):\n" + "\n".join(lines)
         )
     return message
 
@@ -214,9 +214,11 @@ def _execution_error_finding(exc: PreflightExecutionError) -> str:
 def _repair_finding(report: PreflightReport) -> str:
     """Listet jeden Befehl (auch erfolgreiche und ausgelassene) auf.
 
-    Erfolgreiche Korrekturen können den Arbeitsbaum bereits verändert
-    haben (kein automatischer Rückbau); ausgelassene Prüfungen und die
-    tatsächlichen argv müssen deshalb sichtbar bleiben, nicht nur die
+    Sowohl bestandene als auch fehlgeschlagene Befehle können den
+    Arbeitsbaum bereits verändert haben (z. B. ein Formatter, der eine
+    Datei ändert und danach an einer anderen scheitert); kein
+    automatischer Rückbau. Ausgelassene Prüfungen und die tatsächlichen
+    argv müssen deshalb ebenfalls sichtbar bleiben, nicht nur die
     fehlgeschlagenen Befehle.
     """
     lines = [format_command_result(item) for item in report.commands]
@@ -227,8 +229,9 @@ def _repair_finding(report: PreflightReport) -> str:
         )
     return (
         "Vorlauf ohne Review-Übergabe (Details unter "
-        f"{ARTIFACT_DIR}); erfolgreiche PASS-Befehle wurden nicht "
-        "automatisch zurückgesetzt:\n" + "\n".join(lines)
+        f"{ARTIFACT_DIR}); bereits ausgeführte Befehle (PASS wie "
+        "FAIL) wurden nicht automatisch zurückgesetzt:\n"
+        + "\n".join(lines)
     )
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import time
 import tomllib
@@ -457,19 +458,22 @@ def _excluded(path: str) -> bool:
 
 def _git(project_root: Path, *args: str) -> str:
     """Git-Aufruf für den Fingerprint: strikt dekodiert, nicht
-    verlustbehaftet.
+    verlustbehaftet, ohne Zeilenendenübersetzung.
 
     Der Fingerprint bindet den Bericht an exakte Pfade und
-    Dateiinhalte; ``errors="replace"`` würde nicht dekodierbare Pfade
-    unbemerkt verfälschen und könnte verschiedene Zustände auf densel-
-    ben Fingerprint abbilden. Nicht dekodierbare Ausgabe gilt deshalb
-    als Ausführungsfehler, nicht als stillschweigend ersetzter Text.
+    Dateiinhalte. ``text=True`` würde nicht nur ``errors="replace"``
+    Pfade verfälschen können, sondern per Universal-Newlines auch ein
+    rohes ``\\r`` in einem Dateinamen in ``\\n`` umwandeln; zwei
+    verschiedene Pfade könnten so auf dieselbe Zeichenkette und damit
+    denselben Fingerprint abbilden. Deshalb werden rohe Bytes gelesen
+    und ohne Zeilenendenübersetzung strikt dekodiert; nicht dekodier-
+    bare Ausgabe gilt als Ausführungsfehler, nicht als stillschweigend
+    ersetzter oder umgewandelter Text.
     """
     try:
         completed = subprocess.run(
             ["git", *args],
             cwd=project_root,
-            text=True,
             capture_output=True,
             check=True,
         )
@@ -478,16 +482,17 @@ def _git(project_root: Path, *args: str) -> str:
             f"git {' '.join(args)} fehlgeschlagen: "
             f"exit={exc.returncode}"
         ) from exc
+    except OSError as exc:
+        raise PreflightExecutionError(
+            f"git nicht ausführbar: {exc}"
+        ) from exc
+    try:
+        return completed.stdout.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise PreflightExecutionError(
             f"git {' '.join(args)}: Ausgabe nicht als UTF-8 "
             f"dekodierbar: {exc}"
         ) from exc
-    except OSError as exc:
-        raise PreflightExecutionError(
-            f"git nicht ausführbar: {exc}"
-        ) from exc
-    return completed.stdout
 
 
 def _write_artifact(
@@ -537,7 +542,7 @@ def format_command_result(item: CommandResult) -> str:
     im Agentenkontext.
     """
     name = _bounded(_clean(item.name), _MAX_SUCCESS_DETAIL_CHARS)
-    argv_text = _bounded(_clean(" ".join(item.argv)), _MAX_ARGV_CHARS)
+    argv_text = _bounded(_clean(shlex.join(item.argv)), _MAX_ARGV_CHARS)
     parts = [f"- {name}: {item.status.upper()}"]
     if item.bounded_detail:
         parts.append(item.bounded_detail)
