@@ -183,8 +183,12 @@ Agentenstart, kein Beads-Update.
 
 **Ausgabe:** Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
 um einen kompakten Bericht (`PRUEFBERICHT git=…`, je Befehl Status, gekürzte
-Ausgabe und tatsächliche `argv`; `name`/`argv` werden dabei ebenso von
-Steuerzeichen/ANSI-Codes bereinigt und begrenzt wie die Prozessausgabe).
+Ausgabe und `argv`; `name`/`argv` werden dabei ebenso von Steuerzeichen/
+ANSI-Codes bereinigt und begrenzt wie die Prozessausgabe, mit eindeutigem
+Quoting mehrteiliger Argumente. Ein Inline-Skript nach `-c` erscheint nur
+als Zeichenzahl, nie im Klartext — längere Prüflogik gehört in
+referenzierte Skriptdateien; die vollständige `argv` steht bei Bedarf im
+lokalen Prüfartefakt).
 Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer, stderr listet
 jeden konfigurierten Befehl mit seinem tatsächlichen Status (auch bereits
 erfolgreiche Korrekturen und wegen eines vorherigen Fehlschlags ausgelassene

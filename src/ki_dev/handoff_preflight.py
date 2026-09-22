@@ -404,21 +404,32 @@ def _fingerprint(project_root: Path) -> str:
         "-z",
     )
     hasher = hashlib.sha256()
-    hasher.update(head.encode())
+    _hash_field(hasher, head.encode())
     for code, path, orig_path in _parse_status_z(status):
         paths = (path,) if orig_path is None else (path, orig_path)
         if any(_excluded(candidate) for candidate in paths):
             continue
-        hasher.update(code.encode())
+        _hash_field(hasher, code.encode())
         for candidate in paths:
-            hasher.update(candidate.encode())
+            _hash_field(hasher, candidate.encode())
         full = project_root / path
         if full.is_file():
             try:
-                hasher.update(full.read_bytes())
+                _hash_field(hasher, full.read_bytes())
             except OSError:
-                hasher.update(b"<unlesbar>")
+                _hash_field(hasher, b"<unlesbar>")
     return hasher.hexdigest()
+
+
+def _hash_field(hasher, data: bytes) -> None:
+    """Längenpräfigiertes Feld statt reiner Konkatenation.
+
+    Ohne Längenpräfix wären z. B. Pfad ``a`` mit Inhalt ``bc`` und Pfad
+    ``ab`` mit Inhalt ``c`` im Hasher ununterscheidbar (beide ergeben
+    die Bytefolge ``abc``); Änderungen könnten so unbemerkt bleiben.
+    """
+    hasher.update(len(data).to_bytes(8, "big"))
+    hasher.update(data)
 
 
 def _parse_status_z(raw: str) -> list[tuple[str, str, str | None]]:
@@ -491,7 +502,9 @@ def _git(project_root: Path, *args: str) -> str:
     except UnicodeDecodeError as exc:
         raise PreflightExecutionError(
             f"git {' '.join(args)}: Ausgabe nicht als UTF-8 "
-            f"dekodierbar: {exc}"
+            f"dekodierbar: {exc}. Vermutlich ein Dateiname mit "
+            "ungültigen UTF-8-Bytes im Arbeitsbaum; diesen Pfad auf "
+            "gültiges UTF-8 umbenennen und den Vorlauf erneut starten."
         ) from exc
 
 
@@ -539,15 +552,35 @@ def format_command_result(item: CommandResult) -> str:
     tatsächlichen argv) zeigen. name/argv stammen aus der Konfiguration,
     nicht aus Prozessausgabe, werden aber ebenso bereinigt und begrenzt
     wie bounded_detail: kein voller Log, keine Steuerzeichen/ANSI-Codes
-    im Agentenkontext.
+    im Agentenkontext. Längere Prüflogik gehört in referenzierte
+    Skriptdateien, nicht als Inline-Skriptinhalt in die Übergabe; die
+    vollständige argv bleibt im lokalen Prüfartefakt erhalten.
     """
     name = _bounded(_clean(item.name), _MAX_SUCCESS_DETAIL_CHARS)
-    argv_text = _bounded(_clean(shlex.join(item.argv)), _MAX_ARGV_CHARS)
+    argv_text = _bounded(_argv_display(item.argv), _MAX_ARGV_CHARS)
     parts = [f"- {name}: {item.status.upper()}"]
     if item.bounded_detail:
         parts.append(item.bounded_detail)
     parts.append(f"[argv={argv_text}]")
     return " ".join(parts)
+
+
+def _argv_display(argv: tuple[str, ...]) -> str:
+    """argv fürs Copy-Text: Inline-Skriptinhalt nach ``-c`` (python/sh/
+    bash: "führe diese Zeichenkette als Code aus") wird durch seine
+    Zeichenzahl ersetzt statt im Klartext gezeigt zu werden. Die
+    vollständige argv bleibt im lokalen Prüfartefakt erhalten.
+    """
+    tokens: list[str] = []
+    mask_this = False
+    for token in argv:
+        cleaned = _clean(token)
+        if mask_this:
+            tokens.append(f"<{len(cleaned)} Zeichen ausgelassen>")
+        else:
+            tokens.append(cleaned)
+        mask_this = token == "-c"
+    return shlex.join(tokens)
 
 
 def render_review_handoff(

@@ -412,6 +412,23 @@ def test_fingerprint_changes_for_edit_of_path_with_carriage_return(
     assert first.source_fingerprint != second.source_fingerprint
 
 
+def test_fingerprint_frames_path_and_content_without_ambiguity(
+    tmp_path: Path,
+):
+    """Ohne Laengenpraefix waeren Pfad 'a' mit Inhalt 'bc' und Pfad
+    'ab' mit Inhalt 'c' im Hasher ununterscheidbar (beide ergeben nach
+    Verkettung von code+pfad+inhalt dieselbe Bytefolge 'abc'); mit
+    echtem git status -z gegen die alte Verkettung reproduziert."""
+    repo = _repo(tmp_path)
+    config = _ok_config("noop")
+    (repo / "a").write_bytes(b"bc")
+    first = run_preflight(config, repo)
+    (repo / "a").unlink()
+    (repo / "ab").write_bytes(b"c")
+    second = run_preflight(config, repo)
+    assert first.source_fingerprint != second.source_fingerprint
+
+
 # ---------------------------------------------------------------------
 # Ausführungsfehler außerhalb einzelner Befehle (Review P2)
 # ---------------------------------------------------------------------
@@ -473,6 +490,17 @@ def test_git_status_with_non_utf8_filename_fails_closed(tmp_path: Path):
         run_preflight(config, repo)
 
 
+def test_non_utf8_filename_error_tells_user_to_rename(tmp_path: Path):
+    """Der Fehlertext muss ausdrücklich zum Umbenennen des betroffenen
+    Pfads auffordern, nicht nur den Dekodierfehler nennen."""
+    repo = _repo(tmp_path)
+    bad_name = os.fsdecode(b"bad-\xff\xfe.txt")
+    (repo / bad_name).write_bytes(b"x")
+    config = _ok_config()
+    with pytest.raises(PreflightExecutionError, match="umbenennen"):
+        run_preflight(config, repo)
+
+
 def test_execution_error_keeps_already_run_correction_results(
     tmp_path: Path,
 ):
@@ -522,6 +550,26 @@ def test_format_command_result_quotes_argv_unambiguously():
     assert format_command_result(one_arg) != format_command_result(
         two_args
     )
+
+
+def test_format_command_result_masks_inline_script_after_dash_c():
+    """Inline-Skriptinhalt (z. B. python -c 'print(1)') darf nicht im
+    Klartext in die Übergabe kopiert werden; längere Prüflogik gehört
+    in referenzierte Skriptdateien. Das Skriptargument wird durch
+    seine Zeichenzahl ersetzt; das lokale Prüfartefakt behält
+    weiterhin die vollständige argv (test_writes_local_artifact...)."""
+    item = CommandResult(
+        "x",
+        ("python", "-c", "print('geheimes skript')"),
+        "pass",
+        0,
+        "",
+        omitted=False,
+    )
+    line = format_command_result(item)
+    assert "geheimes skript" not in line
+    assert "-c" in line
+    assert "Zeichen ausgelassen" in line
 
 
 # ---------------------------------------------------------------------
