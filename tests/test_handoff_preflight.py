@@ -10,9 +10,12 @@ import pytest
 from ki_dev.handoff import HandoffIssue
 from ki_dev.handoff_preflight import (
     ARTIFACT_DIR,
+    CommandResult,
     CommandSpec,
     PreflightConfig,
     PreflightConfigError,
+    PreflightExecutionError,
+    format_command_result,
     load_preflight_config,
     render_review_handoff,
     run_preflight,
@@ -126,6 +129,23 @@ def test_duplicate_names_across_corrections_and_checks_is_config_error(
         load_preflight_config(tmp_path)
 
 
+def test_nul_byte_in_argv_is_rejected_before_any_command_runs(
+    tmp_path: Path,
+):
+    """Ein via TOML \\u0000 codiertes NUL im argv scheitert erst beim
+    Prozessstart mit ValueError; die Konfiguration muss das vorher
+    ablehnen, damit keine Korrektur vor dem Prüffehler bereits lief."""
+    _pyproject(
+        tmp_path,
+        'corrections = [{name = "c1", argv = ["true"], '
+        "timeout_s = 1.0}]\n"
+        'checks = [{name = "c2", argv = ["true", "\\u0000"], '
+        "timeout_s = 1.0}]\n",
+    )
+    with pytest.raises(PreflightConfigError, match="NUL"):
+        load_preflight_config(tmp_path)
+
+
 # ---------------------------------------------------------------------
 # run_preflight: Reihenfolge, Exitcodes, Auslassungen
 # ---------------------------------------------------------------------
@@ -187,7 +207,7 @@ def test_first_failing_correction_stops_remaining_and_skips_checks(
     statuses = {item.name: item.status for item in report.commands}
     assert statuses["first"] == "fail"
     assert statuses["second"] == "omitted"
-    assert "would-check" not in statuses
+    assert statuses["would-check"] == "omitted"
 
 
 def test_checks_all_run_even_if_one_fails(tmp_path: Path):
@@ -262,9 +282,7 @@ def test_argv_is_not_shell_interpreted(tmp_path: Path):
     config = PreflightConfig(
         corrections=(),
         checks=(
-            _py(
-                "literal", "import sys; sys.stdout.write('$HOME')"
-            ),
+            _py("literal", "import sys; sys.stdout.write('$HOME')"),
         ),
     )
     report = run_preflight(config, repo)
@@ -307,9 +325,7 @@ def test_no_commit_or_reset_happens(tmp_path: Path):
     repo = _repo(tmp_path)
     before = _git(repo, "rev-parse", "HEAD")
     config = PreflightConfig(
-        corrections=(
-            _py("touch", "open('neu.txt', 'w').write('x')"),
-        ),
+        corrections=(_py("touch", "open('neu.txt', 'w').write('x')"),),
         checks=(_py("ok", "pass"),),
     )
     run_preflight(config, repo)
@@ -329,6 +345,7 @@ def test_writes_local_artifact_with_report(tmp_path: Path):
     assert payload["valid"] is True
     assert payload["source_fingerprint"] == report.source_fingerprint
     assert payload["commands"][0]["name"] == "ok"
+    assert payload["commands"][0]["argv"] == list(config.checks[0].argv)
 
 
 def test_own_artifact_directory_is_excluded_from_fingerprint(
@@ -339,6 +356,89 @@ def test_own_artifact_directory_is_excluded_from_fingerprint(
     first = run_preflight(config, repo)
     second = run_preflight(config, repo)
     assert first.source_fingerprint == second.source_fingerprint
+
+
+# ---------------------------------------------------------------------
+# _fingerprint: NUL-separierte git-status-Auswertung (Review P1)
+# ---------------------------------------------------------------------
+
+
+def test_fingerprint_changes_for_edit_of_quoted_path(tmp_path: Path):
+    """Pfade mit Sonderzeichen quotiert git in der Textform (z. B.
+    '"b \\303\\244.txt"'); ohne -z waere das kein gueltiger Dateipfad
+    mehr und eine Aenderung koennte unbemerkt bleiben."""
+    repo = _repo(tmp_path)
+    quoted_path = repo / "b ä.txt"
+    quoted_path.write_text("eins\n")
+    config = _ok_config("noop")
+    first = run_preflight(config, repo)
+    quoted_path.write_text("zwei\n")
+    second = run_preflight(config, repo)
+    assert first.source_fingerprint != second.source_fingerprint
+
+
+def test_fingerprint_changes_for_content_edit_after_rename(
+    tmp_path: Path,
+):
+    """Ein Rename-Eintrag ('alt -> neu') ist in der Textform kein
+    gueltiger Pfad; die NUL-getrennte Auswertung muss neuen und alten
+    Pfad korrekt trennen und den tatsaechlichen Dateiinhalt hashen."""
+    repo = _repo(tmp_path)
+    (repo / "quelle.txt").write_text("eins\n")
+    _git(repo, "add", "quelle.txt")
+    _git(repo, "commit", "-q", "-m", "quelle")
+    _git(repo, "mv", "quelle.txt", "ziel.txt")
+    config = _ok_config("noop")
+    first = run_preflight(config, repo)
+    (repo / "ziel.txt").write_text("zwei\n")
+    second = run_preflight(config, repo)
+    assert first.source_fingerprint != second.source_fingerprint
+
+
+# ---------------------------------------------------------------------
+# Ausführungsfehler außerhalb einzelner Befehle (Review P2)
+# ---------------------------------------------------------------------
+
+
+def test_missing_git_repo_raises_execution_error_not_raw_exception(
+    tmp_path: Path,
+):
+    """Kein Git-Repository: der Fingerprint schlägt fehl. Das muss als
+    PreflightExecutionError sichtbar werden, nicht als unbehandelter
+    CalledProcessError aus run_preflight heraus."""
+    config = _ok_config()
+    with pytest.raises(PreflightExecutionError):
+        run_preflight(config, tmp_path)
+
+
+def test_artifact_write_failure_raises_execution_error(
+    tmp_path: Path,
+):
+    """Belegt den .local/handoff/preflight-Pfad mit einer Datei statt
+    einem Verzeichnis, sodass das Schreiben des Prüfartefakts
+    fehlschlägt; das darf kein unbehandelter OSError sein."""
+    repo = _repo(tmp_path)
+    blocker = repo / ARTIFACT_DIR
+    blocker.parent.mkdir(parents=True, exist_ok=True)
+    blocker.write_text("kein Verzeichnis")
+    config = _ok_config()
+    with pytest.raises(PreflightExecutionError):
+        run_preflight(config, repo)
+
+
+def test_non_utf8_process_output_does_not_crash(tmp_path: Path):
+    """Ungültige UTF-8-Bytes in stdout dürfen zu einem gekürzten,
+    ersetzten Detail führen, nicht zu einem UnicodeDecodeError."""
+    repo = _repo(tmp_path)
+    code = (
+        "import sys; "
+        "sys.stdout.buffer.write(b'\\xff\\xfe kaputt'); sys.exit(1)"
+    )
+    config = PreflightConfig(corrections=(), checks=(_py("bad", code),))
+    report = run_preflight(config, repo)
+    item = report.commands[0]
+    assert item.status == "fail"
+    assert "kaputt" in item.bounded_detail
 
 
 # ---------------------------------------------------------------------
@@ -365,6 +465,38 @@ def test_render_review_handoff_appends_compact_report(tmp_path: Path):
     assert text.startswith("Schritt: review\n")
     assert f"PRUEFBERICHT git={report.source_fingerprint}" in text
     assert "- ok: PASS" in text
+    assert "[argv=" in text
+
+
+def test_format_command_result_includes_argv_and_detail():
+    item = CommandResult(
+        "fmt",
+        ("ruff", "format"),
+        "fail",
+        1,
+        "exit=1\nboom",
+        omitted=False,
+    )
+    line = format_command_result(item)
+    assert line.startswith("- fmt: FAIL")
+    assert "exit=1" in line
+    assert "[argv=ruff format]" in line
+
+
+def test_format_command_result_marks_omitted_without_exit_code():
+    item = CommandResult(
+        "b",
+        ("true",),
+        "omitted",
+        None,
+        "ausgelassen: vorherige Korrektur fehlgeschlagen",
+        omitted=True,
+    )
+    line = format_command_result(item)
+    assert line == (
+        "- b: OMITTED ausgelassen: vorherige Korrektur fehlgeschlagen "
+        "[argv=true]"
+    )
 
 
 def test_render_review_handoff_does_not_touch_filesystem(

@@ -154,30 +154,41 @@ Prüfbericht und beurteilt anhand dessen auch Testqualität und Abdeckung.
 `ki-dev handoff BEAD_ID --step review` führt diesen Vorlauf jetzt selbst aus,
 **bevor** die Übergabe entsteht — das erweitert den sonst rein lesenden
 Vertrag ausdrücklich für diesen einen Aufruf. Ablauf: konfigurierte
-Korrekturen seriell (Abbruch bei der ersten fehlgeschlagenen, restliche gelten
-als ausgelassen, bereits erfolgte Änderungen bleiben unverändert stehen),
-danach — nur wenn alle Korrekturen erfolgreich waren — alle konfigurierten
-Prüfungen auf demselben Stand. Ein Fingerprint des Quellstands (Git-HEAD plus
-Inhalt aller uncommitteten/unversionierten Dateien) wird vor und nach den
-Prüfungen verglichen; weicht er ab, gilt der Bericht als ungültig, auch wenn
-jede Prüfung für sich bestanden hat.
+Korrekturen seriell (Abbruch bei der ersten fehlgeschlagenen; restliche
+Korrekturen **und** alle Prüfungen gelten dann als ausgelassen und erscheinen
+so im Bericht; bereits erfolgte Änderungen bleiben unverändert stehen, es gibt
+keinen automatischen Rückbau), danach — nur wenn alle Korrekturen erfolgreich
+waren — alle konfigurierten Prüfungen auf demselben Stand. Ein Fingerprint des
+Quellstands (Git-HEAD plus Inhalt aller uncommitteten/unversionierten
+Dateien, ausgewertet aus NUL-separierter `git status -z`-Ausgabe, damit auch
+zitierte Pfade und Rename-Einträge korrekt erkannt werden) wird vor und nach
+den Prüfungen verglichen; weicht er ab, gilt der Bericht als ungültig, auch
+wenn jede Prüfung für sich bestanden hat.
 
 **Konfiguration:** projektlokale `pyproject.toml`, Tabelle
 `tool.ki-dev.handoff.preflight`, Listen `corrections` (darf leer sein) und
 `checks` (mindestens ein Eintrag), je Eintrag `name` (eindeutig über beide
-Listen), nichtleere `argv`-Liste, positiver endlicher `timeout_s`. Keine
-Autodetektion, keine automatische Installation, keine impliziten Fixes; fehlt
-die Tabelle oder `checks`, ist das ein Konfigurationsfehler (Exit 2, vor jeder
-Schreibwirkung). Prozessaufrufe laufen ohne Shell im aktuellen
-Arbeitsverzeichnis (Projektwurzel) mit geerbter Umgebung. Kein Commit, kein
-Zurücksetzen, kein Agentenstart, kein Beads-Update.
+Listen), nichtleere `argv`-Liste ohne NUL-Zeichen, positiver endlicher
+`timeout_s`. Keine Autodetektion, keine automatische Installation, keine
+impliziten Fixes; fehlt die Tabelle oder `checks`, oder enthält `argv` ein
+NUL-Zeichen, ist das ein Konfigurationsfehler (Exit 2, vor jedem
+Korrekturbefehl erkannt, unabhängig davon, welcher Eintrag betroffen ist).
+Prozessaufrufe laufen ohne Shell im aktuellen Arbeitsverzeichnis
+(Projektwurzel) mit geerbter Umgebung. Kein Commit, kein Zurücksetzen, kein
+Agentenstart, kein Beads-Update.
 
 **Ausgabe:** Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
-um einen kompakten Bericht (`PRUEFBERICHT git=…`, je Befehl Status und
-gekürzte Ausgabe). Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer,
-stderr nennt einen kurzen Reparaturbefund (Befehl, Status, gekürzte Ausgabe)
-statt voller Prozesslogs; Details stehen bei Bedarf als lokales Prüfartefakt
-unter `.local/handoff/preflight/` (nicht versioniert, kein Projektmemory).
+um einen kompakten Bericht (`PRUEFBERICHT git=…`, je Befehl Status, gekürzte
+Ausgabe und tatsächliche `argv`). Prüf- oder Ausführungsfehler (Exit 1) —
+stdout bleibt leer, stderr listet jeden konfigurierten Befehl mit seinem
+tatsächlichen Status (auch bereits erfolgreiche Korrekturen und wegen eines
+vorherigen Fehlschlags ausgelassene Befehle), statt nur die fehlgeschlagenen
+zu zeigen; volle Prozesslogs bleiben außen vor. Ein Git- oder
+Prüfartefaktfehler außerhalb eines einzelnen konfigurierten Befehls (z. B.
+kein Git-Repository, Artefaktverzeichnis nicht schreibbar) erscheint als
+eigener kurzer `Vorlauf-Ausführungsfehler` statt eines unbehandelten
+Programmabbruchs. Details stehen bei Bedarf als lokales Prüfartefakt unter
+`.local/handoff/preflight/` (nicht versioniert, kein Projektmemory).
 Ungültige Konfiguration oder ein formal unvollständiger Bead (Exit 2) werden
 vor dem ersten Korrekturbefehl erkannt.
 

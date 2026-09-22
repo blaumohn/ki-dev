@@ -265,7 +265,47 @@ def test_review_preflight_correction_failure_stops_before_checks(
     result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert "bad-correction: FAIL" in result.stderr
-    assert "never-runs" not in result.stderr
+    assert "never-runs: OMITTED" in result.stderr
+
+
+def test_review_preflight_reports_passed_correction_after_check_fails(
+    bd, tmp_path, monkeypatch
+):
+    """Eine erfolgreiche Korrektur kann den Arbeitsbaum bereits
+    veraendert haben; der Reparaturbefund darf sie nicht ausblenden,
+    nur weil ein spaeterer Check scheitert."""
+    _preflight_project(
+        tmp_path,
+        corrections=f"[{_command('good-correction', 'print(1)')}]",
+        checks=(f"[{_command('fails', 'import sys; sys.exit(1)')}]"),
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 1
+    assert "good-correction: PASS" in result.stderr
+    assert "fails: FAIL" in result.stderr
+
+
+def test_review_preflight_git_failure_is_reported_without_traceback(
+    bd, tmp_path, monkeypatch
+):
+    """Kein Git-Repository am cwd: der Fingerprint kann nicht gebildet
+    werden. Das muss ein kurzer Reparaturbefund mit Exit 1 sein, kein
+    unbehandelter Traceback."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.ki-dev.handoff.preflight]\n"
+        "corrections = []\n"
+        f"checks = [{_command('ok', 'print(1)')}]\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    # Ein kontrolliertes _fail() endet als SystemExit ueber typer.Exit;
+    # ein unbehandelter CalledProcessError waere eine andere
+    # Exception-Klasse und keine saubere Reparaturmeldung.
+    assert type(result.exception) is SystemExit
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Vorlauf-Ausführungsfehler" in result.stderr
 
 
 def test_review_without_preflight_config_exits_2(

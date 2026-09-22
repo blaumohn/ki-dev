@@ -29,7 +29,9 @@ from ki_dev.handoff_map import map_handoff
 from ki_dev.handoff_preflight import (
     ARTIFACT_DIR,
     PreflightConfigError,
+    PreflightExecutionError,
     PreflightReport,
+    format_command_result,
     load_preflight_config,
     render_review_handoff,
     run_preflight,
@@ -179,27 +181,33 @@ def _review_handoff(issue: HandoffIssue) -> str:
         raise HandoffInvalidError(problems)
     project_root = Path.cwd()
     config = load_preflight_config(project_root)
-    report = run_preflight(config, project_root)
+    try:
+        report = run_preflight(config, project_root)
+    except PreflightExecutionError as exc:
+        _fail(f"Vorlauf-Ausführungsfehler: {exc}", code=1)
     if not report.valid:
         _fail(_repair_finding(report), code=1)
     return render_review_handoff(issue, report)
 
 
 def _repair_finding(report: PreflightReport) -> str:
-    lines = [
-        f"- {item.name}: {item.status.upper()} "
-        f"{item.bounded_detail}".rstrip()
-        for item in report.commands
-        if item.status != "pass"
-    ]
-    if not lines:
-        lines = [
+    """Listet jeden Befehl (auch erfolgreiche und ausgelassene) auf.
+
+    Erfolgreiche Korrekturen können den Arbeitsbaum bereits verändert
+    haben (kein automatischer Rückbau); ausgelassene Prüfungen und die
+    tatsächlichen argv müssen deshalb sichtbar bleiben, nicht nur die
+    fehlgeschlagenen Befehle.
+    """
+    lines = [format_command_result(item) for item in report.commands]
+    if all(item.status == "pass" for item in report.commands):
+        lines.append(
             "- Quellstand hat sich während der Prüfungen verändert; "
             "Bericht ungültig"
-        ]
+        )
     return (
-        "Vorlauf ohne Review-Übergabe; Details unter "
-        f"{ARTIFACT_DIR}:\n" + "\n".join(lines)
+        "Vorlauf ohne Review-Übergabe (Details unter "
+        f"{ARTIFACT_DIR}); erfolgreiche PASS-Befehle wurden nicht "
+        "automatisch zurückgesetzt:\n" + "\n".join(lines)
     )
 
 

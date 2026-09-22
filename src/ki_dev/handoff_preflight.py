@@ -49,6 +49,14 @@ class PreflightConfigError(ValueError):
     """Aufruf/Bead/Konfiguration ungültig; keine Schreibwirkung."""
 
 
+class PreflightExecutionError(RuntimeError):
+    """Vorlauf konnte nicht kontrolliert abgeschlossen werden.
+
+    Git- oder Artefaktfehler, die keinem einzelnen konfigurierten
+    Befehl zuzuordnen sind; führt nie zu einer Übergabe.
+    """
+
+
 @dataclass(frozen=True)
 class CommandSpec:
     """Ein Korrektur- oder Prüfbefehl aus der Projektkonfiguration."""
@@ -67,6 +75,7 @@ class PreflightConfig:
 @dataclass(frozen=True)
 class CommandResult:
     name: str
+    argv: tuple[str, ...]
     status: Status
     exit_code: int | None
     bounded_detail: str
@@ -110,8 +119,7 @@ def load_preflight_config(project_root: Path) -> PreflightConfig:
     for key in _TABLE_KEYS:
         if not isinstance(table, dict) or key not in table:
             raise PreflightConfigError(
-                "tool.ki-dev.handoff.preflight fehlt in "
-                f"{path}"
+                f"tool.ki-dev.handoff.preflight fehlt in {path}"
             )
         table = table[key]
     if not isinstance(table, dict):
@@ -141,9 +149,7 @@ def load_preflight_config(project_root: Path) -> PreflightConfig:
     return PreflightConfig(corrections=corrections, checks=checks)
 
 
-def _parse_commands(
-    raw: object, field: str
-) -> tuple[CommandSpec, ...]:
+def _parse_commands(raw: object, field: str) -> tuple[CommandSpec, ...]:
     if not isinstance(raw, list):
         raise PreflightConfigError(
             f"tool.ki-dev.handoff.preflight.{field} muss eine Liste "
@@ -170,6 +176,10 @@ def _parse_command(item: object, label: str) -> CommandSpec:
         raise PreflightConfigError(
             f"{label}.argv muss eine nichtleere Liste nichtleerer "
             "Zeichenketten sein"
+        )
+    if any("\x00" in part for part in argv):
+        raise PreflightConfigError(
+            f"{label}.argv darf kein NUL-Zeichen enthalten"
         )
     timeout_s = item.get("timeout_s")
     if (
@@ -202,6 +212,7 @@ def run_preflight(
             results.append(
                 CommandResult(
                     spec.name,
+                    spec.argv,
                     "omitted",
                     None,
                     "ausgelassen: vorherige Korrektur fehlgeschlagen",
@@ -215,6 +226,18 @@ def run_preflight(
             corrections_ok = False
 
     if not corrections_ok:
+        for spec in config.checks:
+            results.append(
+                CommandResult(
+                    spec.name,
+                    spec.argv,
+                    "omitted",
+                    None,
+                    "ausgelassen: Korrektur fehlgeschlagen, Prüfung "
+                    "nicht gestartet",
+                    omitted=True,
+                )
+            )
         return _finish(project_root, results, valid=False)
 
     fingerprint_before_checks = _fingerprint(project_root)
@@ -242,9 +265,9 @@ def _finish(
     fingerprint: str | None = None,
 ) -> PreflightReport:
     report = PreflightReport(
-        fingerprint if fingerprint is not None else _fingerprint(
-            project_root
-        ),
+        fingerprint
+        if fingerprint is not None
+        else _fingerprint(project_root),
         tuple(results),
         valid,
     )
@@ -261,12 +284,14 @@ def _run_command(
             cwd=project_root,
             text=True,
             capture_output=True,
+            errors="replace",
             timeout=spec.timeout_s,
             check=False,
         )
     except subprocess.TimeoutExpired:
         return CommandResult(
             spec.name,
+            spec.argv,
             "fail",
             None,
             f"Timeout nach {spec.timeout_s:g} s",
@@ -275,6 +300,7 @@ def _run_command(
     except OSError as exc:
         return CommandResult(
             spec.name,
+            spec.argv,
             "fail",
             None,
             _bounded(f"Startfehler: {exc}", _MAX_FAILURE_DETAIL_CHARS),
@@ -283,6 +309,7 @@ def _run_command(
     passed = completed.returncode == 0
     return CommandResult(
         spec.name,
+        spec.argv,
         "pass" if passed else "fail",
         completed.returncode,
         _exit_detail(
@@ -322,21 +349,30 @@ def _fingerprint(project_root: Path) -> str:
     """Bindet den Bericht an den tatsächlichen Quellstand inklusive
     uncommitteter Änderungen; Git-HEAD allein reicht bei verändertem
     Arbeitsbaum nicht. Schließt das eigene Prüfartefakt dieses Vorlaufs
-    aus (sonst würde dessen Schreiben den Fingerprint selbst ändern)."""
+    aus (sonst würde dessen Schreiben den Fingerprint selbst ändern).
+
+    Nutzt NUL-separierte ``git status -z``-Ausgabe: Pfade mit
+    Sonderzeichen (z. B. Umlauten) und Rename-/Copy-Einträge lassen
+    sich in der quotierten Textform sonst nicht zuverlässig als
+    Dateipfad erkennen.
+    """
     head = _git(project_root, "rev-parse", "HEAD").strip()
     status = _git(
         project_root,
         "status",
         "--porcelain=v1",
         "--untracked-files=all",
+        "-z",
     )
     hasher = hashlib.sha256()
     hasher.update(head.encode())
-    for line in status.splitlines():
-        path = line[3:]
-        if _excluded(path):
+    for code, path, orig_path in _parse_status_z(status):
+        paths = (path,) if orig_path is None else (path, orig_path)
+        if any(_excluded(candidate) for candidate in paths):
             continue
-        hasher.update(line.encode())
+        hasher.update(code.encode())
+        for candidate in paths:
+            hasher.update(candidate.encode())
         full = project_root / path
         if full.is_file():
             try:
@@ -344,6 +380,34 @@ def _fingerprint(project_root: Path) -> str:
             except OSError:
                 hasher.update(b"<unlesbar>")
     return hasher.hexdigest()
+
+
+def _parse_status_z(raw: str) -> list[tuple[str, str, str | None]]:
+    """Parst NUL-separierte ``git status --porcelain=v1 -z``-Ausgabe.
+
+    Jeder Eintrag ist ``XY PATH``; ist X oder Y ``R``/``C`` (Rename/
+    Copy), folgt ein zweites NUL-terminiertes Feld mit dem
+    Ursprungspfad.
+    """
+    fields = raw.split("\0")
+    if fields and fields[-1] == "":
+        fields = fields[:-1]
+    entries: list[tuple[str, str, str | None]] = []
+    index = 0
+    while index < len(fields):
+        field = fields[index]
+        index += 1
+        if len(field) < 4:
+            continue
+        code = field[:2]
+        path = field[3:]
+        orig_path: str | None = None
+        is_rename_or_copy = code[0] in "RC" or code[1] in "RC"
+        if is_rename_or_copy and index < len(fields):
+            orig_path = fields[index]
+            index += 1
+        entries.append((code, path, orig_path))
+    return entries
 
 
 def _excluded(path: str) -> bool:
@@ -354,13 +418,24 @@ def _excluded(path: str) -> bool:
 
 
 def _git(project_root: Path, *args: str) -> str:
-    completed = subprocess.run(
-        ["git", *args],
-        cwd=project_root,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=project_root,
+            text=True,
+            capture_output=True,
+            errors="replace",
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise PreflightExecutionError(
+            f"git {' '.join(args)} fehlgeschlagen: "
+            f"exit={exc.returncode}"
+        ) from exc
+    except OSError as exc:
+        raise PreflightExecutionError(
+            f"git nicht ausführbar: {exc}"
+        ) from exc
     return completed.stdout
 
 
@@ -368,15 +443,13 @@ def _write_artifact(
     project_root: Path, report: PreflightReport
 ) -> Path:
     directory = project_root / ARTIFACT_DIR
-    directory.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    path = directory / f"{stamp}-{report.source_fingerprint[:12]}.json"
     payload = {
         "source_fingerprint": report.source_fingerprint,
         "valid": report.valid,
         "commands": [
             {
                 "name": item.name,
+                "argv": list(item.argv),
                 "status": item.status,
                 "exit_code": item.exit_code,
                 "detail": item.bounded_detail,
@@ -385,10 +458,35 @@ def _write_artifact(
             for item in report.commands
         ],
     }
-    path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
-    )
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        path = (
+            directory / f"{stamp}-{report.source_fingerprint[:12]}.json"
+        )
+        path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+        )
+    except OSError as exc:
+        raise PreflightExecutionError(
+            f"Prüfartefakt nicht schreibbar: {exc}"
+        ) from exc
     return path
+
+
+def format_command_result(item: CommandResult) -> str:
+    """Eine Zeile je Befehl: Name, Status, gekürztes Detail, argv.
+
+    Gemeinsam für die Erfolgsübergabe (``render_review_handoff``) und
+    den Reparaturbefund bei Fehlschlag genutzt, damit beide Pfade
+    dieselben Angaben (einschließlich ausgelassener Befehle und der
+    tatsächlichen argv) zeigen.
+    """
+    parts = [f"- {item.name}: {item.status.upper()}"]
+    if item.bounded_detail:
+        parts.append(item.bounded_detail)
+    parts.append(f"[argv={' '.join(item.argv)}]")
+    return " ".join(parts)
 
 
 def render_review_handoff(
@@ -399,9 +497,5 @@ def render_review_handoff(
     lines = [
         f"PRUEFBERICHT git={report.source_fingerprint}",
     ]
-    lines += [
-        f"- {item.name}: {item.status.upper()} "
-        f"{item.bounded_detail}".rstrip()
-        for item in report.commands
-    ]
+    lines += [format_command_result(item) for item in report.commands]
     return render_handoff(issue, Step.REVIEW) + "\n".join(lines) + "\n"
