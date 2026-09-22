@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -439,6 +440,60 @@ def test_non_utf8_process_output_does_not_crash(tmp_path: Path):
     item = report.commands[0]
     assert item.status == "fail"
     assert "kaputt" in item.bounded_detail
+
+
+def test_git_status_with_non_utf8_filename_fails_closed(tmp_path: Path):
+    """Ein Dateiname mit ungültigen UTF-8-Bytes darf den Fingerprint
+    nicht lautlos verfälschen (das wäre mit errors="replace" möglich:
+    zwei verschiedene Zustände könnten auf denselben Fingerprint
+    abbilden). Der Vorlauf muss stattdessen kontrolliert scheitern,
+    nicht heimlich mit ersetztem Text weiterlaufen (Review-Befund
+    AC4)."""
+    repo = _repo(tmp_path)
+    bad_name = os.fsdecode(b"bad-\xff\xfe.txt")
+    (repo / bad_name).write_bytes(b"x")
+    config = _ok_config()
+    with pytest.raises(PreflightExecutionError, match="UTF-8"):
+        run_preflight(config, repo)
+
+
+def test_execution_error_keeps_already_run_correction_results(
+    tmp_path: Path,
+):
+    """Scheitert der Fingerprint (kein Git-Repo o. Ä.) nach bereits
+    gelaufenen Korrekturen, müssen deren Ergebnisse am Fehler hängen
+    bleiben statt verworfen zu werden -- sonst erfährt niemand von
+    bereits erfolgten, nicht zurückgesetzten Änderungen."""
+    repo = _repo(tmp_path)
+    config = PreflightConfig(
+        corrections=(_py("touched", "open('x.txt','w').write('x')"),),
+        checks=(_py("ok", "pass"),),
+    )
+    run_preflight(config, repo)  # baseline: legt Artefaktordner an
+    # Git unbenutzbar machen, ohne die Korrektur zu verhindern.
+    (repo / ".git").rename(repo / ".git-weg")
+    with pytest.raises(PreflightExecutionError) as excinfo:
+        run_preflight(config, repo)
+    names = [item.name for item in excinfo.value.partial_results]
+    assert "touched" in names
+    assert excinfo.value.partial_results[0].status == "pass"
+
+
+def test_format_command_result_bounds_and_cleans_argv_and_name():
+    """argv/name kommen aus der Konfiguration, nicht aus Prozess-
+    ausgabe, unterliegen im Bericht aber derselben Bereinigungs-/
+    Begrenzungspflicht wie bounded_detail (Review-Befund AC3)."""
+    item = CommandResult(
+        "x" * 5000,
+        ("\x1b[31m" + "y" * 5000,),
+        "pass",
+        0,
+        "",
+        omitted=False,
+    )
+    line = format_command_result(item)
+    assert "\x1b" not in line
+    assert len(line) < 1000
 
 
 # ---------------------------------------------------------------------

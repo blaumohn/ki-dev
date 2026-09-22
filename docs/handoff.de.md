@@ -163,7 +163,11 @@ Quellstands (Git-HEAD plus Inhalt aller uncommitteten/unversionierten
 Dateien, ausgewertet aus NUL-separierter `git status -z`-Ausgabe, damit auch
 zitierte Pfade und Rename-Einträge korrekt erkannt werden) wird vor und nach
 den Prüfungen verglichen; weicht er ab, gilt der Bericht als ungültig, auch
-wenn jede Prüfung für sich bestanden hat.
+wenn jede Prüfung für sich bestanden hat. Lässt sich die Git-Ausgabe nicht
+verlustfrei als UTF-8 dekodieren (z. B. bei Dateinamen mit ungültigen
+Bytes), scheitert der Fingerprint kontrolliert statt Pfade lautlos zu
+ersetzen — das würde unterschiedliche Zustände auf denselben Fingerprint
+abbilden können.
 
 **Konfiguration:** projektlokale `pyproject.toml`, Tabelle
 `tool.ki-dev.handoff.preflight`, Listen `corrections` (darf leer sein) und
@@ -179,16 +183,21 @@ Agentenstart, kein Beads-Update.
 
 **Ausgabe:** Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
 um einen kompakten Bericht (`PRUEFBERICHT git=…`, je Befehl Status, gekürzte
-Ausgabe und tatsächliche `argv`). Prüf- oder Ausführungsfehler (Exit 1) —
-stdout bleibt leer, stderr listet jeden konfigurierten Befehl mit seinem
-tatsächlichen Status (auch bereits erfolgreiche Korrekturen und wegen eines
-vorherigen Fehlschlags ausgelassene Befehle), statt nur die fehlgeschlagenen
-zu zeigen; volle Prozesslogs bleiben außen vor. Ein Git- oder
-Prüfartefaktfehler außerhalb eines einzelnen konfigurierten Befehls (z. B.
-kein Git-Repository, Artefaktverzeichnis nicht schreibbar) erscheint als
-eigener kurzer `Vorlauf-Ausführungsfehler` statt eines unbehandelten
-Programmabbruchs. Details stehen bei Bedarf als lokales Prüfartefakt unter
-`.local/handoff/preflight/` (nicht versioniert, kein Projektmemory).
+Ausgabe und tatsächliche `argv`; `name`/`argv` werden dabei ebenso von
+Steuerzeichen/ANSI-Codes bereinigt und begrenzt wie die Prozessausgabe).
+Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer, stderr listet
+jeden konfigurierten Befehl mit seinem tatsächlichen Status (auch bereits
+erfolgreiche Korrekturen und wegen eines vorherigen Fehlschlags ausgelassene
+Befehle), statt nur die fehlgeschlagenen zu zeigen; volle Prozesslogs
+bleiben außen vor. Ein Git- oder Prüfartefaktfehler außerhalb eines
+einzelnen konfigurierten Befehls (z. B. kein Git-Repository,
+Artefaktverzeichnis nicht schreibbar, nicht dekodierbare Git-Ausgabe)
+erscheint als eigener kurzer `Vorlauf-Ausführungsfehler` statt eines
+unbehandelten Programmabbruchs; bereits gelaufene Befehle (einschließlich
+bestandener, nicht zurückgesetzter Korrekturen) werden dabei mit
+aufgeführt, nicht verworfen. Details stehen bei Bedarf als lokales
+Prüfartefakt unter `.local/handoff/preflight/` (nicht versioniert, kein
+Projektmemory).
 Ungültige Konfiguration oder ein formal unvollständiger Bead (Exit 2) werden
 vor dem ersten Korrekturbefehl erkannt.
 

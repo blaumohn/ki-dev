@@ -184,10 +184,31 @@ def _review_handoff(issue: HandoffIssue) -> str:
     try:
         report = run_preflight(config, project_root)
     except PreflightExecutionError as exc:
-        _fail(f"Vorlauf-Ausführungsfehler: {exc}", code=1)
+        _fail(_execution_error_finding(exc), code=1)
     if not report.valid:
         _fail(_repair_finding(report), code=1)
     return render_review_handoff(issue, report)
+
+
+def _execution_error_finding(exc: PreflightExecutionError) -> str:
+    """Git-/Artefaktfehler außerhalb eines einzelnen Befehls.
+
+    Bereits gelaufene Befehle (``exc.partial_results``) dürfen dabei
+    nicht verlorengehen: Erfolgreiche Korrekturen können den
+    Arbeitsbaum schon verändert haben, ohne dass der Bericht das noch
+    zeigen könnte.
+    """
+    message = f"Vorlauf-Ausführungsfehler: {exc}"
+    if exc.partial_results:
+        lines = [
+            format_command_result(item) for item in exc.partial_results
+        ]
+        message += (
+            "\nBereits gelaufene Befehle vor dem Fehler (erfolgreiche "
+            "PASS-Befehle wurden nicht automatisch zurückgesetzt):\n"
+            + "\n".join(lines)
+        )
+    return message
 
 
 def _repair_finding(report: PreflightReport) -> str:

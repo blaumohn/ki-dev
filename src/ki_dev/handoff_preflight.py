@@ -33,6 +33,11 @@ _TABLE_KEYS = ("tool", "ki-dev", "handoff", "preflight")
 # fassung).
 _MAX_FAILURE_DETAIL_CHARS = 1200
 _MAX_SUCCESS_DETAIL_CHARS = 200
+# name/argv kommen aus der Projektkonfiguration, nicht aus Prozess-
+# ausgabe, unterliegen im Bericht aber derselben Begrenzungs-/
+# Bereinigungspflicht wie bounded_detail (kein voller Log, keine
+# Steuerzeichen/ANSI-Codes im Agentenkontext).
+_MAX_ARGV_CHARS = 300
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -54,7 +59,18 @@ class PreflightExecutionError(RuntimeError):
 
     Git- oder Artefaktfehler, die keinem einzelnen konfigurierten
     Befehl zuzuordnen sind; führt nie zu einer Übergabe.
+    ``partial_results`` trägt die bis zum Fehler bereits gelaufenen
+    Befehle (auch bestandene, nicht zurückgesetzte Korrekturen), damit
+    sie trotz des Fehlers sichtbar bleiben statt verworfen zu werden.
     """
+
+    def __init__(
+        self,
+        message: str,
+        partial_results: tuple[CommandResult, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.partial_results = partial_results
 
 
 @dataclass(frozen=True)
@@ -240,14 +256,18 @@ def run_preflight(
             )
         return _finish(project_root, results, valid=False)
 
-    fingerprint_before_checks = _fingerprint(project_root)
+    fingerprint_before_checks = _with_partial_results(
+        results, _fingerprint, project_root
+    )
     checks_ok = True
     for spec in config.checks:
         result = _run_command(project_root, spec)
         results.append(result)
         if result.status != "pass":
             checks_ok = False
-    fingerprint_after_checks = _fingerprint(project_root)
+    fingerprint_after_checks = _with_partial_results(
+        results, _fingerprint, project_root
+    )
     stable = fingerprint_before_checks == fingerprint_after_checks
     return _finish(
         project_root,
@@ -257,6 +277,17 @@ def run_preflight(
     )
 
 
+def _with_partial_results(results: list[CommandResult], func, *args):
+    """Ruft ``func`` auf; hängt bereits gelaufene Befehle an einen
+    ``PreflightExecutionError`` an, statt sie mit ihm zu verwerfen."""
+    try:
+        return func(*args)
+    except PreflightExecutionError as exc:
+        raise PreflightExecutionError(
+            str(exc), partial_results=tuple(results)
+        ) from exc
+
+
 def _finish(
     project_root: Path,
     results: list[CommandResult],
@@ -264,14 +295,17 @@ def _finish(
     valid: bool,
     fingerprint: str | None = None,
 ) -> PreflightReport:
-    report = PreflightReport(
+    resolved_fingerprint = (
         fingerprint
         if fingerprint is not None
-        else _fingerprint(project_root),
-        tuple(results),
-        valid,
+        else _with_partial_results(results, _fingerprint, project_root)
     )
-    _write_artifact(project_root, report)
+    report = PreflightReport(
+        resolved_fingerprint, tuple(results), valid
+    )
+    _with_partial_results(
+        results, _write_artifact, project_root, report
+    )
     return report
 
 
@@ -319,8 +353,12 @@ def _run_command(
     )
 
 
+def _clean(text: str) -> str:
+    return _CONTROL_CHARS.sub("", _ANSI_ESCAPE.sub("", text))
+
+
 def _exit_detail(returncode: int, output: str) -> str:
-    text = _CONTROL_CHARS.sub("", _ANSI_ESCAPE.sub("", output)).strip()
+    text = _clean(output).strip()
     if returncode == 0:
         lines = text.splitlines()
         last = lines[-1] if lines else ""
@@ -418,19 +456,32 @@ def _excluded(path: str) -> bool:
 
 
 def _git(project_root: Path, *args: str) -> str:
+    """Git-Aufruf für den Fingerprint: strikt dekodiert, nicht
+    verlustbehaftet.
+
+    Der Fingerprint bindet den Bericht an exakte Pfade und
+    Dateiinhalte; ``errors="replace"`` würde nicht dekodierbare Pfade
+    unbemerkt verfälschen und könnte verschiedene Zustände auf densel-
+    ben Fingerprint abbilden. Nicht dekodierbare Ausgabe gilt deshalb
+    als Ausführungsfehler, nicht als stillschweigend ersetzter Text.
+    """
     try:
         completed = subprocess.run(
             ["git", *args],
             cwd=project_root,
             text=True,
             capture_output=True,
-            errors="replace",
             check=True,
         )
     except subprocess.CalledProcessError as exc:
         raise PreflightExecutionError(
             f"git {' '.join(args)} fehlgeschlagen: "
             f"exit={exc.returncode}"
+        ) from exc
+    except UnicodeDecodeError as exc:
+        raise PreflightExecutionError(
+            f"git {' '.join(args)}: Ausgabe nicht als UTF-8 "
+            f"dekodierbar: {exc}"
         ) from exc
     except OSError as exc:
         raise PreflightExecutionError(
@@ -480,12 +531,17 @@ def format_command_result(item: CommandResult) -> str:
     Gemeinsam für die Erfolgsübergabe (``render_review_handoff``) und
     den Reparaturbefund bei Fehlschlag genutzt, damit beide Pfade
     dieselben Angaben (einschließlich ausgelassener Befehle und der
-    tatsächlichen argv) zeigen.
+    tatsächlichen argv) zeigen. name/argv stammen aus der Konfiguration,
+    nicht aus Prozessausgabe, werden aber ebenso bereinigt und begrenzt
+    wie bounded_detail: kein voller Log, keine Steuerzeichen/ANSI-Codes
+    im Agentenkontext.
     """
-    parts = [f"- {item.name}: {item.status.upper()}"]
+    name = _bounded(_clean(item.name), _MAX_SUCCESS_DETAIL_CHARS)
+    argv_text = _bounded(_clean(" ".join(item.argv)), _MAX_ARGV_CHARS)
+    parts = [f"- {name}: {item.status.upper()}"]
     if item.bounded_detail:
         parts.append(item.bounded_detail)
-    parts.append(f"[argv={' '.join(item.argv)}]")
+    parts.append(f"[argv={argv_text}]")
     return " ".join(parts)
 
 
