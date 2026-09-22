@@ -172,26 +172,28 @@ abbilden können.
 **Konfiguration:** projektlokale `pyproject.toml`, Tabelle
 `tool.ki-dev.handoff.preflight`, Listen `corrections` (darf leer sein) und
 `checks` (mindestens ein Eintrag), je Eintrag `name` (eindeutig über beide
-Listen), nichtleere `argv`-Liste ohne NUL-Zeichen, positiver endlicher
-`timeout_s`. Keine Autodetektion, keine automatische Installation, keine
-impliziten Fixes; fehlt die Tabelle oder `checks`, oder enthält `argv` ein
-NUL-Zeichen, ist das ein Konfigurationsfehler (Exit 2, vor jedem
-Korrekturbefehl erkannt, unabhängig davon, welcher Eintrag betroffen ist).
-Prozessaufrufe laufen ohne Shell im aktuellen Arbeitsverzeichnis
-(Projektwurzel) mit geerbter Umgebung. Kein Commit, kein Zurücksetzen, kein
-Agentenstart, kein Beads-Update.
+Listen), nichtleere `argv`-Liste nichtleerer Zeichenketten ohne NUL/CR/LF,
+positiver endlicher `timeout_s`. Zusätzlich gilt je Eintrag
+`len(shlex.join(argv)) <= 100` (inklusive Quoting/Leerzeichen); längere
+Prüflogik gehört in ein benanntes Skript oder Modul, dessen Hauptfluss
+benannte Teilaufgaben zeigt, statt als Inline-Code in `argv` zu stehen.
+Keine Autodetektion, keine automatische Installation, keine impliziten
+Fixes; fehlt die Tabelle oder `checks`, enthält `argv` NUL/CR/LF, oder
+überschreitet ein Befehl die 100-Zeichen-Grenze, ist das ein
+Konfigurationsfehler (Exit 2, vor jedem Korrekturbefehl erkannt,
+unabhängig davon, welcher Eintrag betroffen ist). Prozessaufrufe laufen
+ohne Shell im aktuellen Arbeitsverzeichnis (Projektwurzel) mit geerbter
+Umgebung. Kein Commit, kein Zurücksetzen, kein Agentenstart, kein
+Beads-Update.
 
 **Ausgabe:** Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
 um einen kompakten Bericht (`PRUEFBERICHT git=…`, je Befehl Status, gekürzte
-Ausgabe und `argv`; `name`/`argv` werden dabei ebenso von Steuerzeichen/
-ANSI-Codes bereinigt und begrenzt wie die Prozessausgabe, mit eindeutigem
-Quoting mehrteiliger Argumente. Inline-Code bekannter Interpreter
-erscheint nur als Zeichenzahl, nie im Klartext — z. B. `python -c`,
-`bash -lc`, `node --eval`; längere Prüflogik gehört in referenzierte
-Skriptdateien. Was eine Option bedeutet, hängt am Programm: `pytest -c
-pytest.ini` benennt eine Konfigurationsdatei und bleibt sichtbar, ebenso
-Optionen nach einem Skript- oder Modulnamen wie bei `python -m pytest`.
-Die vollständige `argv` steht bei Bedarf im lokalen Prüfartefakt).
+Ausgabe und die vollständige `argv` mit eindeutigem Quoting mehrteiliger
+Argumente. `name` und die Prozessausgabe werden von Steuerzeichen/
+ANSI-Codes bereinigt und begrenzt; `argv` ist wegen der 100-Zeichen-Grenze
+beim Konfigurationsladen bereits kurz genug, um immer vollständig zu
+erscheinen — keine Interpreterlisten, Optionsparser oder Maskierung von
+vermeintlichem Inline-Code).
 Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer, stderr listet
 jeden konfigurierten Befehl mit seinem tatsächlichen Status (auch bereits
 erfolgreiche Korrekturen und wegen eines vorherigen Fehlschlags ausgelassene

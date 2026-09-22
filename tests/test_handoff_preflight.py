@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -144,6 +145,71 @@ def test_nul_byte_in_argv_is_rejected_before_any_command_runs(
         "timeout_s = 1.0}]\n",
     )
     with pytest.raises(PreflightConfigError, match="NUL"):
+        load_preflight_config(tmp_path)
+
+
+@pytest.mark.parametrize("escape", ["\\r", "\\n"])
+def test_cr_or_lf_in_argv_is_rejected_before_any_command_runs(
+    tmp_path: Path, escape: str
+):
+    """CR/LF im argv sind ebenso verboten wie NUL (Vorlaufvertrag P2)
+    und scheitern beim Konfigurationsladen, nicht erst beim Rendern
+    der Übergabe."""
+    _pyproject(
+        tmp_path,
+        'corrections = [{name = "c1", argv = ["true"], '
+        "timeout_s = 1.0}]\n"
+        f'checks = [{{name = "c2", argv = ["true", "x{escape}y"], '
+        "timeout_s = 1.0}]\n",
+    )
+    with pytest.raises(PreflightConfigError, match="Zeilenumbruch"):
+        load_preflight_config(tmp_path)
+
+
+def test_command_of_exactly_100_chars_after_quoting_is_accepted(
+    tmp_path: Path,
+):
+    """len(shlex.join(argv)) <= 100 ist die Grenze, nicht < 100
+    (Vorlaufvertrag P2)."""
+    argv = ["x" * 100]
+    assert len(shlex.join(argv)) == 100
+    _pyproject(
+        tmp_path, f"checks = [{{name = 'c', argv = {argv!r}, "
+        "timeout_s = 1.0}]\n",
+    )
+    config = load_preflight_config(tmp_path)
+    assert config.checks[0].argv == tuple(argv)
+
+
+def test_command_of_101_chars_after_quoting_is_config_error(
+    tmp_path: Path,
+):
+    argv = ["x" * 101]
+    assert len(shlex.join(argv)) == 101
+    _pyproject(
+        tmp_path, f"checks = [{{name = 'c', argv = {argv!r}, "
+        "timeout_s = 1.0}]\n",
+    )
+    with pytest.raises(PreflightConfigError, match="100"):
+        load_preflight_config(tmp_path)
+
+
+def test_command_length_counts_quoting_not_just_plain_text(
+    tmp_path: Path,
+):
+    """Ein Token mit Leerzeichen braucht Quoting; die Grenze gilt fuer
+    len(shlex.join(argv)), nicht fuer eine naive Verkettung ohne
+    Quoting -- sonst koennte ein Befehl die 100 Zeichen inklusive
+    Quoting ueberschreiten, ohne dass die Pruefung es bemerkt."""
+    argv = ["x" * 95, "a b"]
+    plain_length = len(" ".join(argv))
+    quoted_length = len(shlex.join(argv))
+    assert plain_length <= 100 < quoted_length
+    _pyproject(
+        tmp_path, f"checks = [{{name = 'c', argv = {argv!r}, "
+        "timeout_s = 1.0}]\n",
+    )
+    with pytest.raises(PreflightConfigError, match="100"):
         load_preflight_config(tmp_path)
 
 
@@ -523,13 +589,16 @@ def test_execution_error_keeps_already_run_correction_results(
     assert excinfo.value.partial_results[0].status == "pass"
 
 
-def test_format_command_result_bounds_and_cleans_argv_and_name():
-    """argv/name kommen aus der Konfiguration, nicht aus Prozess-
-    ausgabe, unterliegen im Bericht aber derselben Bereinigungs-/
-    Begrenzungspflicht wie bounded_detail (Review-Befund AC3)."""
+def test_format_command_result_bounds_name_and_cleans_ansi():
+    """name kommt aus der Konfiguration, nicht aus Prozessausgabe,
+    unterliegt im Bericht aber derselben Bereinigungs-/Begrenzungs-
+    pflicht wie bounded_detail (Review-Befund AC3). argv ist bereits
+    beim Konfigurationsladen auf höchstens 100 Zeichen begrenzt und
+    wird deshalb hier vollständig gezeigt, nur von ANSI-Codes
+    bereinigt."""
     item = CommandResult(
         "x" * 5000,
-        ("\x1b[31m" + "y" * 5000,),
+        ("\x1b[31mtrue",),
         "pass",
         0,
         "",
@@ -538,6 +607,16 @@ def test_format_command_result_bounds_and_cleans_argv_and_name():
     line = format_command_result(item)
     assert "\x1b" not in line
     assert len(line) < 1000
+
+
+def test_format_command_result_shows_valid_argv_completely():
+    """Gültige argv sind beim Konfigurationsladen bereits auf höchstens
+    100 Zeichen begrenzt; der Bericht zeigt sie deshalb vollständig,
+    ohne Interpreterlisten, Optionsparser oder Maskierung."""
+    argv = ("python", "-c", "print('geheimes skript')")
+    item = CommandResult("x", argv, "pass", 0, "", omitted=False)
+    line = format_command_result(item)
+    assert f"[argv={shlex.join(argv)}]" in line
 
 
 def test_format_command_result_quotes_argv_unambiguously():
@@ -550,77 +629,6 @@ def test_format_command_result_quotes_argv_unambiguously():
     assert format_command_result(one_arg) != format_command_result(
         two_args
     )
-
-
-def test_format_command_result_masks_inline_script_after_dash_c():
-    """Inline-Skriptinhalt (z. B. python -c 'print(1)') darf nicht im
-    Klartext in die Übergabe kopiert werden; längere Prüflogik gehört
-    in referenzierte Skriptdateien. Das Skriptargument wird durch
-    seine Zeichenzahl ersetzt; das lokale Prüfartefakt behält
-    weiterhin die vollständige argv (test_writes_local_artifact...)."""
-    item = CommandResult(
-        "x",
-        ("python", "-c", "print('geheimes skript')"),
-        "pass",
-        0,
-        "",
-        omitted=False,
-    )
-    line = format_command_result(item)
-    assert "geheimes skript" not in line
-    assert "-c" in line
-    assert "Zeichen ausgelassen" in line
-
-
-def _argv_line(*argv: str) -> str:
-    return format_command_result(
-        CommandResult("x", argv, "pass", 0, "", omitted=False)
-    )
-
-
-def test_argv_display_masks_bundled_shell_code_option():
-    """'bash -lc CODE' ist gebündeltes -l -c; der Skriptinhalt gehört
-    ebenso wenig in die Übergabe wie bei 'bash -c CODE'."""
-    line = _argv_line("bash", "-lc", "echo Beispiel")
-    assert "echo Beispiel" not in line
-    assert "-lc" in line
-    assert "Zeichen ausgelassen" in line
-
-
-def test_argv_display_masks_code_in_same_token():
-    """Steht der Code im selben Token ('-cprint(1)'), muss nur der
-    Optionsteil sichtbar bleiben."""
-    line = _argv_line("python", "-cprint(1)")
-    assert "print(1)" not in line
-    assert "-c" in line
-
-
-def test_argv_display_keeps_config_path_of_other_programs():
-    """'-c' bedeutet bei pytest eine Konfigurationsdatei, keinen Code;
-    dieser Pfad ist für das Review relevant und bleibt sichtbar."""
-    line = _argv_line("pytest", "-c", "pytest.ini")
-    assert "pytest.ini" in line
-    assert "ausgelassen" not in line
-
-
-def test_argv_display_stops_interpreting_after_module_or_script():
-    """Nach '-m pytest' bzw. einem Skriptnamen gelten Optionen dem
-    aufgerufenen Programm, nicht mehr dem Interpreter."""
-    module_line = _argv_line(
-        ".venv/bin/python", "-m", "pytest", "-c", "pytest.ini"
-    )
-    script_line = _argv_line("sh", "pruefe.sh", "-c", "kein-code")
-    assert "pytest.ini" in module_line
-    assert "kein-code" in script_line
-    assert "ausgelassen" not in module_line + script_line
-
-
-def test_argv_display_masks_versioned_interpreter_path():
-    """Die Programmfamilie ergibt sich aus dem Dateinamen ohne
-    Verzeichnis und Versionsziffern (python3.12 -> python)."""
-    line = _argv_line("/usr/bin/python3.12", "-c", "print('x')")
-    assert "print" not in line
-    assert "Zeichen ausgelassen" in line
 
 
 # ---------------------------------------------------------------------

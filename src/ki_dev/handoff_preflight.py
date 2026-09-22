@@ -34,29 +34,12 @@ _TABLE_KEYS = ("tool", "ki-dev", "handoff", "preflight")
 # fassung).
 _MAX_FAILURE_DETAIL_CHARS = 1200
 _MAX_SUCCESS_DETAIL_CHARS = 200
-# name/argv kommen aus der Projektkonfiguration, nicht aus Prozess-
-# ausgabe, unterliegen im Bericht aber derselben Begrenzungs-/
-# Bereinigungspflicht wie bounded_detail (kein voller Log, keine
-# Steuerzeichen/ANSI-Codes im Agentenkontext).
-_MAX_ARGV_CHARS = 300
-
-# Optionen, deren Argument Inline-Code ist, je Programmfamilie: kurze
-# Optionsbuchstaben (auch gebündelt, z. B. "bash -lc") und lange
-# Optionswörter. Dieselbe Option bedeutet bei anderen Programmen etwas
-# anderes -- "pytest -c pytest.ini" benennt eine Konfigurationsdatei --,
-# deshalb wird nur bei diesen bekannten Interpretern maskiert.
-_CODE_OPTION_LETTERS = {
-    "python": "c",
-    "sh": "c",
-    "bash": "c",
-    "dash": "c",
-    "ksh": "c",
-    "zsh": "c",
-    "node": "ep",
-    "perl": "eE",
-    "ruby": "e",
-}
-_CODE_OPTION_WORDS = {"node": ("--eval", "--print")}
+# name kommt aus der Projektkonfiguration, nicht aus Prozessausgabe,
+# unterliegt im Bericht aber derselben Begrenzungs-/Bereinigungspflicht
+# wie bounded_detail (kein voller Log, keine Steuerzeichen/ANSI-Codes
+# im Agentenkontext). argv ist bereits beim Konfigurationsladen auf
+# höchstens _MAX_COMMAND_CHARS begrenzt und wird vollständig gezeigt.
+_MAX_COMMAND_CHARS = 100
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -212,9 +195,17 @@ def _parse_command(item: object, label: str) -> CommandSpec:
             f"{label}.argv muss eine nichtleere Liste nichtleerer "
             "Zeichenketten sein"
         )
-    if any("\x00" in part for part in argv):
+    if any(char in part for part in argv for char in "\x00\r\n"):
         raise PreflightConfigError(
-            f"{label}.argv darf kein NUL-Zeichen enthalten"
+            f"{label}.argv darf kein NUL- oder Zeilenumbruchzeichen "
+            "(CR/LF) enthalten"
+        )
+    command = shlex.join(argv)
+    if len(command) > _MAX_COMMAND_CHARS:
+        raise PreflightConfigError(
+            f"{label}.argv ergibt mit Quoting {len(command)} Zeichen, "
+            f"erlaubt sind höchstens {_MAX_COMMAND_CHARS}: lange Logik "
+            "gehört in ein benanntes Skript/Modul"
         )
     timeout_s = item.get("timeout_s")
     if (
@@ -567,100 +558,23 @@ def format_command_result(item: CommandResult) -> str:
     Gemeinsam für die Erfolgsübergabe (``render_review_handoff``) und
     den Reparaturbefund bei Fehlschlag genutzt, damit beide Pfade
     dieselben Angaben (einschließlich ausgelassener Befehle und der
-    tatsächlichen argv) zeigen. name/argv stammen aus der Konfiguration,
-    nicht aus Prozessausgabe, werden aber ebenso bereinigt und begrenzt
+    tatsächlichen argv) zeigen. name stammt aus der Konfiguration,
+    nicht aus Prozessausgabe, wird aber ebenso bereinigt und begrenzt
     wie bounded_detail: kein voller Log, keine Steuerzeichen/ANSI-Codes
-    im Agentenkontext. Längere Prüflogik gehört in referenzierte
-    Skriptdateien, nicht als Inline-Skriptinhalt in die Übergabe; die
-    vollständige argv bleibt im lokalen Prüfartefakt erhalten.
+    im Agentenkontext. Gültige argv sind bereits beim Konfigurations-
+    laden auf höchstens _MAX_COMMAND_CHARS begrenzt (siehe
+    ``_parse_command``) und werden hier deshalb vollständig gezeigt --
+    ohne Interpreterlisten, Optionsparser oder Maskierung, die erraten
+    müssten, ob ein Optionsargument beim aufgerufenen Programm Code
+    bedeutet.
     """
     name = _bounded(_clean(item.name), _MAX_SUCCESS_DETAIL_CHARS)
-    argv_text = _bounded(_argv_display(item.argv), _MAX_ARGV_CHARS)
+    argv_text = _clean(shlex.join(item.argv))
     parts = [f"- {name}: {item.status.upper()}"]
     if item.bounded_detail:
         parts.append(item.bounded_detail)
     parts.append(f"[argv={argv_text}]")
     return " ".join(parts)
-
-
-def _argv_display(argv: tuple[str, ...]) -> str:
-    """argv für den Übergabetext: Inline-Code nur als Zeichenzahl.
-
-    Ob ein Optionsargument Code ist, entscheidet das aufgerufene
-    Programm: ``python -c`` und ``bash -lc`` führen eine Zeichenkette
-    aus, ``pytest -c pytest.ini`` benennt dagegen eine
-    Konfigurationsdatei. Maskiert wird deshalb nur bei den bekannten
-    Interpretern aus ``_CODE_OPTION_LETTERS``/``_CODE_OPTION_WORDS``,
-    und nur solange die Optionen dem Interpreter selbst gelten: Nach
-    dem Code-Argument oder dem ersten Nicht-Options-Token (Skript- oder
-    Modulname, z. B. ``python -m pytest``) gehören weitere Optionen dem
-    aufgerufenen Programm und bleiben unverändert sichtbar. Die
-    vollständige argv steht weiterhin im lokalen Prüfartefakt.
-    """
-    program = _program_family(argv[0])
-    letters = _CODE_OPTION_LETTERS.get(program, "")
-    words = _CODE_OPTION_WORDS.get(program, ())
-    tokens = [_clean(argv[0])]
-    interpreting = bool(letters or words)
-    mask_next = False
-    for token in argv[1:]:
-        cleaned = _clean(token)
-        if mask_next:
-            tokens.append(_masked(cleaned))
-            mask_next = False
-            interpreting = False
-        elif not interpreting:
-            tokens.append(cleaned)
-        elif not token.startswith("-") or token == "-":
-            tokens.append(cleaned)
-            interpreting = False
-        else:
-            option, inline = _split_code_option(token, letters, words)
-            if option is None:
-                tokens.append(cleaned)
-            elif inline is None:
-                tokens.append(_clean(option))
-                mask_next = True
-            else:
-                tokens.append(_clean(option) + _masked(_clean(inline)))
-                interpreting = False
-    return shlex.join(tokens)
-
-
-def _program_family(argv0: str) -> str:
-    """Dateiname ohne Verzeichnis und Versionsziffern.
-
-    ``/usr/bin/python3.12`` und ``.venv/bin/python`` gehören beide zur
-    Familie ``python``.
-    """
-    return re.sub(r"[0-9.]+$", "", Path(argv0).name)
-
-
-def _split_code_option(
-    token: str, letters: str, words: tuple[str, ...]
-) -> tuple[str | None, str | None]:
-    """Zerlegt eine Option in Optionsteil und darin enthaltenen Code.
-
-    ``-lc`` -> ``("-lc", None)``: Der Code folgt als nächstes Argument.
-    ``-cprint(1)`` -> ``("-c", "print(1)")`` und ``--eval=1+1`` ->
-    ``("--eval=", "1+1")``: Der Code steht im selben Token. Trägt die
-    Option keinen Code, ``(None, None)``.
-    """
-    if token in words:
-        return token, None
-    for word in words:
-        if token.startswith(word + "="):
-            return token[: len(word) + 1], token[len(word) + 1 :]
-    if token.startswith("--"):
-        return None, None
-    for index, char in enumerate(token[1:], start=1):
-        if char in letters:
-            return token[: index + 1], token[index + 1 :] or None
-    return None, None
-
-
-def _masked(text: str) -> str:
-    return f"<{len(text)} Zeichen ausgelassen>"
 
 
 def render_review_handoff(
