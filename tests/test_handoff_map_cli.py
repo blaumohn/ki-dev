@@ -329,7 +329,7 @@ def test_help_documents_both_forms_and_their_effects(env):
     for text in (
         "--agent codex --session",
         "--step STEP",
-        "nur lesend",
+        "außer --step review",
         "schreibt",
         "KI_DEV_CODEX_SESSIONS_DIR",
         "CODEX_HOME/sessions",

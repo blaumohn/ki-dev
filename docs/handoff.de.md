@@ -2,11 +2,13 @@
 
 `ki-dev handoff BEAD_ID --step STEP` prüft einen Bead formal und gibt eine
 kurze, kopierbare Arbeitsübergabe aus. Du startest die passende Agentensitzung
-selbst und fügst den Text dort ein. Diese Form liest nur
+selbst und fügst den Text dort ein. Diese Form liest den Bead nur
 (`bd --readonly show BEAD_ID --json` im aktuellen Arbeitsverzeichnis, Frist
-10 s), schreibt nichts und startet keinen Agenten. Eine zweite Form, die eine
-Codex-Sitzung als Quelle erschließt und dabei schreibt, steht
-[weiter unten](#codex-sitzung-als-quelle-handoff-map).
+10 s) und startet keinen Agenten. Für `--step review` gilt eine ausdrückliche
+Ausnahme vom sonst rein lesenden Vertrag: siehe
+[Deterministischer Vorlauf vor der Review-Übergabe](#deterministischer-vorlauf-vor-der-review-übergabe-step-review).
+Eine zweite Form, die eine Codex-Sitzung als Quelle erschließt und dabei
+schreibt, steht [weiter unten](#codex-sitzung-als-quelle-handoff-map).
 
 ## Die fünf Aufrufe
 
@@ -55,9 +57,9 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 
 | Exit | Bedeutung |
 | --- | --- |
-| 0 | Übergabe auf stdout |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID) oder Bead formal unvollständig; stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
-| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden, Fehler, Zeitüberschreitung, unerwartete Antwort). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
+| 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht) |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
 Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen.
@@ -70,11 +72,13 @@ Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen
 3. `materialize`: je dünnem Vorgang eine Sitzung; danach die Ausführungsreife
    getrennt prüfen lassen.
 4. `build`: Übergabe des materialisierten Beads in einer Bau-Sitzung.
-5. `review`: Übergabe in einer **frischen, getrennten** Sitzung. Der Review-Text
-   verlangt zuerst ein eigenes Urteil anhand von `description`, `design`,
-   `acceptance_criteria`, Diff und selbst nachvollzogenen Prüfungen und ein
-   Ergebnis `PASS`, `CHANGES` oder `NEEDS_DECISION`. Das Schließen des Beads
-   entscheidest du.
+5. `review`: Vorher läuft automatisch der
+   [deterministische Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe-step-review);
+   erst bei dessen Erfolg entsteht die Übergabe für eine **frische, getrennte**
+   Sitzung. Der Review-Text verlangt zuerst ein eigenes Urteil anhand von
+   `description`, `design`, `acceptance_criteria`, Diff und Prüfbericht und
+   ein Ergebnis `PASS`, `CHANGES` oder `NEEDS_DECISION`. Das Schließen des
+   Beads entscheidest du.
 
 Die „Hinweis für den Menschen“-Zeile am Ende jeder Übergabe nennt nur den
 üblichen Folgeschritt; sie wird nie automatisch ausgeführt.
@@ -137,6 +141,48 @@ Kartierungssitzung einfügen, danach getrennt prüfen lassen. Die Karte geht mit
 Wiederholungen, Präzisierungen und Widersprüchen inhaltlich um; der Parser
 bereinigt nichts. Der Befehl startet keinen Agenten und legt keine Karte an,
 beansprucht oder schließt nichts.
+
+## Deterministischer Vorlauf vor der Review-Übergabe (`--step review`)
+
+Build darf gezielt entwickeln und testen; das ist kein pauschales Test-,
+Typprüfer- oder Werkzeugverbot. Ein deterministischer Vorlauf entlastet die
+Bau-Sitzung nur von mechanischem Linting/Formatieren und den abschließenden
+Prüfungen. Die Review-Sitzung selbst startet keine Formatter, Linter,
+Typprüfer oder Tests; sie liest Dateien, Diff, Anforderungen und den
+Prüfbericht und beurteilt anhand dessen auch Testqualität und Abdeckung.
+
+`ki-dev handoff BEAD_ID --step review` führt diesen Vorlauf jetzt selbst aus,
+**bevor** die Übergabe entsteht — das erweitert den sonst rein lesenden
+Vertrag ausdrücklich für diesen einen Aufruf. Ablauf: konfigurierte
+Korrekturen seriell (Abbruch bei der ersten fehlgeschlagenen, restliche gelten
+als ausgelassen, bereits erfolgte Änderungen bleiben unverändert stehen),
+danach — nur wenn alle Korrekturen erfolgreich waren — alle konfigurierten
+Prüfungen auf demselben Stand. Ein Fingerprint des Quellstands (Git-HEAD plus
+Inhalt aller uncommitteten/unversionierten Dateien) wird vor und nach den
+Prüfungen verglichen; weicht er ab, gilt der Bericht als ungültig, auch wenn
+jede Prüfung für sich bestanden hat.
+
+**Konfiguration:** projektlokale `pyproject.toml`, Tabelle
+`tool.ki-dev.handoff.preflight`, Listen `corrections` (darf leer sein) und
+`checks` (mindestens ein Eintrag), je Eintrag `name` (eindeutig über beide
+Listen), nichtleere `argv`-Liste, positiver endlicher `timeout_s`. Keine
+Autodetektion, keine automatische Installation, keine impliziten Fixes; fehlt
+die Tabelle oder `checks`, ist das ein Konfigurationsfehler (Exit 2, vor jeder
+Schreibwirkung). Prozessaufrufe laufen ohne Shell im aktuellen
+Arbeitsverzeichnis (Projektwurzel) mit geerbter Umgebung. Kein Commit, kein
+Zurücksetzen, kein Agentenstart, kein Beads-Update.
+
+**Ausgabe:** Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
+um einen kompakten Bericht (`PRUEFBERICHT git=…`, je Befehl Status und
+gekürzte Ausgabe). Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer,
+stderr nennt einen kurzen Reparaturbefund (Befehl, Status, gekürzte Ausgabe)
+statt voller Prozesslogs; Details stehen bei Bedarf als lokales Prüfartefakt
+unter `.local/handoff/preflight/` (nicht versioniert, kein Projektmemory).
+Ungültige Konfiguration oder ein formal unvollständiger Bead (Exit 2) werden
+vor dem ersten Korrekturbefehl erkannt.
+
+`ki-dev loop` ist von diesem Vorlauf unverändert; er gehört ausschließlich zum
+manuellen `handoff`-Ablauf.
 
 ## Grenzen
 

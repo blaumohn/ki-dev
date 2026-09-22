@@ -1,5 +1,7 @@
 import json
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -9,6 +11,8 @@ from ki_dev.cli import app
 from ki_dev.handoff import Step
 
 runner = CliRunner()
+
+NON_REVIEW_STEPS = [step for step in Step if step is not Step.REVIEW]
 
 FULL = {
     "id": "x-1",
@@ -31,7 +35,14 @@ def bd(monkeypatch):
         "raises": None,
     }
 
+    real_run = subprocess.run
+
     def fake(argv, **kwargs):
+        if not argv or argv[0] != "bd":
+            # Nur bd faken; git/Vorlauf-Prüfbefehle der Review-Tests
+            # laufen echt (beads_reader.subprocess ist dasselbe
+            # Modulobjekt wie subprocess, das Patchen wirkt global).
+            return real_run(argv, **kwargs)
         calls.append(argv)
         if state["raises"]:
             raise state["raises"]
@@ -45,7 +56,7 @@ def bd(monkeypatch):
     return fake
 
 
-@pytest.mark.parametrize("step", list(Step))
+@pytest.mark.parametrize("step", NON_REVIEW_STEPS)
 def test_every_step_prints_plain_handoff(bd, step):
     result = runner.invoke(
         app, ["handoff", "x-1", "--step", step.value]
@@ -122,12 +133,13 @@ def test_missing_source_refs_block_only_reference_steps(bd, step):
     assert "metadata.handoff.source_refs" in result.stderr
 
 
-@pytest.mark.parametrize("step", ["build", "review"])
-def test_build_review_work_without_metadata(bd, step):
+def test_build_works_without_metadata(bd):
     bead = {k: v for k, v in FULL.items() if k != "metadata"}
     bd.state["stdout"] = json.dumps([bead])
     assert (
-        runner.invoke(app, ["handoff", "x-1", "--step", step]).exit_code
+        runner.invoke(
+            app, ["handoff", "x-1", "--step", "build"]
+        ).exit_code
         == 0
     )
 
@@ -170,3 +182,112 @@ def test_adapter_errors_exit_1_without_raw_output(bd, change):
     assert "GEHEIME" not in result.stderr
     assert "boese" not in result.stderr
     assert len(result.stderr) < 300
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True
+    )
+
+
+def _preflight_project(
+    tmp_path: Path, *, checks: str, corrections: str = "[]"
+) -> Path:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "test")
+    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    (tmp_path / "README.md").write_text("x\n")
+    _git(tmp_path, "add", "README.md")
+    _git(tmp_path, "commit", "-q", "-m", "base")
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.ki-dev.handoff.preflight]\n"
+        f"corrections = {corrections}\n"
+        f"checks = {checks}\n"
+    )
+    return tmp_path
+
+
+def _command(name: str, code: str, timeout_s: float = 5.0) -> str:
+    py = json.dumps(sys.executable)
+    return (
+        f'{{name = "{name}", argv = [{py}, "-c", {json.dumps(code)}], '
+        f"timeout_s = {timeout_s}}}"
+    )
+
+
+def test_review_preflight_success_runs_checks_and_appends_report(
+    bd, tmp_path, monkeypatch
+):
+    _preflight_project(
+        tmp_path, checks=f"[{_command('ok', 'print(1)')}]"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("Schritt: review\n")
+    assert "PRUEFBERICHT git=" in result.stdout
+    assert "- ok: PASS" in result.stdout
+    assert result.stderr == ""
+    artifacts = list(
+        (tmp_path / ".local" / "handoff" / "preflight").glob("*.json")
+    )
+    assert len(artifacts) == 1
+    assert json.loads(artifacts[0].read_text())["valid"] is True
+
+
+def test_review_preflight_check_failure_exits_1_without_handoff(
+    bd, tmp_path, monkeypatch
+):
+    fail_code = "import sys; sys.exit(1)"
+    _preflight_project(
+        tmp_path, checks=f"[{_command('fails', fail_code)}]"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Vorlauf ohne Review-Übergabe" in result.stderr
+    assert "fails: FAIL" in result.stderr
+    assert ".local/handoff/preflight" in result.stderr
+
+
+def test_review_preflight_correction_failure_stops_before_checks(
+    bd, tmp_path, monkeypatch
+):
+    _preflight_project(
+        tmp_path,
+        corrections=(
+            f"[{_command('bad-correction', 'import sys; sys.exit(3)')}]"
+        ),
+        checks=f"[{_command('never-runs', 'raise SystemExit(1)')}]",
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 1
+    assert "bad-correction: FAIL" in result.stderr
+    assert "never-runs" not in result.stderr
+
+
+def test_review_without_preflight_config_exits_2(
+    bd, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Vorlauf-Konfiguration ungültig" in result.stderr
+
+
+def test_review_validates_bead_before_preflight_config(
+    bd, tmp_path, monkeypatch
+):
+    """Kein pyproject.toml am cwd noetig, wenn der Bead bereits formal
+    unvollstaendig ist: Bead-Validierung geht der Konfiguration vor."""
+    bd.state["stdout"] = json.dumps(
+        [{k: v for k, v in FULL.items() if k != "design"}]
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 2
+    assert "design" in result.stderr
+    assert "Vorlauf-Konfiguration" not in result.stderr

@@ -156,3 +156,24 @@ def test_core_imports_no_cli_or_process_modules():
         "sys.exit(int(bool(bad & set(sys.modules))))"
     )
     assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+
+
+def test_build_may_test_review_may_not():
+    """Build darf gezielt testen (kein pauschales Werkzeugverbot);
+    Review startet selbst keine Prüfwerkzeuge, darf aber lesen und
+    Testqualität/Abdeckung beurteilen (AC1/AC2)."""
+    build = " ".join(render_handoff(_issue(), Step.BUILD).split())
+    review = " ".join(render_handoff(_issue(), Step.REVIEW).split())
+
+    assert "gezielte Entwicklungstests" in build
+    assert "Kein pauschales Test-, Typprüfer- oder Werkzeugverbot" in (
+        build
+    )
+    assert "Starte keine Formatter, Linter" not in build
+
+    assert "starte selbst keine Formatter, Linter" in review
+    assert "Typprüfer oder Tests" in review
+    assert "Lesen von Dateien, Diff" in review
+    assert "bleibt erlaubt" in review
+    assert "Testqualität und Abdeckung" in review
+    assert "Prüfbericht" in review

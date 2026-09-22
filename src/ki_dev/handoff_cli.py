@@ -18,8 +18,22 @@ from ki_dev.executors.session_transcript import (
     TranscriptRequestError,
 )
 from ki_dev.executors.transcript import validate_session_request
-from ki_dev.handoff import HandoffInvalidError, Step, render_handoff
+from ki_dev.handoff import (
+    HandoffInvalidError,
+    HandoffIssue,
+    Step,
+    render_handoff,
+    validate_handoff,
+)
 from ki_dev.handoff_map import map_handoff
+from ki_dev.handoff_preflight import (
+    ARTIFACT_DIR,
+    PreflightConfigError,
+    PreflightReport,
+    load_preflight_config,
+    render_review_handoff,
+    run_preflight,
+)
 from ki_dev.handoff_source import HandoffSourceError
 
 MAP_WORD = "map"
@@ -28,7 +42,7 @@ HELP = """\
 Zwei Formen; sie lassen sich nicht mischen.
 
 \b
-1. ki-dev handoff BEAD_ID --step STEP   (nur lesend)
+1. ki-dev handoff BEAD_ID --step STEP   (lesend, außer --step review)
 2. ki-dev handoff map --agent codex --session SESSION_ID   (schreibt)
 
 Form 1 prüft einen Bead und gibt eine kopierbare Arbeitsübergabe aus.
@@ -48,10 +62,20 @@ source_refs ist eine nichtleere Liste nichtleerer Strings, z. B.
   {"handoff":{"source_refs":["docs/design/a.md#L12-L40","bd:karte"]}}
 Die Referenzen werden nur als Text weitergegeben, nicht aufgelöst.
 
-Der Befehl liest nur (bd --readonly show BEAD_ID --json), schreibt
-nichts und startet keinen Agenten. Fortsetzung von Hand: Ausgabe
-kopieren (oder per Umleitung speichern) und in einer passenden
-getrennten Agentensitzung einfügen.
+Der Befehl liest den Bead nur (bd --readonly show BEAD_ID --json) und
+startet keinen Agenten. Fortsetzung von Hand: Ausgabe kopieren (oder
+per Umleitung speichern) und in einer passenden getrennten
+Agentensitzung einfügen.
+
+\b
+--step review erweitert das ausdrücklich um einen deterministischen
+Vorlauf ohne Modell: konfigurierte Korrekturen (z. B. Autofixes) und
+danach Prüfungen (z. B. Tests) laufen auf dem aktuellen Arbeitsbaum,
+bevor die Übergabe entsteht. Konfiguration: pyproject.toml, Tabelle
+tool.ki-dev.handoff.preflight, Listen corrections (darf leer sein) und
+checks (mindestens ein Eintrag), je Eintrag name, argv, timeout_s.
+Details bei Bedarf als lokales Prüfartefakt unter
+.local/handoff/preflight; kein Beads-Update, kein Commit, kein Agent.
 
 \b
 Form 2 erschließt eine lokale Codex-Sitzung als Quelle für den Schritt
@@ -68,9 +92,12 @@ per bd create (bei gleichem Stand wiederverwendet). stdout ist nur der
 kurze map-Auftrag. Serielle Nutzung; kein Agentenstart.
 
 \b
-Exit 0: Übergabe auf stdout. Exit 2: Aufruf falsch oder Bead formal
-unvollständig (Feldpfade auf stderr). Exit 1: bd nicht lesbar bzw.
-Sitzung/Quelle nicht verwendbar.
+Exit 0: Übergabe auf stdout. Exit 2: Aufruf falsch, Bead formal
+unvollständig oder (bei --step review) Vorlauf-Konfiguration ungültig
+(jeweils auf stderr, vor jeder Schreibwirkung). Exit 1: bd nicht
+lesbar, Sitzung/Quelle nicht verwendbar, oder (bei --step review) eine
+Korrektur/Prüfung ist fehlgeschlagen (kurzer Reparaturbefund auf
+stderr statt Übergabe).
 """
 
 
@@ -119,7 +146,10 @@ def _bead_form(bead_id: str | None, step: Step | None) -> None:
         )
     try:
         issue = read_issue(bead_id, Path.cwd())
-        text = render_handoff(issue, step)
+        if step is Step.REVIEW:
+            text = _review_handoff(issue)
+        else:
+            text = render_handoff(issue, step)
     except InvalidBeadIdError as exc:
         _fail(str(exc), code=2)
     except HandoffInvalidError as exc:
@@ -131,7 +161,46 @@ def _bead_form(bead_id: str | None, step: Step | None) -> None:
         )
     except BeadsReadError as exc:
         _fail(f"Beads-Lesefehler: {exc}", code=1)
+    except PreflightConfigError as exc:
+        _fail(f"Vorlauf-Konfiguration ungültig: {exc}", code=2)
     typer.echo(text, nl=False)
+
+
+def _review_handoff(issue: HandoffIssue) -> str:
+    """Deterministischer Vorlauf vor der Review-Übergabe (Step.REVIEW).
+
+    Validiert Bead und Konfiguration vollständig, bevor der erste
+    Korrekturbefehl läuft (kein Schreibeffekt vor dieser Prüfung).
+    Bei einem Prüf-/Ausführungsfehler bricht dies mit Exit 1 und einem
+    kurzen Reparaturbefund ab, statt eine Übergabe zu liefern.
+    """
+    problems = validate_handoff(issue, Step.REVIEW)
+    if problems:
+        raise HandoffInvalidError(problems)
+    project_root = Path.cwd()
+    config = load_preflight_config(project_root)
+    report = run_preflight(config, project_root)
+    if not report.valid:
+        _fail(_repair_finding(report), code=1)
+    return render_review_handoff(issue, report)
+
+
+def _repair_finding(report: PreflightReport) -> str:
+    lines = [
+        f"- {item.name}: {item.status.upper()} "
+        f"{item.bounded_detail}".rstrip()
+        for item in report.commands
+        if item.status != "pass"
+    ]
+    if not lines:
+        lines = [
+            "- Quellstand hat sich während der Prüfungen verändert; "
+            "Bericht ungültig"
+        ]
+    return (
+        "Vorlauf ohne Review-Übergabe; Details unter "
+        f"{ARTIFACT_DIR}:\n" + "\n".join(lines)
+    )
 
 
 def _map_form(
