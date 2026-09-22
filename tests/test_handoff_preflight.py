@@ -572,6 +572,57 @@ def test_format_command_result_masks_inline_script_after_dash_c():
     assert "Zeichen ausgelassen" in line
 
 
+def _argv_line(*argv: str) -> str:
+    return format_command_result(
+        CommandResult("x", argv, "pass", 0, "", omitted=False)
+    )
+
+
+def test_argv_display_masks_bundled_shell_code_option():
+    """'bash -lc CODE' ist gebündeltes -l -c; der Skriptinhalt gehört
+    ebenso wenig in die Übergabe wie bei 'bash -c CODE'."""
+    line = _argv_line("bash", "-lc", "echo Beispiel")
+    assert "echo Beispiel" not in line
+    assert "-lc" in line
+    assert "Zeichen ausgelassen" in line
+
+
+def test_argv_display_masks_code_in_same_token():
+    """Steht der Code im selben Token ('-cprint(1)'), muss nur der
+    Optionsteil sichtbar bleiben."""
+    line = _argv_line("python", "-cprint(1)")
+    assert "print(1)" not in line
+    assert "-c" in line
+
+
+def test_argv_display_keeps_config_path_of_other_programs():
+    """'-c' bedeutet bei pytest eine Konfigurationsdatei, keinen Code;
+    dieser Pfad ist für das Review relevant und bleibt sichtbar."""
+    line = _argv_line("pytest", "-c", "pytest.ini")
+    assert "pytest.ini" in line
+    assert "ausgelassen" not in line
+
+
+def test_argv_display_stops_interpreting_after_module_or_script():
+    """Nach '-m pytest' bzw. einem Skriptnamen gelten Optionen dem
+    aufgerufenen Programm, nicht mehr dem Interpreter."""
+    module_line = _argv_line(
+        ".venv/bin/python", "-m", "pytest", "-c", "pytest.ini"
+    )
+    script_line = _argv_line("sh", "pruefe.sh", "-c", "kein-code")
+    assert "pytest.ini" in module_line
+    assert "kein-code" in script_line
+    assert "ausgelassen" not in module_line + script_line
+
+
+def test_argv_display_masks_versioned_interpreter_path():
+    """Die Programmfamilie ergibt sich aus dem Dateinamen ohne
+    Verzeichnis und Versionsziffern (python3.12 -> python)."""
+    line = _argv_line("/usr/bin/python3.12", "-c", "print('x')")
+    assert "print" not in line
+    assert "Zeichen ausgelassen" in line
+
+
 # ---------------------------------------------------------------------
 # render_review_handoff: reines Rendering
 # ---------------------------------------------------------------------

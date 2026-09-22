@@ -185,10 +185,13 @@ Agentenstart, kein Beads-Update.
 um einen kompakten Bericht (`PRUEFBERICHT git=…`, je Befehl Status, gekürzte
 Ausgabe und `argv`; `name`/`argv` werden dabei ebenso von Steuerzeichen/
 ANSI-Codes bereinigt und begrenzt wie die Prozessausgabe, mit eindeutigem
-Quoting mehrteiliger Argumente. Ein Inline-Skript nach `-c` erscheint nur
-als Zeichenzahl, nie im Klartext — längere Prüflogik gehört in
-referenzierte Skriptdateien; die vollständige `argv` steht bei Bedarf im
-lokalen Prüfartefakt).
+Quoting mehrteiliger Argumente. Inline-Code bekannter Interpreter
+erscheint nur als Zeichenzahl, nie im Klartext — z. B. `python -c`,
+`bash -lc`, `node --eval`; längere Prüflogik gehört in referenzierte
+Skriptdateien. Was eine Option bedeutet, hängt am Programm: `pytest -c
+pytest.ini` benennt eine Konfigurationsdatei und bleibt sichtbar, ebenso
+Optionen nach einem Skript- oder Modulnamen wie bei `python -m pytest`.
+Die vollständige `argv` steht bei Bedarf im lokalen Prüfartefakt).
 Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer, stderr listet
 jeden konfigurierten Befehl mit seinem tatsächlichen Status (auch bereits
 erfolgreiche Korrekturen und wegen eines vorherigen Fehlschlags ausgelassene
