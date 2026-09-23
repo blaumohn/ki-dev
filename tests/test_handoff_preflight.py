@@ -392,6 +392,30 @@ def test_argv_is_not_shell_interpreted(tmp_path: Path):
     assert report.commands[0].bounded_detail == "$HOME"
 
 
+def test_command_inherits_current_environment(
+    tmp_path: Path, monkeypatch
+):
+    """Der Vorlauf schraenkt die Umgebung nicht ein: Auch eine erst
+    zur Laufzeit gesetzte Variable erreicht den Befehl. Plumbum
+    uebergibt sonst einen beim Import erstellten Schnappschuss von
+    os.environ statt der aktuellen Umgebung des Aufrufers."""
+    repo = _repo(tmp_path)
+    monkeypatch.setenv("KI_DEV_VORLAUF_PROBE", "gesetzt")
+    config = PreflightConfig(
+        corrections=(),
+        checks=(
+            _py(
+                "umgebung",
+                "import os; "
+                "print(os.environ['KI_DEV_VORLAUF_PROBE'])",
+            ),
+        ),
+    )
+    report = run_preflight(config, repo)
+    assert report.commands[0].status == "pass"
+    assert "gesetzt" in report.commands[0].bounded_detail
+
+
 def test_relative_script_path_runs_from_project_root(
     tmp_path: Path,
 ):

@@ -24,10 +24,11 @@ import os
 import re
 import shlex
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
@@ -176,8 +177,8 @@ def load_preflight_config(project_root: Path) -> PreflightConfig:
     Tabelle oder ``checks``, ist das ein Konfigurationsfehler, kein
     Anlass für einen automatischen Modellstart.
     """
-    table = _read_preflight_table(project_root / "pyproject.toml")
-    _validate_structure(table)
+    raw = _read_preflight_table(project_root / "pyproject.toml")
+    table = _validate_structure(raw)
     corrections = _commands(table.get("corrections", ()), "corrections")
     checks = _commands(table["checks"], "checks")
     _check_unique_names((*corrections, *checks))
@@ -215,7 +216,7 @@ def _read_preflight_table(path: Path) -> object:
     return table
 
 
-def _validate_structure(table: object) -> None:
+def _validate_structure(table: object) -> dict:
     if isinstance(table, dict) and "checks" not in table:
         raise PreflightConfigError(
             f"{_CONFIG_PATH}.checks fehlt; mindestens eine Prüfung ist "
@@ -225,6 +226,9 @@ def _validate_structure(table: object) -> None:
         Draft202012Validator(_PREFLIGHT_SCHEMA).validate(table)
     except ValidationError as exc:
         raise PreflightConfigError(_diagnosis(exc)) from exc
+    # ``type: object`` im Schema hat den Typ bereits erzwungen; hier
+    # wird er nicht erneut geprüft, nur zugesichert.
+    return cast(dict, table)
 
 
 def _diagnosis(error: ValidationError) -> str:
@@ -239,11 +243,13 @@ def _diagnosis(error: ValidationError) -> str:
         return f"{field}: Pflichtfeld fehlt: {missing}"
     if error.validator == "type":
         return f"{field}: muss vom Typ {error.validator_value} sein"
+    # Auffangtext für Schemaregeln, die erst später hinzukommen: Der
+    # Fehler bleibt sichtbar, nur die Regelbeschreibung fehlt dann.
     rule = _RULE_DIAGNOSES.get(str(error.validator), "ist ungültig")
     return f"{field}: {rule}"
 
 
-def _field_path(path) -> str:
+def _field_path(path: Iterable[str | int]) -> str:
     parts = [_CONFIG_PATH]
     for step in path:
         parts.append(
@@ -252,7 +258,9 @@ def _field_path(path) -> str:
     return "".join(parts)
 
 
-def _commands(raw, field: str) -> tuple[CommandSpec, ...]:
+def _commands(
+    raw: Iterable[dict], field: str
+) -> tuple[CommandSpec, ...]:
     return tuple(
         _command(item, f"{_CONFIG_PATH}.{field}[{index}]")
         for index, item in enumerate(raw)
@@ -411,6 +419,12 @@ def _run_command(
     in die Diagnose. Plumbum dekodiert sie als UTF-8 und verwirft
     ungültige Bytes, statt sie zu ersetzen -- für eine bereits
     gekürzte Diagnose ist das gleichwertig.
+
+    ``env`` wird ausdrücklich übergeben, weil Plumbum sonst einen beim
+    Import erstellten Schnappschuss von ``os.environ`` weiterreicht;
+    der Vorlauf schränkt die Umgebung aber nicht ein. Plumbum legt die
+    übergebene Umgebung über den Schnappschuss: Eine erst zur Laufzeit
+    gelöschte Variable bleibt dadurch sichtbar.
     """
     try:
         program = _program(project_root, spec.argv[0])
@@ -422,6 +436,7 @@ def _run_command(
             retcode=None,
             timeout=spec.timeout_s,
             cwd=project_root,
+            env=os.environ,
         )
     except ProcessTimedOut:
         return CommandResult(
