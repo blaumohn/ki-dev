@@ -177,3 +177,12 @@ def test_build_may_test_review_may_not():
     assert "bleibt erlaubt" in review
     assert "Testqualität und Abdeckung" in review
     assert "Prüfbericht" in review
+
+
+@pytest.mark.parametrize("step", list(Step))
+def test_every_step_includes_epic_guidance_with_origin(step):
+    issue = _issue(
+        epic_guidance=(("epic-1", "Kleine Umsetzungsschnitte."),)
+    )
+    text = render_handoff(issue, step)
+    assert "Epic-Hinweis (epic-1):\nKleine Umsetzungsschnitte." in text

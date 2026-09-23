@@ -41,6 +41,29 @@ kopieren. `ki-dev handoff --help` fasst das auf Deutsch zusammen.
 
 ## Pflichtfelder je Schritt
 
+### Geerbte Epic-Hinweise
+
+Untergeordnete Vorgänge erben automatisch `metadata.handoff.guidance`
+aus ihren Epic-Vorfahren über Beads-Beziehungen vom Typ `parent-child`.
+Auch Zwischenvorgänge ohne eigenen Hinweis unterbrechen die Vererbung nicht.
+Die Ausgabe nennt die Epic-ID und zeigt Hinweise vom äußersten zum nächsten
+Epic; sie werden nicht überschrieben. Blockierungs- und Herkunftsbeziehungen
+liefern keinen Kontext. Widersprüche klärt der Mensch.
+
+Das optionale Feld enthält einen nichtleeren Text mit höchstens 600 Zeichen.
+Fehlerhafte Hinweise, nicht lesbare Eltern, mehrdeutige Eltern und Zyklen
+verhindern eine unvollständige Übergabe (Exit 1). Eltern ohne Hinweis bleiben
+stumm; ihre Beschreibungen, Notizen und Kommentare werden nicht übernommen.
+
+Beispiel: `ki-dev-ablauf-zip` bündelt die Handoff-Vorgänge. Bei
+`ki-dev handoff ki-dev-ablauf-prx --step build` erscheint automatisch:
+
+> Epic-Hinweis (ki-dev-ablauf-zip): Experimenteller „mensch-dev loop“ …
+
+Der Hinweis wird einmal am Epic gepflegt, nicht in jedem Kind verknüpft.
+
+### Pflichtwerte
+
 Immer: `id`, `title`, `description` als nichtleere Strings.
 
 | Schritt | zusätzlich |

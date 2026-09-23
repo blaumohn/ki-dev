@@ -24,6 +24,7 @@ class HandoffIssue:
     design: object = None
     acceptance_criteria: object = None
     source_refs: object = None
+    epic_guidance: tuple[tuple[str, str], ...] = ()
 
 
 class HandoffInvalidError(ValueError):
@@ -74,6 +75,12 @@ def render_handoff(issue: HandoffIssue, step: Step) -> str:
         "",
         *_ROLES[step],
     ]
+    for epic_id, guidance in issue.epic_guidance:
+        lines += [
+            "",
+            f"Epic-Hinweis ({_line(epic_id)}):",
+            _line(guidance),
+        ]
     if step in _REFS_STEPS:
         lines += ["", "Quellenreferenzen (unaufgelöst):"]
         lines += [f"- {_line(ref)}" for ref in issue.source_refs]

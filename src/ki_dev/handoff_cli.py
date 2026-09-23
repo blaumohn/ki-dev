@@ -64,6 +64,10 @@ source_refs ist eine nichtleere Liste nichtleerer Strings, z. B.
   {"handoff":{"source_refs":["docs/design/a.md#L12-L40","bd:karte"]}}
 Die Referenzen werden nur als Text weitergegeben, nicht aufgelöst.
 
+Bereichshinweise werden entlang der parent-child-Elternkette aus
+Epic-Metadaten handoff.guidance geerbt (je 1–600 Zeichen), mit Epic-ID
+ausgegeben und nicht aus Blockierungsbeziehungen abgeleitet.
+
 Der Befehl liest den Bead nur (bd --readonly show BEAD_ID --json) und
 startet keinen Agenten. Fortsetzung von Hand: Ausgabe kopieren (oder
 per Umleitung speichern) und in einer passenden getrennten

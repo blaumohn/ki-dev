@@ -142,3 +142,108 @@ def test_missing_bd_is_adapter_error(monkeypatch, tmp_path):
     _install(monkeypatch, raises=FileNotFoundError("bd"))
     with pytest.raises(BeadsReadError, match="nicht gefunden"):
         read_issue("x-1", tmp_path)
+
+
+def _install_graph(monkeypatch, graph):
+    calls = []
+
+    def run(argv, **kwargs):
+        assert argv[:3] == ["bd", "--readonly", "show"]
+        calls.append(argv[3])
+        return subprocess.CompletedProcess(
+            argv, 0, json.dumps([graph[argv[3]]])
+        )
+
+    monkeypatch.setattr(beads_reader.subprocess, "run", run)
+    return calls
+
+
+def _node(key, parent=None, kind="task", hint=None):
+    node = _bead(id=key, issue_type=kind)
+    if parent:
+        node["dependencies"] = [
+            {"id": parent, "dependency_type": "parent-child"}
+        ]
+    if hint is not None:
+        node["metadata"] = {"handoff": {"guidance": hint}}
+    return node
+
+
+def test_epic_guidance_inherits_through_tasks_in_root_order(
+    monkeypatch, tmp_path
+):
+    graph = {
+        "x-1": _node("x-1", "middle"),
+        "middle": _node("middle", "inner", hint="not an epic"),
+        "inner": _node("inner", "outer", "epic", "Specific"),
+        "outer": _node("outer", kind="epic", hint="General"),
+    }
+    calls = _install_graph(monkeypatch, graph)
+    issue = read_issue("x-1", tmp_path)
+    assert issue.epic_guidance == (
+        ("outer", "General"),
+        ("inner", "Specific"),
+    )
+    assert calls == ["x-1", "middle", "inner", "outer"]
+
+
+def test_blockers_and_origin_do_not_supply_guidance(
+    monkeypatch, tmp_path
+):
+    node = _node("x-1")
+    node["dependencies"] = [
+        {"id": "other", "dependency_type": kind}
+        for kind in ("blocks", "discovered-from")
+    ]
+    calls = _install_graph(monkeypatch, {"x-1": node})
+    assert read_issue("x-1", tmp_path).epic_guidance == ()
+    assert calls == ["x-1"]
+
+
+@pytest.mark.parametrize("hint", ["", " ", 7, "x" * 601])
+def test_invalid_epic_hint_is_visible_error(
+    monkeypatch, tmp_path, hint
+):
+    _install_graph(
+        monkeypatch,
+        {
+            "x-1": _node("x-1", "epic"),
+            "epic": _node("epic", kind="epic", hint=hint),
+        },
+    )
+    with pytest.raises(BeadsReadError, match="guidance"):
+        read_issue("x-1", tmp_path)
+
+
+def test_parent_cycle_is_visible_error(monkeypatch, tmp_path):
+    _install_graph(
+        monkeypatch,
+        {
+            "x-1": _node("x-1", "epic"),
+            "epic": _node("epic", "x-1", "epic", "hint"),
+        },
+    )
+    with pytest.raises(BeadsReadError, match="Zyklus"):
+        read_issue("x-1", tmp_path)
+
+
+@pytest.mark.parametrize(
+    "dependencies",
+    [
+        None,
+        [7],
+        [
+            {"id": "a", "dependency_type": "parent-child"},
+            {"id": "b", "dependency_type": "parent-child"},
+        ],
+        [{"id": [], "dependency_type": "parent-child"}],
+    ],
+)
+def test_invalid_parent_edges_fail_cleanly(
+    monkeypatch, tmp_path, dependencies
+):
+    _install_graph(
+        monkeypatch, {"x-1": _bead(dependencies=dependencies)}
+    )
+    with pytest.raises(BeadsReadError, match="Eltern"):
+        read_issue("x-1", tmp_path)

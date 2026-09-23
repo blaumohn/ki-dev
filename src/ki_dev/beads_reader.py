@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 from ki_dev.handoff import HandoffIssue
@@ -21,11 +22,75 @@ class InvalidBeadIdError(BeadsReadError):
 
 def read_issue(bead_id: str, workdir: Path) -> HandoffIssue:
     """Einen Bead lesen und zu normalisierten Rohwerten machen."""
+    raw = _read_raw(bead_id, workdir)
+    return replace(
+        _normalize(raw), epic_guidance=_epic_guidance(raw, workdir)
+    )
+
+
+def _read_raw(bead_id: str, workdir: Path) -> dict:
     _check_bead_id(bead_id)
     stdout = _run_bd(
         ["bd", "--readonly", "show", bead_id, "--json"], workdir
     )
-    return _normalize(_single_object(stdout, bead_id))
+    return _single_object(stdout, bead_id)
+
+
+def _epic_guidance(
+    raw: dict, workdir: Path
+) -> tuple[tuple[str, str], ...]:
+    hints: list[tuple[str, str]] = []
+    seen = {raw["id"]}
+    while parent := _parent(raw):
+        if parent in seen:
+            raise BeadsReadError("Zyklus in der Epic-Elternkette")
+        seen.add(parent)
+        raw = _read_raw(parent, workdir)
+        if raw.get("issue_type") != "epic":
+            continue
+        metadata = raw.get("metadata")
+        handoff = (
+            metadata.get("handoff")
+            if isinstance(metadata, dict)
+            else None
+        )
+        if not isinstance(handoff, dict) or "guidance" not in handoff:
+            continue
+        hint = handoff["guidance"]
+        if (
+            not isinstance(hint, str)
+            or not hint.strip()
+            or len(hint) > 600
+        ):
+            raise BeadsReadError(
+                "Epic metadata.handoff.guidance muss "
+                "1–600 Zeichen enthalten"
+            )
+        hints.append((parent, hint))
+    return tuple(reversed(hints))
+
+
+def _parent(raw: dict) -> str | None:
+    dependencies = raw.get("dependencies", [])
+    if not isinstance(dependencies, list) or any(
+        not isinstance(item, dict) for item in dependencies
+    ):
+        raise BeadsReadError(
+            "Ungültige Elternbeziehungen in bd-Antwort"
+        )
+    parents = [
+        item.get("id")
+        for item in dependencies
+        if item.get("dependency_type") == "parent-child"
+    ]
+    if len(parents) > 1 or any(
+        not isinstance(parent, str) or not parent.strip()
+        for parent in parents
+    ):
+        raise BeadsReadError(
+            "Ungültige oder mehrdeutige Elternbeziehung"
+        )
+    return next(iter(parents), None)
 
 
 def _check_bead_id(bead_id: str) -> None:
