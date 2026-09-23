@@ -8,18 +8,23 @@ kein Checkpoint, kein Commit, keine Runden-/Sicherheitsgrenzen, keine
 Agentensteuerung. Prozessaufrufe laufen ohne Shell in der
 Projektwurzel; die Umgebung wird nicht eingeschränkt (geerbte
 Umgebung des Aufrufers), das ist keine Vorgabe dieses Auftrags.
+
+Der Vorlauf bindet den Bericht nicht an einen Quellstand: kein
+Fingerprint, kein Git-Aufruf, keine Drifterkennung zwischen den
+Prüfungen. Der Bericht nennt nur den Zeitpunkt; Bericht und
+Arbeitsstand ordnet der Mensch einander zu und startet den Vorlauf
+nach weiteren Änderungen erneut (docs/handoff.de.md).
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import shlex
 import subprocess
-import time
 import tomllib
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -44,11 +49,6 @@ _MAX_COMMAND_CHARS = 100
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
-# Eigenes Prüfartefakt dieses Vorlaufs: vom Fingerprint ausgeschlossen,
-# sonst würde das Schreiben des Berichts den geprüften Stand selbst
-# verändern.
-_FINGERPRINT_EXCLUDES = (str(ARTIFACT_DIR),)
-
 Status = Literal["pass", "fail", "omitted"]
 
 
@@ -59,8 +59,8 @@ class PreflightConfigError(ValueError):
 class PreflightExecutionError(RuntimeError):
     """Vorlauf konnte nicht kontrolliert abgeschlossen werden.
 
-    Git- oder Artefaktfehler, die keinem einzelnen konfigurierten
-    Befehl zuzuordnen sind; führt nie zu einer Übergabe.
+    Artefaktfehler, die keinem einzelnen konfigurierten Befehl
+    zuzuordnen sind; führt nie zu einer Übergabe.
     ``partial_results`` trägt die bis zum Fehler bereits gelaufenen
     Befehle (auch bestandene, nicht zurückgesetzte Korrekturen), damit
     sie trotz des Fehlers sichtbar bleiben statt verworfen zu werden.
@@ -104,11 +104,14 @@ class CommandResult:
 class PreflightReport:
     """``valid`` heißt: Grundlage für eine erfolgreiche Review-Übergabe.
 
-    ``source_fingerprint`` bindet den Bericht an den Quellstand nach
-    den Korrekturen (auf dem die Prüfungen liefen).
+    ``started_at`` nennt den Beginn des Vorlaufs zur manuellen
+    Zuordnung. Es ist keine Bindung an einen Quellstand: Der Vorlauf
+    erfasst weder Fingerprints noch Git-Stände und erkennt keine
+    Änderungen zwischen Prüfungen. Diese Zuordnung verantwortet der
+    Mensch, der den Vorlauf nach weiteren Änderungen erneut startet.
     """
 
-    source_fingerprint: str
+    started_at: str
     commands: tuple[CommandResult, ...]
     valid: bool
 
@@ -122,10 +125,14 @@ def load_preflight_config(project_root: Path) -> PreflightConfig:
     """
     path = project_root / "pyproject.toml"
     try:
-        raw = path.read_text()
+        raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise PreflightConfigError(
             f"{path} nicht lesbar: {exc}"
+        ) from exc
+    except UnicodeDecodeError as exc:
+        raise PreflightConfigError(
+            f"{path} ist nicht als UTF-8 lesbar: {exc}"
         ) from exc
     try:
         data: object = tomllib.loads(raw)
@@ -227,10 +234,12 @@ def run_preflight(
     Bricht bei der ersten fehlgeschlagenen Korrektur ab; bereits
     erfolgte Änderungen bleiben stehen (kein automatischer Rückbau).
     Restliche Korrekturen gelten dann als ausgelassen, Prüfungen
-    laufen in diesem Fall nicht. Der Fingerprint vor und nach den
-    Prüfungen wird verglichen; eine Abweichung macht den Bericht
-    ungültig, auch wenn alle Prüfungen für sich bestanden haben.
+    laufen in diesem Fall nicht. Der Vorlauf vergleicht keinen
+    Quellstand vor und nach den Prüfungen: Dass der Arbeitsstand
+    währenddessen unverändert bleibt, hält der Mensch ein, der den
+    Vorlauf nach weiteren Änderungen erneut startet.
     """
+    started_at = _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     results: list[CommandResult] = []
     corrections_ok = True
     for spec in config.corrections:
@@ -264,27 +273,15 @@ def run_preflight(
                     omitted=True,
                 )
             )
-        return _finish(project_root, results, valid=False)
+        return _finish(project_root, results, started_at, valid=False)
 
-    fingerprint_before_checks = _with_partial_results(
-        results, _fingerprint, project_root
-    )
     checks_ok = True
     for spec in config.checks:
         result = _run_command(project_root, spec)
         results.append(result)
         if result.status != "pass":
             checks_ok = False
-    fingerprint_after_checks = _with_partial_results(
-        results, _fingerprint, project_root
-    )
-    stable = fingerprint_before_checks == fingerprint_after_checks
-    return _finish(
-        project_root,
-        results,
-        valid=checks_ok and stable,
-        fingerprint=fingerprint_before_checks,
-    )
+    return _finish(project_root, results, started_at, valid=checks_ok)
 
 
 def _with_partial_results(results: list[CommandResult], func, *args):
@@ -301,22 +298,19 @@ def _with_partial_results(results: list[CommandResult], func, *args):
 def _finish(
     project_root: Path,
     results: list[CommandResult],
+    started_at: str,
     *,
     valid: bool,
-    fingerprint: str | None = None,
 ) -> PreflightReport:
-    resolved_fingerprint = (
-        fingerprint
-        if fingerprint is not None
-        else _with_partial_results(results, _fingerprint, project_root)
-    )
-    report = PreflightReport(
-        resolved_fingerprint, tuple(results), valid
-    )
+    report = PreflightReport(started_at, tuple(results), valid)
     _with_partial_results(
         results, _write_artifact, project_root, report
     )
     return report
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _run_command(
@@ -393,136 +387,12 @@ def _bounded(text: str, limit: int) -> str:
     )
 
 
-def _fingerprint(project_root: Path) -> str:
-    """Bindet den Bericht an den tatsächlichen Quellstand inklusive
-    uncommitteter Änderungen; Git-HEAD allein reicht bei verändertem
-    Arbeitsbaum nicht. Schließt das eigene Prüfartefakt dieses Vorlaufs
-    aus (sonst würde dessen Schreiben den Fingerprint selbst ändern).
-
-    Nutzt NUL-separierte ``git status -z``-Ausgabe: Pfade mit
-    Sonderzeichen (z. B. Umlauten) und Rename-/Copy-Einträge lassen
-    sich in der quotierten Textform sonst nicht zuverlässig als
-    Dateipfad erkennen.
-    """
-    head = _git(project_root, "rev-parse", "HEAD").strip()
-    status = _git(
-        project_root,
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=all",
-        "-z",
-    )
-    hasher = hashlib.sha256()
-    _hash_field(hasher, head.encode())
-    for code, path, orig_path in _parse_status_z(status):
-        paths = (path,) if orig_path is None else (path, orig_path)
-        if any(_excluded(candidate) for candidate in paths):
-            continue
-        _hash_field(hasher, code.encode())
-        for candidate in paths:
-            _hash_field(hasher, candidate.encode())
-        full = project_root / path
-        if full.is_file():
-            try:
-                _hash_field(hasher, full.read_bytes())
-            except OSError:
-                _hash_field(hasher, b"<unlesbar>")
-    return hasher.hexdigest()
-
-
-def _hash_field(hasher, data: bytes) -> None:
-    """Längenpräfigiertes Feld statt reiner Konkatenation.
-
-    Ohne Längenpräfix wären z. B. Pfad ``a`` mit Inhalt ``bc`` und Pfad
-    ``ab`` mit Inhalt ``c`` im Hasher ununterscheidbar (beide ergeben
-    die Bytefolge ``abc``); Änderungen könnten so unbemerkt bleiben.
-    """
-    hasher.update(len(data).to_bytes(8, "big"))
-    hasher.update(data)
-
-
-def _parse_status_z(raw: str) -> list[tuple[str, str, str | None]]:
-    """Parst NUL-separierte ``git status --porcelain=v1 -z``-Ausgabe.
-
-    Jeder Eintrag ist ``XY PATH``; ist X oder Y ``R``/``C`` (Rename/
-    Copy), folgt ein zweites NUL-terminiertes Feld mit dem
-    Ursprungspfad.
-    """
-    fields = raw.split("\0")
-    if fields and fields[-1] == "":
-        fields = fields[:-1]
-    entries: list[tuple[str, str, str | None]] = []
-    index = 0
-    while index < len(fields):
-        field = fields[index]
-        index += 1
-        if len(field) < 4:
-            continue
-        code = field[:2]
-        path = field[3:]
-        orig_path: str | None = None
-        is_rename_or_copy = code[0] in "RC" or code[1] in "RC"
-        if is_rename_or_copy and index < len(fields):
-            orig_path = fields[index]
-            index += 1
-        entries.append((code, path, orig_path))
-    return entries
-
-
-def _excluded(path: str) -> bool:
-    return any(
-        path == excl or path.startswith(excl + "/")
-        for excl in _FINGERPRINT_EXCLUDES
-    )
-
-
-def _git(project_root: Path, *args: str) -> str:
-    """Git-Aufruf für den Fingerprint: strikt dekodiert, nicht
-    verlustbehaftet, ohne Zeilenendenübersetzung.
-
-    Der Fingerprint bindet den Bericht an exakte Pfade und
-    Dateiinhalte. ``text=True`` würde nicht nur ``errors="replace"``
-    Pfade verfälschen können, sondern per Universal-Newlines auch ein
-    rohes ``\\r`` in einem Dateinamen in ``\\n`` umwandeln; zwei
-    verschiedene Pfade könnten so auf dieselbe Zeichenkette und damit
-    denselben Fingerprint abbilden. Deshalb werden rohe Bytes gelesen
-    und ohne Zeilenendenübersetzung strikt dekodiert; nicht dekodier-
-    bare Ausgabe gilt als Ausführungsfehler, nicht als stillschweigend
-    ersetzter oder umgewandelter Text.
-    """
-    try:
-        completed = subprocess.run(
-            ["git", *args],
-            cwd=project_root,
-            capture_output=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise PreflightExecutionError(
-            f"git {' '.join(args)} fehlgeschlagen: "
-            f"exit={exc.returncode}"
-        ) from exc
-    except OSError as exc:
-        raise PreflightExecutionError(
-            f"git nicht ausführbar: {exc}"
-        ) from exc
-    try:
-        return completed.stdout.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise PreflightExecutionError(
-            f"git {' '.join(args)}: Ausgabe nicht als UTF-8 "
-            f"dekodierbar: {exc}. Vermutlich ein Dateiname mit "
-            "ungültigen UTF-8-Bytes im Arbeitsbaum; diesen Pfad auf "
-            "gültiges UTF-8 umbenennen und den Vorlauf erneut starten."
-        ) from exc
-
-
 def _write_artifact(
     project_root: Path, report: PreflightReport
 ) -> Path:
     directory = project_root / ARTIFACT_DIR
     payload = {
-        "source_fingerprint": report.source_fingerprint,
+        "started_at": report.started_at,
         "valid": report.valid,
         "commands": [
             {
@@ -538,10 +408,10 @@ def _write_artifact(
     }
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-        path = (
-            directory / f"{stamp}-{report.source_fingerprint[:12]}.json"
-        )
+        # Mikrosekunden, damit zwei Vorläufe in derselben Sekunde nicht
+        # dasselbe Artefakt überschreiben.
+        stamp = _utc_now().strftime("%Y%m%dT%H%M%S.%fZ")
+        path = directory / f"{stamp}.json"
         path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         )
@@ -561,15 +431,15 @@ def format_command_result(item: CommandResult) -> str:
     tatsächlichen argv) zeigen. name stammt aus der Konfiguration,
     nicht aus Prozessausgabe, wird aber ebenso bereinigt und begrenzt
     wie bounded_detail: kein voller Log, keine Steuerzeichen/ANSI-Codes
-    im Agentenkontext. Gültige argv sind bereits beim Konfigurations-
-    laden auf höchstens _MAX_COMMAND_CHARS begrenzt (siehe
-    ``_parse_command``) und werden hier deshalb vollständig gezeigt --
-    ohne Interpreterlisten, Optionsparser oder Maskierung, die erraten
-    müssten, ob ein Optionsargument beim aufgerufenen Programm Code
-    bedeutet.
+    im Agentenkontext. argv dagegen bleibt unverändert: Sie ist beim
+    Konfigurationsladen bereits auf höchstens _MAX_COMMAND_CHARS
+    begrenzt und frei von CR/LF/NUL (siehe ``_parse_command``), und der
+    Mensch soll den Befehl daraus wörtlich nachvollziehen und erneut
+    starten können. Deshalb wird nichts still entfernt und nichts
+    maskiert; ``shlex.join`` hält nur die Argumentgrenzen eindeutig.
     """
     name = _bounded(_clean(item.name), _MAX_SUCCESS_DETAIL_CHARS)
-    argv_text = _clean(shlex.join(item.argv))
+    argv_text = shlex.join(item.argv)
     parts = [f"- {name}: {item.status.upper()}"]
     if item.bounded_detail:
         parts.append(item.bounded_detail)
@@ -582,8 +452,11 @@ def render_review_handoff(
 ) -> str:
     """Reines Rendering: hängt den kompakten Vorlaufbericht an die
     Review-Übergabe (``handoff.render_handoff``) an."""
-    lines = [
-        f"PRUEFBERICHT git={report.source_fingerprint}",
-    ]
+    lines = [f"PRUEFBERICHT vorlauf-start={report.started_at}"]
     lines += [format_command_result(item) for item in report.commands]
+    lines.append(
+        "Hinweis: Der Zeitpunkt dient der manuellen Zuordnung, nicht "
+        "als Beweis eines unveränderten Quellstands; nach weiteren "
+        "Änderungen den Vorlauf erneut starten."
+    )
     return render_handoff(issue, Step.REVIEW) + "\n".join(lines) + "\n"

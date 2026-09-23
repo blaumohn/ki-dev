@@ -225,7 +225,7 @@ def test_review_preflight_success_runs_checks_and_appends_report(
     result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
     assert result.exit_code == 0
     assert result.stdout.startswith("Schritt: review\n")
-    assert "PRUEFBERICHT git=" in result.stdout
+    assert "PRUEFBERICHT vorlauf-start=" in result.stdout
     assert "- ok: PASS" in result.stdout
     assert result.stderr == ""
     artifacts = list(
@@ -303,12 +303,11 @@ def test_review_preflight_repair_hint_covers_fail_not_only_pass(
     assert "FAIL" in result.stderr
 
 
-def test_review_preflight_git_failure_is_reported_without_traceback(
+def test_review_preflight_without_git_repository_succeeds(
     bd, tmp_path, monkeypatch
 ):
-    """Kein Git-Repository am cwd: der Fingerprint kann nicht gebildet
-    werden. Das muss ein kurzer Reparaturbefund mit Exit 1 sein, kein
-    unbehandelter Traceback."""
+    """Der Vorlauf bindet den Bericht nicht mehr an einen Quellstand
+    und braucht deshalb kein Git-Repository am cwd."""
     (tmp_path / "pyproject.toml").write_text(
         "[tool.ki-dev.handoff.preflight]\n"
         "corrections = []\n"
@@ -316,9 +315,28 @@ def test_review_preflight_git_failure_is_reported_without_traceback(
     )
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 0
+    assert "PRUEFBERICHT vorlauf-start=" in result.stdout
+    assert result.stderr == ""
+
+
+def test_review_preflight_artifact_failure_without_traceback(
+    bd, tmp_path, monkeypatch
+):
+    """Ein Artefaktfehler ausserhalb eines einzelnen Befehls muss ein
+    kurzer Reparaturbefund mit Exit 1 sein, kein unbehandelter
+    Traceback."""
+    _preflight_project(
+        tmp_path, checks=f"[{_command('ok', 'print(1)')}]"
+    )
+    blocker = tmp_path / ".local" / "handoff" / "preflight"
+    blocker.parent.mkdir(parents=True, exist_ok=True)
+    blocker.write_text("kein Verzeichnis")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
     # Ein kontrolliertes _fail() endet als SystemExit ueber typer.Exit;
-    # ein unbehandelter CalledProcessError waere eine andere
-    # Exception-Klasse und keine saubere Reparaturmeldung.
+    # ein unbehandelter OSError waere eine andere Exception-Klasse und
+    # keine saubere Reparaturmeldung.
     assert type(result.exception) is SystemExit
     assert result.exit_code == 1
     assert result.stdout == ""

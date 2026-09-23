@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -163,6 +163,25 @@ def test_cr_or_lf_in_argv_is_rejected_before_any_command_runs(
         "timeout_s = 1.0}]\n",
     )
     with pytest.raises(PreflightConfigError, match="Zeilenumbruch"):
+        load_preflight_config(tmp_path)
+
+
+def test_invalid_utf8_pyproject_is_config_error(tmp_path: Path):
+    """Ungueltige UTF-8-Bytes in pyproject.toml muessen kontrolliert
+    abgelehnt werden (Exit 2), nicht als UnicodeDecodeError aus dem
+    Konfigurationsladen herausfallen."""
+    (tmp_path / "pyproject.toml").write_bytes(
+        b"[tool.ki-dev.handoff.preflight]\nchecks = [] # \xff\xfe\n"
+    )
+    with pytest.raises(PreflightConfigError, match="UTF-8"):
+        load_preflight_config(tmp_path)
+
+
+def test_invalid_toml_is_config_error(tmp_path: Path):
+    """Auch syntaktisch kaputtes TOML ist ein Konfigurationsfehler vor
+    jeder Schreibwirkung."""
+    (tmp_path / "pyproject.toml").write_text("[tool.ki-dev\n")
+    with pytest.raises(PreflightConfigError, match="TOML"):
         load_preflight_config(tmp_path)
 
 
@@ -356,11 +375,13 @@ def test_argv_is_not_shell_interpreted(tmp_path: Path):
     assert report.commands[0].bounded_detail == "$HOME"
 
 
-def test_uncommitted_change_during_checks_invalidates_report(
+def test_change_during_checks_does_not_invalidate_report(
     tmp_path: Path,
 ):
-    """Eine Pruefung, die eine relevante Datei veraendert, macht den
-    Bericht ungueltig, auch wenn ihr eigener Exitstatus 0 ist."""
+    """Der Vorlauf erkennt keine Aenderungen zwischen den Pruefungen:
+    Eine Pruefung mit Exitstatus 0 bleibt gueltig, auch wenn sie eine
+    Quelldatei veraendert. Bericht und Arbeitsstand ordnet der Mensch
+    einander zu."""
     repo = _repo(tmp_path)
     config = PreflightConfig(
         corrections=(),
@@ -373,19 +394,26 @@ def test_uncommitted_change_during_checks_invalidates_report(
     )
     report = run_preflight(config, repo)
     assert report.commands[0].status == "pass"
-    assert report.valid is False
+    assert report.valid is True
 
 
-def test_git_head_alone_is_not_enough_uncommitted_changes_bind_report(
-    tmp_path: Path,
-):
-    repo = _repo(tmp_path)
-    (repo / "README.md").write_text("uncommitted\n")
-    config = _ok_config("noop")
-    first = run_preflight(config, repo)
-    (repo / "README.md").write_text("anders\n")
-    second = run_preflight(config, repo)
-    assert first.source_fingerprint != second.source_fingerprint
+def test_runs_without_git_repository(tmp_path: Path):
+    """Ohne Fingerprint braucht der Vorlauf kein Git: ein Projekt ohne
+    Repository laeuft normal durch, statt an einem Git-Aufruf zu
+    scheitern."""
+    report = run_preflight(_ok_config(), tmp_path)
+    assert report.valid is True
+
+
+def test_report_names_start_time(tmp_path: Path):
+    """Der Bericht nennt statt eines Quellstands nur den Zeitpunkt des
+    Vorlaufs (AC2: Bericht mit Zeitpunkt)."""
+    before = datetime.now(UTC)
+    report = run_preflight(_ok_config(), _repo(tmp_path))
+    started = datetime.strptime(
+        report.started_at, "%Y-%m-%dT%H:%M:%SZ"
+    ).replace(tzinfo=UTC)
+    assert abs((started - before).total_seconds()) < 60
 
 
 def test_no_commit_or_reset_happens(tmp_path: Path):
@@ -410,105 +438,24 @@ def test_writes_local_artifact_with_report(tmp_path: Path):
     assert len(artifacts) == 1
     payload = json.loads(artifacts[0].read_text())
     assert payload["valid"] is True
-    assert payload["source_fingerprint"] == report.source_fingerprint
+    assert payload["started_at"] == report.started_at
     assert payload["commands"][0]["name"] == "ok"
     assert payload["commands"][0]["argv"] == list(config.checks[0].argv)
 
 
-def test_own_artifact_directory_is_excluded_from_fingerprint(
-    tmp_path: Path,
-):
+def test_each_run_writes_its_own_artifact(tmp_path: Path):
+    """Keine Wiederverwendung alter Resultate: jeder Vorlauf legt ein
+    eigenes Artefakt an, auch zwei Laeufe in derselben Sekunde."""
     repo = _repo(tmp_path)
     config = _ok_config()
-    first = run_preflight(config, repo)
-    second = run_preflight(config, repo)
-    assert first.source_fingerprint == second.source_fingerprint
-
-
-# ---------------------------------------------------------------------
-# _fingerprint: NUL-separierte git-status-Auswertung (Review P1)
-# ---------------------------------------------------------------------
-
-
-def test_fingerprint_changes_for_edit_of_quoted_path(tmp_path: Path):
-    """Pfade mit Sonderzeichen quotiert git in der Textform (z. B.
-    '"b \\303\\244.txt"'); ohne -z waere das kein gueltiger Dateipfad
-    mehr und eine Aenderung koennte unbemerkt bleiben."""
-    repo = _repo(tmp_path)
-    quoted_path = repo / "b ä.txt"
-    quoted_path.write_text("eins\n")
-    config = _ok_config("noop")
-    first = run_preflight(config, repo)
-    quoted_path.write_text("zwei\n")
-    second = run_preflight(config, repo)
-    assert first.source_fingerprint != second.source_fingerprint
-
-
-def test_fingerprint_changes_for_content_edit_after_rename(
-    tmp_path: Path,
-):
-    """Ein Rename-Eintrag ('alt -> neu') ist in der Textform kein
-    gueltiger Pfad; die NUL-getrennte Auswertung muss neuen und alten
-    Pfad korrekt trennen und den tatsaechlichen Dateiinhalt hashen."""
-    repo = _repo(tmp_path)
-    (repo / "quelle.txt").write_text("eins\n")
-    _git(repo, "add", "quelle.txt")
-    _git(repo, "commit", "-q", "-m", "quelle")
-    _git(repo, "mv", "quelle.txt", "ziel.txt")
-    config = _ok_config("noop")
-    first = run_preflight(config, repo)
-    (repo / "ziel.txt").write_text("zwei\n")
-    second = run_preflight(config, repo)
-    assert first.source_fingerprint != second.source_fingerprint
-
-
-def test_fingerprint_changes_for_edit_of_path_with_carriage_return(
-    tmp_path: Path,
-):
-    """subprocess text=True uebersetzt \\r in \\n (Universal Newlines);
-    ein Dateiname mit echtem \\r wuerde dann als nicht existierender
-    Pfad mit \\n gelesen und Inhaltsaenderungen blieben unbemerkt."""
-    repo = _repo(tmp_path)
-    cr_path = repo / "a\rb.txt"
-    cr_path.write_bytes(b"eins")
-    config = _ok_config("noop")
-    first = run_preflight(config, repo)
-    cr_path.write_bytes(b"zwei")
-    second = run_preflight(config, repo)
-    assert first.source_fingerprint != second.source_fingerprint
-
-
-def test_fingerprint_frames_path_and_content_without_ambiguity(
-    tmp_path: Path,
-):
-    """Ohne Laengenpraefix waeren Pfad 'a' mit Inhalt 'bc' und Pfad
-    'ab' mit Inhalt 'c' im Hasher ununterscheidbar (beide ergeben nach
-    Verkettung von code+pfad+inhalt dieselbe Bytefolge 'abc'); mit
-    echtem git status -z gegen die alte Verkettung reproduziert."""
-    repo = _repo(tmp_path)
-    config = _ok_config("noop")
-    (repo / "a").write_bytes(b"bc")
-    first = run_preflight(config, repo)
-    (repo / "a").unlink()
-    (repo / "ab").write_bytes(b"c")
-    second = run_preflight(config, repo)
-    assert first.source_fingerprint != second.source_fingerprint
+    run_preflight(config, repo)
+    run_preflight(config, repo)
+    assert len(list((repo / ARTIFACT_DIR).glob("*.json"))) == 2
 
 
 # ---------------------------------------------------------------------
 # Ausführungsfehler außerhalb einzelner Befehle (Review P2)
 # ---------------------------------------------------------------------
-
-
-def test_missing_git_repo_raises_execution_error_not_raw_exception(
-    tmp_path: Path,
-):
-    """Kein Git-Repository: der Fingerprint schlägt fehl. Das muss als
-    PreflightExecutionError sichtbar werden, nicht als unbehandelter
-    CalledProcessError aus run_preflight heraus."""
-    config = _ok_config()
-    with pytest.raises(PreflightExecutionError):
-        run_preflight(config, tmp_path)
 
 
 def test_artifact_write_failure_raises_execution_error(
@@ -541,64 +488,38 @@ def test_non_utf8_process_output_does_not_crash(tmp_path: Path):
     assert "kaputt" in item.bounded_detail
 
 
-def test_git_status_with_non_utf8_filename_fails_closed(tmp_path: Path):
-    """Ein Dateiname mit ungültigen UTF-8-Bytes darf den Fingerprint
-    nicht lautlos verfälschen (das wäre mit errors="replace" möglich:
-    zwei verschiedene Zustände könnten auf denselben Fingerprint
-    abbilden). Der Vorlauf muss stattdessen kontrolliert scheitern,
-    nicht heimlich mit ersetztem Text weiterlaufen (Review-Befund
-    AC4)."""
-    repo = _repo(tmp_path)
-    bad_name = os.fsdecode(b"bad-\xff\xfe.txt")
-    (repo / bad_name).write_bytes(b"x")
-    config = _ok_config()
-    with pytest.raises(PreflightExecutionError, match="UTF-8"):
-        run_preflight(config, repo)
-
-
-def test_non_utf8_filename_error_tells_user_to_rename(tmp_path: Path):
-    """Der Fehlertext muss ausdrücklich zum Umbenennen des betroffenen
-    Pfads auffordern, nicht nur den Dekodierfehler nennen."""
-    repo = _repo(tmp_path)
-    bad_name = os.fsdecode(b"bad-\xff\xfe.txt")
-    (repo / bad_name).write_bytes(b"x")
-    config = _ok_config()
-    with pytest.raises(PreflightExecutionError, match="umbenennen"):
-        run_preflight(config, repo)
-
-
-def test_execution_error_keeps_already_run_correction_results(
+def test_execution_error_keeps_passed_correction_and_failed_check(
     tmp_path: Path,
 ):
-    """Scheitert der Fingerprint (kein Git-Repo o. Ä.) nach bereits
-    gelaufenen Korrekturen, müssen deren Ergebnisse am Fehler hängen
-    bleiben statt verworfen zu werden -- sonst erfährt niemand von
-    bereits erfolgten, nicht zurückgesetzten Änderungen."""
+    """Korrektur PASS + Check FAIL + Artefaktfehler muss alle Befunde
+    erhalten (AC2): Die bestandene Korrektur hat den Arbeitsbaum
+    bereits veraendert und wird nicht zurueckgesetzt, der Check-Befund
+    ist der Reparaturhinweis -- beides darf nicht mit dem
+    Artefaktfehler verlorengehen."""
     repo = _repo(tmp_path)
+    blocker = repo / ARTIFACT_DIR
+    blocker.parent.mkdir(parents=True, exist_ok=True)
+    blocker.write_text("kein Verzeichnis")
     config = PreflightConfig(
         corrections=(_py("touched", "open('x.txt','w').write('x')"),),
-        checks=(_py("ok", "pass"),),
+        checks=(_py("kaputt", "import sys; sys.exit(1)"),),
     )
-    run_preflight(config, repo)  # baseline: legt Artefaktordner an
-    # Git unbenutzbar machen, ohne die Korrektur zu verhindern.
-    (repo / ".git").rename(repo / ".git-weg")
     with pytest.raises(PreflightExecutionError) as excinfo:
         run_preflight(config, repo)
-    names = [item.name for item in excinfo.value.partial_results]
-    assert "touched" in names
-    assert excinfo.value.partial_results[0].status == "pass"
+    statuses = {
+        item.name: item.status for item in excinfo.value.partial_results
+    }
+    assert statuses == {"touched": "pass", "kaputt": "fail"}
+    assert (repo / "x.txt").exists()
 
 
-def test_format_command_result_bounds_name_and_cleans_ansi():
+def test_format_command_result_bounds_and_cleans_name():
     """name kommt aus der Konfiguration, nicht aus Prozessausgabe,
     unterliegt im Bericht aber derselben Bereinigungs-/Begrenzungs-
-    pflicht wie bounded_detail (Review-Befund AC3). argv ist bereits
-    beim Konfigurationsladen auf höchstens 100 Zeichen begrenzt und
-    wird deshalb hier vollständig gezeigt, nur von ANSI-Codes
-    bereinigt."""
+    pflicht wie bounded_detail (Review-Befund AC3)."""
     item = CommandResult(
-        "x" * 5000,
-        ("\x1b[31mtrue",),
+        "\x1b[31m" + "x" * 5000,
+        ("true",),
         "pass",
         0,
         "",
@@ -607,6 +528,16 @@ def test_format_command_result_bounds_name_and_cleans_ansi():
     line = format_command_result(item)
     assert "\x1b" not in line
     assert len(line) < 1000
+
+
+def test_format_command_result_keeps_argv_verbatim():
+    """Aus argv darf nichts still entfernt werden: Der Mensch soll den
+    Befehl woertlich nachvollziehen und erneut starten koennen. CR/LF/
+    NUL und Ueberlaenge sind dafuer bereits beim Konfigurationsladen
+    ausgeschlossen, statt sie spaeter stumm wegzuputzen."""
+    argv = ("pruefe", "--muster=\x1b[31m")
+    item = CommandResult("x", argv, "pass", 0, "", omitted=False)
+    assert f"[argv={shlex.join(argv)}]" in format_command_result(item)
 
 
 def test_format_command_result_shows_valid_argv_completely():
@@ -653,9 +584,20 @@ def test_render_review_handoff_appends_compact_report(tmp_path: Path):
     report = run_preflight(config, repo)
     text = render_review_handoff(_issue(), report)
     assert text.startswith("Schritt: review\n")
-    assert f"PRUEFBERICHT git={report.source_fingerprint}" in text
+    assert f"PRUEFBERICHT vorlauf-start={report.started_at}" in text
     assert "- ok: PASS" in text
     assert "[argv=" in text
+
+
+def test_render_review_handoff_names_human_responsibility(
+    tmp_path: Path,
+):
+    """Der Bericht darf nicht als Quellstandbeweis gelesen werden; der
+    Hinweis benennt die menschliche Zuordnung ausdruecklich (AC1)."""
+    report = run_preflight(_ok_config(), _repo(tmp_path))
+    text = render_review_handoff(_issue(), report)
+    assert "nicht als Beweis eines unveränderten Quellstands" in text
+    assert "Vorlauf erneut starten" in text
 
 
 def test_format_command_result_includes_argv_and_detail():

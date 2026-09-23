@@ -76,7 +76,9 @@ danach Prüfungen (z. B. Tests) laufen auf dem aktuellen Arbeitsbaum,
 bevor die Übergabe entsteht. Konfiguration: pyproject.toml, Tabelle
 tool.ki-dev.handoff.preflight, Listen corrections (darf leer sein) und
 checks (mindestens ein Eintrag), je Eintrag name, argv, timeout_s.
-Details bei Bedarf als lokales Prüfartefakt unter
+Der Bericht nennt nur seinen Zeitpunkt; Bericht und Arbeitsstand ordnet
+der Mensch einander zu und startet den Vorlauf nach weiteren Änderungen
+erneut. Details bei Bedarf als lokales Prüfartefakt unter
 .local/handoff/preflight; kein Beads-Update, kein Commit, kein Agent.
 
 \b
@@ -191,7 +193,7 @@ def _review_handoff(issue: HandoffIssue) -> str:
 
 
 def _execution_error_finding(exc: PreflightExecutionError) -> str:
-    """Git-/Artefaktfehler außerhalb eines einzelnen Befehls.
+    """Artefaktfehler außerhalb eines einzelnen Befehls.
 
     Bereits gelaufene Befehle (``exc.partial_results``) dürfen dabei
     nicht verlorengehen: Sowohl bestandene als auch fehlgeschlagene
@@ -222,11 +224,6 @@ def _repair_finding(report: PreflightReport) -> str:
     fehlgeschlagenen Befehle.
     """
     lines = [format_command_result(item) for item in report.commands]
-    if all(item.status == "pass" for item in report.commands):
-        lines.append(
-            "- Quellstand hat sich während der Prüfungen verändert; "
-            "Bericht ungültig"
-        )
     return (
         "Vorlauf ohne Review-Übergabe (Details unter "
         f"{ARTIFACT_DIR}); bereits ausgeführte Befehle (PASS wie "

@@ -1,5 +1,18 @@
 # Manuelle Arbeitsübergaben mit `ki-dev handoff`
 
+`handoff` ist ein experimentelles Übergangswerkzeug: intern scherzhaft
+„mensch-dev loop“. Es soll kurzfristig helfen, Aufträge, Abläufe und Prompts
+von Hand effizient zu erproben, bis `ki-dev loop` betrieblich nutzbar ist.
+Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
+ausführungsreife Aufträge bleiben auf einen kleinen Umsetzungsschnitt
+begrenzt: notwendige Anforderungen, Schnittstellen und Prüfnachweise; bei
+fachlicher Übergröße teilen statt immer mehr Details anzuhäufen.
+
+Die Zuordnung von Auftrag, Arbeitsstand und Prüfbericht verantwortest du als
+Mensch. `handoff` garantiert keine Bindung an den Quellstand. Halte den
+Arbeitsstand während Vorlauf und Review passend; nach weiteren Änderungen
+starte den Vorlauf erneut.
+
 `ki-dev handoff BEAD_ID --step STEP` prüft einen Bead formal und gibt eine
 kurze, kopierbare Arbeitsübergabe aus. Du startest die passende Agentensitzung
 selbst und fügst den Text dort ein. Diese Form liest den Bead nur
@@ -158,16 +171,10 @@ Korrekturen seriell (Abbruch bei der ersten fehlgeschlagenen; restliche
 Korrekturen **und** alle Prüfungen gelten dann als ausgelassen und erscheinen
 so im Bericht; bereits erfolgte Änderungen bleiben unverändert stehen, es gibt
 keinen automatischen Rückbau), danach — nur wenn alle Korrekturen erfolgreich
-waren — alle konfigurierten Prüfungen auf demselben Stand. Ein Fingerprint des
-Quellstands (Git-HEAD plus Inhalt aller uncommitteten/unversionierten
-Dateien, ausgewertet aus NUL-separierter `git status -z`-Ausgabe, damit auch
-zitierte Pfade und Rename-Einträge korrekt erkannt werden) wird vor und nach
-den Prüfungen verglichen; weicht er ab, gilt der Bericht als ungültig, auch
-wenn jede Prüfung für sich bestanden hat. Lässt sich die Git-Ausgabe nicht
-verlustfrei als UTF-8 dekodieren (z. B. bei Dateinamen mit ungültigen
-Bytes), scheitert der Fingerprint kontrolliert statt Pfade lautlos zu
-ersetzen — das würde unterschiedliche Zustände auf denselben Fingerprint
-abbilden können.
+waren — alle konfigurierten Prüfungen. Die Zuordnung der Ergebnisse zum
+Arbeitsstand liegt beim Menschen; der Vorlauf erzeugt weder Fingerprints noch
+Git-Snapshots und erkennt keine Änderungen zwischen Prüfungen. Er braucht
+dafür auch kein Git-Repository.
 
 **Konfiguration:** projektlokale `pyproject.toml`, Tabelle
 `tool.ki-dev.handoff.preflight`, Listen `corrections` (darf leer sein) und
@@ -178,29 +185,30 @@ positiver endlicher `timeout_s`. Zusätzlich gilt je Eintrag
 Prüflogik gehört in ein benanntes Skript oder Modul, dessen Hauptfluss
 benannte Teilaufgaben zeigt, statt als Inline-Code in `argv` zu stehen.
 Keine Autodetektion, keine automatische Installation, keine impliziten
-Fixes; fehlt die Tabelle oder `checks`, enthält `argv` NUL/CR/LF, oder
-überschreitet ein Befehl die 100-Zeichen-Grenze, ist das ein
-Konfigurationsfehler (Exit 2, vor jedem Korrekturbefehl erkannt,
-unabhängig davon, welcher Eintrag betroffen ist). Prozessaufrufe laufen
+Fixes; fehlt die Tabelle oder `checks`, enthält `argv` NUL/CR/LF,
+überschreitet ein Befehl die 100-Zeichen-Grenze, oder ist die Datei kein
+gültiges UTF-8/TOML, ist das ein Konfigurationsfehler (Exit 2, vor jedem
+Korrekturbefehl erkannt, unabhängig davon, welcher Eintrag betroffen ist). Prozessaufrufe laufen
 ohne Shell im aktuellen Arbeitsverzeichnis (Projektwurzel) mit geerbter
 Umgebung. Kein Commit, kein Zurücksetzen, kein Agentenstart, kein
 Beads-Update.
 
 **Ausgabe:** Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
-um einen kompakten Bericht (`PRUEFBERICHT git=…`, je Befehl Status, gekürzte
-Ausgabe und die vollständige `argv` mit eindeutigem Quoting mehrteiliger
-Argumente. `name` und die Prozessausgabe werden von Steuerzeichen/
-ANSI-Codes bereinigt und begrenzt; `argv` ist wegen der 100-Zeichen-Grenze
-beim Konfigurationsladen bereits kurz genug, um immer vollständig zu
-erscheinen — keine Interpreterlisten, Optionsparser oder Maskierung von
-vermeintlichem Inline-Code).
+um einen kompakten Bericht (`PRUEFBERICHT vorlauf-start=…`, je Befehl
+Status, gekürzter Ausgabe und vollständiger `argv` mit eindeutigem Quoting
+mehrteiliger Argumente). `name` und die Prozessausgabe werden von
+Steuerzeichen/ANSI-Codes bereinigt und begrenzt; aus `argv` wird dagegen
+nichts still entfernt, damit der Befehl wörtlich nachvollziehbar und erneut
+startbar bleibt — keine Interpreterlisten, Optionsparser oder Maskierung von
+vermeintlichem Inline-Code. Eine abschließende Hinweiszeile nennt, dass der
+Zeitpunkt der manuellen Zuordnung dient und kein Beweis eines unveränderten
+Quellstands ist; nach weiteren Änderungen ist der Vorlauf erneut zu starten.
 Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer, stderr listet
 jeden konfigurierten Befehl mit seinem tatsächlichen Status (auch bereits
 erfolgreiche Korrekturen und wegen eines vorherigen Fehlschlags ausgelassene
 Befehle), statt nur die fehlgeschlagenen zu zeigen; volle Prozesslogs
-bleiben außen vor. Ein Git- oder Prüfartefaktfehler außerhalb eines
-einzelnen konfigurierten Befehls (z. B. kein Git-Repository,
-Artefaktverzeichnis nicht schreibbar, nicht dekodierbare Git-Ausgabe)
+bleiben außen vor. Ein Prüfartefaktfehler außerhalb eines
+einzelnen konfigurierten Befehls (z. B. Artefaktverzeichnis nicht schreibbar)
 erscheint als eigener kurzer `Vorlauf-Ausführungsfehler` statt eines
 unbehandelten Programmabbruchs; bereits gelaufene Befehle (bestanden wie
 fehlgeschlagen, jeweils nicht zurückgesetzt) werden dabei mit aufgeführt,
@@ -210,8 +218,12 @@ Projektmemory).
 Ungültige Konfiguration oder ein formal unvollständiger Bead (Exit 2) werden
 vor dem ersten Korrekturbefehl erkannt.
 
-`ki-dev loop` ist von diesem Vorlauf unverändert; er gehört ausschließlich zum
-manuellen `handoff`-Ablauf.
+Der Vorlauf gehört zum manuellen `handoff`-Ablauf. Gemeinsame Helfer dürfen
+klein umstrukturiert und wiederverwendet werden, wenn Ein-/Ausgabeverträge und
+Betriebsverhalten anderer Features erhalten bleiben und dies tatsächlich
+Arbeit spart. Die vorhandenen Git-Helfer lesen Commit-Referenzen oder verlangen
+einen sauberen Arbeitsbaum; sie ersetzen keinen Vergleich uncommitteter
+Inhalte. Für diesen optionalen Schutz wird keine neue Infrastruktur gebaut.
 
 ## Grenzen
 
