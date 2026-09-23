@@ -284,15 +284,21 @@ wiederholter Kontext und offene Abnahmen bleiben sichtbar.
 
 1. Der Umsetzer wählt einen bereiten Blattvorgang aus
    `bd ready --label v1:jbr --label workflow:implementation`, liest `bd show <id>`
-   und claimt ihn. Ein Mensch kann die Auswahl vorgeben. workflow:gate und
+   ohne den Beads-Status zu ändern. Ein Mensch kann die Auswahl vorgeben. workflow:gate und
    workflow:evidence gehören nicht in diese Umsetzungswarteschlange.
 2. Eine manuell gestartete Sitzung bearbeitet nur dieses Blatt und seine direkten
    Offline-Tests. Kein ki-dev-loop-Aufruf und keine automatische Sitzungsverkettung.
    Fehlende normative Entscheidungen werden als konkrete Vertragslücke gemeldet.
 3. Im gemeinsamen Arbeitsbaum ist die Beads-ID die normale vollständige Übergabe:
    `Setze <id> um.` Der Umsetzer liest AGENTS.md, `bd show <id>`, den dort genannten
-   Vertrag und den vorhandenen Arbeitsstand, claimt den Vorgang und dokumentiert
-   Ergebnis, Prüfungen und offene Punkte in Beads. Zusatztext ist nur nötig, wenn der
+   Vertrag und den vorhandenen Arbeitsstand. Ergebnis und Prüfnachweise stehen
+   in Commit/Diff und Commitnachricht, nicht als Fortschrittschronik in Beads.
+   Ohne Commit wird der uncommittete Stand ausdrücklich benannt; daraus folgt
+   keine zusätzliche Erlaubnis für automatische Commits. Der Umsetzer verändert
+   weder Auftrag noch Status. Nur `notes` darf er als temporäre Kurzmitteilung
+   bis 600 Zeichen ersetzen. Der nächste Handoff-Schritt ersetzt oder leert
+   diese nach Verarbeitung; kein Anhängen und keine Fortschrittskommentare.
+   Zusatztext ist nur nötig, wenn der
    tatsächliche Änderungsstand nicht zugänglich ist oder vom Vorgang abweicht.
 4. Nach jeder Umsetzersitzung startet ein Mensch eine getrennte Review-Agent-Sitzung
    mit `Reviewe <id>.` Auch hier sind Beads-ID und gemeinsamer Arbeitsbaum die
@@ -302,7 +308,8 @@ wiederholter Kontext und offene Abnahmen bleiben sichtbar.
    begründete zusätzliche Sichtpunkte; es ist nicht autoritativer als der Umsetzer.
    Jeder Befund wird mit Beleg übernommen, begründet verworfen oder bei fehlender
    Entscheidung an PM/Mensch zurückgegeben. Reviewtext allein ändert keinen Vertrag.
-5. Bis zur Auswertung bleibt das Blatt offen/in_progress mit Notiz „Review ausstehend“.
+5. Bis zur Auswertung bleibt der Status unverändert. Claim und Abschluss liegen
+   beim Menschen beziehungsweise beauftragten Planer, nicht beim Umsetzer.
    Erst vollständige Abnahmen und ausgewertete relevante Befunde erlauben bd close.
    Nötige Korrekturen bleiben im Auftrag oder erhalten einen expliziten Folgeauftrag
    mit passender Blockerabhängigkeit; unerfüllte Pflichtabnahmen werden nicht verschoben,

@@ -1,10 +1,35 @@
 ---
 layout: page
-title: Programmierleitlinien
+title: Architektur- und Programmierleitlinien
 permalink: /de/policies/programmierleitlinien/
 ---
 
 Diese Leitlinien sollen Code für Review, Wartung und Betrieb klar machen.
+
+## Geltungsbereich und Anwendung nach Phase
+
+Die Leitlinien gelten für Planung, Materialisierung, Umsetzung und Review.
+Architektur und Programmierung teilen dieselben Regeln; die folgenden
+Schwerpunkte helfen beim Einstieg und beschränken deren Geltung nicht.
+Die [Technikleitlinie](technikleitlinie.de.md) konkretisiert für ki-dev die
+Werkzeugwahl und ist in allen vier Phasen zu berücksichtigen.
+
+### Architektur in Planung und Materialisierung
+
+Zuständigkeiten, Schnittstellen, Konfiguration und Datenverträge im Entwurf
+festlegen und im ausführungsreifen Auftrag konkret benennen. Maßgeblich sind
+insbesondere die Regeln zu
+[Modulgrenzen und Konfiguration](#modulgrenzen-machen-abhängigkeiten-ausdrücklich),
+[überschaubaren Funktionen und Dateien](#funktionen-und-dateien-bleiben-überschaubar)
+und [gemeinsamer Validierung](#datenregeln-werden-gemeinsam-deklarativ-beschrieben).
+Fehlerverhalten und nötige Prüfnachweise gehören bereits in den Auftrag.
+
+### Programmierung in Umsetzung und Review
+
+Den Entwurf an diesen Regeln messen und zusätzlich Funktionsaufgaben,
+Lesereihenfolge, Fehler- und Ersatzpfade, Ressourcenfreigabe, Tests und
+Dokumentation am konkreten Code prüfen. Die Architekturregeln gelten dabei
+weiter; eine Implementierung wird auch auf ihre Modulgrenzen geprüft.
 
 ## Automatisierte Prüfung
 
@@ -17,7 +42,7 @@ Als kompaktes Vorbild für die Art der Stilprüfung dient die
 Die konkreten Werkzeuge und Werte werden je Repo in den jeweiligen
 Linter-Konfigurationen gepflegt.
 
-## Fachliche Stilregeln
+## Gemeinsame Architektur- und Programmierregeln
 
 Die Regeln gelten für handgeschriebenen Quelltext. Erzeugte Dateien werden
 gekennzeichnet und neu erzeugt; übernommener Fremdcode wird getrennt gepflegt.
@@ -90,6 +115,26 @@ func handleCopyFileRangeErr(err error, copied, written int64) (bool, error) {
 
 [Beleg: handleCopyFileRangeErr – ENOSYS-Zweig](https://go.dev/src/internal/poll/copy_file_range_linux.go).
 
+### Datenregeln werden gemeinsam deklarativ beschrieben
+{: .policy-subtitle }
+
+- Für strukturierte Daten eine bewährte gemeinsame Validierungssprache
+  verwenden. Wiederkehrende Regeln einmal definieren und wiederverwenden,
+  statt Typ-, Pflichtfeld- und Grenzprüfungen im Ablauf zu verteilen.
+- Regeln nach fachlicher Zuständigkeit bündeln. Validierung bleibt von
+  Ein-/Ausgabe und Ablaufsteuerung getrennt; sie gilt auch für bereits im
+  Speicher vorliegende Daten, unabhängig vom eingelesenen Dateiformat.
+- Fehlende optionale Werte und vorhandene ungültige Werte unterscheiden.
+  Fehler nennen den betroffenen Feldpfad, ohne vertrauliche Werte auszugeben.
+- Fachliche Beziehungen, die die Validierungssprache nicht ausdrücken kann,
+  in benannten Prüffunktionen ergänzen. Werkzeugwahl und begründete Ausnahmen
+  stehen in der jeweiligen projektweiten Technikleitlinie.
+
+**Beispiel – optionale Angaben:** `metadata.handoff` ist ein optionales
+Mapping. Fehlt es, ist das erlaubt; der vorhandene Wert `7` ist ein Typfehler.
+Ein vorhandenes `guidance` muss nichtleerer Text innerhalb der definierten
+Längengrenze sein. Ein falscher Typ darf nicht als „Angabe fehlt“ weiterlaufen.
+
 ### Fehler werden nicht pauschal geschluckt
 {: .policy-subtitle }
 
@@ -143,6 +188,13 @@ ausgelagert.
   Ein- und Ausgabegrenzen gelesen.
 - Neue Abhängigkeiten und Schnittstellenänderungen werden geprüft.
   Hilfsmodule dürfen keine verdeckte Rückkopplung zum aufrufenden Modul schaffen.
+- Konfiguration wird nach fachlicher Zuständigkeit gegliedert. Jeder Parameter
+  hat genau eine maßgebliche Definition. Profile bündeln nur zusammengehörige
+  Einstellungen; keine Sammeldatei für unabhängige Bereiche. Eigene Dateien
+  entstehen erst, wenn die Trennung die Übersicht verbessert.
+
+**Beispiel – Konfiguration:** Feldbreiten gehören unter `anzeige`,
+Prozessfristen unter `prozesse`.
 
 **Beispiel – rust-analyzer:** Der Analysekern erhält Quelltexte und
 Projektstruktur als Daten im Speicher und führt selbst keine Ein- oder Ausgabe aus.
