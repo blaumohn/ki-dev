@@ -17,16 +17,9 @@ venv_volume="ki-dev-agent-${volume_key}-venv"
 
 case "${1:-shell}" in
   build)
-    loope_source="${LOOPE_SOURCE:-$repo_dir/../loope}"
-    if [[ ! -f "$loope_source/Cargo.toml" ]]; then
-      echo "Set LOOPE_SOURCE to the local loope source directory." >&2
-      exit 1
-    fi
     build_context="$(mktemp -d)"
     trap 'rm -rf -- "$build_context"' EXIT
-    mkdir -p "$build_context/loope" "$build_context/project" "$build_context/docker"
-    cp "$loope_source/Cargo.toml" "$loope_source/Cargo.lock" "$build_context/loope/"
-    cp -R "$loope_source/src" "$build_context/loope/"
+    mkdir -p "$build_context/project" "$build_context/docker"
     cp "$repo_dir/pyproject.toml" "$build_context/project/"
     cp -R "$repo_dir/src" "$build_context/project/"
     cp -R "$repo_dir/docker/agent" "$build_context/docker/"
