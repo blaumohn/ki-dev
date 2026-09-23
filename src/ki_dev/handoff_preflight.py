@@ -23,8 +23,10 @@ import math
 import os
 import re
 import shlex
+import shutil
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,7 +34,8 @@ from typing import Literal, cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
-from plumbum import CommandNotFound, ProcessTimedOut, local
+from plumbum import ProcessTimedOut, local
+from plumbum.machines.local import LocalCommand
 
 from ki_dev.handoff import HandoffIssue, Step, render_handoff
 
@@ -420,35 +423,35 @@ def _run_command(
     ungültige Bytes, statt sie zu ersetzen -- für eine bereits
     gekürzte Diagnose ist das gleichwertig.
 
-    ``env`` wird ausdrücklich übergeben, weil Plumbum sonst einen beim
-    Import erstellten Schnappschuss von ``os.environ`` weiterreicht;
-    der Vorlauf schränkt die Umgebung aber nicht ein. Plumbum legt die
-    übergebene Umgebung über den Schnappschuss: Eine erst zur Laufzeit
-    gelöschte Variable bleibt dadurch sichtbar.
+    Programmauflösung und Prozessstart laufen in derselben aktuellen
+    Umgebung: ``_inherited_environment`` ersetzt dafür Plumbums beim
+    Import erstellte Umgebungskopie, ``_program`` sucht im aktuellen
+    ``PATH``.
     """
-    try:
+    with _inherited_environment():
         program = _program(project_root, spec.argv[0])
-    except CommandNotFound as exc:
-        return _start_failure(spec, exc)
-    try:
-        exit_code, stdout, stderr = program.run(
-            spec.argv[1:],
-            retcode=None,
-            timeout=spec.timeout_s,
-            cwd=project_root,
-            env=os.environ,
-        )
-    except ProcessTimedOut:
-        return CommandResult(
-            spec.name,
-            spec.argv,
-            "fail",
-            None,
-            f"Timeout nach {spec.timeout_s:g} s",
-            omitted=False,
-        )
-    except OSError as exc:
-        return _start_failure(spec, exc)
+        if program is None:
+            return _start_failure(
+                spec, f"{spec.argv[0]} nicht im PATH gefunden"
+            )
+        try:
+            exit_code, stdout, stderr = program.run(
+                spec.argv[1:],
+                retcode=None,
+                timeout=spec.timeout_s,
+                cwd=project_root,
+            )
+        except ProcessTimedOut:
+            return CommandResult(
+                spec.name,
+                spec.argv,
+                "fail",
+                None,
+                f"Timeout nach {spec.timeout_s:g} s",
+                omitted=False,
+            )
+        except OSError as exc:
+            return _start_failure(spec, str(exc))
     return CommandResult(
         spec.name,
         spec.argv,
@@ -459,29 +462,51 @@ def _run_command(
     )
 
 
-def _program(project_root: Path, program: str):
-    """argv[0] wie ``execvp`` auflösen, bezogen auf die Projektwurzel.
+@contextmanager
+def _inherited_environment() -> Iterator[None]:
+    """Plumbums Umgebungskopie durch die aktuelle Umgebung ersetzen.
+
+    Plumbum hält eine beim Import erstellte Kopie von ``os.environ``
+    und legt eine an ``run`` übergebene Umgebung nur darüber; eine
+    inzwischen gelöschte Variable bliebe dadurch sichtbar, und die
+    Programmsuche läse weiterhin den gespeicherten ``PATH``. Der
+    Vorlauf vererbt aber die aktuelle Umgebung des Aufrufers
+    unverändert. ``local.env`` ist prozessweit, deshalb wird der
+    vorherige Stand beim Verlassen wiederhergestellt.
+    """
+    with local.env():
+        local.env.clear()
+        local.env.update(os.environ)
+        yield
+
+
+def _program(project_root: Path, program: str) -> LocalCommand | None:
+    """argv[0] wie ``execvp`` auflösen; ``None`` heißt nicht gefunden.
 
     Enthält der Name einen Pfadtrenner, gilt er relativ zum
-    Arbeitsverzeichnis des Befehls, sonst wird er über PATH gesucht.
-    Plumbum löst relative Programmpfade gegen das Arbeitsverzeichnis
-    des Aufrufers auf, nicht gegen das übergebene ``cwd``; ohne diese
-    Auflösung wäre ``scripts/pruefe.sh`` -- die vom Vorlaufvertrag für
-    längere Logik vorgesehene Form -- je nach Startort ein
-    Startfehler.
+    Arbeitsverzeichnis des Befehls -- Plumbum löst relative
+    Programmpfade sonst gegen das Arbeitsverzeichnis des Aufrufers
+    auf, und ``scripts/pruefe.sh`` (die vom Vorlaufvertrag für längere
+    Logik vorgesehene Form) wäre je nach Startort ein Startfehler.
+
+    Ein Name ohne Trenner wird im aktuellen ``PATH`` gesucht, exakt
+    und selbst: ``local[name]`` würde zu ``pruef_werkzeug``
+    ersatzweise auch ``pruef-werkzeug`` und ``pruef.werkzeug``
+    starten, also einen anderen als den konfigurierten Befehl.
     """
     if any(sep in program for sep in _PATH_SEPARATORS):
         return local[str(project_root / program)]
-    return local[program]
+    resolved = shutil.which(program, path=os.environ.get("PATH"))
+    return None if resolved is None else local[resolved]
 
 
-def _start_failure(spec: CommandSpec, exc: Exception) -> CommandResult:
+def _start_failure(spec: CommandSpec, reason: str) -> CommandResult:
     return CommandResult(
         spec.name,
         spec.argv,
         "fail",
         None,
-        _bounded(f"Startfehler: {exc}", _MAX_FAILURE_DETAIL_CHARS),
+        _bounded(f"Startfehler: {reason}", _MAX_FAILURE_DETAIL_CHARS),
         omitted=False,
     )
 

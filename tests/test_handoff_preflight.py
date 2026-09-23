@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -8,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from plumbum import local
 from plumbum.machines.local import LocalMachine
 
 from ki_dev.handoff import HandoffIssue
@@ -390,6 +392,90 @@ def test_argv_is_not_shell_interpreted(tmp_path: Path):
     )
     report = run_preflight(config, repo)
     assert report.commands[0].bounded_detail == "$HOME"
+
+
+def _on_path(
+    tmp_path: Path, monkeypatch, name: str, output: str
+) -> None:
+    """Ein ausfuehrbares Programm anlegen und PATH darauf zeigen
+    lassen -- fuer os.environ und fuer Plumbums eigene Kopie, damit
+    der Test nicht schon an einem veralteten PATH vorbeilaeuft."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    tool = bindir / name
+    tool.write_text(f"#!/bin/sh\nprintf '{output}'\n")
+    tool.chmod(0o755)
+    path = f"{bindir}{os.pathsep}{os.environ['PATH']}"
+    monkeypatch.setenv("PATH", path)
+
+
+def test_program_name_is_resolved_exactly(
+    tmp_path: Path, monkeypatch
+):
+    """Plumbums which() sucht zu ``pruef_werkzeug`` ersatzweise auch
+    ``pruef-werkzeug`` und ``pruef.werkzeug``. Dann liefe ein anderer
+    als der konfigurierte Befehl und koennte PASS melden; der Vorlauf
+    loest deshalb exakt auf und meldet sonst einen Startfehler."""
+    repo = _repo(tmp_path)
+    _on_path(tmp_path, monkeypatch, "pruef-werkzeug", "falscher befehl")
+    config = PreflightConfig(
+        corrections=(),
+        checks=(CommandSpec("exakt", ("pruef_werkzeug",), 10.0),),
+    )
+    with local.env(PATH=os.environ["PATH"]):
+        report = run_preflight(config, repo)
+    item = report.commands[0]
+    assert item.status == "fail"
+    assert "Startfehler" in item.bounded_detail
+    assert "falscher befehl" not in item.bounded_detail
+
+
+def test_program_is_resolved_with_current_path(
+    tmp_path: Path, monkeypatch
+):
+    """Die Programmsuche nutzt den aktuellen PATH, nicht Plumbums beim
+    Import gespeicherte Kopie: ein erst zur Laufzeit ergaenztes
+    Verzeichnis muss wirken."""
+    repo = _repo(tmp_path)
+    _on_path(
+        tmp_path, monkeypatch, "ki-dev-vorlauf-probe", "werkzeug ok"
+    )
+    config = PreflightConfig(
+        corrections=(),
+        checks=(
+            CommandSpec("probe", ("ki-dev-vorlauf-probe",), 10.0),
+        ),
+    )
+    report = run_preflight(config, repo)
+    item = report.commands[0]
+    assert item.status == "pass"
+    assert "werkzeug ok" in item.bounded_detail
+
+
+def test_command_does_not_see_stale_plumbum_environment(
+    tmp_path: Path, monkeypatch
+):
+    """Plumbum haelt eine beim Import erstellte Kopie von os.environ
+    und legt eine uebergebene Umgebung nur darueber. Eine dort noch
+    vorhandene, inzwischen geloeschte Variable darf den Befehl nicht
+    erreichen -- der Vorlauf vererbt die aktuelle Umgebung."""
+    repo = _repo(tmp_path)
+    monkeypatch.delenv("KI_DEV_VORLAUF_ALT", raising=False)
+    config = PreflightConfig(
+        corrections=(),
+        checks=(
+            _py(
+                "umgebung",
+                "import os; "
+                "print(os.environ.get('KI_DEV_VORLAUF_ALT'))",
+            ),
+        ),
+    )
+    with local.env(KI_DEV_VORLAUF_ALT="veraltet"):
+        report = run_preflight(config, repo)
+    item = report.commands[0]
+    assert item.status == "pass"
+    assert "None" in item.bounded_detail
 
 
 def test_command_inherits_current_environment(
