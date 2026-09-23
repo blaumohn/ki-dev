@@ -3,6 +3,7 @@ import pytest
 from ki_dev.handoff import (
     HandoffInvalidError,
     HandoffIssue,
+    ReviewTarget,
     Step,
     render_handoff,
     validate_handoff,
@@ -186,3 +187,202 @@ def test_every_step_includes_epic_guidance_with_origin(step):
     )
     text = render_handoff(issue, step)
     assert "Epic-Hinweis (epic-1):\nKleine Umsetzungsschnitte." in text
+
+
+# --- ReviewTarget (--review-of) -------------------------------------
+
+
+SOURCE_TARGETS = (
+    ReviewTarget.MAP,
+    ReviewTarget.GRAPH,
+    ReviewTarget.MATERIALIZE,
+)
+
+
+def test_review_without_target_equals_build_target():
+    assert render_handoff(_issue(), Step.REVIEW) == render_handoff(
+        _issue(), Step.REVIEW, ReviewTarget.BUILD
+    )
+    assert validate_handoff(
+        _issue(), Step.REVIEW
+    ) == validate_handoff(_issue(), Step.REVIEW, ReviewTarget.BUILD)
+
+
+@pytest.mark.parametrize("target", SOURCE_TARGETS)
+def test_source_review_targets_require_source_refs(target):
+    problems = validate_handoff(
+        _issue(source_refs=None), Step.REVIEW, target
+    )
+    assert problems[0].startswith("metadata.handoff.source_refs")
+
+
+@pytest.mark.parametrize(
+    "target", [ReviewTarget.MAP, ReviewTarget.GRAPH]
+)
+def test_map_graph_review_need_no_design_or_ac(target):
+    issue = _issue(design=None, acceptance_criteria=None)
+    assert validate_handoff(issue, Step.REVIEW, target) == ()
+
+
+def test_materialize_review_needs_refs_and_contract_fields():
+    target = ReviewTarget.MATERIALIZE
+    assert validate_handoff(_issue(), Step.REVIEW, target) == ()
+
+    missing_refs = validate_handoff(
+        _issue(source_refs=None), Step.REVIEW, target
+    )
+    assert missing_refs[0].startswith("metadata.handoff.source_refs")
+
+    missing_design = validate_handoff(
+        _issue(design=None), Step.REVIEW, target
+    )
+    assert missing_design == ("design",)
+
+
+def test_build_review_target_needs_no_source_refs():
+    issue = _issue(source_refs=None)
+    problems = validate_handoff(issue, Step.REVIEW, ReviewTarget.BUILD)
+    assert problems == ()
+
+
+@pytest.mark.parametrize("target", SOURCE_TARGETS)
+def test_source_review_targets_render_source_refs(target):
+    text = render_handoff(_issue(), Step.REVIEW, target)
+    assert "- docs/design/a.md#L12-L40\n- bd:karte\n" in text
+
+
+def test_build_review_target_does_not_render_source_refs():
+    assert "docs/design/a.md" not in render_handoff(
+        _issue(), Step.REVIEW, ReviewTarget.BUILD
+    )
+
+
+def test_review_targets_have_distinct_role_texts():
+    texts = {
+        target: render_handoff(_issue(), Step.REVIEW, target)
+        for target in ReviewTarget
+    }
+    assert "Kartenprüfung" in texts[ReviewTarget.MAP]
+    assert "Graphprüfung" in texts[ReviewTarget.GRAPH]
+    assert (
+        "Materialisierungsprüfung" in texts[ReviewTarget.MATERIALIZE]
+    )
+    assert "deterministischen Vorlauf" in texts[ReviewTarget.BUILD]
+    for target in SOURCE_TARGETS:
+        assert "deterministischen Vorlauf" not in texts[target]
+
+
+def test_materialize_review_transports_ac3_criteria():
+    text = " ".join(
+        render_handoff(
+            _issue(), Step.REVIEW, ReviewTarget.MATERIALIZE
+        ).split()
+    )
+    assert "ursprünglichen, bestätigten Nutzeranforderungen und" in text
+    assert "nicht nur gegen einen möglicherweise fehlerhaften" in text
+    assert "Modalität (darf/muss/darf nicht)" in text
+    assert "Geltungsbereich" in text
+    assert "Nicht-Ziele" in text
+    # "unbeauftragte Umfangserweiterung" ist ein Graph-Kriterium.
+    assert "unbeauftragte Umfangserweiterung" not in text
+    assert "fehlende Quelle ist NEEDS_DECISION" in text
+    assert "Übergröße" in text
+
+
+def test_materialize_review_criteria_cover_invented_build_test_ban():
+    """Regressionsfixtur: ein materialisierter Auftrag erfindet ein
+    Build-Testverbot, das der Bau-Rolle widerspricht (siehe
+    ki-dev-ablauf-8is und test_build_may_test_review_may_not: "Build
+    darf gezielt testen"). AC3 verlangt keine automatische Erkennung;
+    die Fixtur belegt nur, dass die transportierten Kriterien
+    ("Modalität darf/muss/darf nicht", bestätigte Entscheidung vs.
+    Umsetzungsvorschlag) einem Reviewer erlauben, das erfundene
+    Verbot als Prüfgegenstand zu erkennen."""
+    issue = _issue(
+        design=(
+            "Der Bau-Agent darf keine Tests ausführen; jegliche "
+            "Testausführung ist untersagt."
+        )
+    )
+    text = " ".join(
+        render_handoff(
+            issue, Step.REVIEW, ReviewTarget.MATERIALIZE
+        ).split()
+    )
+    # Der Rohtext des Auftrags erscheint nicht in der Übergabe
+    # (Grenzen); die Kriterien dafür, ein erfundenes "darf nicht" als
+    # unbestätigte Entscheidung zu erkennen, aber schon.
+    assert "Der Bau-Agent darf keine Tests" not in text
+    assert "Modalität (darf/muss/darf nicht)" in text
+    assert (
+        "Unterscheide bestätigte Entscheidungen von "
+        "Umsetzungsvorschlägen und offenen Produktfragen" in text
+    )
+
+
+def test_materialize_review_criteria_cover_unauthorized_loop_scope():
+    """Regressionsfixtur: ein materialisierter Auftrag erweitert
+    unbeauftragt die ki-dev-loop-Architektur (wiw selbst nennt "keine
+    neue Loop-Architektur" als Nicht-Umfang). AC3 verlangt keine
+    automatische Erkennung; die Fixtur belegt nur, dass
+    Geltungsbereich-/Nicht-Ziele-/Übergröße-Kriterien einem Reviewer
+    erlauben, die unbeauftragte Erweiterung als Prüfgegenstand zu
+    erkennen."""
+    issue = _issue(
+        description=(
+            "Zusätzlich führen wir eine neue Loop-Runde für "
+            "automatische Freigaben in ki_dev.loop ein."
+        )
+    )
+    text = " ".join(
+        render_handoff(
+            issue, Step.REVIEW, ReviewTarget.MATERIALIZE
+        ).split()
+    )
+    assert "automatische Freigaben" not in text
+    assert "Geltungsbereich" in text
+    assert "Nicht-Ziele" in text
+    assert (
+        "Benenne Übergröße, widersprüchliche Nachträge und nötige "
+        "Teilung mit betroffenem Abschnitt" in text
+    )
+
+
+def test_all_review_targets_forbid_own_tooling_or_further_models():
+    for target in SOURCE_TARGETS:
+        text = " ".join(
+            render_handoff(_issue(), Step.REVIEW, target).split()
+        )
+        assert "Prüfwerkzeuge oder Folgemodelle" in text
+
+
+@pytest.mark.parametrize("target", list(ReviewTarget))
+def test_every_review_target_outputs_pass_changes_needs_decision(
+    target,
+):
+    text = render_handoff(_issue(), Step.REVIEW, target)
+    assert "PASS | CHANGES | NEEDS_DECISION" in text
+
+
+def test_review_line_names_effective_target():
+    assert "Reviewziel: build\n" in render_handoff(
+        _issue(), Step.REVIEW
+    )
+    assert "Reviewziel: map\n" in render_handoff(
+        _issue(), Step.REVIEW, ReviewTarget.MAP
+    )
+
+
+@pytest.mark.parametrize(
+    "step,expected",
+    [
+        (Step.MAP, "--review-of map"),
+        (Step.GRAPH, "--review-of graph"),
+        (Step.MATERIALIZE, "--review-of materialize"),
+        (Step.BUILD, "--step review"),
+    ],
+)
+def test_productive_steps_name_the_concrete_review_call(
+    step, expected
+):
+    assert expected in render_handoff(_issue(), step)

@@ -69,13 +69,65 @@ Immer: `id`, `title`, `description` als nichtleere Strings.
 | Schritt | zusätzlich |
 | --- | --- |
 | `map`, `graph`, `materialize` | `metadata.handoff.source_refs` |
-| `build`, `review` | `acceptance_criteria`, `design` |
+| `build`, `review` (ohne `--review-of`, = `--review-of build`) | `acceptance_criteria`, `design` |
 
 `build` und `review` brauchen keine Metadaten; fehlende Metadaten blockieren nur
 `map`, `graph` und `materialize`. `design` soll die relevanten
 Schnittstellen/Code-Einstiege und die konkreten Prüfaufträge enthalten. Das
 Werkzeug prüft nur Vorhandensein und Typ, nicht die inhaltliche
 Ausführungsreife.
+
+### `--review-of`: getrenntes Review je Handoff-Schritt
+
+`--step review` prüft standardmäßig das Ergebnis von `build`. `--review-of
+map|graph|materialize|build` wählt stattdessen den Prüfgegenstand für ein
+eigenes, getrenntes Review nach den jeweils vorangegangenen Schritten
+`map`, `graph` und `materialize` – unabhängig vom verwendeten Modell. Die
+Option ist nur zusammen mit `--step review` zulässig; jede andere Kombination
+(auch mit der `map --agent`/`--session`-Form) ist Exit 2 vor jeder
+`bd`-Anfrage. Ohne `--review-of` bleibt `--step review` unverändert die
+bisherige Build-Review; `--review-of build` ist dazu gleichwertig.
+
+Die frische Sitzung startest du selbst; `handoff` startet keinen Agenten
+und schließt sie nicht automatisch. Optional kannst du dafür ein anderes
+Modell oder einen anderen Anbieter wählen – kein Anbieter ist
+vorgeschrieben, es gibt keine automatische Übermittlung oder
+Modellanfrage und **keine Garantie unabhängiger Fehler**: Ein anderes
+Modell kann dieselben Lücken übersehen.
+
+| `--review-of` | zusätzliche Pflichtfelder | deterministischer Vorlauf |
+| --- | --- | --- |
+| `map` | `metadata.handoff.source_refs` | nein |
+| `graph` | `metadata.handoff.source_refs` | nein |
+| `materialize` | `metadata.handoff.source_refs`, `acceptance_criteria`, `design` | nein |
+| `build` (Standard) | `acceptance_criteria`, `design` | ja |
+
+Nur `--review-of build` führt den
+[deterministischen Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe-step-review)
+aus `handoff_preflight` aus; `map`, `graph` und `materialize` sind reine,
+lesende Quellenprüfungen ohne Prozessaufrufe und ohne `pyproject.toml`. Für
+`materialize` gilt zusätzlich: Es reicht nicht, den fertig materialisierten
+Auftrag gegen sich selbst zu prüfen – das Review vergleicht ihn gegen die
+ursprünglichen, bestätigten Nutzeranforderungen und Quellen und gibt bei
+fehlender Quelle `NEEDS_DECISION` statt eines Freibriefs für formal gefüllte
+Felder.
+
+Jede produktive Übergabe (`map`, `graph`, `materialize`, `build`) nennt am
+Ende den passenden Review-Aufruf, z. B. nach `materialize`:
+
+```bash
+ki-dev handoff BEAD_ID --step review --review-of materialize
+```
+
+Alle vier Prüfgegenstände geben `PASS | CHANGES | NEEDS_DECISION` aus, nennen
+Befunde mit Quellen-/Anforderungsbezug, konkreter Abweichung und betroffenem
+Abschnitt und starten selbst weder Prüfwerkzeuge noch Folgemodelle. Ein
+Review hat keine automatische Autorität gegenüber dem vorangegangenen Agenten
+und schließt nichts automatisch; `PASS` gilt nur für den vom Menschen
+zugeordneten Arbeitsstand/Scope, was `handoff` nicht technisch prüft, und
+unentscheidbare Konflikte entscheidet der Mensch. Es gibt keine erzwungene
+Review-Kette: Nach jedem produktiven Schritt folgt ein Review, nach einer
+substanziellen Korrektur nur eine erneute Prüfung der betroffenen Kriterien.
 
 ### Metadatenbeispiel
 
@@ -94,7 +146,7 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 | Exit | Bedeutung |
 | --- | --- |
 | 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht) |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
 | 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
@@ -103,12 +155,15 @@ Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen
 ## Ablauf in wenigen Minuten
 
 1. `map`: Übergabe ausgeben, in einer neuen Agentensitzung einfügen. Danach
-   eine getrennte Kartenprüfung starten.
+   den erstellten Karten-Bead mit `--step review --review-of map` in einer
+   frischen Sitzung prüfen lassen.
 2. `graph`: Übergabe für den Bead der Karte; der Agent legt dünne Vorgänge an.
+   Danach jeden angelegten dünnen Vorgang mit `--step review --review-of
+   graph` prüfen lassen, bevor er materialisiert wird.
 3. `materialize`: je dünnem Vorgang eine Sitzung; danach die Ausführungsreife
-   getrennt prüfen lassen.
+   mit `--step review --review-of materialize` getrennt prüfen lassen.
 4. `build`: Übergabe des materialisierten Beads in einer Bau-Sitzung.
-5. `review`: Vorher läuft automatisch der
+5. `review` (Standard bzw. `--review-of build`): Vorher läuft automatisch der
    [deterministische Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe-step-review);
    erst bei dessen Erfolg entsteht die Übergabe für eine **frische, getrennte**
    Sitzung. Der Review-Text verlangt zuerst ein eigenes Urteil anhand von

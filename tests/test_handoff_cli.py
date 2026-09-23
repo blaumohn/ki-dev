@@ -353,6 +353,129 @@ def test_review_without_preflight_config_exits_2(
     assert "Vorlauf-Konfiguration ungültig" in result.stderr
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["handoff", "x-1", "--step", "build", "--review-of", "build"],
+        ["handoff", "x-1", "--review-of", "map"],
+        [
+            "handoff",
+            "map",
+            "--review-of",
+            "build",
+            "--agent",
+            "codex",
+            "--session",
+            "s-1",
+        ],
+        [
+            "handoff",
+            "x-1",
+            "--step",
+            "review",
+            "--review-of",
+            "unbekannt",
+        ],
+    ],
+)
+def test_review_of_wrong_combination_exits_2_without_bd(bd, args):
+    result = runner.invoke(app, args)
+    assert result.exit_code == 2
+    assert bd.calls == []
+
+
+@pytest.mark.parametrize("target", ["map", "graph"])
+def test_review_of_source_target_needs_only_refs(bd, target):
+    bead = {
+        k: v
+        for k, v in FULL.items()
+        if k not in ("design", "acceptance_criteria")
+    }
+    bd.state["stdout"] = json.dumps([bead])
+    result = runner.invoke(
+        app,
+        ["handoff", "x-1", "--step", "review", "--review-of", target],
+    )
+    assert result.exit_code == 0
+    assert result.stdout.startswith("Schritt: review\n")
+    assert f"Reviewziel: {target}\n" in result.stdout
+    assert "PRUEFBERICHT" not in result.stdout
+
+
+@pytest.mark.parametrize("target", ["map", "graph", "materialize"])
+def test_review_of_source_target_runs_no_preflight_or_process(
+    bd, tmp_path, monkeypatch, target
+):
+    """Quellen-/Materialisierungsreviews laufen ohne pyproject.toml
+    und ohne Prozessaufrufe (AC4: kein Code-Pruefvorlauf)."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["handoff", "x-1", "--step", "review", "--review-of", target],
+    )
+    assert result.exit_code == 0
+    assert "PRUEFBERICHT" not in result.stdout
+    preflight_dir = tmp_path / ".local" / "handoff" / "preflight"
+    assert not preflight_dir.exists()
+
+
+@pytest.mark.parametrize("target", ["map", "graph", "materialize"])
+def test_review_of_source_target_ignores_failing_preflight(
+    bd, tmp_path, monkeypatch, target
+):
+    """AC4: Nur build fuehrt den Code-Pruefvorlauf aus. Ein konfigu-
+    rierter, hier absichtlich fehlschlagender Check darf ein Quellen-/
+    Materialisierungsreview nicht beeinflussen: Es startet ihn gar
+    nicht erst."""
+    fail_code = "import sys; sys.exit(1)"
+    _preflight_project(
+        tmp_path, checks=f"[{_command('fails', fail_code)}]"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["handoff", "x-1", "--step", "review", "--review-of", target],
+    )
+    assert result.exit_code == 0
+    assert "PRUEFBERICHT" not in result.stdout
+    preflight_dir = tmp_path / ".local" / "handoff" / "preflight"
+    assert not preflight_dir.exists()
+
+
+def test_review_of_materialize_needs_refs_and_contract(bd):
+    bead = {k: v for k, v in FULL.items() if k != "metadata"}
+    bd.state["stdout"] = json.dumps([bead])
+    result = runner.invoke(
+        app,
+        [
+            "handoff",
+            "x-1",
+            "--step",
+            "review",
+            "--review-of",
+            "materialize",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "metadata.handoff.source_refs" in result.stderr
+
+
+def test_review_of_build_matches_plain_review(
+    bd, tmp_path, monkeypatch
+):
+    _preflight_project(
+        tmp_path, checks=f"[{_command('ok', 'print(1)')}]"
+    )
+    monkeypatch.chdir(tmp_path)
+    plain = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    explicit = runner.invoke(
+        app,
+        ["handoff", "x-1", "--step", "review", "--review-of", "build"],
+    )
+    assert plain.exit_code == explicit.exit_code == 0
+    assert plain.stdout == explicit.stdout
+
+
 def test_review_validates_bead_before_preflight_config(
     bd, tmp_path, monkeypatch
 ):

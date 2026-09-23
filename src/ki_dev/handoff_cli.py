@@ -21,6 +21,7 @@ from ki_dev.executors.transcript import validate_session_request
 from ki_dev.handoff import (
     HandoffInvalidError,
     HandoffIssue,
+    ReviewTarget,
     Step,
     render_handoff,
     validate_handoff,
@@ -57,7 +58,24 @@ Schritte und Pflichtfelder (zusätzlich immer id, title, description):
   graph        metadata.handoff.source_refs
   materialize  metadata.handoff.source_refs
   build        acceptance_criteria, design
-  review       acceptance_criteria, design
+  review       acceptance_criteria, design (= --review-of build)
+
+\b
+--review-of map|graph|materialize|build wählt bei --step review den
+Prüfgegenstand des getrennten Reviews und ist nur zusammen mit
+--step review zulässig; jede andere Kombination (auch mit der
+map --agent/--session-Form) ist Exit 2 vor jeder bd-Anfrage. Ohne
+--review-of bleibt --step review die bisherige Build-Review.
+Pflichtfelder je Prüfgegenstand:
+  --review-of map          metadata.handoff.source_refs
+  --review-of graph        metadata.handoff.source_refs
+  --review-of materialize  metadata.handoff.source_refs,
+                            acceptance_criteria, design
+  --review-of build        acceptance_criteria, design
+Nur der Prüfgegenstand build (Standard oder ausdrücklich) führt den
+deterministischen Vorlauf weiter unten aus; map/graph/materialize sind
+reine, rein lesende Quellenprüfungen ohne Prozessaufrufe und ohne
+pyproject.toml.
 
 \b
 source_refs ist eine nichtleere Liste nichtleerer Strings, z. B.
@@ -122,6 +140,17 @@ def handoff(
             show_default=False,
         ),
     ] = None,
+    review_of: Annotated[
+        ReviewTarget | None,
+        typer.Option(
+            "--review-of",
+            help=(
+                "map | graph | materialize | build; nur zusammen mit "
+                "--step review."
+            ),
+            show_default=False,
+        ),
+    ] = None,
     agent: Annotated[
         str | None,
         typer.Option(
@@ -140,22 +169,31 @@ def handoff(
     ] = None,
 ) -> None:
     if agent is not None or session is not None or bead_id == MAP_WORD:
-        _map_form(bead_id, step, agent, session)
+        _map_form(bead_id, step, review_of, agent, session)
     else:
-        _bead_form(bead_id, step)
+        _bead_form(bead_id, step, review_of)
 
 
-def _bead_form(bead_id: str | None, step: Step | None) -> None:
+def _bead_form(
+    bead_id: str | None,
+    step: Step | None,
+    review_of: ReviewTarget | None,
+) -> None:
     if bead_id is None or step is None:
         _fail(
             "Aufruf: BEAD_ID --step STEP oder map --agent codex "
             "--session SESSION_ID",
             code=2,
         )
+    if review_of is not None and step is not Step.REVIEW:
+        _fail(
+            "--review-of ist nur zusammen mit --step review zulässig",
+            code=2,
+        )
     try:
         issue = read_issue(bead_id, Path.cwd())
         if step is Step.REVIEW:
-            text = _review_handoff(issue)
+            text = _review_handoff(issue, review_of)
         else:
             text = render_handoff(issue, step)
     except InvalidBeadIdError as exc:
@@ -174,15 +212,23 @@ def _bead_form(bead_id: str | None, step: Step | None) -> None:
     typer.echo(text, nl=False)
 
 
-def _review_handoff(issue: HandoffIssue) -> str:
-    """Deterministischer Vorlauf vor der Review-Übergabe (Step.REVIEW).
+def _review_handoff(
+    issue: HandoffIssue, review_of: ReviewTarget | None
+) -> str:
+    """Übergabe für ``--step review``.
 
-    Validiert Bead und Konfiguration vollständig, bevor der erste
-    Korrekturbefehl läuft (kein Schreibeffekt vor dieser Prüfung).
-    Bei einem Prüf-/Ausführungsfehler bricht dies mit Exit 1 und einem
-    kurzen Reparaturbefund ab, statt eine Übergabe zu liefern.
+    Nur für den (Standard- oder ausdrücklichen) Prüfgegenstand build
+    läuft der deterministische Vorlauf aus handoff_preflight: Bead und
+    Konfiguration werden vollständig validiert, bevor der erste
+    Korrekturbefehl läuft (kein Schreibeffekt vor dieser Prüfung); ein
+    Prüf-/Ausführungsfehler bricht mit Exit 1 und einem kurzen
+    Reparaturbefund ab, statt eine Übergabe zu liefern. Für
+    map/graph/materialize ist das Review eine reine Quellenprüfung:
+    kein Vorlauf, keine pyproject.toml nötig, keine Prozessaufrufe.
     """
-    problems = validate_handoff(issue, Step.REVIEW)
+    if review_of not in (None, ReviewTarget.BUILD):
+        return render_handoff(issue, Step.REVIEW, review_of)
+    problems = validate_handoff(issue, Step.REVIEW, review_of)
     if problems:
         raise HandoffInvalidError(problems)
     project_root = Path.cwd()
@@ -239,6 +285,7 @@ def _repair_finding(report: PreflightReport) -> str:
 def _map_form(
     bead_id: str | None,
     step: Step | None,
+    review_of: ReviewTarget | None,
     agent: str | None,
     session: str | None,
 ) -> None:
@@ -249,9 +296,10 @@ def _map_form(
             "Positionsargumenten mischen)",
             code=2,
         )
-    if step is not None:
+    if step is not None or review_of is not None:
         _fail(
-            "--step lässt sich nicht mit map --agent/--session mischen",
+            "--step/--review-of lassen sich nicht mit map "
+            "--agent/--session mischen",
             code=2,
         )
     if agent is None or session is None:

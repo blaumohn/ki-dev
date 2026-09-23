@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from jsonschema import Draft202012Validator
+
 
 class Step(StrEnum):
     MAP = "map"
@@ -12,6 +14,20 @@ class Step(StrEnum):
     MATERIALIZE = "materialize"
     BUILD = "build"
     REVIEW = "review"
+
+
+class ReviewTarget(StrEnum):
+    """Prüfgegenstand von ``Step.REVIEW``; nur dieser wertet es aus.
+
+    Fehlt ``review_target`` bei ``Step.REVIEW``, bleibt das
+    Verhalten die bisherige Build-Review (Rückwärtskompatibilität
+    von ``--step review`` ohne ``--review-of``).
+    """
+
+    MAP = "map"
+    GRAPH = "graph"
+    MATERIALIZE = "materialize"
+    BUILD = "build"
 
 
 @dataclass(frozen=True)
@@ -35,45 +51,191 @@ class HandoffInvalidError(ValueError):
         self.problems = problems
 
 
-_TEXT_FIELDS = ("id", "title", "description")
-_BUILD_FIELDS = ("acceptance_criteria", "design")
 _SOURCE_REFS_PATH = "metadata.handoff.source_refs"
 _REFS_STEPS = {Step.MAP, Step.GRAPH, Step.MATERIALIZE}
-_CONTRACT_STEPS = {Step.BUILD, Step.REVIEW}
+_CONTRACT_STEPS = {Step.BUILD}
+# Ein fehlender review_target bei Step.REVIEW bleibt die bisherige
+# Build-Review (Rückwärtskompatibilität von --step review ohne
+# --review-of).
+_REVIEW_TARGET_REFS = {
+    ReviewTarget.MAP,
+    ReviewTarget.GRAPH,
+    ReviewTarget.MATERIALIZE,
+}
+_REVIEW_TARGET_CONTRACT = {
+    None,
+    ReviewTarget.MATERIALIZE,
+    ReviewTarget.BUILD,
+}
+
+
+def _needs_refs(step: Step, review_target: ReviewTarget | None) -> bool:
+    if step is Step.REVIEW:
+        return review_target in _REVIEW_TARGET_REFS
+    return step in _REFS_STEPS
+
+
+def _needs_contract(
+    step: Step, review_target: ReviewTarget | None
+) -> bool:
+    if step is Step.REVIEW:
+        return review_target in _REVIEW_TARGET_CONTRACT
+    return step in _CONTRACT_STEPS
+
+
+# Gemeinsame Schema-Bausteine (Technikleitlinie: Draft202012Validator,
+# einmal je Regel definiert und wiederverwendet). metadata/handoff
+# bleiben rein deklarativ: source_refs ist eine nichtleere Liste
+# nichtleerer Texte, unabhängig vom internen HandoffIssue-Feldnamen.
+_NONEMPTY_TEXT = {"type": "string", "minLength": 1, "pattern": r"\S"}
+
+_SOURCE_REFS_SCHEMA = {
+    "type": "array",
+    "minItems": 1,
+    "items": _NONEMPTY_TEXT,
+}
+
+_BASE_PROPERTIES = {
+    "id": _NONEMPTY_TEXT,
+    "title": _NONEMPTY_TEXT,
+    "description": _NONEMPTY_TEXT,
+}
+_BASE_REQUIRED = ("id", "title", "description")
+
+_CONTRACT_PROPERTIES = {
+    "acceptance_criteria": _NONEMPTY_TEXT,
+    "design": _NONEMPTY_TEXT,
+}
+_CONTRACT_REQUIRED = ("acceptance_criteria", "design")
+
+_REFS_PROPERTIES = {
+    "metadata": {
+        "type": "object",
+        "required": ["handoff"],
+        "properties": {
+            "handoff": {
+                "type": "object",
+                "required": ["source_refs"],
+                "properties": {"source_refs": _SOURCE_REFS_SCHEMA},
+            },
+        },
+    },
+}
+_REFS_REQUIRED = ("metadata",)
+
+
+def _issue_schema(*, needs_refs: bool, needs_contract: bool) -> dict:
+    properties = dict(_BASE_PROPERTIES)
+    required = list(_BASE_REQUIRED)
+    if needs_contract:
+        properties |= _CONTRACT_PROPERTIES
+        required += _CONTRACT_REQUIRED
+    if needs_refs:
+        properties |= _REFS_PROPERTIES
+        required += _REFS_REQUIRED
+    return {
+        "type": "object",
+        "required": required,
+        "properties": properties,
+    }
+
+
+# Die vier (step, review_target)-Verträge reduzieren sich auf zwei
+# Booleans (_needs_refs/_needs_contract); die Varianten werden beim
+# Laden einmal zusammengesetzt statt je Aufruf neu gebaut.
+_ISSUE_SCHEMAS = {
+    (needs_refs, needs_contract): _issue_schema(
+        needs_refs=needs_refs, needs_contract=needs_contract
+    )
+    for needs_refs in (False, True)
+    for needs_contract in (False, True)
+}
+
+# Reihenfolge der Feldpfade in der Ausgabe, unabhängig von der
+# (undefinierten) Reihenfolge, in der Draft202012Validator Fehler über
+# mehrere properties hinweg liefert. Geschlüsselt über das erste
+# Pfadsegment der rohen jsonschema-Fehlerpfade (vor dem Formatieren).
+_FIELD_RANK = {
+    "id": 0,
+    "title": 1,
+    "description": 2,
+    "metadata": 3,
+    "acceptance_criteria": 4,
+    "design": 5,
+}
 
 
 def validate_handoff(
-    issue: HandoffIssue, step: Step
+    issue: HandoffIssue,
+    step: Step,
+    review_target: ReviewTarget | None = None,
 ) -> tuple[str, ...]:
-    """Formale Lücken als Feldpfade; leer heißt vollständig."""
-    problems = [
-        name
-        for name in _TEXT_FIELDS
-        if not _is_text(getattr(issue, name))
-    ]
-    if step in _REFS_STEPS:
-        problems += _source_ref_problems(issue.source_refs)
-    if step in _CONTRACT_STEPS:
-        problems += [
-            name
-            for name in _BUILD_FIELDS
-            if not _is_text(getattr(issue, name))
-        ]
-    return tuple(problems)
+    """Formale Lücken als Feldpfade; leer heißt vollständig.
+
+    ``review_target`` wirkt nur bei ``step is Step.REVIEW``: er wählt,
+    welcher Prüfgegenstand (map/graph/materialize/build) benötigt wird.
+    Für andere Schritte wird er ignoriert.
+    """
+    refs = _needs_refs(step, review_target)
+    contract = _needs_contract(step, review_target)
+    schema = _ISSUE_SCHEMAS[(refs, contract)]
+    validator = Draft202012Validator(schema)
+    paths = {
+        tuple(error.absolute_path)
+        for error in validator.iter_errors(_issue_payload(issue))
+    }
+    ordered = sorted(paths, key=_path_sort_key)
+    return tuple(_field_path(path) for path in ordered)
 
 
-def render_handoff(issue: HandoffIssue, step: Step) -> str:
+def _issue_payload(issue: HandoffIssue) -> dict:
+    """HandoffIssue als Schema-Instanz; nur zur Validierung gebildet."""
+    return {
+        "id": issue.id,
+        "title": issue.title,
+        "description": issue.description,
+        "acceptance_criteria": issue.acceptance_criteria,
+        "design": issue.design,
+        "metadata": {"handoff": {"source_refs": issue.source_refs}},
+    }
+
+
+def _path_sort_key(path: tuple) -> tuple[int, int]:
+    """Sortiert die rohen jsonschema-Pfade vor dem Formatieren:
+    zuerst nach Feld (Reihenfolge wie im bisherigen Vertrag), innerhalb
+    von source_refs zusätzlich nach Listenindex."""
+    index = path[3] if len(path) > 3 else -1
+    return (_FIELD_RANK[path[0]], index)
+
+
+def _field_path(path: tuple) -> str:
+    """jsonschema-Fehlerpfad in den bisherigen Feldpfad übersetzen."""
+    if path[:3] == ("metadata", "handoff", "source_refs"):
+        if len(path) == 3:
+            return _SOURCE_REFS_PATH
+        return f"{_SOURCE_REFS_PATH}[{path[3]}]"
+    return str(path[0])
+
+
+def render_handoff(
+    issue: HandoffIssue,
+    step: Step,
+    review_target: ReviewTarget | None = None,
+) -> str:
     """Kopierbarer Klartext; lehnt formal unvollständige Beads ab."""
-    problems = validate_handoff(issue, step)
+    problems = validate_handoff(issue, step, review_target)
     if problems:
         raise HandoffInvalidError(problems)
-    lines = [
-        f"Schritt: {step.value}",
+    lines = [f"Schritt: {step.value}"]
+    if step is Step.REVIEW:
+        effective_target = review_target or ReviewTarget.BUILD
+        lines.append(f"Reviewziel: {effective_target.value}")
+    lines += [
         f"Bead: {_line(issue.id)} - {_line(issue.title)}",
         "",
         *_COMMON,
         "",
-        *_ROLES[step],
+        *_roles(step, review_target),
     ]
     for epic_id, guidance in issue.epic_guidance:
         lines += [
@@ -81,25 +243,19 @@ def render_handoff(issue: HandoffIssue, step: Step) -> str:
             f"Epic-Hinweis ({_line(epic_id)}):",
             _line(guidance),
         ]
-    if step in _REFS_STEPS:
+    if _needs_refs(step, review_target):
         lines += ["", "Quellenreferenzen (unaufgelöst):"]
         lines += [f"- {_line(ref)}" for ref in issue.source_refs]
     lines += ["", _NEXT[step]]
     return "\n".join(lines) + "\n"
 
 
-def _is_text(value: object) -> bool:
-    return isinstance(value, str) and bool(value.strip())
-
-
-def _source_ref_problems(refs: object) -> list[str]:
-    if not isinstance(refs, list) or not refs:
-        return [_SOURCE_REFS_PATH]
-    return [
-        f"{_SOURCE_REFS_PATH}[{index}]"
-        for index, ref in enumerate(refs)
-        if not _is_text(ref)
-    ]
+def _roles(
+    step: Step, review_target: ReviewTarget | None
+) -> tuple[str, ...]:
+    if step is not Step.REVIEW:
+        return _ROLES[step]
+    return _REVIEW_ROLES[review_target or ReviewTarget.BUILD]
 
 
 def _line(value: object) -> str:
@@ -164,7 +320,74 @@ _ROLES = {
         "keine allgemeinen ADR-Sammlungen, um den Auftrag zu",
         "rekonstruieren; melde konkrete Vertragslücken zurück.",
     ),
-    Step.REVIEW: (
+}
+
+# Je Step.REVIEW-Prüfgegenstand ein eigener Rollentext: Nur die
+# Build-Review hat einen vorgeschalteten deterministischen Vorlauf
+# (Diff, Prüfbericht) aus handoff_preflight; das dort behauptete
+# Ergebnis existiert für map/graph/materialize nicht und darf ihnen
+# nicht unterstellt werden. Alle vier verbieten trotzdem eigene
+# Prüfwerkzeuge und Folgemodellaufrufe.
+_REVIEW_ROLES = {
+    ReviewTarget.MAP: (
+        "Rolle: Review-Agent in frischer, getrennter Sitzung",
+        "(Kartenprüfung).",
+        "Bilde zuerst dein eigenes Urteil aus den referenzierten",
+        "Rohquellen und der erstellten Karte; nicht aus notes,",
+        "comments oder früheren Reviews. Prüfe Quellenabdeckung,",
+        "genaue Fundstellen sowie bewahrte Einschränkungen,",
+        "Widersprüche und offene Fragen; werte eine erfundene",
+        "Entscheidung der Karte als Befund. Starte selbst keine",
+        "Prüfwerkzeuge oder Folgemodelle.",
+        "Ausgabe: PASS | CHANGES | NEEDS_DECISION; bei CHANGES oder",
+        "NEEDS_DECISION je Befund mit Quellenbezug, konkreter",
+        "Abweichung und betroffenem Abschnitt. Du hast keine",
+        "automatische Autorität gegenüber dem Kartierungsagenten und",
+        "schließt nichts automatisch; unentscheidbare Konflikte gehen",
+        "an den Menschen.",
+    ),
+    ReviewTarget.GRAPH: (
+        "Rolle: Review-Agent in frischer, getrennter Sitzung",
+        "(Graphprüfung).",
+        "Bilde zuerst dein eigenes Urteil aus Karte, Originalquellen",
+        "und den angelegten dünnen Vorgängen; nicht aus notes,",
+        "comments oder früheren Reviews. Prüfe, ob alle relevanten",
+        "Anforderungen abgedeckt sind, die Vorgänge sinnvoll begrenzt",
+        "bleiben, Abhängigkeiten echt bestehen und keine",
+        "unbeauftragte Umfangserweiterung oder stillschweigende",
+        "Entscheidung vorliegt. Starte selbst keine Prüfwerkzeuge",
+        "oder Folgemodelle.",
+        "Ausgabe: PASS | CHANGES | NEEDS_DECISION; bei CHANGES oder",
+        "NEEDS_DECISION je Befund mit Quellenbezug, konkreter",
+        "Abweichung und betroffenem Vorgang. Du hast keine",
+        "automatische Autorität gegenüber dem Auflösungsagenten und",
+        "schließt nichts automatisch; unentscheidbare Konflikte gehen",
+        "an den Menschen.",
+    ),
+    ReviewTarget.MATERIALIZE: (
+        "Rolle: Review-Agent in frischer, getrennter Sitzung",
+        "(Materialisierungsprüfung).",
+        "Bilde zuerst dein eigenes Urteil gegen die ursprünglichen,",
+        "bestätigten Nutzeranforderungen und Quellen, nicht nur",
+        "gegen einen möglicherweise fehlerhaften Bead; nicht aus",
+        "notes, comments oder früheren Reviews. Gleiche Rollen,",
+        "Modalität (darf/muss/darf nicht), Geltungsbereich,",
+        "Nicht-Ziele, Schnittstellen, konkrete Prüfaufträge und",
+        "messbare Abnahmekriterien ab. Unterscheide bestätigte",
+        "Entscheidungen von Umsetzungsvorschlägen und offenen",
+        "Produktfragen. Eine fehlende Quelle ist NEEDS_DECISION;",
+        "formal gefüllte Felder allein rechtfertigen kein PASS.",
+        "Benenne Übergröße, widersprüchliche Nachträge und nötige",
+        "Teilung mit betroffenem Abschnitt. Starte selbst keine",
+        "Prüfwerkzeuge oder Folgemodelle.",
+        "Ausgabe: PASS | CHANGES | NEEDS_DECISION; bei CHANGES oder",
+        "NEEDS_DECISION je Befund mit Quellenbezug, konkreter",
+        "Abweichung und betroffenem Abschnitt. Du hast keine",
+        "automatische Autorität gegenüber dem Materialisierungsagenten",
+        "und schließt nichts automatisch; unentscheidbare Konflikte",
+        "gehen an den Menschen.",
+    ),
+    ReviewTarget.BUILD: (
         "Rolle: Review-Agent in frischer, getrennter Sitzung.",
         "Bilde zuerst dein eigenes Urteil anhand der geltenden",
         "description, design und acceptance_criteria, des",
@@ -191,13 +414,18 @@ _ROLES = {
 
 _NEXT = {
     Step.MAP: "Hinweis für den Menschen: danach getrennte "
-    "Kartenprüfung in eigener Sitzung starten.",
-    Step.GRAPH: "Hinweis für den Menschen: danach je dünnem Vorgang "
-    "den Schritt materialize starten.",
+    "Kartenprüfung mit `ki-dev handoff BEAD_ID --step review "
+    "--review-of map` starten (BEAD_ID des erstellten Karten-Beads).",
+    Step.GRAPH: "Hinweis für den Menschen: danach die angelegten "
+    "dünnen Vorgänge mit `ki-dev handoff BEAD_ID --step review "
+    "--review-of graph` prüfen lassen (BEAD_ID je dünnem Vorgang); "
+    "erst danach je Vorgang materialize starten.",
     Step.MATERIALIZE: "Hinweis für den Menschen: danach die "
-    "Ausführungsreife getrennt prüfen lassen.",
+    "Ausführungsreife mit `ki-dev handoff BEAD_ID --step review "
+    "--review-of materialize` getrennt prüfen lassen.",
     Step.BUILD: "Hinweis für den Menschen: danach eine getrennte "
-    "Review-Sitzung mit dem Schritt review starten.",
+    "Review-Sitzung mit `ki-dev handoff BEAD_ID --step review` "
+    "starten.",
     Step.REVIEW: "Hinweis für den Menschen: Schließen und weitere "
     "Schritte entscheidest du selbst.",
 }
