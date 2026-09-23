@@ -25,8 +25,7 @@ import re
 import shlex
 import shutil
 import tomllib
-from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -423,35 +422,39 @@ def _run_command(
     ungültige Bytes, statt sie zu ersetzen -- für eine bereits
     gekürzte Diagnose ist das gleichwertig.
 
-    Programmauflösung und Prozessstart laufen in derselben aktuellen
-    Umgebung: ``_inherited_environment`` ersetzt dafür Plumbums beim
-    Import erstellte Umgebungskopie, ``_program`` sucht im aktuellen
-    ``PATH``.
+    ``env`` wird ausdrücklich übergeben, weil Plumbum sonst nur seine
+    beim Import erstellte Kopie von ``os.environ`` weiterreicht; der
+    Vorlauf schränkt die Umgebung aber nicht ein. Plumbum legt die
+    übergebene Umgebung über die Kopie, sodass eine nach dem Import
+    gelöschte Variable sichtbar bliebe. Für den einmaligen CLI-Aufruf,
+    den der Vorlauf bedient, fallen Import- und Startzeitpunkt
+    zusammen; dafür wird keine weitere Umgebungsverwaltung gebaut. Die
+    Programmsuche in ``_program`` liest ``os.environ`` ohnehin direkt.
     """
-    with _inherited_environment():
-        program = _program(project_root, spec.argv[0])
-        if program is None:
-            return _start_failure(
-                spec, f"{spec.argv[0]} nicht im PATH gefunden"
-            )
-        try:
-            exit_code, stdout, stderr = program.run(
-                spec.argv[1:],
-                retcode=None,
-                timeout=spec.timeout_s,
-                cwd=project_root,
-            )
-        except ProcessTimedOut:
-            return CommandResult(
-                spec.name,
-                spec.argv,
-                "fail",
-                None,
-                f"Timeout nach {spec.timeout_s:g} s",
-                omitted=False,
-            )
-        except OSError as exc:
-            return _start_failure(spec, str(exc))
+    program = _program(project_root, spec.argv[0])
+    if program is None:
+        return _start_failure(
+            spec, f"{spec.argv[0]} nicht im PATH gefunden"
+        )
+    try:
+        exit_code, stdout, stderr = program.run(
+            spec.argv[1:],
+            retcode=None,
+            timeout=spec.timeout_s,
+            cwd=project_root,
+            env=os.environ,
+        )
+    except ProcessTimedOut:
+        return CommandResult(
+            spec.name,
+            spec.argv,
+            "fail",
+            None,
+            f"Timeout nach {spec.timeout_s:g} s",
+            omitted=False,
+        )
+    except OSError as exc:
+        return _start_failure(spec, str(exc))
     return CommandResult(
         spec.name,
         spec.argv,
@@ -460,24 +463,6 @@ def _run_command(
         _exit_detail(exit_code, stdout + stderr),
         omitted=False,
     )
-
-
-@contextmanager
-def _inherited_environment() -> Iterator[None]:
-    """Plumbums Umgebungskopie durch die aktuelle Umgebung ersetzen.
-
-    Plumbum hält eine beim Import erstellte Kopie von ``os.environ``
-    und legt eine an ``run`` übergebene Umgebung nur darüber; eine
-    inzwischen gelöschte Variable bliebe dadurch sichtbar, und die
-    Programmsuche läse weiterhin den gespeicherten ``PATH``. Der
-    Vorlauf vererbt aber die aktuelle Umgebung des Aufrufers
-    unverändert. ``local.env`` ist prozessweit, deshalb wird der
-    vorherige Stand beim Verlassen wiederhergestellt.
-    """
-    with local.env():
-        local.env.clear()
-        local.env.update(os.environ)
-        yield
 
 
 def _program(project_root: Path, program: str) -> LocalCommand | None:

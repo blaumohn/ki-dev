@@ -422,6 +422,9 @@ def test_program_name_is_resolved_exactly(
         corrections=(),
         checks=(CommandSpec("exakt", ("pruef_werkzeug",), 10.0),),
     )
+    # Auch Plumbums eigener PATH zeigt auf das Verzeichnis, sonst
+    # scheiterte die Suche schon daran und der Test belegte nicht,
+    # dass die Ersatznamen nicht verwendet werden.
     with local.env(PATH=os.environ["PATH"]):
         report = run_preflight(config, repo)
     item = report.commands[0]
@@ -450,32 +453,6 @@ def test_program_is_resolved_with_current_path(
     item = report.commands[0]
     assert item.status == "pass"
     assert "werkzeug ok" in item.bounded_detail
-
-
-def test_command_does_not_see_stale_plumbum_environment(
-    tmp_path: Path, monkeypatch
-):
-    """Plumbum haelt eine beim Import erstellte Kopie von os.environ
-    und legt eine uebergebene Umgebung nur darueber. Eine dort noch
-    vorhandene, inzwischen geloeschte Variable darf den Befehl nicht
-    erreichen -- der Vorlauf vererbt die aktuelle Umgebung."""
-    repo = _repo(tmp_path)
-    monkeypatch.delenv("KI_DEV_VORLAUF_ALT", raising=False)
-    config = PreflightConfig(
-        corrections=(),
-        checks=(
-            _py(
-                "umgebung",
-                "import os; "
-                "print(os.environ.get('KI_DEV_VORLAUF_ALT'))",
-            ),
-        ),
-    )
-    with local.env(KI_DEV_VORLAUF_ALT="veraltet"):
-        report = run_preflight(config, repo)
-    item = report.commands[0]
-    assert item.status == "pass"
-    assert "None" in item.bounded_detail
 
 
 def test_command_inherits_current_environment(
