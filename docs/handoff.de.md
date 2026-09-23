@@ -214,8 +214,10 @@ gültiges UTF-8/TOML, ist das ein Konfigurationsfehler (Exit 2, vor jedem
 Korrekturbefehl erkannt, unabhängig davon, welcher Eintrag betroffen ist). Prozessaufrufe laufen
 ohne Shell im aktuellen Arbeitsverzeichnis (Projektwurzel) mit geerbter
 Umgebung. Enthält das erste `argv`-Element einen Pfadtrenner, gilt es relativ
-zur Projektwurzel (`scripts/pruefe.sh`); ein Name ohne Trenner wird über `PATH`
-gesucht. Kein Commit, kein Zurücksetzen, kein Agentenstart, kein
+zur Projektwurzel (`scripts/pruefe.sh`); ein Name ohne Trenner wird im aktuellen
+`PATH` gesucht, und zwar genau unter diesem Namen: `pruef_werkzeug` startet
+nicht ersatzweise `pruef-werkzeug`, sondern meldet ohne exakten Treffer einen
+Startfehler. Kein Commit, kein Zurücksetzen, kein Agentenstart, kein
 Beads-Update.
 
 **Ausgabe:** Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
