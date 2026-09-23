@@ -26,6 +26,8 @@ Der Build verwendet die lokalen Quellen aus `../loope`; bei Bedarf:
 `LOOPE_SOURCE=/pfad/zu/loope ./scripts/agent-container build`.
 macOS-Binaries werden nicht kopiert. loope wird ohne TUI für Linux gebaut;
 bd 1.2.2, Codex 0.154.0 und Claude Code 2.1.272 werden über npm installiert.
+Das Dolt-CLI 2.1.4 wird als Release-Binary nach `/usr/local/bin/dolt` gelegt
+(Architektur über `TARGETARCH`, Fallback `dpkg --print-architecture`).
 Versionsänderungen erfolgen über die ARG-Vorgaben im Dockerfile.
 
 ## Anmeldung und Start
@@ -191,6 +193,32 @@ deren bd-Aktivitäten beenden. Ein Lock-Fehler muss vor dem Agentenlauf geklärt
 ```bash
 ./scripts/agent-container run bd --readonly list --limit 5
 ```
+
+### Direkter Dolt-Zugriff
+
+Das Dolt-CLI liegt im Image und arbeitet auf demselben Verzeichnis wie bd:
+`/workspace/.beads/embeddeddolt/ki_dev_ablauf`. Dolt arbeitet relativ zum
+aktuellen Verzeichnis, deshalb zuerst dorthin wechseln:
+
+```bash
+./scripts/agent-container run bash -lc 'cd /workspace/.beads/embeddeddolt/ki_dev_ablauf \
+  && dolt sql -q "SHOW TABLES"'
+```
+
+Es läuft **kein** Dolt-Server als eigener Compose-Dienst. Das wäre ein zweiter
+dauerhafter Schreiber auf derselben Datenbank; das CLI ist stattdessen ein
+kurzlebiger Prozess, den der Bedienende steuert. Es gilt dieselbe Regel wie für
+bd: nie gleichzeitig mit einem bd-Prozess auf Host oder Container schreiben.
+Lesende Abfragen vor schreibenden bevorzugen und schreibende Änderungen mit
+`dolt commit` abschließen, damit `bd` und die Referenzbildung in
+`ki_dev.deltas.beads_changes` einen sauberen Dolt-Commit sehen.
+
+Die Identität für `dolt commit` setzt `entrypoint.sh` im Home-Volume, je
+Schlüssel nur solange er leer ist (Vorgaben `agent` /
+`agent@ki-dev-ablauf.invalid`). Andere Werte über `DOLT_USER_NAME` und
+`DOLT_USER_EMAIL` setzen oder im Container einmalig
+`dolt config --global --add user.name …` aufrufen; ein so gesetzter Wert bleibt
+erhalten und wird nicht wieder überschrieben.
 
 Die Container-Einrichtung ändert weder die fachliche Bestätigungspflicht
 eines Auftrags noch das loope-Iterationslimit.

@@ -8,6 +8,8 @@ services:
     security_opt: [no-new-privileges:true]
     environment:
       TERM: ${TERM:-xterm-256color}
+      DOLT_USER_NAME: ${DOLT_USER_NAME:-agent}
+      DOLT_USER_EMAIL: ${DOLT_USER_EMAIL:-agent@ki-dev-ablauf.invalid}
     volumes:
       - type: bind
         source: ${KI_DEV_AGENT_REPO:-.}
