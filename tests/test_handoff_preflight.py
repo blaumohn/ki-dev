@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from plumbum.machines.local import LocalMachine
 
 from ki_dev.handoff import HandoffIssue
 from ki_dev.handoff_preflight import (
@@ -116,6 +117,22 @@ def test_invalid_command_entries_are_config_errors(
 ):
     _pyproject(tmp_path, f"checks = [{entry}]\n")
     with pytest.raises(PreflightConfigError):
+        load_preflight_config(tmp_path)
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "true"])
+def test_non_finite_or_non_numeric_timeout_is_config_error(
+    tmp_path: Path, value: str
+):
+    """timeout_s muss positiv und endlich sein. TOML kennt inf/nan,
+    und eine Zahlenregel allein laesst sie durch; der Vertrag braucht
+    eine echte Prozessfrist."""
+    _pyproject(
+        tmp_path,
+        'checks = [{name = "c", argv = ["true"], '
+        f"timeout_s = {value}}}]\n",
+    )
+    with pytest.raises(PreflightConfigError, match="timeout_s"):
         load_preflight_config(tmp_path)
 
 
@@ -375,6 +392,29 @@ def test_argv_is_not_shell_interpreted(tmp_path: Path):
     assert report.commands[0].bounded_detail == "$HOME"
 
 
+def test_relative_script_path_runs_from_project_root(
+    tmp_path: Path,
+):
+    """Die Laengengrenze verweist lange Logik in benannte Skripte
+    (Vorlaufvertrag P2). Ein relativer Skriptpfad wird deshalb gegen
+    die Projektwurzel aufgeloest, nicht gegen das Arbeitsverzeichnis
+    des Aufrufers -- sonst waere genau die empfohlene Konfiguration
+    ``scripts/pruefe.sh`` je nach Startort ein Startfehler."""
+    repo = _repo(tmp_path)
+    (repo / "scripts").mkdir()
+    script = repo / "scripts" / "pruefe.sh"
+    script.write_text("#!/bin/sh\nprintf 'skript ok'\n")
+    script.chmod(0o755)
+    config = PreflightConfig(
+        corrections=(),
+        checks=(CommandSpec("skript", ("scripts/pruefe.sh",), 10.0),),
+    )
+    report = run_preflight(config, repo)
+    item = report.commands[0]
+    assert item.status == "pass"
+    assert "skript ok" in item.bounded_detail
+
+
 def test_change_during_checks_does_not_invalidate_report(
     tmp_path: Path,
 ):
@@ -453,6 +493,24 @@ def test_each_run_writes_its_own_artifact(tmp_path: Path):
     assert len(list((repo / ARTIFACT_DIR).glob("*.json"))) == 2
 
 
+def test_artifact_bounds_and_cleans_name(tmp_path: Path):
+    """Das gespeicherte Pruefartefakt unterliegt derselben
+    Bereinigungs-/Begrenzungspflicht wie die Terminalausgabe: Ein
+    ueberlanger name mit ANSI-Codes darf nicht unveraendert im Bericht
+    landen (Review-Befund P2)."""
+    repo = _repo(tmp_path)
+    config = PreflightConfig(
+        corrections=(),
+        checks=(_py("\x1b[31m" + "x" * 5000, "pass"),),
+    )
+    run_preflight(config, repo)
+    artifacts = list((repo / ARTIFACT_DIR).glob("*.json"))
+    payload = json.loads(artifacts[0].read_text())
+    name = payload["commands"][0]["name"]
+    assert "\x1b" not in name
+    assert len(name) < 1000
+
+
 # ---------------------------------------------------------------------
 # Ausführungsfehler außerhalb einzelner Befehle (Review P2)
 # ---------------------------------------------------------------------
@@ -475,7 +533,9 @@ def test_artifact_write_failure_raises_execution_error(
 
 def test_non_utf8_process_output_does_not_crash(tmp_path: Path):
     """Ungültige UTF-8-Bytes in stdout dürfen zu einem gekürzten,
-    ersetzten Detail führen, nicht zu einem UnicodeDecodeError."""
+    bereinigten Detail führen, nicht zu einem UnicodeDecodeError.
+    Plumbum verwirft die ungültigen Bytes beim Dekodieren; der
+    lesbare Rest bleibt erhalten."""
     repo = _repo(tmp_path)
     code = (
         "import sys; "
@@ -642,5 +702,8 @@ def test_render_review_handoff_does_not_touch_filesystem(
     def _forbidden(*args, **kwargs):
         raise AssertionError("render_review_handoff darf nicht I/O tun")
 
-    monkeypatch.setattr(subprocess, "run", _forbidden)
+    # Plumbums Prozesseinstieg, nicht subprocess.run: Der Vorlauf
+    # startet Befehle ueber Plumbum, eine Sperre auf subprocess.run
+    # waere hier wirkungslos.
+    monkeypatch.setattr(LocalMachine, "_popen", _forbidden)
     render_review_handoff(_issue(), report)
