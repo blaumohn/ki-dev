@@ -104,7 +104,7 @@ def test_incomplete_or_invalid_call_exits_2_without_bd(bd, args):
     assert bd.calls == []
 
 
-def test_help_is_german_and_lists_steps_and_fields(bd):
+def test_help_explains_steps_and_shows_examples(bd):
     result = runner.invoke(app, ["handoff", "--help"])
     assert result.exit_code == 0
     for text in (
@@ -114,10 +114,15 @@ def test_help_is_german_and_lists_steps_and_fields(bd):
         "materialize",
         "build",
         "review",
-        "metadata.handoff.source_refs",
-        "acceptance_criteria",
-        "design",
-        "Fortsetzung von Hand",
+        "Anforderungen aus Rohnotizen kartieren",
+        "Vorgänge ableiten",
+        "ausführungsreif beschreiben",
+        "Auftrag umsetzen",
+        "getrennten Sitzung prüfen",
+        "BEISPIELE",
+        "ki-dev handoff projekt-42 --step build > uebergabe.txt",
+        "--review-of materialize",
+        "docs/handoff.de.md",
     ):
         assert text in result.output
     assert bd.calls == []

@@ -329,13 +329,11 @@ def test_help_documents_both_forms_and_their_effects(env):
     for text in (
         "--agent codex --session",
         "--step STEP",
-        "außer --step review",
-        "schreibt",
-        "KI_DEV_CODEX_SESSIONS_DIR",
-        "CODEX_HOME/sessions",
+        "Korrekturen können Dateien ändern",
+        "Schreibt ein Transkript",
         ".local/handoff",
-        "bd create",
-        "Quellsitzung",
-        "Serielle Nutzung",
+        "Quellen-Bead",
+        "bei gleichem Stand wiederverwendet",
+        "Statt einer Beads-ID; nicht mit --step kombinieren",
     ):
         assert text in " ".join(result.stdout.split()), text

@@ -42,101 +42,63 @@ from ki_dev.handoff_source import HandoffSourceError
 MAP_WORD = "map"
 
 HELP = """\
-Zwei Formen; sie lassen sich nicht mischen.
+Eine Arbeitsübergabe für eine neue Agentensitzung ausgeben.
 
-\b
-1. ki-dev handoff BEAD_ID --step STEP   (lesend, außer --step review)
-2. ki-dev handoff map --agent codex --session SESSION_ID   (schreibt)
+AUFRUFE
+  ki-dev handoff BEAD_ID --step STEP
+    Übergabe aus einem vorhandenen Bead erstellen.
+  ki-dev handoff map --agent codex --session SESSION_ID
+    Codex-Sitzung als Quelle importieren und Kartierung vorbereiten.
 
-Form 1 prüft einen Bead und gibt eine kopierbare Arbeitsübergabe aus.
-BEAD_ID ist die Beads-ID (z. B. projekt-42). --step ist erforderlich,
-es gibt keine automatische Auswahl.
+SCHRITTE (--step)
+  map          Anforderungen aus Rohnotizen kartieren.
+  graph        Aus der Karte einzelne Vorgänge ableiten.
+  materialize  Einen Vorgang ausführungsreif beschreiben.
+  build        Den beschriebenen Auftrag umsetzen.
+  review       Ein Ergebnis in einer getrennten Sitzung prüfen.
 
-\b
-Schritte und Pflichtfelder (zusätzlich immer id, title, description):
-  map          metadata.handoff.source_refs
-  graph        metadata.handoff.source_refs
-  materialize  metadata.handoff.source_refs
-  build        acceptance_criteria, design
-  review       acceptance_criteria, design (= --review-of build)
+BEISPIELE
+  ki-dev handoff projekt-42 --step map
+  ki-dev handoff projekt-42 --step graph
+  ki-dev handoff projekt-42 --step materialize
+  ki-dev handoff projekt-42 --step build > uebergabe.txt
+  ki-dev handoff projekt-42 --step review
+  ki-dev handoff projekt-42 --step review --review-of materialize
+  ki-dev handoff map --agent codex --session SESSION_ID
 
-\b
---review-of map|graph|materialize|build wählt bei --step review den
-Prüfgegenstand des getrennten Reviews und ist nur zusammen mit
---step review zulässig; jede andere Kombination (auch mit der
-map --agent/--session-Form) ist Exit 2 vor jeder bd-Anfrage. Ohne
---review-of bleibt --step review die bisherige Build-Review.
-Pflichtfelder je Prüfgegenstand:
-  --review-of map          metadata.handoff.source_refs
-  --review-of graph        metadata.handoff.source_refs
-  --review-of materialize  metadata.handoff.source_refs,
-                            acceptance_criteria, design
-  --review-of build        acceptance_criteria, design
-Nur der Prüfgegenstand build (Standard oder ausdrücklich) führt den
-deterministischen Vorlauf weiter unten aus; map/graph/materialize sind
-reine, rein lesende Quellenprüfungen ohne Prozessaufrufe und ohne
-pyproject.toml.
+REVIEW
+  Standard: build. Führt vorab konfigurierte Korrekturen und Tests aus.
+  Korrekturen können Dateien ändern. Konfiguration: pyproject.toml,
+  tool.ki-dev.handoff.preflight.
+  --review-of map, graph oder materialize: nur lesen, ohne Vorlauf.
 
-\b
-source_refs ist eine nichtleere Liste nichtleerer Strings, z. B.
-  {"handoff":{"source_refs":["docs/design/a.md#L12-L40","bd:karte"]}}
-Die Referenzen werden nur als Text weitergegeben, nicht aufgelöst.
+SITZUNGSIMPORT (map --agent codex --session SESSION_ID)
+  Schreibt ein Transkript unter .local/handoff/ und legt einen
+  Quellen-Bead an (bei gleichem Stand wiederverwendet).
+  SESSION_ID durch die ID ersetzen.
+  Statt einer Beads-ID; nicht mit --step kombinieren.
 
-Bereichshinweise werden entlang der parent-child-Elternkette aus
-Epic-Metadaten handoff.guidance geerbt (je 1–600 Zeichen), mit Epic-ID
-ausgegeben und nicht aus Blockierungsbeziehungen abgeleitet.
+Ausgabe kopieren und in einer neuen Agentensitzung einfügen.
+Der Befehl startet keinen Agenten.
 
-Der Befehl liest den Bead nur (bd --readonly show BEAD_ID --json) und
-startet keinen Agenten. Fortsetzung von Hand: Ausgabe kopieren (oder
-per Umleitung speichern) und in einer passenden getrennten
-Agentensitzung einfügen.
-
-\b
---step review erweitert das ausdrücklich um einen deterministischen
-Vorlauf ohne Modell: konfigurierte Korrekturen (z. B. Autofixes) und
-danach Prüfungen (z. B. Tests) laufen auf dem aktuellen Arbeitsbaum,
-bevor die Übergabe entsteht. Konfiguration: pyproject.toml, Tabelle
-tool.ki-dev.handoff.preflight, Listen corrections (darf leer sein) und
-checks (mindestens ein Eintrag), je Eintrag name, argv, timeout_s.
-Der Bericht nennt nur seinen Zeitpunkt; Bericht und Arbeitsstand ordnet
-der Mensch einander zu und startet den Vorlauf nach weiteren Änderungen
-erneut. Details bei Bedarf als lokales Prüfartefakt unter
-.local/handoff/preflight; kein Beads-Update, kein Commit, kein Agent.
-
-\b
-Form 2 erschließt eine lokale Codex-Sitzung als Quelle für den Schritt
-map. --agent und --session sind beide erforderlich; --agent bezeichnet
-die Quellsitzung (nur codex), nicht den späteren Kartierungsagenten.
-Es gibt keinen Dateipfad und keine automatische Wahl der letzten
-Sitzung. Der Sitzungsordner kommt aus KI_DEV_CODEX_SESSIONS_DIR, sonst
-CODEX_HOME/sessions, sonst ~/.codex/sessions. Der Dialog wird streng
-geprüft (Benutzer/final_answer im Wechsel, ordinal eindeutig); jede
-Abweichung bricht ohne Ergebnis ab, Diagnosen nennen nur Prüfcode,
-Zeile und Feldpfad, nie Gesprächsinhalt. Schreibwirkung: normalisiertes
-Transkript unter .local/handoff/AGENT/SESSION_ID/, dazu ein Quellen-Bead
-per bd create (bei gleichem Stand wiederverwendet). stdout ist nur der
-kurze map-Auftrag. Serielle Nutzung; kein Agentenstart.
-
-\b
-Exit 0: Übergabe auf stdout. Exit 2: Aufruf falsch, Bead formal
-unvollständig oder (bei --step review) Vorlauf-Konfiguration ungültig
-(jeweils auf stderr, vor jeder Schreibwirkung). Exit 1: bd nicht
-lesbar, Sitzung/Quelle nicht verwendbar, oder (bei --step review) eine
-Korrektur/Prüfung ist fehlgeschlagen (kurzer Reparaturbefund auf
-stderr statt Übergabe).
+Details zu Pflichtfeldern, Konfiguration und Fehlern: docs/handoff.de.md
 """
 
 
 def handoff(
     bead_id: Annotated[
         str | None,
-        typer.Argument(metavar="[BEAD_ID]", help="Beads-ID."),
+        typer.Argument(
+            metavar="[BEAD_ID]",
+            help="Beads-ID oder map für den Sitzungsimport.",
+        ),
     ] = None,
     step: Annotated[
         Step | None,
         typer.Option(
             "--step",
-            help="map | graph | materialize | build | review",
+            metavar="STEP",
+            help="Schritt der Übergabe (für BEAD_ID erforderlich).",
             show_default=False,
         ),
     ] = None,
@@ -144,10 +106,9 @@ def handoff(
         ReviewTarget | None,
         typer.Option(
             "--review-of",
-            help=(
-                "map | graph | materialize | build; nur zusammen mit "
-                "--step review."
-            ),
+            metavar="ZIEL",
+            help="map, graph, materialize oder build (Standard); "
+            "nur mit --step review.",
             show_default=False,
         ),
     ] = None,
@@ -155,6 +116,7 @@ def handoff(
         str | None,
         typer.Option(
             "--agent",
+            metavar="AGENT",
             help="Anbieter der Quellsitzung (nur codex).",
             show_default=False,
         ),
@@ -163,6 +125,7 @@ def handoff(
         str | None,
         typer.Option(
             "--session",
+            metavar="SESSION_ID",
             help="Sitzungs-ID der Quellsitzung.",
             show_default=False,
         ),
