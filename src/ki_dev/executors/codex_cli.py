@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ki_dev.tool_versions import load_tool_versions
+
 from .base import CliAdapter
 from .contract import (
     QuotaMeasurement,
@@ -19,8 +21,8 @@ from .contract import (
 )
 from .metering import codex_quota, codex_result
 
-# Lokal verifizierter Bezugsstand der dokumentierten CLI-Syntax.
-VERIFIED_CLI_VERSION = "0.154.0"
+# Gemeinsamer Versionsstand fuer Build und Laufzeit.
+CLI_VERSION = load_tool_versions()["CODEX_VERSION"]
 
 # Beobachtetes Format von ``codex --version``, z. B.
 # "codex-cli 0.154.0".
@@ -43,7 +45,7 @@ class CodexCliAdapter(CliAdapter):
     """
 
     name = "codex-cli"
-    verified_cli_version = VERIFIED_CLI_VERSION
+    cli_version_pin = CLI_VERSION
 
     @property
     def default_executable(self) -> str:

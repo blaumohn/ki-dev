@@ -15,7 +15,7 @@ import json
 
 import pytest
 
-from ki_dev.executors.codex_cli import VERIFIED_CLI_VERSION
+from ki_dev.executors.codex_cli import CLI_VERSION
 from ki_dev.usage import (
     CounterScope,
     UsageStatus,
@@ -349,7 +349,7 @@ def scan(tmp_path, rows):
         encoding="utf-8",
     )
     return read_codex_rollout_usage(
-        path, cli_version=VERIFIED_CLI_VERSION
+        path, cli_version=CLI_VERSION
     )
 
 

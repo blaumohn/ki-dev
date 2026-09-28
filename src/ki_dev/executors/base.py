@@ -145,7 +145,7 @@ class CliAdapter(ABC):
         self, request: TurnRequest, timeout_s: float
     ) -> str | None:
         """Tatsaechlich ausgefuehrte CLI-Version per ``--version``
-        nachweisen (R2, ki-dev-ablauf-wu0.3): ``verified_cli_version``
+        nachweisen (R2, ki-dev-ablauf-wu0.3): ``cli_version_pin``
         ist nur ein gepinnter Bezugsstand, kein Laufzeitnachweis.
 
         Laeuft mit demselben ``cwd``/``env`` wie der nachfolgende Turn

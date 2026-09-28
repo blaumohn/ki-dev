@@ -22,6 +22,8 @@ import re
 from pathlib import Path
 from typing import TypeGuard
 
+from ki_dev.tool_versions import load_tool_versions
+
 from .command import DeltaCommandError, run_command
 from .contract import (
     BeadsDelta,
@@ -31,7 +33,7 @@ from .contract import (
     VcsRef,
 )
 
-SUPPORTED_BD_VERSION = "1.2.2"
+SUPPORTED_BD_VERSION = load_tool_versions()["BD_VERSION"]
 BD_DIFF_INTERFACE = ("bd", "diff", "FROM_REF", "TO_REF")
 
 _VERSION = re.compile(r"\bbd version (\d+\.\d+\.\d+)")

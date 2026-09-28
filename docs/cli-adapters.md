@@ -90,7 +90,7 @@ Modul: `ki_dev.executors.base` (`CliAdapter.send_metered_turn`)
 
 Ein budgetierter Turn (`TurnRequest.budget` gesetzt) fuehrt vor dem
 eigentlichen Prozessaufruf `<cli> --version` aus, um die tatsaechlich
-ausgefuehrte CLI-Version nachzuweisen (siehe `verified_cli_version`
+ausgefuehrte CLI-Version nachzuweisen (siehe `cli_version_pin`
 unten) statt sie aus dem gepinnten Bezugsstand zu behaupten. Probe und
 Turn teilen sich EINE gemeinsame Zeitgrenze (`budget.timeout_s`, siehe
 oben) statt sie zu verdoppeln:
@@ -110,9 +110,8 @@ oben) statt sie zu verdoppeln:
 Verwendete CLI: **Claude Code CLI** (`claude`), nachweisbar per
 `claude --version`.
 
-* **Verifizierter Bezugsstand:** Claude Code **2.1.272**
-  (`claude_cli.VERIFIED_CLI_VERSION`, getestet in
-  `tests/executors/test_cli_versions.py`).
+* **Versionsstand:** zentral in `src/ki_dev/tool-versions.json`;
+  `tests/executors/test_cli_versions.py` vergleicht die lokale CLI damit.
 
 Gebildeter Aufruf:
 
@@ -173,9 +172,8 @@ beschrieben. Die Flags sind auch im installierten Bezugsstand vorhanden.
 Verwendete CLI: **OpenAI Codex CLI** (`codex`), nachweisbar per
 `codex --version`.
 
-* **Verifizierter Bezugsstand:** Codex CLI **0.154.0**
-  (`codex_cli.VERIFIED_CLI_VERSION`, getestet in
-  `tests/executors/test_cli_versions.py`).
+* **Versionsstand:** zentral in `src/ki_dev/tool-versions.json`;
+  `tests/executors/test_cli_versions.py` vergleicht die lokale CLI damit.
 
 Gebildeter Aufruf:
 

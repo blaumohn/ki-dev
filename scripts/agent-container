@@ -17,13 +17,22 @@ venv_volume="ki-dev-agent-${volume_key}-venv"
 
 case "${1:-shell}" in
   build)
+    build_python=python3
+    if [[ -x "$repo_dir/.venv/bin/python" ]]; then
+      build_python="$repo_dir/.venv/bin/python"
+    fi
+    build_args_text="$(PYTHONPATH="$repo_dir/src" "$build_python" -m ki_dev.tool_versions)"
+    build_args=()
+    while IFS= read -r argument; do
+      build_args+=("$argument")
+    done <<< "$build_args_text"
     build_context="$(mktemp -d)"
     trap 'rm -rf -- "$build_context"' EXIT
     mkdir -p "$build_context/project" "$build_context/docker"
     cp "$repo_dir/pyproject.toml" "$build_context/project/"
     cp -R "$repo_dir/src" "$build_context/project/"
     cp -R "$repo_dir/docker/agent" "$build_context/docker/"
-    docker build --build-arg "AGENT_UID=$(id -u)" --build-arg "AGENT_GID=$(id -g)" \
+    docker build "${build_args[@]}" --build-arg "AGENT_UID=$(id -u)" --build-arg "AGENT_GID=$(id -g)" \
       -t "$image_name" -f "$build_context/docker/agent/Dockerfile" "$build_context"
     exit
     ;;

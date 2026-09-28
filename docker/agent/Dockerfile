@@ -1,17 +1,20 @@
-FROM node:22-bookworm AS node
-FROM python:3.12-bookworm
+ARG NODE_IMAGE
+ARG PYTHON_IMAGE
+FROM ${NODE_IMAGE} AS node
+FROM ${PYTHON_IMAGE}
 ARG AGENT_UID=1000
 ARG AGENT_GID=1000
-ARG BD_VERSION=1.2.2
-ARG CODEX_VERSION=0.156.1
-ARG CLAUDE_VERSION=2.1.272
-ARG DOLT_VERSION=2.1.4
-ARG RUST_VERSION=1.82.0
+ARG BD_VERSION
+ARG CODEX_VERSION
+ARG CLAUDE_VERSION
+ARG DOLT_VERSION
+ARG RUST_VERSION
+ARG RUSTUP_VERSION
 # Go matches the toolchain line in ../beads/go.mod; golangci-lint matches its CI.
-ARG GO_VERSION=1.26.7
-ARG GO_SHA256_AMD64=ffb5f8de10c62550dfddab66b36b57030721e0a44a3218e9e1181d7b59f121ca
-ARG GO_SHA256_ARM64=5a4ec883379d51ee9ce1040d5e87f8d35e20387574dd8c947feb01eabc3c1b37
-ARG GOLANGCI_LINT_VERSION=2.10.1
+ARG GO_VERSION
+ARG GO_SHA256_AMD64
+ARG GO_SHA256_ARM64
+ARG GOLANGCI_LINT_VERSION
 ARG TARGETARCH
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo
@@ -29,13 +32,13 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
         arm64) rust_arch=aarch64-unknown-linux-gnu ;; \
         *) echo "unsupported architecture" >&2; exit 1 ;; \
     esac \
-    && curl -fsSLO "https://static.rust-lang.org/rustup/archive/1.27.1/${rust_arch}/rustup-init" \
-    && curl -fsSLO "https://static.rust-lang.org/rustup/archive/1.27.1/${rust_arch}/rustup-init.sha256" \
+    && curl -fsSLO "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rust_arch}/rustup-init" \
+    && curl -fsSLO "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rust_arch}/rustup-init.sha256" \
     && sha256sum -c rustup-init.sha256 \
     && chmod +x rustup-init && ./rustup-init -y --profile minimal --default-toolchain "${RUST_VERSION}" \
     && rm rustup-init* \
     && chown -R ${AGENT_UID}:${AGENT_GID} "$RUSTUP_HOME" "$CARGO_HOME"
-# dolt CLI for direct access to the bd database; 2.1.4 is the engine bd 1.2.2 embeds.
+# Keep the Dolt CLI version aligned with the engine embedded in bd.
 RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && curl -fsSL "https://github.com/dolthub/dolt/releases/download/v${DOLT_VERSION}/dolt-linux-${arch}.tar.gz" \
         -o /tmp/dolt.tar.gz \

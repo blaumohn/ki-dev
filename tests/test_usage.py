@@ -18,10 +18,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ki_dev.executors.claude_cli import (
-    VERIFIED_CLI_VERSION as CLAUDE_VERIFIED_VERSION,
+    CLI_VERSION as CLAUDE_CLI_VERSION,
 )
 from ki_dev.executors.codex_cli import (
-    VERIFIED_CLI_VERSION as CODEX_VERIFIED_VERSION,
+    CLI_VERSION as CODEX_CLI_VERSION,
 )
 from ki_dev.usage import (
     CounterScope,
@@ -148,7 +148,7 @@ class TestClaudeCliResult:
     def test_valid_usage_is_measured(self):
         event = normalize_claude_cli_result(
             self._usage(),
-            cli_version=CLAUDE_VERIFIED_VERSION,
+            cli_version=CLAUDE_CLI_VERSION,
             session_id="s1",
         )
         assert event.status is UsageStatus.MEASURED
@@ -158,7 +158,7 @@ class TestClaudeCliResult:
         # (Werkzeugnutzung); das result-Ereignis ist deren Summe.
         assert event.counter_scope is CounterScope.CALL_TOTAL
         assert event.tokens == TokenCounts(10, 500, 30, 20)
-        assert event.cli_version == CLAUDE_VERIFIED_VERSION
+        assert event.cli_version == CLAUDE_CLI_VERSION
         assert event.session_id == "s1"
 
     def test_missing_cli_version_is_partial_not_measured(self):
@@ -211,7 +211,7 @@ class TestClaudeSessionMessageUsage:
     def test_rich_usage_is_measured_with_subcategories(self):
         event = normalize_claude_session_message_usage(
             self._usage(),
-            schema_version=CLAUDE_VERIFIED_VERSION,
+            schema_version=CLAUDE_CLI_VERSION,
             confirmed_model="claude-haiku-4-5-20251001",
         )
         assert event.status is UsageStatus.MEASURED
@@ -225,7 +225,7 @@ class TestClaudeSessionMessageUsage:
         del usage["cache_creation"]
         del usage["output_tokens_details"]
         event = normalize_claude_session_message_usage(
-            usage, schema_version=CLAUDE_VERIFIED_VERSION
+            usage, schema_version=CLAUDE_CLI_VERSION
         )
         assert event.status is UsageStatus.MEASURED
         assert event.tokens.reasoning_output is None
@@ -245,7 +245,7 @@ class TestClaudeSessionMessageUsage:
             }
         )
         event = normalize_claude_session_message_usage(
-            usage, schema_version=CLAUDE_VERIFIED_VERSION
+            usage, schema_version=CLAUDE_CLI_VERSION
         )
         assert event.status is UsageStatus.PARTIAL
         # Hauptkategorien bleiben erhalten, nur die widerspruechliche
@@ -267,7 +267,7 @@ class TestCodexTurnUsage:
                 "cached_input_tokens": 40,
                 "output_tokens": 15,
             },
-            cli_version=CODEX_VERIFIED_VERSION,
+            cli_version=CODEX_CLI_VERSION,
         )
         assert event.status is UsageStatus.MEASURED
         # Ein Turn kann intern mehrere Modell-Requests umfassen
@@ -315,7 +315,7 @@ class TestCodexTokenCountUsage:
                 "total_tokens": 115,
             },
             scope=CounterScope.PER_REQUEST,
-            cli_version=CODEX_VERIFIED_VERSION,
+            cli_version=CODEX_CLI_VERSION,
         )
         assert event.status is UsageStatus.MEASURED
         assert event.source == "rollout_last_token_usage"
@@ -348,7 +348,7 @@ class TestCodexTokenCountUsage:
                 "total_tokens": 75,
             },
             scope=CounterScope.PER_REQUEST,
-            cli_version=CODEX_VERIFIED_VERSION,
+            cli_version=CODEX_CLI_VERSION,
         )
         assert event.status is UsageStatus.PARTIAL
         assert event.tokens.fresh_input == 60
@@ -368,7 +368,7 @@ class TestCodexTokenCountUsage:
                 "total_tokens": "not-a-number",
             },
             scope=CounterScope.PER_REQUEST,
-            cli_version=CODEX_VERIFIED_VERSION,
+            cli_version=CODEX_CLI_VERSION,
         )
         assert event.status is UsageStatus.PARTIAL
         assert event.tokens.fresh_input == 60
@@ -517,7 +517,7 @@ class TestReadCodexRolloutUsage:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -596,7 +596,7 @@ def _assistant_row(**kwargs):
         "type": "assistant",
         "sessionId": "sess-1",
         "requestId": "req-1",
-        "version": CLAUDE_VERIFIED_VERSION,
+        "version": CLAUDE_CLI_VERSION,
         "timestamp": "2026-04-04T09:00:00.000Z",
         "message": {
             "id": "msg-1",
@@ -666,7 +666,7 @@ class TestReadClaudeSessionUsage:
         event = scan.events[0]
         assert event.session_id == "sess-1"
         assert event.request_id == "req-1"
-        assert event.schema_version == CLAUDE_VERIFIED_VERSION
+        assert event.schema_version == CLAUDE_CLI_VERSION
         assert event.confirmed_model == "claude-haiku-4-5-20251001"
         assert event.status is UsageStatus.MEASURED
 
@@ -718,7 +718,7 @@ class TestNachreviewDf44275:
                 "total_tokens": sentinel,
             },
             scope=CounterScope.PER_REQUEST,
-            cli_version=CODEX_VERIFIED_VERSION,
+            cli_version=CODEX_CLI_VERSION,
         )
         assert event.status is UsageStatus.PARTIAL
         assert len(event.detail) < 200
@@ -774,7 +774,7 @@ class TestNachreviewDf44275:
         )
         path.write_text(first + "\n" + second + "\n")
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -818,7 +818,7 @@ class TestNachreviewDf44275:
         )
         path.write_text(first + "\n" + second + "\n")
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -863,7 +863,7 @@ class TestNachreviewDf44275:
         path = tmp_path / "rollout.jsonl"
         path.write_text(earlier + "\n" + later + "\n")
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         cumulative = [
             e
@@ -910,7 +910,7 @@ class TestNachreviewDf44275:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         cumulative = [
             e
@@ -934,7 +934,7 @@ class TestNachreviewDf44275:
                 "timestamp": "2026-04-04T08:59:00.000Z",
                 "payload": {
                     "id": "sess-abc",
-                    "cli_version": "0.154.0",
+                    "cli_version": CODEX_CLI_VERSION,
                 },
             }
         )
@@ -971,7 +971,7 @@ class TestNachreviewDf44275:
         assert len(per_request) == 1
         event = per_request[0]
         assert event.session_id == "sess-abc"
-        assert event.cli_version == "0.154.0"
+        assert event.cli_version == CODEX_CLI_VERSION
         assert event.status is UsageStatus.MEASURED
 
     def test_truncated_multibyte_tail_does_not_abort_the_scan(
@@ -1003,7 +1003,7 @@ class TestNachreviewDf44275:
             cli_version="unrecognized-version",
         )
         assert event.status is UsageStatus.PARTIAL
-        assert "verifizierte Version" in event.detail
+        assert "unterstuetzte Version" in event.detail
         assert "unrecognized-version" not in event.detail
 
     def test_well_formed_but_unsupported_version_is_partial(self):
@@ -1020,7 +1020,7 @@ class TestNachreviewDf44275:
             cli_version="999.999.999",
         )
         assert event.status is UsageStatus.PARTIAL
-        assert "verifizierte Version" in event.detail
+        assert "unterstuetzte Version" in event.detail
 
     def test_non_string_version_does_not_crash(self):
         """[P2] Ein JSON-Zahlenwert statt eines Strings (z. B.
@@ -1078,7 +1078,7 @@ class TestNachreview3ac1ebe:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1121,7 +1121,7 @@ class TestNachreview3ac1ebe:
         )
         path.write_text(line + "\n" + other_time_line + "\n")
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1161,7 +1161,7 @@ class TestNachreview3ac1ebe:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1202,7 +1202,7 @@ class TestNachreview3ac1ebe:
         path = tmp_path / "rollout.jsonl"
         path.write_text(valid + "\n" + invalid + "\n")
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         cumulative = [
             e
@@ -1257,7 +1257,7 @@ class TestNachreviewAf4cf95:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1314,7 +1314,7 @@ class TestNachreviewAf4cf95:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1349,7 +1349,7 @@ class TestNachreviewAf4cf95:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         assert len(scan.events) == 1
         assert scan.events[0].status is UsageStatus.PARTIAL
@@ -1396,7 +1396,7 @@ class TestNachreview7431ea6:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1423,7 +1423,7 @@ class TestNachreview7431ea6:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1449,7 +1449,7 @@ class TestNachreview7431ea6:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1484,7 +1484,7 @@ class TestNachreview7431ea6:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         assert len(scan.events) == 1
         assert scan.events[0].status is UsageStatus.PARTIAL
@@ -1521,7 +1521,7 @@ class TestNachreview7431ea6:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1573,7 +1573,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1600,7 +1600,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1630,7 +1630,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1669,7 +1669,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1713,7 +1713,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1759,7 +1759,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1789,7 +1789,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1831,7 +1831,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1870,7 +1870,7 @@ class TestNachreview19b6e88:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -1896,7 +1896,7 @@ class TestNachreview19b6e88Folgerunde:
         path = tmp_path / "rollout.jsonl"
         path.write_text("".join(line + "\n" for line in lines))
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         return scan, [
             e
@@ -2081,7 +2081,7 @@ class TestNachreview007a8ff:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -2116,7 +2116,7 @@ class TestNachreview007a8ff:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         per_request = [
             e
@@ -2236,7 +2236,7 @@ class TestNachreview007a8ff:
             + "\n"
         )
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         (cumulative,) = [
             e
@@ -2376,10 +2376,10 @@ def test_codex_rollout_request_invariants(steps):
         path = Path(tmp) / "rollout.jsonl"
         path.write_text("\n".join(lines) + "\n")
         scan = read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         assert scan == read_codex_rollout_usage(
-            path, cli_version=CODEX_VERIFIED_VERSION
+            path, cli_version=CODEX_CLI_VERSION
         )
         return scan
 

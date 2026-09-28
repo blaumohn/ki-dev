@@ -34,10 +34,10 @@ from enum import StrEnum
 from pathlib import Path
 
 from ki_dev.executors.claude_cli import (
-    VERIFIED_CLI_VERSION as _CLAUDE_VERIFIED_VERSION,
+    CLI_VERSION as _CLAUDE_CLI_VERSION,
 )
 from ki_dev.executors.codex_cli import (
-    VERIFIED_CLI_VERSION as _CODEX_VERIFIED_VERSION,
+    CLI_VERSION as _CODEX_CLI_VERSION,
 )
 
 
@@ -241,15 +241,11 @@ def _describe_invalid(value: object) -> str:
     return type(value).__name__
 
 
-# Lokal tatsaechlich verifizierte CLI-Versionen (siehe
-# executors/claude_cli.py/codex_cli.py, dieselbe Konstante --
-# ki-dev-ablauf-u3c prueft die Durchsetzung dieses Bezugs im
-# Executor selbst). Ein plausibel geformter, aber nicht verifizierter
-# Versionswert (z. B. "999.999.999") ist damit kein implizit
-# gueltiger Messwert (Messvertrag).
+# Der gemeinsame Versionsstand begrenzt die unterstuetzten Formate.
+# Andere ausgefuehrte Versionen liefern weiterhin nur PARTIAL.
 _KNOWN_SUPPORTED_VERSIONS: dict[str, frozenset[str]] = {
-    "claude": frozenset({_CLAUDE_VERIFIED_VERSION}),
-    "codex": frozenset({_CODEX_VERIFIED_VERSION}),
+    "claude": frozenset({_CLAUDE_CLI_VERSION}),
+    "codex": frozenset({_CODEX_CLI_VERSION}),
 }
 
 
@@ -257,7 +253,7 @@ def _measured_or_partial(
     provider: str, version: object, version_field: str
 ) -> tuple[UsageStatus, str]:
     """Messvertrag: "unbekannte Version ist kein implizit gueltiger
-    Messwert". Ohne (oder mit nicht lokal verifizierter) Version
+    Messwert". Ohne (oder mit nicht unterstuetzter) Version
     bleiben die Zahlen erhalten (kein Verwerfen), der Status sinkt
     aber von MEASURED auf PARTIAL."""
     if not isinstance(version, str) or not version:
@@ -271,7 +267,7 @@ def _measured_or_partial(
     if version not in supported:
         return (
             UsageStatus.PARTIAL,
-            f"{version_field} ist keine lokal verifizierte Version; "
+            f"{version_field} ist keine unterstuetzte Version; "
             "Messwert nicht als vollstaendig verifiziert eingestuft",
         )
     return UsageStatus.MEASURED, ""

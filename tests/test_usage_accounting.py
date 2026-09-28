@@ -18,7 +18,10 @@ from dataclasses import asdict
 import pytest
 
 from ki_dev.executors.claude_cli import (
-    VERIFIED_CLI_VERSION as CLAUDE_VERIFIED_CLI_VERSION,
+    CLI_VERSION as CLAUDE_CLI_VERSION,
+)
+from ki_dev.executors.codex_cli import (
+    CLI_VERSION as CODEX_CLI_VERSION,
 )
 from ki_dev.executors.contract import TurnResult, TurnStatus
 from ki_dev.loop_safety import CallLedger, SafetyLimits, SafetyStop
@@ -64,7 +67,9 @@ def _codex_event(**overrides):
         "output_tokens": 15,
     }
     usage.update(overrides)
-    return normalize_codex_turn_usage(usage, cli_version="0.154.0")
+    return normalize_codex_turn_usage(
+        usage, cli_version=CODEX_CLI_VERSION
+    )
 
 
 def _purpose_attribution(purpose):
@@ -99,7 +104,7 @@ def _record_purpose_call(ledger, purpose, amount, *, call_id=None):
             "cached_input_tokens": 0,
             "output_tokens": 0,
         },
-        cli_version="0.154.0",
+        cli_version=CODEX_CLI_VERSION,
         session_id="sess-purpose",
     )
     ledger.record_usage(
@@ -173,7 +178,7 @@ def test_claude_call_total_summary_reconciles_with_legacy_usage(
     ledger = _ledger(tmp_path)
     event = normalize_claude_cli_result(
         TURN_USAGE,
-        cli_version=CLAUDE_VERIFIED_CLI_VERSION,
+        cli_version=CLAUDE_CLI_VERSION,
         session_id="sess-1",
     )
 
@@ -301,7 +306,7 @@ def test_unattributed_call_stays_visible_and_separate_from_purposes(
             "cached_input_tokens": 0,
             "output_tokens": 0,
         },
-        cli_version="0.154.0",
+        cli_version=CODEX_CLI_VERSION,
         session_id="sess-purpose",
     )
     ledger.record_usage(
@@ -398,7 +403,7 @@ def test_aborted_attempt_still_counts_under_its_purpose(tmp_path):
             "cached_input_tokens": 0,
             "output_tokens": 0,
         },
-        cli_version="0.154.0",
+        cli_version=CODEX_CLI_VERSION,
         session_id="sess-purpose",
     )
     ledger.record_usage(
@@ -456,7 +461,7 @@ def test_resubmitting_identical_evidence_for_same_call_keeps_balance(
             "cached_input_tokens": 0,
             "output_tokens": 0,
         },
-        cli_version="0.154.0",
+        cli_version=CODEX_CLI_VERSION,
         session_id="sess-dup",
     )
     ledger.record_usage("call-1", event, "evidence-dup", summary=True)
@@ -495,7 +500,7 @@ def _bound_call(
             "cached_input_tokens": 0,
             "output_tokens": 0,
         },
-        cli_version="0.154.0",
+        cli_version=CODEX_CLI_VERSION,
         session_id=f"sess-{call_id}",
     )
     ledger.record_usage(

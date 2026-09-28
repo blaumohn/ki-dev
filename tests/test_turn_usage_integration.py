@@ -93,7 +93,7 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
     executable, trace = write_usage_cli(
         tmp_path,
         provider,
-        adapter_type.verified_cli_version,
+        adapter_type.cli_version_pin,
         output,
         exit_code=7 if failed else 0,
     )
@@ -161,7 +161,7 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
     assert event["tokens"] == asdict(expected_tokens)
     assert event["provider"] == provider
     assert event["session_id"] == role
-    assert event["cli_version"] == adapter_type.verified_cli_version
+    assert event["cli_version"] == adapter_type.cli_version_pin
     assert event["status"] == UsageStatus.MEASURED.value
     assert event["counter_scope"] == CounterScope.CALL_TOTAL.value
     assert event["source"] == (

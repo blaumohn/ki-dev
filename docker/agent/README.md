@@ -30,15 +30,21 @@ aus der über `BD_VERSION` festgelegten Go-Modulversion nativ nach
 `/usr/local/bin/bd` installiert, mit CGO für Embedded Dolt und dem Build-Tag
 `gms_pure_go`. Grundlage ist der
 [Go-Installationsweg von Beads](https://github.com/gastownhall/beads/blob/main/.goreleaser.yml).
-Das Dolt-CLI 2.1.4 wird als Release-Binary nach `/usr/local/bin/dolt` gelegt
+Das Dolt-CLI wird als Release-Binary nach `/usr/local/bin/dolt` gelegt
 (Architektur über `TARGETARCH`, Fallback `dpkg --print-architecture`).
-Versionsänderungen erfolgen über die ARG-Vorgaben im Dockerfile.
+Alle Image-, Toolversionen und Go-Prüfsummen stehen ausschließlich in
+`src/ki_dev/tool-versions.json`. Das Buildskript übergibt diese Werte als
+Build-Argumente; Python-Code und Tests lesen dieselbe mitgelieferte Datei.
+Der Host benötigt Python 3 mit `jsonschema`; bevorzugt wird `.venv/bin/python`,
+sonst `python3`. Fehlende oder ungültige Werte brechen vor dem Build ab.
+Versionswechsel separat committen, das Image neu bauen und die betroffenen
+Tests ausführen. Es gibt keinen separat gepflegten verifizierten Versionsstand.
 
 ## beads-Entwicklung unter `/beads`
 
-Das Image enthält Go 1.26.7 (die `toolchain` aus `beads/go.mod`, geprüft per
-sha256) und golangci-lint 2.10.1 (Version aus der beads-CI, aus den Quellen
-gebaut). `GOTOOLCHAIN=local` verhindert Nachladen anderer Toolchains.
+Die Go-Version ist mit der `toolchain` aus `beads/go.mod` abzustimmen,
+die golangci-lint-Version mit der beads-CI. Go wird per sha256 geprüft,
+golangci-lint aus den Quellen gebaut. `GOTOOLCHAIN=local` verhindert Nachladen anderer Toolchains.
 Modul- und Build-Cache liegen unter `/home/agent/go` bzw. `~/.cache/go-build`
 im Home-Volume und bleiben zwischen Sitzungen erhalten.
 

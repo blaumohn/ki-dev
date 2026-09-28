@@ -798,9 +798,9 @@ class _SequencedRunner:
 
 def _version_probe_result(provider: str) -> TurnResult:
     stdout = (
-        f"{ClaudeCliAdapter.verified_cli_version} (Claude Code)"
+        f"{ClaudeCliAdapter.cli_version_pin} (Claude Code)"
         if provider == "claude"
-        else f"codex-cli {CodexCliAdapter.verified_cli_version}"
+        else f"codex-cli {CodexCliAdapter.cli_version_pin}"
     )
     return _result(stdout)
 
@@ -894,7 +894,7 @@ def test_codex_failure_preserves_completed_turn_usage(
             exit_code=exit_code,
         ),
         session_id="session",
-        cli_version=CodexCliAdapter.verified_cli_version,
+        cli_version=CodexCliAdapter.cli_version_pin,
     )
 
     assert result.status is TurnStatus.NONZERO_EXIT
@@ -951,7 +951,7 @@ def test_adapter_binds_usage_to_executed_cli_version(
     weiterhin einen gemessenen Turn erlauben.
     """
     version = (
-        adapter_type.verified_cli_version
+        adapter_type.cli_version_pin
         if verified
         else "999.999.999"
     )
@@ -993,7 +993,7 @@ def test_codex_failure_without_usage_does_not_invent_zero_counts():
             "error": {"message": "quota"},
         })),
         session_id="session",
-        cli_version=CodexCliAdapter.verified_cli_version,
+        cli_version=CodexCliAdapter.cli_version_pin,
     )
     assert not result.ok
     assert result.usage is None

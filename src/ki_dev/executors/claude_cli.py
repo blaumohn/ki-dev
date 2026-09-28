@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ki_dev.tool_versions import load_tool_versions
+
 from .base import CliAdapter
 from .contract import (
     ContextMeasurement,
@@ -21,8 +23,8 @@ from .contract import (
 )
 from .metering import claude_context_tokens, claude_result
 
-# Lokal verifizierter Bezugsstand der dokumentierten CLI-Syntax.
-VERIFIED_CLI_VERSION = "2.1.272"
+# Gemeinsamer Versionsstand fuer Build und Laufzeit.
+CLI_VERSION = load_tool_versions()["CLAUDE_VERSION"]
 
 # Beobachtetes Format von ``claude --version``, z. B.
 # "2.1.272 (Claude Code)".
@@ -40,7 +42,7 @@ class ClaudeCliAdapter(CliAdapter):
     """
 
     name = "claude-cli"
-    verified_cli_version = VERIFIED_CLI_VERSION
+    cli_version_pin = CLI_VERSION
 
     @property
     def default_executable(self) -> str:

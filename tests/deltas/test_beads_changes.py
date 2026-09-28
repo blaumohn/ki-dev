@@ -48,7 +48,6 @@ def _available_commands(help_text: str) -> set[str]:
 
 
 def test_supported_version_is_pinned():
-    assert SUPPORTED_BD_VERSION == "1.2.2"
     assert BD_DIFF_INTERFACE == ("bd", "diff", "FROM_REF", "TO_REF")
 
 
