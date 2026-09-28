@@ -1,32 +1,23 @@
+# check=skip=InvalidDefaultArgInFrom
+# Base images have no defaults on purpose: scripts/agent-container passes them
+# from src/ki_dev/tool-versions.json, the single source for all versions.
 ARG NODE_IMAGE
 ARG PYTHON_IMAGE
 FROM ${NODE_IMAGE} AS node
 FROM ${PYTHON_IMAGE}
+# Version ARGs are declared right before their step, ordered from rarely to
+# frequently changed, so a version bump only rebuilds the layers after it.
 ARG AGENT_UID=1000
 ARG AGENT_GID=1000
-ARG BD_VERSION
-ARG CODEX_VERSION
-ARG CLAUDE_VERSION
-ARG DOLT_VERSION
-ARG RUST_VERSION
-ARG RUSTUP_VERSION
-# Go matches the toolchain line in ../beads/go.mod; golangci-lint matches its CI.
-ARG GO_VERSION
-ARG GO_SHA256_AMD64
-ARG GO_SHA256_ARM64
-ARG GOLANGCI_LINT_VERSION
 ARG TARGETARCH
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo
 RUN apt-get update && apt-get install -y --no-install-recommends curl ripgrep tini \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && npm install -g @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_VERSION} \
-    && chown -R ${AGENT_UID}:${AGENT_GID} /usr/local/lib/node_modules /usr/local/bin
 # The build host may be arm64; a hardcoded x86_64 rustup-init dies under qemu
 # because the arm64 rootfs has no /lib64/ld-linux-x86-64.so.2.
+ARG RUSTUP_VERSION
+ARG RUST_VERSION
 RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
         amd64) rust_arch=x86_64-unknown-linux-gnu ;; \
         arm64) rust_arch=aarch64-unknown-linux-gnu ;; \
@@ -39,6 +30,7 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
     && rm rustup-init* \
     && chown -R ${AGENT_UID}:${AGENT_GID} "$RUSTUP_HOME" "$CARGO_HOME"
 # Keep the Dolt CLI version aligned with the engine embedded in bd.
+ARG DOLT_VERSION
 RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && curl -fsSL "https://github.com/dolthub/dolt/releases/download/v${DOLT_VERSION}/dolt-linux-${arch}.tar.gz" \
         -o /tmp/dolt.tar.gz \
@@ -46,8 +38,16 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && install -m 0755 "/tmp/dolt-linux-${arch}/bin/dolt" /usr/local/bin/dolt \
     && rm -rf /tmp/dolt.tar.gz "/tmp/dolt-linux-${arch}"
 # Go toolchain for beads development in /beads (compose.beads.yaml).
+# Go matches the toolchain line in ../beads/go.mod; golangci-lint matches its CI.
 # golangci-lint is built from source so it knows the go.mod language version.
-RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+ARG GO_VERSION
+ARG GO_SHA256_AMD64
+ARG GO_SHA256_ARM64
+ARG GOLANGCI_LINT_VERSION
+# Cache mounts keep Go modules and build cache across builds, outside the image.
+RUN --mount=type=cache,target=/tmp/gopath/pkg/mod \
+    --mount=type=cache,target=/tmp/gocache \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && case "$arch" in \
         amd64) go_sha="${GO_SHA256_AMD64}" ;; \
         arm64) go_sha="${GO_SHA256_ARM64}" ;; \
@@ -58,14 +58,28 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && tar -xzf /tmp/go.tar.gz -C /usr/local \
     && rm /tmp/go.tar.gz \
     && GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOTOOLCHAIN=local \
-        /usr/local/go/bin/go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}" \
-    && GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOTOOLCHAIN=local \
+        /usr/local/go/bin/go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}"
+ARG BD_VERSION
+RUN --mount=type=cache,target=/tmp/gopath/pkg/mod \
+    --mount=type=cache,target=/tmp/gocache \
+    GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOTOOLCHAIN=local \
         CGO_ENABLED=1 GOFLAGS=-tags=gms_pure_go \
         /usr/local/go/bin/go install -trimpath -ldflags="-X main.Build=v${BD_VERSION}" \
-        "github.com/steveyegge/beads/cmd/bd@v${BD_VERSION}" \
-    && rm -rf /tmp/gopath /tmp/gocache
+        "github.com/steveyegge/beads/cmd/bd@v${BD_VERSION}"
 RUN (getent group ${AGENT_GID} || groupadd -g ${AGENT_GID} agent) \
     && useradd -m -u ${AGENT_UID} -g ${AGENT_GID} -s /bin/bash agent
+# Agent CLIs change most often, so they come last among the tool layers.
+# Only the npm-managed files are handed to the agent user, not dolt/bd/golangci-lint.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+ARG CODEX_VERSION
+ARG CLAUDE_VERSION
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && npm install -g @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_VERSION} \
+    && chown -R ${AGENT_UID}:${AGENT_GID} /usr/local/lib/node_modules \
+    && chown ${AGENT_UID}:${AGENT_GID} /usr/local/bin \
+    && chown -h ${AGENT_UID}:${AGENT_GID} /usr/local/bin/node /usr/local/bin/npm \
+        /usr/local/bin/codex /usr/local/bin/claude
 COPY project /opt/project
 RUN python -m venv /workspace/.venv \
     && /workspace/.venv/bin/pip install --no-cache-dir hatchling '/opt/project[test]' \
