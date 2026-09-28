@@ -7,6 +7,11 @@ ARG CODEX_VERSION=0.156.1
 ARG CLAUDE_VERSION=2.1.272
 ARG DOLT_VERSION=2.1.4
 ARG RUST_VERSION=1.82.0
+# Go matches the toolchain line in ../beads/go.mod; golangci-lint matches its CI.
+ARG GO_VERSION=1.26.7
+ARG GO_SHA256_AMD64=ffb5f8de10c62550dfddab66b36b57030721e0a44a3218e9e1181d7b59f121ca
+ARG GO_SHA256_ARM64=5a4ec883379d51ee9ce1040d5e87f8d35e20387574dd8c947feb01eabc3c1b37
+ARG GOLANGCI_LINT_VERSION=2.10.1
 ARG TARGETARCH
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo
@@ -15,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ripgrep ti
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && npm install -g @beads/bd@${BD_VERSION} @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_VERSION} \
+    && npm install -g @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_VERSION} \
     && chown -R ${AGENT_UID}:${AGENT_GID} /usr/local/lib/node_modules /usr/local/bin
 # The build host may be arm64; a hardcoded x86_64 rustup-init dies under qemu
 # because the arm64 rootfs has no /lib64/ld-linux-x86-64.so.2.
@@ -37,6 +42,25 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && tar -xzf /tmp/dolt.tar.gz -C /tmp \
     && install -m 0755 "/tmp/dolt-linux-${arch}/bin/dolt" /usr/local/bin/dolt \
     && rm -rf /tmp/dolt.tar.gz "/tmp/dolt-linux-${arch}"
+# Go toolchain for beads development in /beads (compose.beads.yaml).
+# golangci-lint is built from source so it knows the go.mod language version.
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$arch" in \
+        amd64) go_sha="${GO_SHA256_AMD64}" ;; \
+        arm64) go_sha="${GO_SHA256_ARM64}" ;; \
+        *) echo "unsupported architecture" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${arch}.tar.gz" -o /tmp/go.tar.gz \
+    && echo "${go_sha}  /tmp/go.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/go.tar.gz -C /usr/local \
+    && rm /tmp/go.tar.gz \
+    && GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOTOOLCHAIN=local \
+        /usr/local/go/bin/go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}" \
+    && GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOTOOLCHAIN=local \
+        CGO_ENABLED=1 GOFLAGS=-tags=gms_pure_go \
+        /usr/local/go/bin/go install -trimpath -ldflags="-X main.Build=v${BD_VERSION}" \
+        "github.com/steveyegge/beads/cmd/bd@v${BD_VERSION}" \
+    && rm -rf /tmp/gopath /tmp/gocache
 RUN (getent group ${AGENT_GID} || groupadd -g ${AGENT_GID} agent) \
     && useradd -m -u ${AGENT_UID} -g ${AGENT_GID} -s /bin/bash agent
 COPY project /opt/project
@@ -56,7 +80,8 @@ RUN chmod +x /usr/local/bin/agent-entrypoint /opt/agent-bin/agent_cli.py \
     && ln -s agent_cli.py /opt/agent-bin/claude
 ENV HOME=/home/agent \
     VIRTUAL_ENV=/workspace/.venv \
-    PATH=/opt/agent-bin:/workspace/.venv/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+    PATH=/opt/agent-bin:/workspace/.venv/bin:/usr/local/cargo/bin:/usr/local/go/bin:/home/agent/go/bin:/usr/local/bin:/usr/bin:/bin \
+    GOTOOLCHAIN=local \
     KI_DEV_AGENT_CONTAINER=1 \
     PYTHONPATH=/workspace/src
 USER agent

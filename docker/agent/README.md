@@ -25,10 +25,52 @@ Vom Repository aus (auf dem Host):
 Der Build verwendet die lokalen Quellen aus `../loope`; bei Bedarf:
 `LOOPE_SOURCE=/pfad/zu/loope ./scripts/agent-container build`.
 macOS-Binaries werden nicht kopiert. loope wird ohne TUI für Linux gebaut;
-bd 1.2.2, Codex 0.154.0 und Claude Code 2.1.272 werden über npm installiert.
+Codex und Claude Code werden über npm installiert. bd wird beim Image-Build
+aus der über `BD_VERSION` festgelegten Go-Modulversion nativ nach
+`/usr/local/bin/bd` installiert, mit CGO für Embedded Dolt und dem Build-Tag
+`gms_pure_go`. Grundlage ist der
+[Go-Installationsweg von Beads](https://github.com/gastownhall/beads/blob/main/.goreleaser.yml).
 Das Dolt-CLI 2.1.4 wird als Release-Binary nach `/usr/local/bin/dolt` gelegt
 (Architektur über `TARGETARCH`, Fallback `dpkg --print-architecture`).
 Versionsänderungen erfolgen über die ARG-Vorgaben im Dockerfile.
+
+## beads-Entwicklung unter `/beads`
+
+Das Image enthält Go 1.26.7 (die `toolchain` aus `beads/go.mod`, geprüft per
+sha256) und golangci-lint 2.10.1 (Version aus der beads-CI, aus den Quellen
+gebaut). `GOTOOLCHAIN=local` verhindert Nachladen anderer Toolchains.
+Modul- und Build-Cache liegen unter `/home/agent/go` bzw. `~/.cache/go-build`
+im Home-Volume und bleiben zwischen Sitzungen erhalten.
+
+Liegt `../beads` neben diesem Repo, bindet das Startskript es zusätzlich
+über `compose.beads.yaml` schreibbar unter `/beads` ein. Von `/workspace`
+aus funktioniert damit `cd ../beads`. Ein anderer Pfad:
+`KI_DEV_AGENT_BEADS_REPO=/pfad/zu/beads ./scripts/agent-container shell`.
+
+Für einen lokalen PR die Quellen **im Container** bauen und installieren:
+
+```bash
+cd /beads
+source .buildflags
+GOBIN="$HOME/go/bin" go install ./cmd/bd
+hash -r
+command -v bd  # /home/agent/go/bin/bd
+cd /workspace
+bd version
+bd lint
+```
+
+`go build ./cmd/bd/...` allein installiert nichts. `~/go/bin` steht im
+Container-PATH vor `/usr/local/bin`; ein dort installierter lokaler Build
+wird damit auch von Agenten und Skripten als `bd` verwendet. Compose bindet
+nur die Quellen ein und installiert beim Start keine Programme. Änderungen
+im Checkout werden erst nach erneutem `go install` wirksam; das Image selbst
+enthält weiterhin die festgelegte Release-Version, keine lokalen PR-Patches.
+
+Der lokale Build bleibt im Home-Volume auch nach einem Image-Neubau erhalten.
+Vor einem Wechsel zurück zu `/usr/local/bin/bd` prüfen, ob dessen Version
+das aktuelle Datenbankschema unterstützt. Ein neuerer Entwicklungsstand kann
+die Datenbank bereits migriert haben; eine Schemawarnung nicht umgehen.
 
 ## Anmeldung und Start
 

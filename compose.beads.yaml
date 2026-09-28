@@ -1,0 +1,11 @@
+# Optional: ../beads next to /workspace, so `cd ../beads` works in the container.
+# scripts/agent-container adds this file when KI_DEV_AGENT_BEADS_REPO is set
+# or ../beads exists next to this repository.
+services:
+  agent:
+    volumes:
+      - type: bind
+        source: ${KI_DEV_AGENT_BEADS_REPO:?KI_DEV_AGENT_BEADS_REPO is required}
+        target: /beads
+        bind:
+          create_host_path: false

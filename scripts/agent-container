@@ -55,6 +55,15 @@ export KI_DEV_CLAUDE_STATE=/dev/null
 if [[ -f "$auth_root/.claude.json" ]]; then
   export KI_DEV_CLAUDE_STATE="$auth_root/.claude.json"
 fi
+compose_files=(-f "$repo_dir/compose.yaml")
+# Optional beads checkout for Go development, mounted at /beads.
+if [[ -z "${KI_DEV_AGENT_BEADS_REPO:-}" && -d "$repo_dir/../beads" ]]; then
+  KI_DEV_AGENT_BEADS_REPO="$(cd -- "$repo_dir/../beads" && pwd)"
+fi
+if [[ -n "${KI_DEV_AGENT_BEADS_REPO:-}" ]]; then
+  export KI_DEV_AGENT_BEADS_REPO
+  compose_files+=(-f "$repo_dir/compose.beads.yaml")
+fi
 run_args=(run --rm --no-deps)
 if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
-exec docker compose -f "$repo_dir/compose.yaml" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"
+exec docker compose "${compose_files[@]}" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"
