@@ -40,6 +40,13 @@ sonst `python3`. Fehlende oder ungültige Werte brechen vor dem Build ab.
 Versionswechsel separat committen, das Image neu bauen und die betroffenen
 Tests ausführen. Es gibt keinen separat gepflegten verifizierten Versionsstand.
 
+Paket-Downloads beim Image-Bau landen in BuildKit-Cache-Mounts, je
+Paketverwalter einer (`id=npm`, `id=pip`, Go über seine Zielpfade). Sie
+liegen im Builder, bei Colima also in der VM, und weder im Image noch im
+laufenden Container. Anzeigen und begrenzen:
+`docker buildx du --filter type=exec.cachemount`,
+`docker buildx prune --filter type=exec.cachemount --keep-storage 5GB`.
+
 ## beads-Entwicklung unter `/beads`
 
 Die Go-Version ist mit der `toolchain` aus `beads/go.mod` abzustimmen,

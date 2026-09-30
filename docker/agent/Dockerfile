@@ -74,15 +74,19 @@ COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 ARG CODEX_VERSION
 ARG CLAUDE_VERSION
-RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+# Package caches live in the BuildKit builder, one id per package manager;
+# they never enter the image and are not visible at container runtime.
+RUN --mount=type=cache,id=npm,target=/root/.npm,sharing=locked \
+    ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && npm install -g @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_VERSION} \
     && chown -R ${AGENT_UID}:${AGENT_GID} /usr/local/lib/node_modules \
     && chown ${AGENT_UID}:${AGENT_GID} /usr/local/bin \
     && chown -h ${AGENT_UID}:${AGENT_GID} /usr/local/bin/node /usr/local/bin/npm \
         /usr/local/bin/codex /usr/local/bin/claude
 COPY project /opt/project
-RUN python -m venv /workspace/.venv \
-    && /workspace/.venv/bin/pip install --no-cache-dir hatchling '/opt/project[test]' \
+RUN --mount=type=cache,id=pip,target=/root/.cache/pip,sharing=locked \
+    python -m venv /workspace/.venv \
+    && /workspace/.venv/bin/pip install hatchling '/opt/project[test]' \
     && mkdir -p /home/agent/.claude /home/agent/.codex \
     && chown -R ${AGENT_UID}:${AGENT_GID} /workspace /home/agent
 # access/ and model/ are bind targets; generated/ stays container-only.
