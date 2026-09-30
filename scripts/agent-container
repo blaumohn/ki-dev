@@ -1,85 +1,234 @@
 #!/usr/bin/env bash
+# Builds and starts the agent sandbox from the host; see
+# docker/agent/README.md.
 set -euo pipefail
-if [[ "${KI_DEV_AGENT_CONTAINER:-}" == "1" ]]; then
-  echo "scripts/agent-container starts the Docker sandbox from the host and needs" >&2
-  echo "Docker; it neither has nor needs a Docker socket inside that sandbox." >&2
-  echo "You are already running inside the agent container, so run the target" >&2
-  echo "command directly instead, e.g.:" >&2
-  echo "  bd prime" >&2
-  echo "  ./.venv/bin/python -m pytest" >&2
-  exit 1
-fi
-repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-image_name="${KI_DEV_AGENT_IMAGE:-ki-dev-agent:local}"
-volume_key="$(printf '%s' "$repo_dir" | cksum | cut -d ' ' -f 1)"
-home_volume="ki-dev-agent-${volume_key}-home"
-venv_volume="ki-dev-agent-${volume_key}-venv"
 
-case "${1:-shell}" in
-  build)
-    # The Dockerfile needs BuildKit (cache mounts); plain docker build may
-    # silently fall back to the legacy builder when buildx is missing.
-    if ! docker buildx version >/dev/null 2>&1; then
-      echo "docker buildx is missing; install it (e.g. brew install docker-buildx)" >&2
-      echo "and register the plugin dir via cliPluginsExtraDirs in ~/.docker/config.json." >&2
-      exit 1
-    fi
-    build_python=python3
-    if [[ -x "$repo_dir/.venv/bin/python" ]]; then
-      build_python="$repo_dir/.venv/bin/python"
-    fi
-    build_args_text="$(PYTHONPATH="$repo_dir/src" "$build_python" -m ki_dev.tool_versions)"
-    build_args=()
-    while IFS= read -r argument; do
-      build_args+=("$argument")
-    done <<< "$build_args_text"
-    build_context="$(mktemp -d)"
-    trap 'rm -rf -- "$build_context"' EXIT
-    mkdir -p "$build_context/project" "$build_context/docker"
-    cp "$repo_dir/pyproject.toml" "$build_context/project/"
-    cp -R "$repo_dir/src" "$build_context/project/"
-    cp -R "$repo_dir/docker/agent" "$build_context/docker/"
-    docker buildx build "${build_args[@]}" --build-arg "AGENT_UID=$(id -u)" --build-arg "AGENT_GID=$(id -g)" \
-      -t "$image_name" -f "$build_context/docker/agent/Dockerfile" "$build_context"
-    exit
-    ;;
-  shell) shift "$(( $# > 0 ? 1 : 0 ))"; set -- bash "$@" ;;
-  run) shift ;;
-  *)
-    echo "Usage: $0 build | shell | run COMMAND [ARGS...]" >&2
-    exit 2
-    ;;
-esac
-if [[ $# == 0 ]]; then
-  echo "run requires a command" >&2
+main() {
+  refuse_inside_container
+  repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+  image_name="${KI_DEV_AGENT_IMAGE:-ki-dev-agent:local}"
+  volume_key="$(printf '%s' "$repo_dir" | cksum | cut -d ' ' -f 1)"
+  mount_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ki-dev/agent-container/mounts"
+  compose_files=(-f "$repo_dir/compose.yaml")
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h | --help)
+        print_help
+        exit 0
+        ;;
+      -m | --mount)
+        if [[ $# -lt 2 ]]; then usage_error "$1 needs NAME[,NAME...]"; fi
+        add_mounts "$2"
+        shift 2
+        ;;
+      --mount=*)
+        add_mounts "${1#--mount=}"
+        shift
+        ;;
+      -*) usage_error "unknown option '$1'" ;;
+      *) break ;;
+    esac
+  done
+  case "${1:-shell}" in
+    build) build_image ;;
+    mounts) list_mounts ;;
+    shell)
+      shift "$(( $# > 0 ? 1 : 0 ))"
+      run_agent bash "$@"
+      ;;
+    run)
+      shift
+      if [[ $# == 0 ]]; then usage_error "run requires a command"; fi
+      run_agent "$@"
+      ;;
+    *) usage_error "unknown command '$1'" ;;
+  esac
+}
+
+print_help() {
+  cat <<EOF
+Usage: scripts/agent-container [OPTION]... [shell [ARGS...]]
+       scripts/agent-container [OPTION]... run COMMAND [ARGS...]
+       scripts/agent-container build | mounts
+
+Build the agent image or start the agent sandbox from the host.
+Without a command, shell starts bash in the sandbox; mounts lists the
+names usable with --mount.
+
+Options:
+  -m, --mount NAME[,NAME...]  also apply the mount file NAME.yaml;
+                              repeatable, unique prefixes are accepted
+  -h, --help                  show this help and exit
+
+Mount files: \${XDG_CONFIG_HOME:-~/.config}/ki-dev/agent-container/mounts/NAME.yaml
+Template:    docker/agent/mount.example.yaml
+
+../beads is always mounted at /beads when present; KI_DEV_AGENT_BEADS_REPO
+selects another checkout. Details: docker/agent/README.md
+EOF
+}
+
+usage_error() {
+  echo "agent-container: $1" >&2
+  echo "Try 'scripts/agent-container --help' for more information." >&2
   exit 2
-fi
-# Reuse the user's existing CLI logins; no API keys are forwarded.
-auth_root="${KI_DEV_AGENT_AUTH_HOME:-$HOME}"
-for auth_dir in .claude .codex; do
-  if [[ ! -d "$auth_root/$auth_dir" ]]; then
-    echo "Missing $auth_root/$auth_dir; log in with the CLI on the host first." >&2
+}
+
+# Optional sibling checkouts, chosen per call from $mount_dir/NAME.yaml.
+add_mounts() {
+  local list="$1" names name mount_file
+  if [[ ! "$list" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]]; then
+    usage_error "invalid mount list '$list'; expected NAME[,NAME...]"
+  fi
+  IFS=, read -r -a names <<< "$list"
+  for name in "${names[@]}"; do
+    mount_file="$(resolve_mount "$name")"
+    if [[ " ${compose_files[*]} " != *" $mount_file "* ]]; then
+      compose_files+=(-f "$mount_file")
+    fi
+  done
+}
+
+# Exact name first, otherwise a unique prefix (like getopt_long options).
+resolve_mount() {
+  local name="$1" mount_file
+  local matches=()
+  if [[ -f "$mount_dir/$name.yaml" ]]; then
+    echo "$mount_dir/$name.yaml"
+    return
+  fi
+  for mount_file in "$mount_dir/$name"*.yaml; do
+    if [[ -f "$mount_file" ]]; then matches+=("$mount_file"); fi
+  done
+  case "${#matches[@]}" in
+    1) echo "${matches[0]}" ;;
+    0) usage_error "unknown mount '$name' in $mount_dir; see: scripts/agent-container mounts" ;;
+    *)
+      matches=("${matches[@]##*/}")
+      usage_error "ambiguous mount '$name': ${matches[*]%.yaml}"
+      ;;
+  esac
+}
+
+# Name and container target of each mount file, read from its first target:.
+list_mounts() {
+  local mount_file name target
+  local found=0
+  echo "Mount files in $mount_dir:"
+  for mount_file in "$mount_dir"/*.yaml; do
+    if [[ ! -f "$mount_file" ]]; then continue; fi
+    found=1
+    name="${mount_file##*/}"
+    target="$(awk '$1 == "target:" { print $2; exit }' "$mount_file")"
+    printf '  %-26s %s\n' "${name%.yaml}" "${target:-(no target)}"
+  done
+  if [[ $found == 0 ]]; then
+    echo "  (none; template: docker/agent/mount.example.yaml)"
+  fi
+}
+
+refuse_inside_container() {
+  if [[ "${KI_DEV_AGENT_CONTAINER:-}" == "1" ]]; then
+    echo "scripts/agent-container starts the Docker sandbox from the host and needs" >&2
+    echo "Docker; it neither has nor needs a Docker socket inside that sandbox." >&2
+    echo "You are already running inside the agent container, so run the target" >&2
+    echo "command directly instead, e.g.:" >&2
+    echo "  bd prime" >&2
+    echo "  ./.venv/bin/python -m pytest" >&2
     exit 1
   fi
-done
-export KI_DEV_AGENT_REPO="$repo_dir"
-export KI_DEV_AGENT_IMAGE="$image_name"
-export KI_DEV_AGENT_AUTH_HOME="$auth_root"
-export KI_DEV_AGENT_HOME_VOLUME="$home_volume"
-export KI_DEV_AGENT_VENV_VOLUME="$venv_volume"
-export KI_DEV_CLAUDE_STATE=/dev/null
-if [[ -f "$auth_root/.claude.json" ]]; then
-  export KI_DEV_CLAUDE_STATE="$auth_root/.claude.json"
-fi
-compose_files=(-f "$repo_dir/compose.yaml")
-# Optional beads checkout for Go development, mounted at /beads.
-if [[ -z "${KI_DEV_AGENT_BEADS_REPO:-}" && -d "$repo_dir/../beads" ]]; then
-  KI_DEV_AGENT_BEADS_REPO="$(cd -- "$repo_dir/../beads" && pwd)"
-fi
-if [[ -n "${KI_DEV_AGENT_BEADS_REPO:-}" ]]; then
-  export KI_DEV_AGENT_BEADS_REPO
-  compose_files+=(-f "$repo_dir/compose.beads.yaml")
-fi
-run_args=(run --rm --no-deps)
-if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
-exec docker compose "${compose_files[@]}" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"
+}
+
+build_image() {
+  require_buildx
+  local build_args_text argument
+  local build_args=()
+  build_args_text="$(tool_version_build_args)"
+  while IFS= read -r argument; do
+    build_args+=("$argument")
+  done <<< "$build_args_text"
+  # Global: the EXIT trap runs after this function has returned.
+  build_context="$(mktemp -d)"
+  trap 'rm -rf -- "$build_context"' EXIT
+  copy_build_sources
+  docker buildx build "${build_args[@]}" --build-arg "AGENT_UID=$(id -u)" --build-arg "AGENT_GID=$(id -g)" \
+    -t "$image_name" -f "$build_context/docker/agent/Dockerfile" "$build_context"
+}
+
+# The Dockerfile needs BuildKit (cache mounts); plain docker build may
+# silently fall back to the legacy builder when buildx is missing.
+require_buildx() {
+  if ! docker buildx version >/dev/null 2>&1; then
+    echo "docker buildx is missing; install it (e.g. brew install docker-buildx)" >&2
+    echo "and register the plugin dir via cliPluginsExtraDirs in ~/.docker/config.json." >&2
+    exit 1
+  fi
+}
+
+# Image and tool versions from the shared source, one --build-arg per pair.
+tool_version_build_args() {
+  local build_python="$repo_dir/.venv/bin/python"
+  if [[ ! -x "$build_python" ]]; then
+    # Hosts without the project venv may use Python 3 with jsonschema
+    # (docker/agent/README.md).
+    build_python=python3
+  fi
+  PYTHONPATH="$repo_dir/src" "$build_python" -m ki_dev.tool_versions
+}
+
+# Only the sources the image needs, so unrelated changes keep the layer cache.
+copy_build_sources() {
+  mkdir -p "$build_context/project" "$build_context/docker"
+  cp "$repo_dir/pyproject.toml" "$build_context/project/"
+  cp -R "$repo_dir/src" "$build_context/project/"
+  cp -R "$repo_dir/docker/agent" "$build_context/docker/"
+}
+
+run_agent() {
+  # Reuse the user's existing CLI logins; no API keys are forwarded.
+  local auth_root="${KI_DEV_AGENT_AUTH_HOME:-$HOME}"
+  require_cli_logins "$auth_root"
+  export_compose_env "$auth_root"
+  add_beads_mount
+  local run_args=(run --rm --no-deps)
+  if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
+  exec docker compose "${compose_files[@]}" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"
+}
+
+require_cli_logins() {
+  local auth_root="$1" auth_dir
+  for auth_dir in .claude .codex; do
+    if [[ ! -d "$auth_root/$auth_dir" ]]; then
+      echo "Missing $auth_root/$auth_dir; log in with the CLI on the host first." >&2
+      exit 1
+    fi
+  done
+}
+
+export_compose_env() {
+  local auth_root="$1"
+  export KI_DEV_AGENT_REPO="$repo_dir"
+  export KI_DEV_AGENT_IMAGE="$image_name"
+  export KI_DEV_AGENT_AUTH_HOME="$auth_root"
+  export KI_DEV_AGENT_HOME_VOLUME="ki-dev-agent-${volume_key}-home"
+  export KI_DEV_AGENT_VENV_VOLUME="ki-dev-agent-${volume_key}-venv"
+  # Optional host state; without it compose.yaml mounts /dev/null.
+  unset KI_DEV_CLAUDE_STATE
+  if [[ -f "$auth_root/.claude.json" ]]; then
+    export KI_DEV_CLAUDE_STATE="$auth_root/.claude.json"
+  fi
+}
+
+# Optional beads checkout for Go development and local bd builds, mounted at
+# /beads whenever ../beads exists or KI_DEV_AGENT_BEADS_REPO is set.
+add_beads_mount() {
+  if [[ -z "${KI_DEV_AGENT_BEADS_REPO:-}" && -d "$repo_dir/../beads" ]]; then
+    KI_DEV_AGENT_BEADS_REPO="$(cd -- "$repo_dir/../beads" && pwd)"
+  fi
+  if [[ -n "${KI_DEV_AGENT_BEADS_REPO:-}" ]]; then
+    export KI_DEV_AGENT_BEADS_REPO
+    compose_files+=(-f "$repo_dir/compose.beads.yaml")
+  fi
+}
+
+main "$@"

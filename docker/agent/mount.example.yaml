@@ -1,0 +1,17 @@
+# Template for one sibling checkout, applied with:
+#   scripts/agent-container --mount NAME ...
+# Copy to ${XDG_CONFIG_HOME:-~/.config}/ki-dev/agent-container/mounts/NAME.yaml
+# and replace NAME and the source path. Use an absolute source: Compose
+# resolves relative paths against the ki-dev checkout, which differs per
+# worktree.
+services:
+  agent:
+    volumes:
+      - type: bind
+        source: /absolute/path/to/NAME
+        target: /NAME
+        bind:
+          create_host_path: false
+    # Optional: keep generated directories out of the host checkout.
+    # tmpfs:
+    #   - /NAME/var:rw,nosuid,nodev,mode=1777

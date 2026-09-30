@@ -85,6 +85,37 @@ Vor einem Wechsel zurück zu `/usr/local/bin/bd` prüfen, ob dessen Version
 das aktuelle Datenbankschema unterstützt. Ein neuerer Entwicklungsstand kann
 die Datenbank bereits migriert haben; eine Schemawarnung nicht umgehen.
 
+## Weitere Nachbar-Repos per `--mount`
+
+Weitere Nachbar-Repos werden je Aufruf gewählt, nach dem Muster von
+`docker buildx build --platform a,b`: `-m`/`--mount` ist wiederholbar und
+nimmt kommagetrennte Namen; eindeutige Präfixe genügen (wie bei
+`getopt_long`). `NAME` wendet die Compose-Datei `NAME.yaml` aus dem
+benutzereigenen Ordner an:
+
+```text
+${XDG_CONFIG_HOME:-~/.config}/ki-dev/agent-container/mounts/NAME.yaml
+```
+
+Welche Repos jemand einbindet, ist Benutzersache und steht deshalb nicht im
+VCS. Der Ordner liegt außerhalb des Checkouts, damit neue Worktrees,
+`git clean -fdX` und Neuklonen ihn nicht verlieren. Für eine neue Datei die
+Vorlage kopieren und Name und Pfad ersetzen:
+
+```bash
+dir="${XDG_CONFIG_HOME:-$HOME/.config}/ki-dev/agent-container/mounts"
+mkdir -p "$dir" && cp docker/agent/mount.example.yaml "$dir/mdman.yaml"
+./scripts/agent-container mounts                 # Namen und Ziele
+./scripts/agent-container -m mdman,mdman-ai shell
+./scripts/agent-container --mount=lebens run ls /lebenslauf-web-vorlage
+```
+
+Quellpfade absolut angeben: Compose löst relative Pfade gegen den
+ki-dev-Checkout auf, und der liegt je Worktree woanders. Unbekannte oder
+mehrdeutige Namen brechen mit Exit 2 ab; fehlt ein gewähltes Repo, bricht
+Compose ab. Erzeugte Ordner eines Repos können per `tmpfs` aus dem
+Host-Checkout herausgehalten werden, siehe Vorlage.
+
 ## Anmeldung und Start
 
 Die vorhandenen Verzeichnisse `~/.claude` und `~/.codex` werden schreibbar
