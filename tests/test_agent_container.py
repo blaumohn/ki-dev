@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +15,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 FAKE_DOCKER = """#!/bin/sh
 if [ "$1 $2" = "buildx version" ]; then exit 0; fi
+for arg; do
+  if [ "$arg" = config ]; then
+    printf '%s\\n' "$@" >> "$FAKE_LOG/config-args"
+    while [ $# -gt 0 ]; do
+      if [ "$1" = -f ]; then file="$2"; fi
+      shift
+    done
+    name="${file##*/}"
+    cat "$FAKE_LOG/${name%.yaml}.json" 2>/dev/null || echo '{}'
+    exit 0
+  fi
+done
 printf '%s\\n' "$@" > "$FAKE_LOG/args"
 printf '%s\\n' "${KI_DEV_CLAUDE_STATE-<unset>}" > "$FAKE_LOG/claude"
 printf '%s\\n' "${KI_DEV_AGENT_BEADS_REPO-<unset>}" > "$FAKE_LOG/beads"
@@ -82,6 +96,9 @@ def sandbox(tmp_path):
     (repo / "docker/agent/Dockerfile").write_text("FROM scratch\n")
     (repo / "src/ki_dev").mkdir(parents=True)
     (repo / "src/ki_dev/__init__.py").write_text("")
+    shutil.copy(
+        ROOT / "src/ki_dev/agent_repo_contract.py", repo / "src/ki_dev"
+    )
     (repo / "pyproject.toml").write_text("")
     auth = tmp_path / "auth"
     (auth / ".claude").mkdir(parents=True)
@@ -100,6 +117,10 @@ def sandbox(tmp_path):
         box.add_mount(name)
     box.add_executable(
         box.bin / "docker", FAKE_DOCKER.split("\n", 1)[1]
+    )
+    # A wrapper, not a symlink: build tests overwrite this file.
+    box.add_executable(
+        repo / ".venv/bin/python", f'exec "{sys.executable}" "$@"'
     )
     return box
 
@@ -277,6 +298,7 @@ def test_build_prefers_project_venv(sandbox):
 
 
 def test_build_falls_back_to_system_python(sandbox):
+    (sandbox.repo / ".venv/bin/python").unlink()
     fake_python(sandbox, sandbox.bin / "python3", "FROM=system")
     sandbox.run("build")
     args = sandbox.logged("args")
@@ -289,6 +311,7 @@ def test_build_falls_back_to_system_python(sandbox):
         "./docker/agent/Dockerfile",
         "./project/pyproject.toml",
         "./project/src/ki_dev/__init__.py",
+        "./project/src/ki_dev/agent_repo_contract.py",
     ]
     assert not Path(sandbox.logged("context")[0]).exists()
 
@@ -297,3 +320,58 @@ def test_build_stops_when_versions_fail(sandbox):
     sandbox.add_executable(sandbox.bin / "python3", "exit 1")
     sandbox.run("build", retcode=1)
     assert not (sandbox.log / "args").exists()
+
+
+def contract_document(name, deps):
+    return json.dumps(
+        {
+            "services": {
+                "agent": {
+                    "volumes": [
+                        {
+                            "type": "bind",
+                            "source": f"/src/{name}",
+                            "target": f"/{name}",
+                        }
+                    ]
+                }
+            },
+            "x-ki-dev": {"repo": f"/{name}", "deps": deps},
+        }
+    )
+
+
+def test_invalid_contract_stops_before_docker(sandbox):
+    (sandbox.log / "mdman.json").write_text(
+        contract_document(
+            "mdman",
+            [{"manager": "pnpm", "inputs": ["x"], "install": "y"}],
+        )
+    )
+    _, _, stderr = sandbox.run(
+        "-m", "devkit,mdman", "run", "true", retcode=2
+    )
+    assert (
+        "agent-container: mdman.yaml: x-ki-dev.deps.0.manager: "
+        "unbekannter Wert"
+    ) in stderr
+    assert not (sandbox.log / "args").exists()
+
+
+def test_contracts_read_with_project_directory(sandbox):
+    sandbox.run("-m", "devkit,mdman", "run", "true")
+    config_args = sandbox.logged("config-args")
+    assert config_args.count("config") == 2
+    assert config_args[:4] == [
+        "compose",
+        "-p",
+        "ki-dev-contract",
+        "--project-directory",
+    ]
+    assert config_args[4] == str(sandbox.repo)
+    assert sandbox.logged("args")[-2:] == ["agent", "true"]
+
+
+def test_no_contract_check_without_mounts(sandbox):
+    sandbox.run("run", "true")
+    assert not (sandbox.log / "config-args").exists()

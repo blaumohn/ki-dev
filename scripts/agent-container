@@ -10,6 +10,7 @@ main() {
   volume_key="$(printf '%s' "$repo_dir" | cksum | cut -d ' ' -f 1)"
   mount_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ki-dev/agent-container/mounts"
   compose_files=(-f "$repo_dir/compose.yaml")
+  mount_files=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h | --help)
@@ -85,6 +86,7 @@ add_mounts() {
     mount_file="$(resolve_mount "$name")"
     if [[ " ${compose_files[*]} " != *" $mount_file "* ]]; then
       compose_files+=(-f "$mount_file")
+      mount_files+=("$mount_file")
     fi
   done
 }
@@ -174,13 +176,17 @@ require_buildx() {
 
 # Image and tool versions from the shared source, one --build-arg per pair.
 tool_version_build_args() {
-  local build_python="$repo_dir/.venv/bin/python"
-  if [[ ! -x "$build_python" ]]; then
+  host_python -m ki_dev.tool_versions
+}
+
+host_python() {
+  local python="$repo_dir/.venv/bin/python"
+  if [[ ! -x "$python" ]]; then
     # Hosts without the project venv may use Python 3 with jsonschema
     # (docker/agent/README.md).
-    build_python=python3
+    python=python3
   fi
-  PYTHONPATH="$repo_dir/src" "$build_python" -m ki_dev.tool_versions
+  PYTHONPATH="$repo_dir/src" "$python" "$@"
 }
 
 # Only the sources the image needs, so unrelated changes keep the layer cache.
@@ -194,12 +200,21 @@ copy_build_sources() {
 run_agent() {
   # Reuse the user's existing CLI logins; no API keys are forwarded.
   local auth_root="${KI_DEV_AGENT_AUTH_HOME:-$HOME}"
+  check_repo_contracts
   require_cli_logins "$auth_root"
   export_compose_env "$auth_root"
   add_beads_mount
   local run_args=(run --rm --no-deps)
   if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
   exec docker compose "${compose_files[@]}" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"
+}
+
+# x-ki-dev in the chosen mount files; an invalid contract exits 2 before
+# Docker starts.
+check_repo_contracts() {
+  if [[ ${#mount_files[@]} == 0 ]]; then return; fi
+  host_python -m ki_dev.agent_repo_contract \
+    --project-directory "$repo_dir" "${mount_files[@]}" >/dev/null
 }
 
 require_cli_logins() {

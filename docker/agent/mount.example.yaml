@@ -4,6 +4,17 @@
 # and replace NAME and the source path. Use an absolute source: Compose
 # resolves relative paths against the ki-dev checkout, which differs per
 # worktree.
+#
+# Optional repo contract, checked before Docker starts (exit 2 if invalid):
+# repo is the container path of a bind target below; per package manager
+# (npm, composer) the input files and the install directory, both relative
+# to repo. Names and paths are reported per field, e.g.
+# NAME.yaml: x-ki-dev.deps.0.manager: unbekannter Wert.
+# x-ki-dev:
+#   repo: /NAME
+#   deps:
+#     - {manager: npm, inputs: [package.json, package-lock.json], install: node_modules}
+#     - {manager: composer, inputs: [composer.json, composer.lock], install: vendor}
 services:
   agent:
     volumes:

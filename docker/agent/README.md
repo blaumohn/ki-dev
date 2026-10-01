@@ -118,6 +118,45 @@ mehrdeutige Namen brechen mit Exit 2 ab; fehlt ein gewähltes Repo, bricht
 Compose ab. Erzeugte Ordner eines Repos können per `tmpfs` aus dem
 Host-Checkout herausgehalten werden, siehe Vorlage.
 
+### Repo-Vertrag `x-ki-dev`
+
+Eine Mount-Datei darf zusätzlich beschreiben, welche Paketverwalter das
+eingebundene Repo nutzt, aus welchen Eingabedateien sie installieren und
+wohin. Das Compose-Erweiterungsfeld steht neben der Einbindung; Compose selbst
+ignoriert es:
+
+```yaml
+x-ki-dev:
+  repo: /lebenslauf-web-vorlage   # Container-Pfad, ein target dieser Datei
+  deps:
+    - {manager: npm,      inputs: [package.json, package-lock.json], install: node_modules}
+    - {manager: composer, inputs: [composer.json, composer.lock],    install: vendor}
+```
+
+Fehlt `x-ki-dev`, bleibt es beim reinen Einbinden. Ein vorhandener Vertrag
+wird vor jedem `shell`/`run` geprüft; ist er ungültig, bricht das Skript mit
+Exit 2 ab, bevor Docker startet. Die Meldung nennt Datei und Feldpfad, etwa
+`lebens.yaml: x-ki-dev.deps.0.manager: unbekannter Wert`. Geprüft werden:
+bekannter `manager` (`npm`, `composer`), nichtleere `inputs`, die im Repo
+vorhanden sind, `install` und `inputs` relativ und innerhalb von `repo`,
+kein doppelter `install`-Pfad, `repo` ist ein Bind-`target` der Datei.
+
+Zuständig ist `src/ki_dev/agent_repo_contract.py` (JSON Schema plus benannte
+Prüfungen). Die YAML-Datei liest `docker compose config`; der Vertrag sieht
+damit dieselbe Syntax, Interpolation und Pfadauflösung wie der echte Lauf,
+ohne eigene YAML-Bibliothek. Von Hand:
+
+```bash
+PYTHONPATH=src ./.venv/bin/python -m ki_dev.agent_repo_contract \
+  --project-directory . "$dir/lebens.yaml"
+```
+
+Die Ausgabe ist der normalisierte Vertrag als JSON. Mit `--agent` sind
+höchstens ein Repo mit `deps` erlaubt, sonst Exit 2; das Skript verwendet
+diesen Modus erst mit `--agent` (ki-dev-ablauf-d51). Der Dateiname ohne
+`.yaml` ist der Repo-Name; Volumes und Images aus einem Vertrag tragen
+später das Label `ki-dev.repo=<NAME>`.
+
 ## Anmeldung und Start
 
 Die vorhandenen Verzeichnisse `~/.claude` und `~/.codex` werden schreibbar
