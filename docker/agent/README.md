@@ -105,11 +105,13 @@ Vorlage kopieren und Name und Pfad ersetzen:
 ```bash
 dir="${XDG_CONFIG_HOME:-$HOME/.config}/ki-dev/agent-container/mounts"
 mkdir -p "$dir" && cp docker/agent/mount.example.yaml "$dir/mdman.yaml"
-./scripts/agent-container mounts                 # Namen und Ziele
+./scripts/agent-container mounts                 # Namen, Ziele, Quellen
 ./scripts/agent-container -m mdman,mdman-ai shell
 ./scripts/agent-container --mount=lebens run ls /lebenslauf-web-vorlage
 ```
 
+`mounts` zeigt je Datei das erste `target:` und `source:` und meldet einen
+fehlenden oder leeren Ordner ausdrücklich.
 Quellpfade absolut angeben: Compose löst relative Pfade gegen den
 ki-dev-Checkout auf, und der liegt je Worktree woanders. Unbekannte oder
 mehrdeutige Namen brechen mit Exit 2 ab; fehlt ein gewähltes Repo, bricht

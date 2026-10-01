@@ -146,18 +146,29 @@ def test_mounts_lists_names_and_targets(sandbox):
     lines = stdout.splitlines()
     assert lines[0] == f"Mount files in {sandbox.mounts}:"
     assert sorted(line.split() for line in lines[1:]) == [
-        ["devkit", "/devkit"],
-        ["lebenslauf-web-vorlage", "/lebenslauf-web-vorlage"],
-        ["mdman", "/mdman"],
-        ["mdman-ai-session", "/mdman-ai-session"],
+        [name, f"/{name}", "<-", f"/src/{name}"]
+        for name in (
+            "devkit",
+            "lebenslauf-web-vorlage",
+            "mdman",
+            "mdman-ai-session",
+        )
     ]
     assert not (sandbox.log / "args").exists()
 
 
-def test_mounts_without_files(sandbox):
+@pytest.mark.parametrize(
+    ("state", "message"),
+    [("missing", "(directory missing;"), ("empty", "(no mount files;")],
+)
+def test_mounts_without_files(sandbox, state, message):
     shutil.rmtree(sandbox.mounts)
+    if state == "empty":
+        sandbox.mounts.mkdir()
     _, stdout, _ = sandbox.run("mounts")
-    assert "(none; template: docker/agent/mount.example.yaml)" in stdout
+    assert stdout.splitlines()[1] == (
+        f"  {message} template: docker/agent/mount.example.yaml)"
+    )
     _, _, stderr = sandbox.run("-m", "devkit", "shell", retcode=2)
     assert f"unknown mount 'devkit' in {sandbox.mounts}" in stderr
 

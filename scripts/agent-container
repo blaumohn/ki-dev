@@ -110,20 +110,27 @@ resolve_mount() {
   esac
 }
 
-# Name and container target of each mount file, read from its first target:.
+# Name, host source and container target of each mount file, read from its
+# first source: and target:.
 list_mounts() {
-  local mount_file name target
+  local mount_file name source target
   local found=0
   echo "Mount files in $mount_dir:"
+  if [[ ! -d "$mount_dir" ]]; then
+    echo "  (directory missing; template: docker/agent/mount.example.yaml)"
+    return
+  fi
   for mount_file in "$mount_dir"/*.yaml; do
     if [[ ! -f "$mount_file" ]]; then continue; fi
     found=1
     name="${mount_file##*/}"
+    source="$(awk '$1 == "source:" { print $2; exit }' "$mount_file")"
     target="$(awk '$1 == "target:" { print $2; exit }' "$mount_file")"
-    printf '  %-26s %s\n' "${name%.yaml}" "${target:-(no target)}"
+    printf '  %-26s %-26s <- %s\n' "${name%.yaml}" \
+      "${target:-(no target)}" "${source:-(no source)}"
   done
   if [[ $found == 0 ]]; then
-    echo "  (none; template: docker/agent/mount.example.yaml)"
+    echo "  (no mount files; template: docker/agent/mount.example.yaml)"
   fi
 }
 
