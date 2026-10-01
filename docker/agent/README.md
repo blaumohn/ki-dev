@@ -20,14 +20,12 @@ Vom Repository aus (auf dem Host):
 
 ```bash
 ./scripts/agent-container build
-./scripts/agent-container run loope doctor
+./scripts/agent-container run bd version
 ./scripts/agent-container shell
 ```
 
-Der Build verwendet die lokalen Quellen aus `../loope`; bei Bedarf:
-`LOOPE_SOURCE=/pfad/zu/loope ./scripts/agent-container build`.
-macOS-Binaries werden nicht kopiert. loope wird ohne TUI für Linux gebaut;
-Codex und Claude Code werden über npm installiert. bd wird beim Image-Build
+Codex und Claude Code werden über npm installiert, ki-dev aus den
+Projektquellen in die Image-venv. bd wird beim Image-Build
 aus der über `BD_VERSION` festgelegten Go-Modulversion nativ nach
 `/usr/local/bin/bd` installiert, mit CGO für Embedded Dolt und dem Build-Tag
 `gms_pure_go`. Grundlage ist der
@@ -177,7 +175,7 @@ das Label `ki-dev.repo=<NAME>`; für npm-Verzeichnisse siehe
 | --- | --- | --- |
 | Home `/home/agent` | Volume `ki-dev-agent-<key>-home` | anonymes Volume |
 | `/workspace/.venv` | Volume `ki-dev-agent-<key>-venv` | anonymes Volume, frisch aus dem Image |
-| npm-`install` aus `x-ki-dev` | Volume `ki-dev-repo-<NAME>-<install>` | tmpfs |
+| npm-`install` aus `x-ki-dev` | Volume `ki-dev-repo-<NAME>-<install>-<hash>` | tmpfs |
 | `~/.cache/go-build` | Host-Ordner `go-build` | anonymes Volume |
 | `~/.npm`, `~/.cache/pip`, `~/go/pkg/mod` | Host-Ordner, geteilt | Host-Ordner, geteilt |
 
@@ -203,7 +201,9 @@ Läufe entfernt der nächste Start).
 
 **node_modules fremder Repos:** Für jeden npm-Eintrag eines Repo-Vertrags
 (`x-ki-dev`) hängt im Dev-Modus ein Named Volume über
-`<repo>/<install>`, mit Label `ki-dev.repo=<NAME>`. Es ist Linux-eigen,
+`<repo>/<install>`, mit Label `ki-dev.repo=<NAME>`. Der Hash über Name und
+`install` trennt Pfade mit gleichem lesbarem Teil (`packages/ui` und
+`packages-ui`). Das Volume ist Linux-eigen,
 der Mac-Stand im Checkout bleibt unberührt. npm erkennt geänderte Lockfiles
 über `node_modules/.package-lock.json`. Damit das Volume beim Anlegen nicht
 root gehört, hängt es zusätzlich an einem leeren, agent-eigenen Platz
@@ -235,7 +235,7 @@ Bei einem anderen Benutzerverzeichnis:
 ```bash
 ./scripts/agent-container run codex login status
 ./scripts/agent-container run claude auth status
-./scripts/agent-container run loope run --in-place --no-commit 'DEIN AUFTRAG'
+./scripts/agent-container run ki-dev --help
 ```
 
 Die Anmeldedaten müssen dateibasiert vorliegen: Ein macOS-Keychain-Eintrag allein

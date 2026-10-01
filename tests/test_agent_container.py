@@ -322,7 +322,13 @@ def test_build_prefers_project_venv(sandbox):
     fake_python(sandbox, sandbox.bin / "python3", "FROM=system")
     sandbox.run("build")
     args = sandbox.logged("args")
-    assert args[:4] == ["buildx", "build", "--build-arg", "FROM=venv"]
+    assert args[:5] == [
+        "buildx",
+        "build",
+        "--load",
+        "--build-arg",
+        "FROM=venv",
+    ]
 
 
 def test_build_falls_back_to_system_python(sandbox):
@@ -330,7 +336,13 @@ def test_build_falls_back_to_system_python(sandbox):
     fake_python(sandbox, sandbox.bin / "python3", "FROM=system")
     sandbox.run("build")
     args = sandbox.logged("args")
-    assert args[:4] == ["buildx", "build", "--build-arg", "FROM=system"]
+    assert args[:5] == [
+        "buildx",
+        "build",
+        "--load",
+        "--build-arg",
+        "FROM=system",
+    ]
     assert args[-3:-1] == [
         "-f",
         sandbox.logged("context")[0] + "/docker/agent/Dockerfile",

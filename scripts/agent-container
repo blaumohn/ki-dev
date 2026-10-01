@@ -176,7 +176,9 @@ build_image() {
   build_context="$(mktemp -d)"
   trap 'rm -rf -- "$build_context"' EXIT
   copy_build_sources
-  docker buildx build "${build_args[@]}" --build-arg "AGENT_UID=$(id -u)" --build-arg "AGENT_GID=$(id -g)" \
+  # --load: a docker-container builder would otherwise keep the result in
+  # its cache only, and shell/run would start the previous image.
+  docker buildx build --load "${build_args[@]}" --build-arg "AGENT_UID=$(id -u)" --build-arg "AGENT_GID=$(id -g)" \
     -t "$image_name" -f "$build_context/docker/agent/Dockerfile" "$build_context"
 }
 

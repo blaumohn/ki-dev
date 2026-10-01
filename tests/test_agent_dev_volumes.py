@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -66,11 +67,11 @@ def test_dev_overlay_labels_volume_and_seeds_owner():
         },
         "volumes": {
             "deps-0": {
-                "name": "ki-dev-repo-lebens-node_modules",
+                "name": volume_name("lebens", "node_modules"),
                 "labels": {"ki-dev.repo": "lebens"},
             },
             "deps-1": {
-                "name": "ki-dev-repo-site-web-node_modules",
+                "name": volume_name("site", "web/node_modules"),
                 "labels": {"ki-dev.repo": "site"},
             },
         },
@@ -117,8 +118,24 @@ def test_fresh_overlay_uses_owned_tmpfs():
 
 
 def test_volume_name_keeps_docker_charset():
-    assert volume_name("lebens", "a b/node_modules") == (
-        "ki-dev-repo-lebens-a-b-node_modules"
+    name = volume_name("lebens", "a b/node_modules")
+    assert re.fullmatch(r"ki-dev-repo-lebens-a-b-node_modules-[0-9a-f]{12}", name)
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (("app", "packages/ui/node_modules"), ("app", "packages-ui/node_modules")),
+        (("app", "x/node_modules"), ("app-x", "node_modules")),
+    ],
+)
+def test_volume_names_do_not_collide(first, second):
+    assert volume_name(*first) != volume_name(*second)
+
+
+def test_volume_name_is_stable():
+    assert volume_name("app", "node_modules") == volume_name(
+        "app", "node_modules"
     )
 
 

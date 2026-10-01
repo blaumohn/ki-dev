@@ -15,6 +15,7 @@ compose.yaml und den Mount-Dateien anwendet:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -106,8 +107,10 @@ def dev_overlay(contracts: list[RepoContract]) -> dict:
 
 
 def volume_name(name: str, install: str) -> str:
+    """Lesbarer Name; der Hash trennt Pfade mit gleichem Slug."""
     slug = re.sub(r"[^A-Za-z0-9_.-]", "-", install)
-    return f"ki-dev-repo-{name}-{slug}"
+    digest = hashlib.sha256(f"{name}\0{install}".encode()).hexdigest()
+    return f"ki-dev-repo-{name}-{slug}-{digest[:12]}"
 
 
 def fresh_overlay(contracts: list[RepoContract], uid: int, gid: int) -> dict:

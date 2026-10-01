@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 from plumbum import local
 
+from ki_dev.agent_dev_volumes import volume_name
+
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = "ki-dev-agent:local"
 pytestmark = pytest.mark.docker
@@ -151,7 +153,7 @@ def test_dev_persists_fresh_is_temporary(checkout):
     after_dev = volumes()
     created = after_dev - before
     assert any(name.endswith("-home") for name in created)
-    assert f"ki-dev-repo-{name}-node_modules" in created
+    assert volume_name(name, "node_modules") in created
 
     _, stdout, _ = run("--fresh", "-m", name, "run", "sh", "-c", FRESH_CHECKS)
     assert stdout.split() == [
