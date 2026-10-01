@@ -1,7 +1,9 @@
 # Agenten im Docker-Container
 
 Die Laufzeitkonfiguration steht zentral in `compose.yaml`. Das Startskript
-ruft Docker Compose auf und behält pro Repo dieselben Home-/venv-Volumes.
+ruft Docker Compose auf und behält pro Repo dieselben Home-/venv-Volumes
+(Dev-Modus); `--fresh` startet stattdessen eine temporäre Test-Instanz,
+siehe „Dev- und Testmodus“.
 Der Build kopiert nur die benötigten lokalen Quellen in einen temporären
 Build-Kontext.
 
@@ -35,8 +37,8 @@ Das Dolt-CLI wird als Release-Binary nach `/usr/local/bin/dolt` gelegt
 Alle Image-, Toolversionen und Go-Prüfsummen stehen ausschließlich in
 `src/ki_dev/tool-versions.json`. Das Buildskript übergibt diese Werte als
 Build-Argumente; Python-Code und Tests lesen dieselbe mitgelieferte Datei.
-Der Host benötigt Python 3 mit `jsonschema`; bevorzugt wird `.venv/bin/python`,
-sonst `python3`. Fehlende oder ungültige Werte brechen vor dem Build ab.
+Der Host benötigt Python 3 mit `jsonschema`, für `--mount` zusätzlich
+`plumbum`; bevorzugt wird `.venv/bin/python`, sonst `python3`. Fehlende oder ungültige Werte brechen vor dem Build ab.
 Versionswechsel separat committen, das Image neu bauen und die betroffenen
 Tests ausführen. Es gibt keinen separat gepflegten verifizierten Versionsstand.
 
@@ -52,35 +54,46 @@ laufenden Container. Anzeigen und begrenzen:
 Die Go-Version ist mit der `toolchain` aus `beads/go.mod` abzustimmen,
 die golangci-lint-Version mit der beads-CI. Go wird per sha256 geprüft,
 golangci-lint aus den Quellen gebaut. `GOTOOLCHAIN=local` verhindert Nachladen anderer Toolchains.
-Modul- und Build-Cache liegen unter `/home/agent/go` bzw. `~/.cache/go-build`
-im Home-Volume und bleiben zwischen Sitzungen erhalten.
+Modul- und Build-Cache (`~/go/pkg/mod`, `~/.cache/go-build`) liegen als
+Host-Ordner unter `${XDG_CACHE_HOME:-~/.cache}/agent-container`, siehe
+„Dev- und Testmodus“.
 
 Liegt `../beads` neben diesem Repo, bindet das Startskript es zusätzlich
 über `compose.beads.yaml` schreibbar unter `/beads` ein. Von `/workspace`
 aus funktioniert damit `cd ../beads`. Ein anderer Pfad:
 `KI_DEV_AGENT_BEADS_REPO=/pfad/zu/beads ./scripts/agent-container shell`.
 
-Für einen lokalen PR die Quellen **im Container** bauen und installieren:
+Für einen lokalen PR die Quellen **im Container** bauen:
 
 ```bash
 cd /beads
 source .buildflags
-GOBIN="$HOME/go/bin" go install ./cmd/bd
+go build -o .build/linux/bd ./cmd/bd
 hash -r
-command -v bd  # /home/agent/go/bin/bd
+command -v bd  # /beads/.build/linux/bd
 cd /workspace
 bd version
 bd lint
 ```
 
-`go build ./cmd/bd/...` allein installiert nichts. `~/go/bin` steht im
-Container-PATH vor `/usr/local/bin`; ein dort installierter lokaler Build
-wird damit auch von Agenten und Skripten als `bd` verwendet. Compose bindet
-nur die Quellen ein und installiert beim Start keine Programme. Änderungen
-im Checkout werden erst nach erneutem `go install` wirksam; das Image selbst
+Der Dev-Build liegt im beads-Checkout unter `.build/linux/bd`, nicht im
+Home. `compose.beads.yaml` setzt `/beads/.build/linux` im PATH direkt hinter
+`/opt/agent-bin`, also vor `/usr/local/bin` und `~/go/bin`; Agenten und
+Skripte verwenden damit den lokalen Build als `bd`. Der PATH wiederholt
+sonst den Image-PATH aus dem Dockerfile; ein Test hält beide gleich. Das
+Startskript trägt `.build/` in die `info/exclude` des beads-Checkouts ein
+(auch bei einem Worktree), damit `git status` dort sauber bleibt. Compose
+bindet nur die Quellen ein und baut beim Start nichts. Änderungen im
+Checkout werden erst nach erneutem `go build` wirksam; das Image selbst
 enthält weiterhin die festgelegte Release-Version, keine lokalen PR-Patches.
+Ohne `.build/linux/bd` gilt wieder `/usr/local/bin/bd`. Die bd-Warnung
+„multiple 'bd' binaries found in PATH“ ist dabei erwartet: Sie nennt den
+Dev-Build als verwendet.
 
-Der lokale Build bleibt im Home-Volume auch nach einem Image-Neubau erhalten.
+Gemessen am 01.10. (go-build als Host-Ordner): erster Build kalt einschließlich
+Modul-Download 147 s, danach mit warmem Cache 3 s und 2 s.
+
+Der lokale Build bleibt im Checkout auch nach einem Image-Neubau erhalten.
 Vor einem Wechsel zurück zu `/usr/local/bin/bd` prüfen, ob dessen Version
 das aktuelle Datenbankschema unterstützt. Ein neuerer Entwicklungsstand kann
 die Datenbank bereits migriert haben; eine Schemawarnung nicht umgehen.
@@ -155,7 +168,59 @@ Die Ausgabe ist der normalisierte Vertrag als JSON. Mit `--agent` sind
 höchstens ein Repo mit `deps` erlaubt, sonst Exit 2; das Skript verwendet
 diesen Modus erst mit `--agent` (ki-dev-ablauf-d51). Der Dateiname ohne
 `.yaml` ist der Repo-Name; Volumes und Images aus einem Vertrag tragen
-später das Label `ki-dev.repo=<NAME>`.
+das Label `ki-dev.repo=<NAME>`; für npm-Verzeichnisse siehe
+„Dev- und Testmodus“.
+
+## Dev- und Testmodus
+
+| | Dev (Standard) | Test (`--fresh`) |
+| --- | --- | --- |
+| Home `/home/agent` | Volume `ki-dev-agent-<key>-home` | anonymes Volume |
+| `/workspace/.venv` | Volume `ki-dev-agent-<key>-venv` | anonymes Volume, frisch aus dem Image |
+| npm-`install` aus `x-ki-dev` | Volume `ki-dev-repo-<NAME>-<install>` | tmpfs |
+| `~/.cache/go-build` | Host-Ordner `go-build` | anonymes Volume |
+| `~/.npm`, `~/.cache/pip`, `~/go/pkg/mod` | Host-Ordner, geteilt | Host-Ordner, geteilt |
+
+`<key>` ist eine Prüfsumme des Checkout-Pfads, je Worktree also eigene
+Volumes. Der Dev-Modus verhält sich wie eine lokale Entwicklungsumgebung:
+Home, venv und `node_modules` bleiben zwischen Läufen erhalten. Mit
+`--fresh` läuft der Container wie in der CI; alles außer den Download-Caches
+ist temporär und verschwindet mit dem Container (`run --rm`). Der lokale
+go-build-Ordner bleibt dabei unberührt.
+
+```bash
+./scripts/agent-container --fresh -m lebens run bash -c 'cd /lebenslauf-web-vorlage && npm ci'
+./scripts/agent-container -m lebens reset
+```
+
+**Download-Caches** (npm, pip, go mod) liegen als Host-Ordner unter
+`${XDG_CACHE_HOME:-~/.cache}/agent-container/` und werden über alle Repos,
+Checkouts und beide Modi geteilt. Das Skript legt sie vor dem Start an
+(sonst legte Docker sie als root an). Daneben liegt `go-build`, der erzeugte
+Go-Build-/Testcache des Dev-Modus, und `compose/` mit den je Lauf erzeugten
+Compose-Dateien für `node_modules` (`deps-<PID>.json`; Dateien beendeter
+Läufe entfernt der nächste Start).
+
+**node_modules fremder Repos:** Für jeden npm-Eintrag eines Repo-Vertrags
+(`x-ki-dev`) hängt im Dev-Modus ein Named Volume über
+`<repo>/<install>`, mit Label `ki-dev.repo=<NAME>`. Es ist Linux-eigen,
+der Mac-Stand im Checkout bleibt unberührt. npm erkennt geänderte Lockfiles
+über `node_modules/.package-lock.json`. Damit das Volume beim Anlegen nicht
+root gehört, hängt es zusätzlich an einem leeren, agent-eigenen Platz
+`/opt/agent-volume-seed/<n>` des Images; Docker übernimmt dessen Besitzer.
+Es gibt 8 Plätze, also höchstens 8 solche Verzeichnisse je Lauf. Im
+Testmodus ist das Verzeichnis ein tmpfs mit dem Container-Benutzer als
+Eigentümer (69–295 MB je Repo gemessen); `npm ci` installiert frisch aus
+dem geteilten Cache.
+
+**reset** entfernt die Home- und venv-Volumes dieses Checkouts sowie mit
+`-m NAME` die Volumes mit Label `ki-dev.repo=NAME`; Download-Caches und
+go-build bleiben. Anlass: Drift im Home (etwa `pip --user`-Pakete) oder eine
+veraltete venv nach einem Image-Neubau. Fehlende Volumes werden übersprungen;
+läuft noch ein Container, bricht `reset` mit Hinweis ab.
+
+`~/.claude.json` kopiert der Entrypoint nur, wenn sie im Home fehlt; mit
+`--fresh` also bei jedem Start frisch vom Host.
 
 ## Anmeldung und Start
 
@@ -180,12 +245,13 @@ Keine Schlüssel ins Image schreiben.
 ## Ausführung
 
 - Das ganze Repo einschließlich `.beads` ist unter `/workspace` schreibbar.
-- Home und Linux-`.venv` liegen in eigenen Volumes pro Repositorypfad.
+- Home und Linux-`.venv` liegen im Dev-Modus in eigenen Volumes pro
+  Repositorypfad (siehe „Dev- und Testmodus“).
   Die macOS-`.venv` wird überdeckt und nicht überschrieben.
 - Der Container läuft als Benutzer mit UID/GID des Build-Benutzers.
 - Python lädt über `PYTHONPATH=/workspace/src` den aktuellen Repo-Code.
-  Bei geänderten Abhängigkeiten Image neu bauen und das zugehörige venv-Volume
-  gezielt erneuern (Name mit `docker volume ls` ermitteln).
+  Bei geänderten Abhängigkeiten Image neu bauen und die Dev-Volumes mit
+  `./scripts/agent-container reset` erneuern.
 - loope setzt selbst Sandbox-/Berechtigungsflags. Die Container-Launcher
   ersetzen diese durch uneingeschränkte Ausführung **innerhalb des Containers**.
   Auch Reviewer haben damit Schreibzugriff; ihre fachliche Rolle bleibt im Prompt.

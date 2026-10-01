@@ -89,11 +89,21 @@ RUN --mount=type=cache,id=pip,target=/root/.cache/pip,sharing=locked \
     && /workspace/.venv/bin/pip install hatchling '/opt/project[test]' \
     && mkdir -p /home/agent/.claude /home/agent/.codex \
     && chown -R ${AGENT_UID}:${AGENT_GID} /workspace /home/agent
+# Bind targets of the download caches (compose.yaml). Created here so a fresh
+# home (--fresh) does not get root-owned parents from Docker.
+RUN mkdir -p /home/agent/.npm /home/agent/.cache/pip /home/agent/.cache/go-build \
+        /home/agent/go/pkg/mod /home/agent/go/bin \
+    && chown -R ${AGENT_UID}:${AGENT_GID} /home/agent
 # access/ and model/ are bind targets; generated/ stays container-only.
 RUN mkdir -p /opt/agent-settings/access /opt/agent-settings/model \
         /opt/agent-settings/generated \
     && chown ${AGENT_UID}:${AGENT_GID} /opt/agent-settings/generated \
     && chmod 700 /opt/agent-settings/generated
+# Empty, agent-owned slots: each repo dependency volume is also mounted on one
+# slot, so Docker copies this owner into a new volume instead of leaving it to
+# root. The slot count is SEED_SLOTS in src/ki_dev/agent_dev_volumes.py.
+RUN for slot in 0 1 2 3 4 5 6 7; do mkdir -p "/opt/agent-volume-seed/$slot"; done \
+    && chown -R ${AGENT_UID}:${AGENT_GID} /opt/agent-volume-seed
 COPY docker/agent/agent_cli.py /opt/agent-bin/agent_cli.py
 COPY docker/agent/entrypoint.sh /usr/local/bin/agent-entrypoint
 RUN chmod +x /usr/local/bin/agent-entrypoint /opt/agent-bin/agent_cli.py \

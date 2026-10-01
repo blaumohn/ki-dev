@@ -9,8 +9,10 @@ main() {
   image_name="${KI_DEV_AGENT_IMAGE:-ki-dev-agent:local}"
   volume_key="$(printf '%s' "$repo_dir" | cksum | cut -d ' ' -f 1)"
   mount_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ki-dev/agent-container/mounts"
+  cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/agent-container"
   compose_files=(-f "$repo_dir/compose.yaml")
   mount_files=()
+  mode=dev
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h | --help)
@@ -26,13 +28,21 @@ main() {
         add_mounts "${1#--mount=}"
         shift
         ;;
+      --fresh)
+        mode="test"
+        shift
+        ;;
       -*) usage_error "unknown option '$1'" ;;
       *) break ;;
     esac
   done
+  if [[ $mode == test && "${1:-shell}" != shell && "$1" != run ]]; then
+    usage_error "--fresh applies only to shell and run"
+  fi
   case "${1:-shell}" in
     build) build_image ;;
     mounts) list_mounts ;;
+    reset) reset_volumes ;;
     shell)
       shift "$(( $# > 0 ? 1 : 0 ))"
       run_agent bash "$@"
@@ -50,16 +60,22 @@ print_help() {
   cat <<EOF
 Usage: scripts/agent-container [OPTION]... [shell [ARGS...]]
        scripts/agent-container [OPTION]... run COMMAND [ARGS...]
+       scripts/agent-container [OPTION]... reset
        scripts/agent-container build | mounts
 
 Build the agent image or start the agent sandbox from the host.
 Without a command, shell starts bash in the sandbox; mounts lists the
-names usable with --mount.
+names usable with --mount. reset removes the home and venv volumes of
+this checkout and the dependency volumes of the repos chosen with --mount.
 
 Options:
   -m, --mount NAME[,NAME...]  also apply the mount file NAME.yaml;
                               repeatable, unique prefixes are accepted
+      --fresh                 test mode: temporary home, venv, dependency
+                              directories and Go build cache
   -h, --help                  show this help and exit
+
+Download caches: \${XDG_CACHE_HOME:-~/.cache}/agent-container
 
 Mount files: \${XDG_CONFIG_HOME:-~/.config}/ki-dev/agent-container/mounts/NAME.yaml
 Template:    docker/agent/mount.example.yaml
@@ -200,21 +216,43 @@ copy_build_sources() {
 run_agent() {
   # Reuse the user's existing CLI logins; no API keys are forwarded.
   local auth_root="${KI_DEV_AGENT_AUTH_HOME:-$HOME}"
-  check_repo_contracts
+  add_dependency_volumes
   require_cli_logins "$auth_root"
   export_compose_env "$auth_root"
+  prepare_caches
+  if [[ $mode == test ]]; then
+    compose_files+=(-f "$repo_dir/compose.fresh.yaml")
+  fi
   add_beads_mount
   local run_args=(run --rm --no-deps)
   if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
   exec docker compose "${compose_files[@]}" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"
 }
 
-# x-ki-dev in the chosen mount files; an invalid contract exits 2 before
-# Docker starts.
-check_repo_contracts() {
+# x-ki-dev of the chosen mount files becomes a Compose file for the
+# dependency directories; an invalid contract exits 2 before Docker starts.
+# The file name carries this PID, which exec hands on to docker compose, so
+# files of finished runs can be removed on the next start.
+add_dependency_volumes() {
   if [[ ${#mount_files[@]} == 0 ]]; then return; fi
-  host_python -m ki_dev.agent_repo_contract \
-    --project-directory "$repo_dir" "${mount_files[@]}" >/dev/null
+  local overlay_dir="$cache_dir/compose"
+  local overlay="$overlay_dir/deps-$$.json"
+  remove_stale_overlays "$overlay_dir"
+  host_python -m ki_dev.agent_dev_volumes --mode "$mode" \
+    --uid "$(id -u)" --gid "$(id -g)" \
+    --project-directory "$repo_dir" "${mount_files[@]}" > "$overlay"
+  compose_files+=(-f "$overlay")
+}
+
+remove_stale_overlays() {
+  local overlay_dir="$1" overlay pid
+  mkdir -p "$overlay_dir"
+  for overlay in "$overlay_dir"/deps-*.json; do
+    if [[ ! -f "$overlay" ]]; then continue; fi
+    pid="${overlay##*/deps-}"
+    pid="${pid%.json}"
+    if ! kill -0 "$pid" 2>/dev/null; then rm -f -- "$overlay"; fi
+  done
 }
 
 require_cli_logins() {
@@ -241,6 +279,13 @@ export_compose_env() {
   fi
 }
 
+# Host folders of the caches bound in compose.yaml; created here, otherwise
+# Docker would create them as root.
+prepare_caches() {
+  export KI_DEV_AGENT_CACHE_DIR="$cache_dir"
+  mkdir -p "$cache_dir"/{npm,pip,go-mod,go-build}
+}
+
 # Optional beads checkout for Go development and local bd builds, mounted at
 # /beads whenever ../beads exists or KI_DEV_AGENT_BEADS_REPO is set.
 add_beads_mount() {
@@ -249,7 +294,48 @@ add_beads_mount() {
   fi
   if [[ -n "${KI_DEV_AGENT_BEADS_REPO:-}" ]]; then
     export KI_DEV_AGENT_BEADS_REPO
+    exclude_beads_build "$KI_DEV_AGENT_BEADS_REPO"
     compose_files+=(-f "$repo_dir/compose.beads.yaml")
+  fi
+}
+
+# The local bd build lands in /beads/.build/linux; keep it out of git status.
+# A checkout without .git has no status to keep clean.
+exclude_beads_build() {
+  local beads="$1" exclude
+  if [[ ! -e "$beads/.git" ]]; then return; fi
+  exclude="$(git -C "$beads" rev-parse --path-format=absolute --git-path info/exclude)"
+  mkdir -p "$(dirname -- "$exclude")"
+  if ! grep -qxF '.build/' "$exclude" 2>/dev/null; then
+    echo '.build/' >> "$exclude"
+  fi
+}
+
+# Home and venv volumes of this checkout and the dependency volumes
+# (label ki-dev.repo) of the repos chosen with --mount. Download caches and
+# the Go build cache stay.
+reset_volumes() {
+  local volumes=("ki-dev-agent-${volume_key}-home" "ki-dev-agent-${volume_key}-venv")
+  local mount_file name labelled existing volume
+  local remove=()
+  if [[ ${#mount_files[@]} -gt 0 ]]; then
+    for mount_file in "${mount_files[@]}"; do
+      name="${mount_file##*/}"
+      labelled="$(docker volume ls -q --filter "label=ki-dev.repo=${name%.yaml}")"
+      for volume in $labelled; do volumes+=("$volume"); done
+    done
+  fi
+  existing="$(docker volume ls -q)"
+  for volume in "${volumes[@]}"; do
+    if grep -qxF -- "$volume" <<< "$existing"; then remove+=("$volume"); fi
+  done
+  if [[ ${#remove[@]} == 0 ]]; then
+    echo "No dev volumes to remove."
+    return
+  fi
+  if ! docker volume rm "${remove[@]}"; then
+    echo "Stop running agent containers of this checkout and retry." >&2
+    exit 1
   fi
 }
 

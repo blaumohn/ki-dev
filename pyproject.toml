@@ -30,3 +30,6 @@ packages = ["src/ki_dev"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "docker: echter Docker-Lauf; braucht Daemon, Image ki-dev-agent:local und CLI-Anmeldungen",
+]

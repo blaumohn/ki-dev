@@ -22,6 +22,29 @@ services:
       - type: volume
         source: agent-venv
         target: /workspace/.venv
+      # Download caches, shared by all repos and both modes; host folders
+      # under ${XDG_CACHE_HOME:-~/.cache}/agent-container, created by the script.
+      - type: bind
+        source: ${KI_DEV_AGENT_CACHE_DIR:?KI_DEV_AGENT_CACHE_DIR is required}/npm
+        target: /home/agent/.npm
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KI_DEV_AGENT_CACHE_DIR:?KI_DEV_AGENT_CACHE_DIR is required}/pip
+        target: /home/agent/.cache/pip
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KI_DEV_AGENT_CACHE_DIR:?KI_DEV_AGENT_CACHE_DIR is required}/go-mod
+        target: /home/agent/go/pkg/mod
+        bind:
+          create_host_path: false
+      # Generated Go build/test cache; compose.fresh.yaml replaces it.
+      - type: bind
+        source: ${KI_DEV_AGENT_CACHE_DIR:?KI_DEV_AGENT_CACHE_DIR is required}/go-build
+        target: /home/agent/.cache/go-build
+        bind:
+          create_host_path: false
       - type: bind
         source: ${KI_DEV_AGENT_AUTH_HOME:-${HOME}}/.claude
         target: /home/agent/.claude

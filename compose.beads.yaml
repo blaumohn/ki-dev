@@ -3,6 +3,11 @@
 # or ../beads exists next to this repository.
 services:
   agent:
+    # A local bd build in /beads/.build/linux/bd comes before the image's bd.
+    # Otherwise the image PATH from docker/agent/Dockerfile, kept equal by
+    # tests/test_agent_container.py.
+    environment:
+      PATH: /opt/agent-bin:/beads/.build/linux:/workspace/.venv/bin:/usr/local/cargo/bin:/usr/local/go/bin:/home/agent/go/bin:/usr/local/bin:/usr/bin:/bin
     volumes:
       - type: bind
         source: ${KI_DEV_AGENT_BEADS_REPO:?KI_DEV_AGENT_BEADS_REPO is required}

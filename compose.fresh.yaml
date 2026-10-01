@@ -1,0 +1,12 @@
+# Test mode (scripts/agent-container --fresh): home, venv and the Go build
+# cache become anonymous volumes, removed with the container (run --rm).
+# Download caches stay shared; see compose.yaml.
+services:
+  agent:
+    volumes:
+      - type: volume
+        target: /home/agent
+      - type: volume
+        target: /workspace/.venv
+      - type: volume
+        target: /home/agent/.cache/go-build

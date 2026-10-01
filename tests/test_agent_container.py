@@ -1,8 +1,10 @@
-"""Startskript der Agent-Sandbox: Mount-Auswahl, Ersatzpfade, Build."""
+"""Startskript der Agent-Sandbox: Mount-Auswahl, Modi, reset, Build."""
 
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -15,6 +17,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 FAKE_DOCKER = """#!/bin/sh
 if [ "$1 $2" = "buildx version" ]; then exit 0; fi
+if [ "$1" = volume ]; then
+  echo "$*" >> "$FAKE_LOG/volume-calls"
+  case "$2 $5" in
+    "ls label="*) cat "$FAKE_LOG/volumes-${5#label=}" 2>/dev/null ;;
+    "ls "*) cat "$FAKE_LOG/volumes" 2>/dev/null ;;
+    "rm "*) exit "$(cat "$FAKE_LOG/rm-exit" 2>/dev/null || echo 0)" ;;
+  esac
+  exit 0
+fi
 for arg; do
   if [ "$arg" = config ]; then
     printf '%s\\n' "$@" >> "$FAKE_LOG/config-args"
@@ -30,6 +41,7 @@ done
 printf '%s\\n' "$@" > "$FAKE_LOG/args"
 printf '%s\\n' "${KI_DEV_CLAUDE_STATE-<unset>}" > "$FAKE_LOG/claude"
 printf '%s\\n' "${KI_DEV_AGENT_BEADS_REPO-<unset>}" > "$FAKE_LOG/beads"
+printf '%s\\n' "${KI_DEV_AGENT_CACHE_DIR-<unset>}" > "$FAKE_LOG/cache"
 if [ "$1 $2" = "buildx build" ]; then
   for context; do :; done
   printf '%s\\n' "$context" > "$FAKE_LOG/context"
@@ -45,6 +57,7 @@ class Sandbox:
     bin: Path
     log: Path
     config: Path
+    cache: Path
 
     @property
     def mounts(self):
@@ -65,6 +78,7 @@ class Sandbox:
             "KI_DEV_AGENT_AUTH_HOME": str(self.auth),
             "FAKE_LOG": str(self.log),
             "XDG_CONFIG_HOME": str(self.config),
+            "XDG_CACHE_HOME": str(self.cache),
             **(env or {}),
         }
         assignments = [
@@ -96,9 +110,8 @@ def sandbox(tmp_path):
     (repo / "docker/agent/Dockerfile").write_text("FROM scratch\n")
     (repo / "src/ki_dev").mkdir(parents=True)
     (repo / "src/ki_dev/__init__.py").write_text("")
-    shutil.copy(
-        ROOT / "src/ki_dev/agent_repo_contract.py", repo / "src/ki_dev"
-    )
+    for module in ("agent_repo_contract.py", "agent_dev_volumes.py"):
+        shutil.copy(ROOT / "src/ki_dev" / module, repo / "src/ki_dev")
     (repo / "pyproject.toml").write_text("")
     auth = tmp_path / "auth"
     (auth / ".claude").mkdir(parents=True)
@@ -106,7 +119,12 @@ def sandbox(tmp_path):
     log = tmp_path / "log"
     log.mkdir()
     box = Sandbox(
-        repo, auth, tmp_path / "bin", log, tmp_path / "config"
+        repo,
+        auth,
+        tmp_path / "bin",
+        log,
+        tmp_path / "config",
+        tmp_path / "cache",
     )
     for name in (
         "devkit",
@@ -131,6 +149,15 @@ def compose_files(args):
 
 def mount_file(sandbox, name):
     return str(sandbox.mounts / f"{name}.yaml")
+
+
+def overlay_files(sandbox, args):
+    overlay_dir = sandbox.cache / "agent-container/compose"
+    return [
+        path
+        for path in compose_files(args)
+        if Path(path).parent == overlay_dir
+    ]
 
 
 @pytest.mark.parametrize(
@@ -217,17 +244,18 @@ def test_mount_dir_defaults_to_home_config(sandbox):
 def test_selected_mounts_follow_compose_yaml(sandbox, options):
     sandbox.run(*options, "run", "true")
     args = sandbox.logged("args")
-    assert compose_files(args) == [
+    assert compose_files(args)[:3] == [
         str(sandbox.repo / "compose.yaml"),
         mount_file(sandbox, "devkit"),
         mount_file(sandbox, "mdman"),
     ]
+    assert compose_files(args)[3:] == overlay_files(sandbox, args)
     assert args[-2:] == ["agent", "true"]
 
 
 def test_unique_prefix_selects_mount(sandbox):
     sandbox.run("-m", "mdman-ai,lebens", "run", "true")
-    assert compose_files(sandbox.logged("args"))[1:] == [
+    assert compose_files(sandbox.logged("args"))[1:3] == [
         mount_file(sandbox, "mdman-ai-session"),
         mount_file(sandbox, "lebenslauf-web-vorlage"),
     ]
@@ -311,6 +339,7 @@ def test_build_falls_back_to_system_python(sandbox):
         "./docker/agent/Dockerfile",
         "./project/pyproject.toml",
         "./project/src/ki_dev/__init__.py",
+        "./project/src/ki_dev/agent_dev_volumes.py",
         "./project/src/ki_dev/agent_repo_contract.py",
     ]
     assert not Path(sandbox.logged("context")[0]).exists()
@@ -375,3 +404,190 @@ def test_contracts_read_with_project_directory(sandbox):
 def test_no_contract_check_without_mounts(sandbox):
     sandbox.run("run", "true")
     assert not (sandbox.log / "config-args").exists()
+
+
+def lebens_with_npm(sandbox):
+    repo = sandbox.repo.parent / "lebens-src"
+    repo.mkdir()
+    (repo / "package.json").write_text("{}")
+    document = json.loads(
+        contract_document(
+            "lebenslauf-web-vorlage",
+            [
+                {
+                    "manager": "npm",
+                    "inputs": ["package.json"],
+                    "install": "node_modules",
+                }
+            ],
+        )
+    )
+    document["services"]["agent"]["volumes"][0]["source"] = str(repo)
+    (sandbox.log / "lebenslauf-web-vorlage.json").write_text(
+        json.dumps(document)
+    )
+
+
+@pytest.mark.parametrize(
+    ("options", "mode_file", "node_modules"),
+    [
+        ([], None, "volume"),
+        (["--fresh"], "compose.fresh.yaml", "tmpfs"),
+    ],
+)
+def test_mode_selects_compose_files(sandbox, options, mode_file, node_modules):
+    lebens_with_npm(sandbox)
+    sandbox.run(*options, "-m", "lebens", "run", "true")
+    args = sandbox.logged("args")
+    files = compose_files(args)
+    fresh = str(sandbox.repo / "compose.fresh.yaml")
+    assert (fresh in files) == (mode_file is not None)
+    [overlay] = overlay_files(sandbox, args)
+    agent = json.loads(Path(overlay).read_text())["services"]["agent"]
+    if node_modules == "volume":
+        assert agent["volumes"][0]["target"] == (
+            "/lebenslauf-web-vorlage/node_modules"
+        )
+    else:
+        assert agent["tmpfs"][0].startswith(
+            "/lebenslauf-web-vorlage/node_modules:"
+        )
+        assert files.index(overlay) < files.index(fresh)
+
+
+def test_caches_are_created_and_exported(sandbox):
+    sandbox.run("run", "true")
+    cache = sandbox.cache / "agent-container"
+    assert sandbox.logged("cache") == [str(cache)]
+    assert sorted(path.name for path in cache.iterdir()) == [
+        "go-build",
+        "go-mod",
+        "npm",
+        "pip",
+    ]
+
+
+def test_cache_dir_defaults_to_home_cache(sandbox):
+    sandbox.run("run", "true", env={"XDG_CACHE_HOME": ""})
+    assert sandbox.logged("cache") == [
+        str(sandbox.auth / ".cache/agent-container")
+    ]
+
+
+def test_stale_overlays_are_removed(sandbox):
+    overlay_dir = sandbox.cache / "agent-container/compose"
+    overlay_dir.mkdir(parents=True)
+    stale = overlay_dir / "deps-999999.json"
+    live = overlay_dir / f"deps-{os.getpid()}.json"
+    for overlay in (stale, live):
+        overlay.write_text("{}")
+    sandbox.run("-m", "devkit", "run", "true")
+    assert not stale.exists()
+    assert live.exists()
+    assert len(list(overlay_dir.iterdir())) == 2
+
+
+@pytest.mark.parametrize("command", ["build", "mounts", "reset"])
+def test_fresh_only_for_shell_and_run(sandbox, command):
+    _, _, stderr = sandbox.run("--fresh", command, retcode=2)
+    assert "--fresh applies only to shell and run" in stderr
+    assert not (sandbox.log / "volume-calls").exists()
+
+
+def volume_key(sandbox):
+    pipeline = local["printf"]["%s", str(sandbox.repo)] | local["cksum"]
+    with local.cwd(sandbox.repo):
+        _, stdout, _ = pipeline.run(retcode=0, timeout=10)
+    return stdout.split()[0]
+
+
+def test_reset_removes_dev_volumes_of_checkout(sandbox):
+    key = volume_key(sandbox)
+    (sandbox.log / "volumes").write_text(
+        f"ki-dev-agent-{key}-home\nki-dev-agent-{key}-venv\n"
+        "ki-dev-agent-1-home\nki-dev-repo-mdman-node_modules\n"
+        "ki-dev-repo-devkit-node_modules\n"
+    )
+    (sandbox.log / "volumes-ki-dev.repo=mdman").write_text(
+        "ki-dev-repo-mdman-node_modules\n"
+    )
+    sandbox.run("-m", "mdman", "reset")
+    assert sandbox.logged("volume-calls")[-1] == (
+        f"volume rm ki-dev-agent-{key}-home ki-dev-agent-{key}-venv "
+        "ki-dev-repo-mdman-node_modules"
+    )
+    assert not (sandbox.log / "args").exists()
+
+
+def test_reset_skips_missing_volumes(sandbox):
+    _, stdout, _ = sandbox.run("reset")
+    assert stdout == "No dev volumes to remove.\n"
+    assert sandbox.logged("volume-calls") == ["volume ls -q"]
+
+
+def test_reset_reports_volume_in_use(sandbox):
+    key = volume_key(sandbox)
+    (sandbox.log / "volumes").write_text(f"ki-dev-agent-{key}-home\n")
+    (sandbox.log / "rm-exit").write_text("1")
+    _, _, stderr = sandbox.run("reset", retcode=1)
+    assert "Stop running agent containers" in stderr
+
+
+def run_git(cwd, *args):
+    with local.cwd(cwd):
+        local["git"].run(args=list(args), retcode=0, timeout=10)
+
+
+@pytest.mark.parametrize("git", ["dir", "worktree", "none"])
+def test_beads_build_is_git_excluded(sandbox, git):
+    beads = sandbox.repo.parent / "beads"
+    beads.mkdir()
+    if git == "dir":
+        run_git(beads.parent, "init", "-q", str(beads))
+        exclude = beads / ".git/info/exclude"
+    elif git == "worktree":
+        main = sandbox.repo.parent / "beads-main"
+        run_git(main.parent, "init", "-q", str(main))
+        run_git(
+            main,
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "x",
+        )
+        beads.rmdir()
+        run_git(main, "worktree", "add", "-q", str(beads))
+        exclude = main / ".git/info/exclude"
+    for _ in range(2):
+        sandbox.run("run", "true")
+    if git == "none":
+        assert not (beads / ".git").exists()
+    else:
+        assert exclude.read_text().splitlines().count(".build/") == 1
+
+
+def test_beads_path_extends_image_path():
+    dockerfile = (ROOT / "docker/agent/Dockerfile").read_text()
+    image_path = re.search(r"\bPATH=(\S+)", dockerfile).group(1)
+    beads = (ROOT / "compose.beads.yaml").read_text()
+    beads_path = re.search(r"^\s+PATH: (\S+)$", beads, re.M).group(1)
+    entries = image_path.split(":")
+    assert entries[0] == "/opt/agent-bin"
+    assert beads_path.split(":") == [
+        entries[0],
+        "/beads/.build/linux",
+        *entries[1:],
+    ]
+
+
+@pytest.mark.parametrize("args", [[], ["shell"], ["shell", "-lc", "pwd"]])
+def test_fresh_shell_is_default(sandbox, args):
+    sandbox.run("--fresh", *args)
+    logged = sandbox.logged("args")
+    assert str(sandbox.repo / "compose.fresh.yaml") in compose_files(logged)
+    assert logged[logged.index("agent") + 1] == "bash"

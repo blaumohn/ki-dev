@@ -154,9 +154,10 @@ def load_mount_file(mount_file: Path, project_directory: Path) -> dict:
     ]
     label = mount_file.name
     try:
-        _, stdout, _ = local["docker"].run(
-            args=arguments, retcode=0, timeout=COMPOSE_TIMEOUT
-        )
+        with local.cwd(project_directory):
+            _, stdout, _ = local["docker"].run(
+                args=arguments, retcode=0, timeout=COMPOSE_TIMEOUT
+            )
     except CommandNotFound as exc:
         raise ComposeError("docker nicht gefunden") from exc
     except ProcessTimedOut as exc:
