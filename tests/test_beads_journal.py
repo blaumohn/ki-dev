@@ -449,8 +449,8 @@ def test_concurrent_first_open_creates_queue_once(tmp_path):
 
     Das Wettrennen um PRAGMA journal_mode=WAL tritt nur selten auf;
     dieser Test fängt eine Regression deshalb nicht verlässlich, er
-    prüft nur, dass gleichzeitige Erstöffnungen gelingen und keine
-    temporären Dateien zurückbleiben.
+    prüft nur, dass gleichzeitige Erstöffnungen gelingen, die Tabelle
+    vorhanden ist und keine temporären Dateien zurückbleiben.
     """
     env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     script = (
@@ -473,9 +473,15 @@ def test_concurrent_first_open_creates_queue_once(tmp_path):
         assert [process.wait(timeout=30) for process in processes] == [
             0
         ] * 8
-        assert sorted(path.name for path in folder.iterdir()) == [
-            queue.QUEUE_FILE
-        ]
+        # -wal/-shm dürfen bleiben: Manche SQLite-Builds (macOS-Host)
+        # entfernen sie beim Schließen nicht. Temporäre Dateien nicht.
+        names = {path.name for path in folder.iterdir()}
+        assert queue.QUEUE_FILE in names
+        assert names <= {
+            queue.QUEUE_FILE,
+            f"{queue.QUEUE_FILE}-wal",
+            f"{queue.QUEUE_FILE}-shm",
+        }
         with queue.opened(folder) as handle:
             assert queue.pending_count(handle) == 8
 

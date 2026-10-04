@@ -98,19 +98,34 @@ def _connect(journal: Path, file_name: str) -> SQLiteAckQueue:
 
 
 def _create(journal: Path) -> None:
-    """Legt die Queue an; ein paralleler Erster gewinnt ohne Fehler.
-
-    Beim Schließen der letzten Verbindung schreibt SQLite das WAL zurück
-    und entfernt es; die eingesetzte Datei ist also vollständig.
-    """
+    """Legt die Queue an; ein paralleler Erster gewinnt ohne Fehler."""
     temporary = f"{QUEUE_FILE}.{os.getpid()}.tmp"
     try:
         _connect(journal, temporary).close()
+        _checkpoint(journal / temporary)
         with suppress(FileExistsError):
             os.link(journal / temporary, journal / QUEUE_FILE)
     finally:
         for suffix in ("", "-wal", "-shm"):
             (journal / f"{temporary}{suffix}").unlink(missing_ok=True)
+
+
+def _checkpoint(path: Path) -> None:
+    """Schreibt das WAL der neuen Datei vollständig in die Hauptdatei.
+
+    Nicht jeder SQLite-Build tut das beim Schließen und entfernt -wal
+    und -shm (dauerhaftes WAL, beobachtet auf dem macOS-Host). Ohne
+    Checkpoint könnte das Löschen der temporären -wal die Tabelle
+    kosten.
+    """
+    with closing(sqlite3.connect(path, timeout=BUSY_TIMEOUT)) as db:
+        busy, _, _ = db.execute(
+            "PRAGMA wal_checkpoint(TRUNCATE)"
+        ).fetchone()
+    if busy:
+        raise sqlite3.OperationalError(
+            "Checkpoint der neuen Queue belegt"
+        )
 
 
 def put(handle: SQLiteAckQueue, event: str, issue: dict) -> int:
