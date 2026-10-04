@@ -172,12 +172,13 @@ def test_status_reads_crash_state_with_wal_but_no_shm(tmp_path):
     _add_configuration(tmp_path, "run-crash")
 
     # Nach einem Absturz kann eine WAL-Datei ohne zugehoerige SHM-Datei
-    # zurueckbleiben; ein sauberes runtime.close() raeumt beides auf,
-    # daher wird der Zustand hier gezielt aus den waehrend des offenen
-    # Laufs erfassten Bytes rekonstruiert.
+    # zurueckbleiben. Ein sauberes runtime.close() raeumt je nach
+    # SQLite-Build beides auf oder behaelt beides (dauerhaftes WAL,
+    # macOS-Host); daher wird der Zustand hier gezielt aus den waehrend
+    # des offenen Laufs erfassten Bytes rekonstruiert.
     (run_dir / "checkpoints.sqlite").write_bytes(main_bytes)
     (run_dir / "checkpoints.sqlite-wal").write_bytes(wal_bytes)
-    assert not (run_dir / "checkpoints.sqlite-shm").exists()
+    (run_dir / "checkpoints.sqlite-shm").unlink(missing_ok=True)
 
     result = status_run("run-crash", runs_dir=tmp_path)
 
