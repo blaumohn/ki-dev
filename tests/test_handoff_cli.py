@@ -1,12 +1,13 @@
 import json
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from ki_dev import beads_reader
+from ki_dev import beads_reader, handoff_preflight
 from ki_dev.cli import app
 from ki_dev.handoff import Step
 
@@ -71,11 +72,26 @@ def test_every_step_prints_plain_handoff(bd, step):
 
 
 def test_same_input_gives_same_output(bd):
-    args = ["handoff", "x-1", "--step", "review"]
+    # Nicht review: dessen Bericht trägt einen Zeitstempel, und ohne
+    # eigenes Projekt liefe der Vorlauf dieses Repos (pytest) rekursiv.
+    args = ["handoff", "x-1", "--step", "build"]
     assert (
         runner.invoke(app, args).stdout
         == runner.invoke(app, args).stdout
     )
+
+
+def test_missing_bead_names_id_on_stderr(bd):
+    bd.state.update(
+        returncode=1,
+        stdout=json.dumps(
+            {"error": "no issues found matching the provided IDs"}
+        ),
+    )
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "build"])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr == "Beads-Lesefehler: Bead x-1 nicht gefunden\n"
 
 
 def test_long_lines_are_not_wrapped(bd):
@@ -232,7 +248,7 @@ def test_review_preflight_success_runs_checks_and_appends_report(
     assert result.stdout.startswith("Schritt: review\n")
     assert "PRUEFBERICHT vorlauf-start=" in result.stdout
     assert "- ok: PASS" in result.stdout
-    assert result.stderr == ""
+    assert result.stderr == "Vorlauf: ok läuft (Timeout 5 s) …\n"
     artifacts = list(
         (tmp_path / ".local" / "handoff" / "preflight").glob("*.json")
     )
@@ -254,6 +270,7 @@ def test_review_preflight_check_failure_exits_1_without_handoff(
     assert "Vorlauf ohne Review-Übergabe" in result.stderr
     assert "fails: FAIL" in result.stderr
     assert ".local/handoff/preflight" in result.stderr
+    assert result.stderr.startswith("Vorlauf: fails läuft")
 
 
 def test_review_preflight_correction_failure_stops_before_checks(
@@ -322,7 +339,7 @@ def test_review_preflight_without_git_repository_succeeds(
     result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
     assert result.exit_code == 0
     assert "PRUEFBERICHT vorlauf-start=" in result.stdout
-    assert result.stderr == ""
+    assert result.stderr == "Vorlauf: ok läuft (Timeout 5 s) …\n"
 
 
 def test_review_preflight_artifact_failure_without_traceback(
@@ -472,6 +489,13 @@ def test_review_of_build_matches_plain_review(
         tmp_path, checks=f"[{_command('ok', 'print(1)')}]"
     )
     monkeypatch.chdir(tmp_path)
+    # Feste Zeit: der Bericht trägt vorlauf-start, zwei Läufe könnten
+    # sonst an einer Sekundengrenze verschieden sein.
+    monkeypatch.setattr(
+        handoff_preflight,
+        "_utc_now",
+        lambda: datetime(2026, 10, 3, 12, 0, tzinfo=UTC),
+    )
     plain = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
     explicit = runner.invoke(
         app,

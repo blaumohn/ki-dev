@@ -22,6 +22,7 @@ from ki_dev.handoff_preflight import (
     PreflightExecutionError,
     format_command_result,
     load_preflight_config,
+    progress_line,
     render_review_handoff,
     run_preflight,
 )
@@ -313,6 +314,39 @@ def test_first_failing_correction_stops_remaining_and_skips_checks(
     assert statuses["first"] == "fail"
     assert statuses["second"] == "omitted"
     assert statuses["would-check"] == "omitted"
+
+
+def test_on_start_reports_started_commands_only(tmp_path: Path):
+    repo = _repo(tmp_path)
+    config = PreflightConfig(
+        corrections=(
+            _py("first", "import sys; sys.exit(1)"),
+            _py("second", "print('ausgelassen')"),
+        ),
+        checks=(_py("check", "print('ausgelassen')"),),
+    )
+    lines: list[str] = []
+    run_preflight(config, repo, lines.append)
+    assert lines == [progress_line(config.corrections[0])]
+
+
+def test_on_start_precedes_each_command(tmp_path: Path):
+    repo = _repo(tmp_path)
+    config = PreflightConfig(
+        corrections=(_py("fmt", "print(1)"),),
+        checks=(_py("tests", "print(2)"),),
+    )
+    lines: list[str] = []
+    run_preflight(config, repo, lines.append)
+    assert [line.split()[1] for line in lines] == ["fmt", "tests"]
+
+
+def test_progress_line_bounds_and_cleans_name():
+    spec = CommandSpec("\x1b[31m" + "x" * 5000, ("pruefe",), 360.0)
+    line = progress_line(spec)
+    assert "\x1b" not in line
+    assert len(line) < 300
+    assert line.endswith("läuft (Timeout 360 s) …")
 
 
 def test_checks_all_run_even_if_one_fails(tmp_path: Path):

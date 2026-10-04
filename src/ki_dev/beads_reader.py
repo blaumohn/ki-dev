@@ -10,6 +10,9 @@ from pathlib import Path
 from ki_dev.handoff import HandoffIssue
 
 BD_TIMEOUT_S = 10
+# Feste Fehlerangabe von ``bd show --json`` (bd 1.3) auf stdout, wenn
+# kein Bead zur ID existiert.
+_BD_NOT_FOUND = "no issues found matching the provided IDs"
 
 
 class BeadsReadError(RuntimeError):
@@ -31,7 +34,7 @@ def read_issue(bead_id: str, workdir: Path) -> HandoffIssue:
 def _read_raw(bead_id: str, workdir: Path) -> dict:
     _check_bead_id(bead_id)
     stdout = _run_bd(
-        ["bd", "--readonly", "show", bead_id, "--json"], workdir
+        ["bd", "--readonly", "show", bead_id, "--json"], workdir, bead_id
     )
     return _single_object(stdout, bead_id)
 
@@ -100,7 +103,7 @@ def _check_bead_id(bead_id: str) -> None:
         )
 
 
-def _run_bd(argv: list[str], workdir: Path) -> str:
+def _run_bd(argv: list[str], workdir: Path, bead_id: str) -> str:
     try:
         completed = subprocess.run(
             argv,
@@ -122,15 +125,26 @@ def _run_bd(argv: list[str], workdir: Path) -> str:
             f"bd konnte nicht gelesen werden ({type(exc).__name__})"
         ) from exc
     if completed.returncode != 0:
-        raise BeadsReadError(_failure_message(completed))
+        raise BeadsReadError(_failure_message(completed, bead_id))
     return completed.stdout
 
 
 def _failure_message(
-    completed: subprocess.CompletedProcess[str],
+    completed: subprocess.CompletedProcess[str], bead_id: str
 ) -> str:
-    # Feste Ursache: bd-Ausgabe könnte Roh-JSON enthalten.
+    # Feste Ursachen: bd-Ausgabe könnte Roh-JSON enthalten und wird nie
+    # übernommen, nur auf die bekannte Nicht-gefunden-Angabe geprüft.
+    if _is_not_found(completed.stdout):
+        return f"Bead {bead_id} nicht gefunden"
     return f"bd endete mit Exit-Code {completed.returncode}"
+
+
+def _is_not_found(stdout: str) -> bool:
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and data.get("error") == _BD_NOT_FOUND
 
 
 def _single_object(stdout: str, bead_id: str) -> dict:

@@ -147,7 +147,7 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 | --- | --- |
 | 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht) |
 | 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
-| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
+| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
 Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen.
@@ -275,7 +275,11 @@ nicht ersatzweise `pruef-werkzeug`, sondern meldet ohne exakten Treffer einen
 Startfehler. Kein Commit, kein Zurücksetzen, kein Agentenstart, kein
 Beads-Update.
 
-**Ausgabe:** Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
+**Ausgabe:** Während des Vorlaufs meldet stderr vor jedem gestarteten
+Befehl eine Fortschrittszeile (`Vorlauf: tests läuft (Timeout 360 s) …`),
+damit ein langer Lauf nicht wie ein Hänger aussieht; stdout bleibt davon
+frei und lässt sich weiter umleiten (`> uebergabe.txt`).
+Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
 um einen kompakten Bericht (`PRUEFBERICHT vorlauf-start=…`, je Befehl
 Status, gekürzter Ausgabe und vollständiger `argv` mit eindeutigem Quoting
 mehrteiliger Argumente). `name` und die Prozessausgabe werden von

@@ -197,12 +197,17 @@ def _review_handoff(
     project_root = Path.cwd()
     config = load_preflight_config(project_root)
     try:
-        report = run_preflight(config, project_root)
+        report = run_preflight(config, project_root, _progress)
     except PreflightExecutionError as exc:
         _fail(_execution_error_finding(exc), code=1)
     if not report.valid:
         _fail(_repair_finding(report), code=1)
     return render_review_handoff(issue, report)
+
+
+def _progress(line: str) -> None:
+    # stderr: stdout trägt nur die Übergabe (``> uebergabe.txt``).
+    typer.echo(line, err=True)
 
 
 def _execution_error_finding(exc: PreflightExecutionError) -> str:

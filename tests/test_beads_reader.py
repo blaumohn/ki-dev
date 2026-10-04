@@ -132,6 +132,44 @@ def test_process_failure_reports_fixed_cause_only(
     assert str(info.value) == "bd endete mit Exit-Code 3"
 
 
+NOT_FOUND_STDOUT = json.dumps(
+    {
+        "error": "no issues found matching the provided IDs",
+        "hint": "GEHEIMER-MARKER",
+        "schema_version": 1,
+    }
+)
+
+
+def test_missing_bead_is_named_without_bd_output(monkeypatch, tmp_path):
+    _install(
+        monkeypatch,
+        returncode=1,
+        stdout=NOT_FOUND_STDOUT,
+        stderr="Issue x-1 not found\nGEHEIMER-MARKER",
+    )
+    with pytest.raises(BeadsReadError) as info:
+        read_issue("x-1", tmp_path)
+    assert str(info.value) == "Bead x-1 nicht gefunden"
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        json.dumps({"error": "database is locked"}),
+        json.dumps([{"error": "no issues found matching the provided IDs"}]),
+        "Issue x-1 not found",
+    ],
+)
+def test_similar_bd_failure_keeps_fixed_cause(
+    monkeypatch, tmp_path, stdout
+):
+    _install(monkeypatch, returncode=1, stdout=stdout)
+    with pytest.raises(BeadsReadError) as info:
+        read_issue("x-1", tmp_path)
+    assert str(info.value) == "bd endete mit Exit-Code 1"
+
+
 def test_timeout_is_adapter_error(monkeypatch, tmp_path):
     _install(monkeypatch, raises=subprocess.TimeoutExpired(["bd"], 10))
     with pytest.raises(BeadsReadError, match="10 s"):

@@ -25,7 +25,7 @@ import re
 import shlex
 import shutil
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -325,9 +325,15 @@ def _check_unique_names(specs: tuple[CommandSpec, ...]) -> None:
 
 
 def run_preflight(
-    config: PreflightConfig, project_root: Path
+    config: PreflightConfig,
+    project_root: Path,
+    on_start: Callable[[str], None] | None = None,
 ) -> PreflightReport:
     """Korrekturen seriell, dann Prüfungen, ohne Shell/Commit/Reset.
+
+    ``on_start`` erhält vor jedem gestarteten Befehl eine bereinigte
+    Fortschrittszeile (``progress_line``); ausgelassene Befehle melden
+    keinen Start. Die Ausgabe selbst bleibt Sache des Aufrufers.
 
     Bricht bei der ersten fehlgeschlagenen Korrektur ab; bereits
     erfolgte Änderungen bleiben stehen (kein automatischer Rückbau).
@@ -353,7 +359,7 @@ def run_preflight(
                 )
             )
             continue
-        result = _run_command(project_root, spec)
+        result = _run_started(project_root, spec, on_start)
         results.append(result)
         if result.status != "pass":
             corrections_ok = False
@@ -375,11 +381,29 @@ def run_preflight(
 
     checks_ok = True
     for spec in config.checks:
-        result = _run_command(project_root, spec)
+        result = _run_started(project_root, spec, on_start)
         results.append(result)
         if result.status != "pass":
             checks_ok = False
     return _finish(project_root, results, started_at, valid=checks_ok)
+
+
+def progress_line(spec: CommandSpec) -> str:
+    """Fortschrittszeile für einen gestarteten Befehl."""
+    return (
+        f"Vorlauf: {_report_name(spec.name)} läuft "
+        f"(Timeout {spec.timeout_s:g} s) …"
+    )
+
+
+def _run_started(
+    project_root: Path,
+    spec: CommandSpec,
+    on_start: Callable[[str], None] | None,
+) -> CommandResult:
+    if on_start is not None:
+        on_start(progress_line(spec))
+    return _run_command(project_root, spec)
 
 
 def _with_partial_results(results: list[CommandResult], func, *args):
