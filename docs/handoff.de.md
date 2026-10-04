@@ -280,8 +280,8 @@ Build darf gezielt entwickeln und testen; das ist kein pauschales Test-,
 Typprüfer- oder Werkzeugverbot. Ein deterministischer Vorlauf entlastet die
 Bau-Sitzung nur von mechanischem Linting/Formatieren und den abschließenden
 Prüfungen. Die Review-Sitzung selbst startet keine Formatter, Linter,
-Typprüfer oder Tests; sie liest Dateien, Diff, Anforderungen und den
-Prüfbericht und beurteilt anhand dessen auch Testqualität und Abdeckung.
+Typprüfer oder Tests und keine Folgemodelle; sie liest Dateien, Diff,
+Anforderungen und den Prüfbericht und beurteilt anhand dessen auch Testqualität und Abdeckung.
 
 `ki-dev handoff BEAD_ID --step review` führt diesen Vorlauf jetzt selbst aus,
 **bevor** die Übergabe entsteht — das erweitert den sonst rein lesenden

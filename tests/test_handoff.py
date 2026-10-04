@@ -378,12 +378,22 @@ def test_materialize_review_criteria_cover_unauthorized_loop_scope():
     )
 
 
-def test_all_review_targets_forbid_own_tooling_or_further_models():
-    for target in SOURCE_TARGETS:
-        text = " ".join(
-            render_handoff(_issue(), Step.REVIEW, target).split()
-        )
-        assert "Prüfwerkzeuge oder Folgemodelle" in text
+@pytest.mark.parametrize("target", list(ReviewTarget))
+def test_all_review_targets_forbid_own_tooling_or_further_models(
+    target,
+):
+    text = " ".join(
+        render_handoff(_issue(), Step.REVIEW, target).split()
+    )
+    assert "Prüfwerkzeuge oder Folgemodelle" in text
+
+
+def test_default_review_is_build_and_forbids_further_models():
+    default = " ".join(
+        render_handoff(_issue(), Step.REVIEW).split()
+    )
+    assert "Reviewziel: build" in default
+    assert "Prüfwerkzeuge oder Folgemodelle" in default
 
 
 @pytest.mark.parametrize("target", list(ReviewTarget))
