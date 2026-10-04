@@ -465,8 +465,9 @@ def test_journal_commits_start_no_auto_maintenance(
     """Losgelöstes gc --auto überlebte Hook und Journal-Sperre.
 
     Der Wiederanlauf hielte dessen aktive packed-refs.lock für verwaist.
-    pre-auto-gc läuft nur, wenn git automatische Wartung startet; drei
-    Platzhalter in objects/17 überschreiten gc.auto=1.
+    Wartung ist ausdrücklich aktiv und synchron, damit die Kontrolle
+    unabhängig von Git-Defaults und Hintergrundprozessen bleibt.
+    Drei Platzhalter in objects/17 überschreiten gc.auto=1.
     """
     marker = journal_dir.parent / "auto-gc-ran"
     hooks = journal_dir.parent / "gc-hooks"
@@ -475,11 +476,19 @@ def test_journal_commits_start_no_auto_maintenance(
     hook.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n")
     hook.chmod(0o755)
     git(journal_dir, "config", "core.hooksPath", str(hooks))
-    git(journal_dir, "config", "gc.auto", "1")
+    for key, value in {
+        "maintenance.auto": "true",
+        "maintenance.gc.enabled": "true",
+        "maintenance.autoDetach": "false",
+        "gc.autoDetach": "false",
+        "gc.auto": "1",
+    }.items():
+        git(journal_dir, "config", key, value)
     loose = journal_dir / ".git" / "objects" / "17"
     loose.mkdir(exist_ok=True)
+    name_length = len(git(journal_dir, "rev-parse", "HEAD").strip()) - 2
     for number in range(3):
-        (loose / f"{number:038d}").touch()
+        (loose / f"{number:0{name_length}x}").touch()
     git(journal_dir, "commit", "--allow-empty", "-q", "-m", "kontrolle")
     assert marker.exists()
     marker.unlink()
