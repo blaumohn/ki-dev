@@ -43,12 +43,32 @@ kopieren. `ki-dev handoff --help` fasst das auf Deutsch zusammen.
 
 ### Geerbte Epic-Hinweise
 
+Ein Epic-Hinweis vermittelt Ziel, Zusammenhang und begründende Entscheidungen
+des Elternvorhabens. Er hilft dem Agenten, die Aufgabe eines untergeordneten
+Vorgangs im Ganzen zu verstehen und eine dazu passende Lösung zu entwickeln.
+Die Übergabe fordert dazu auf, diesen Kontext zu berücksichtigen und
+Widersprüche zum konkreten Auftrag zu melden.
+
+Beispiel für den Kontext eines Epics:
+
+> Wir erproben manuelle Agentenübergaben, bevor wir den Ablauf automatisieren.
+> Der Mensch startet die Sitzungen und entscheidet über weitere Schritte.
+
+Ein Kind-Vorgang zur Vorbereitung einer Übergabe kann daraus verstehen,
+warum ein automatischer Agentenstart am Ziel des Epics vorbeigehen würde.
+Der Hinweis darf auch geltende Einschränkungen enthalten; sein Zweck reicht
+über eine Sammlung von Handlungsregeln hinaus.
+
 Untergeordnete Vorgänge erben automatisch `metadata.handoff.guidance`
 aus ihren Epic-Vorfahren über Beads-Beziehungen vom Typ `parent-child`.
 Auch Zwischenvorgänge ohne eigenen Hinweis unterbrechen die Vererbung nicht.
 Die Ausgabe nennt die Epic-ID und zeigt Hinweise vom äußersten zum nächsten
 Epic; sie werden nicht überschrieben. Blockierungs- und Herkunftsbeziehungen
 liefern keinen Kontext. Widersprüche klärt der Mensch.
+
+Der derzeitige Feldname `guidance` bezeichnet diesen Epic-Kontext. Es gibt
+kein zusätzliches Pflichtfeld und keine automatische Bewertung, ob ein Text
+das Epic inhaltlich ausreichend erklärt.
 
 Das optionale Feld enthält einen nichtleeren Text mit höchstens 600 Zeichen.
 Fehlerhafte Hinweise, nicht lesbare Eltern, mehrdeutige Eltern und Zyklen

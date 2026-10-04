@@ -182,11 +182,41 @@ def test_build_may_test_review_may_not():
 
 @pytest.mark.parametrize("step", list(Step))
 def test_every_step_includes_epic_guidance_with_origin(step):
+    context = (
+        "Wir erproben manuelle Übergaben vor der Automatisierung. "
+        "Der Mensch startet die Sitzungen."
+    )
     issue = _issue(
-        epic_guidance=(("epic-1", "Kleine Umsetzungsschnitte."),)
+        epic_guidance=(("epic-1", context),)
     )
     text = render_handoff(issue, step)
-    assert "Epic-Hinweis (epic-1):\nKleine Umsetzungsschnitte." in text
+    assert f"Epic-Hinweis (epic-1):\n{context}" in text
+    normalized = " ".join(text.split())
+    assert (
+        "Ziel, Zusammenhang und begründende Entscheidungen"
+        in normalized
+    )
+    assert "Melde Widersprüche zum konkreten Auftrag." in normalized
+
+
+def test_epic_context_instruction_appears_once_before_ordered_hints():
+    issue = _issue(
+        epic_guidance=(("outer", "Ziel"), ("inner", "Beitrag"))
+    )
+    text = render_handoff(issue, Step.BUILD)
+    instruction = "Die Epic-Hinweise vermitteln"
+    assert text.count(instruction) == 1
+    assert text.index(instruction) < text.index("Epic-Hinweis (outer)")
+    assert text.index("Epic-Hinweis (outer)") < text.index(
+        "Epic-Hinweis (inner)"
+    )
+
+
+@pytest.mark.parametrize("step", list(Step))
+def test_no_epic_context_adds_no_instruction(step):
+    text = render_handoff(_issue(), step)
+    assert "Die Epic-Hinweise vermitteln" not in text
+    assert "Epic-Hinweis (" not in text
 
 
 # --- ReviewTarget (--review-of) -------------------------------------

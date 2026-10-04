@@ -241,6 +241,14 @@ def render_handoff(
         "",
         *_roles(step, review_target),
     ]
+    if issue.epic_guidance:
+        lines += [
+            "",
+            "Die Epic-Hinweise vermitteln Ziel, Zusammenhang und",
+            "begründende Entscheidungen des Elternvorhabens. Nutze",
+            "diesen Kontext für eine dazu passende Lösung deiner",
+            "Teilaufgabe. Melde Widersprüche zum konkreten Auftrag.",
+        ]
     for epic_id, guidance in issue.epic_guidance:
         lines += [
             "",
