@@ -425,7 +425,11 @@ Bestätigung getötet, erkennt der nächste Lauf den Commit am Trailer und
 committet nicht doppelt. Stirbt er während git schreibt, entfernt der
 nächste Lauf die verwaisten Sperrdateien (`.git/index.lock`,
 `.git/HEAD.lock`, `.git/packed-refs.lock`, `.git/refs/**/*.lock`) und
-committet das Ereignis genau einmal. Ist die Sperre 5 s belegt, bleibt das Ereignis liegen;
+committet das Ereignis genau einmal. Automatische git-Wartung
+(`gc --auto`, `maintenance run --auto`) ist für Journal-Commits
+abgeschaltet: Sie liefe losgelöst weiter, und der Wiederanlauf hielte
+ihre aktive Sperre für verwaist. Lose Objekte sammeln sich deshalb an;
+`git gc` im Journal nur ausführen, wenn keine Hooks laufen können. Ist die Sperre 5 s belegt, bleibt das Ereignis liegen;
 der Halter oder der nächste Hook committet es.
 
 ```bash

@@ -44,20 +44,29 @@ class GitError(RuntimeError):
 
 
 def run_git(
-    directory: Path, *args: str, retcode: int | tuple[int, ...] = 0
+    directory: Path,
+    *args: str,
+    retcode: int | tuple[int, ...] = 0,
+    config: dict[str, str] | None = None,
 ) -> tuple[int, str]:
-    """Führt git -C directory args aus; liefert Exitcode und stdout.
+    """Führt git -C directory [-c k=v ...] args aus; Exitcode, stdout.
 
-    Die Fehlermeldung nennt Unterbefehl und Exitcode, nicht die Ausgabe:
+    config überschreibt Einstellungen nur für diesen Aufruf. Die
+    Fehlermeldung nennt Unterbefehl und Exitcode, nicht die Ausgabe:
     sie kann Issue-Inhalte enthalten.
     """
     command = args[0]
+    overrides = [
+        option
+        for key, value in (config or {}).items()
+        for option in ("-c", f"{key}={value}")
+    ]
     try:
         with local.env():
             for name in _LOCAL_ENV_VARS:
                 local.env.pop(name, None)
             code, stdout, _ = local["git"][
-                "-C", str(directory), *args
+                "-C", str(directory), *overrides, *args
             ].run(retcode=retcode, timeout=GIT_TIMEOUT)
     except CommandNotFound as exc:
         raise GitError("git nicht gefunden") from exc

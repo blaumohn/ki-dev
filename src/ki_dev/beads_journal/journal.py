@@ -31,6 +31,11 @@ LOCK = ".lock"
 ERRORS_LOG = ".errors.log"
 LOCK_TIMEOUT = 5
 TRAILER = "Journal-Event"
+# git commit stößt sonst gc --auto bzw. maintenance run --auto an,
+# standardmäßig losgelöst (gc.autoDetach). Diese Wartung überlebte den
+# Hook und die Journal-Sperre; der Wiederanlauf hielte ihre noch aktive
+# packed-refs.lock für verwaist und löschte sie.
+NO_AUTO_MAINTENANCE = {"gc.auto": "0", "maintenance.auto": "false"}
 _GITIGNORE = f"{LOCK}\n{ERRORS_LOG}\n{QUEUE_FILE}*\n{ISSUES}/.*.tmp\n"
 _MARKER_TEXT = "Beads-Journal von ki-dev; siehe README.md.\n"
 _README = """\
@@ -73,7 +78,9 @@ Warteschlange; der Halter oder der nächste Hook bzw. `status`
 committet es. Nach einem Abbruch (bd beendet Hooks nach 10 s) setzt der
 nächste Lauf unbestätigte Einträge zurück und entfernt verwaiste
 Sperrdateien (`.git/index.lock`, `.git/HEAD.lock`,
-`.git/packed-refs.lock`, `.git/refs/**/*.lock`). Ungültige
+`.git/packed-refs.lock`, `.git/refs/**/*.lock`); automatische
+git-Wartung ist für Journal-Commits abgeschaltet, damit keine
+losgelöste Wartung eine dieser Sperren noch hält. Ungültige
 Nutzlasten werden als fehlgeschlagen vermerkt, ohne Rohwerte;
 Git-Fehler lassen das Ereignis in der Warteschlange. Gründe stehen in
 `.errors.log`, mit `#<Queue-ID>` wie in `status`. `.queue.db` gehört
@@ -144,6 +151,7 @@ def initialize(
                 "-q",
                 "-m",
                 f"init: {len(issues)} Issues aus bd export",
+                config=NO_AUTO_MAINTENANCE,
             )
         except (GitError, OSError):
             (journal / MARKER).unlink()
@@ -219,6 +227,7 @@ def commit_event(
             commit_message(event, issue, late),
             "--trailer",
             f"{TRAILER}: {queue_id}",
+            config=NO_AUTO_MAINTENANCE,
         )
     except (GitError, OSError):
         if not late:

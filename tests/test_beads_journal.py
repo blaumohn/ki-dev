@@ -95,7 +95,8 @@ def held_lock(journal_dir):
 def git_wrapper(tmp_path, body):
     """PATH-Ordner mit einem git, das body vor dem echten git ausführt.
 
-    body sieht die Argumente von run_git: $1=-C, $2=Journal, $3=Befehl.
+    body sieht die Argumente von run_git: $1=-C, $2=Journal, dann
+    optionale -c-Paare und der Befehl.
     """
     folder = tmp_path / "bin"
     folder.mkdir()
@@ -395,9 +396,11 @@ def test_kill_during_git_commit_is_committed_once(
     """Prüffall 4: verwaiste index.lock, unbestätigter Eintrag."""
     env = git_wrapper(
         tmp_path,
-        'if [ "$3" = commit ]; then\n'
-        '  touch "$2/.git/index.lock"; kill -9 "$PPID"; exit 1\n'
-        "fi",
+        'for argument in "$@"; do\n'
+        '  if [ "$argument" = commit ]; then\n'
+        '    touch "$2/.git/index.lock"; kill -9 "$PPID"; exit 1\n'
+        "  fi\n"
+        "done",
     )
     drain.enqueue(journal_dir, "create", issue())
 
@@ -454,6 +457,37 @@ def test_kill_during_ref_update_leaves_no_stuck_queue(journal_dir):
     assert git(journal_dir, "status", "--porcelain") == ""
     log = (journal_dir / ERRORS_LOG).read_text()
     assert "verwaiste .git/refs/heads/main.lock entfernt" in log
+
+
+def test_journal_commits_start_no_auto_maintenance(
+    monkeypatch, repo, journal_dir
+):
+    """Losgelöstes gc --auto überlebte Hook und Journal-Sperre.
+
+    Der Wiederanlauf hielte dessen aktive packed-refs.lock für verwaist.
+    pre-auto-gc läuft nur, wenn git automatische Wartung startet; drei
+    Platzhalter in objects/17 überschreiten gc.auto=1.
+    """
+    marker = journal_dir.parent / "auto-gc-ran"
+    hooks = journal_dir.parent / "gc-hooks"
+    hooks.mkdir()
+    hook = hooks / "pre-auto-gc"
+    hook.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n")
+    hook.chmod(0o755)
+    git(journal_dir, "config", "core.hooksPath", str(hooks))
+    git(journal_dir, "config", "gc.auto", "1")
+    loose = journal_dir / ".git" / "objects" / "17"
+    loose.mkdir(exist_ok=True)
+    for number in range(3):
+        (loose / f"{number:038d}").touch()
+    git(journal_dir, "commit", "--allow-empty", "-q", "-m", "kontrolle")
+    assert marker.exists()
+    marker.unlink()
+
+    assert call_hook(monkeypatch, repo, "create", issue()) == 0
+
+    assert subjects(journal_dir)[-1] == "create t-1: Titel t-1 [open]"
+    assert not marker.exists()
 
 
 def test_trailer_match_is_exact(monkeypatch, repo, journal_dir):
@@ -826,10 +860,10 @@ def test_failed_commit_does_not_leak_into_next_event(
     before = subjects(journal_dir)
     real_git = journal.run_git
 
-    def fail_commit(directory, *args):
+    def fail_commit(directory, *args, **options):
         if args[0] == "commit":
             raise GitError("git commit: Exit 1")
-        return real_git(directory, *args)
+        return real_git(directory, *args, **options)
 
     monkeypatch.setattr(journal, "run_git", fail_commit)
     assert (
@@ -855,10 +889,10 @@ def test_failed_commit_does_not_leak_into_next_event(
 def test_failed_init_does_not_activate_journal(monkeypatch, repo):
     real_git = journal.run_git
 
-    def fail_commit(directory, *args):
+    def fail_commit(directory, *args, **options):
         if args[0] == "commit":
             raise GitError("git commit: Exit 1")
-        return real_git(directory, *args)
+        return real_git(directory, *args, **options)
 
     monkeypatch.setattr(journal, "run_git", fail_commit)
     path = repo / ".local/beads-journal"
