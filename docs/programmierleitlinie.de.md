@@ -132,7 +132,7 @@ func handleCopyFileRangeErr(err error, copied, written int64) (bool, error) {
 
 **Beispiel – optionale Angaben:** `metadata.handoff` ist ein optionales
 Mapping. Fehlt es, ist das erlaubt; der vorhandene Wert `7` ist ein Typfehler.
-Ein vorhandenes `guidance` muss nichtleerer Text innerhalb der definierten
+Ein vorhandenes `epic_context` muss nichtleerer Text innerhalb der definierten
 Längengrenze sein. Ein falscher Typ darf nicht als „Angabe fehlt“ weiterlaufen.
 
 ### Fehler werden nicht pauschal geschluckt

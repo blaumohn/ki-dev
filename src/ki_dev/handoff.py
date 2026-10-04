@@ -40,7 +40,7 @@ class HandoffIssue:
     design: object = None
     acceptance_criteria: object = None
     source_refs: object = None
-    epic_guidance: tuple[tuple[str, str], ...] = ()
+    epic_context: tuple[tuple[str, str], ...] = ()
 
 
 class HandoffInvalidError(ValueError):
@@ -241,7 +241,7 @@ def render_handoff(
         "",
         *_roles(step, review_target),
     ]
-    if issue.epic_guidance:
+    if issue.epic_context:
         lines += [
             "",
             "Die Epic-Hinweise vermitteln Ziel, Zusammenhang und",
@@ -249,11 +249,11 @@ def render_handoff(
             "diesen Kontext für eine dazu passende Lösung deiner",
             "Teilaufgabe. Melde Widersprüche zum konkreten Auftrag.",
         ]
-    for epic_id, guidance in issue.epic_guidance:
+    for epic_id, epic_context in issue.epic_context:
         lines += [
             "",
             f"Epic-Hinweis ({_line(epic_id)}):",
-            _line(guidance),
+            _line(epic_context),
         ]
     if _needs_refs(step, review_target):
         lines += ["", "Quellenreferenzen (unaufgelöst):"]

@@ -29,7 +29,7 @@ unbeteiligten Code nebenbei umzubauen.
   Feldpfad übersetzen; keine ungefilterten Validator-Meldungen mit Rohwerten.
 
 **Beispiel:** Ein optionales `handoff` erhält `type: object`; ein enthaltenes
-`guidance` erhält `type: string`, `minLength: 1`, `maxLength: 600` und
+`epic_context` erhält `type: string`, `minLength: 1`, `maxLength: 600` und
 das Muster `\S` (mindestens ein Nicht-Leerraumzeichen). Die Grenze wird
 einmal im zuständigen Vertrag definiert. `{}` ist als fehlende optionale
 Angabe erlaubt, `{"handoff": 7}` wird am Feld `handoff` abgelehnt.

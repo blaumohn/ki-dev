@@ -249,11 +249,11 @@ def _node(key, parent=None, kind="task", hint=None):
             {"id": parent, "dependency_type": "parent-child"}
         ]
     if hint is not None:
-        node["metadata"] = {"handoff": {"guidance": hint}}
+        node["metadata"] = {"handoff": {"epic_context": hint}}
     return node
 
 
-def test_epic_guidance_inherits_through_tasks_in_root_order(
+def test_epic_context_inherits_through_tasks_in_root_order(
     monkeypatch, tmp_path
 ):
     graph = {
@@ -264,7 +264,7 @@ def test_epic_guidance_inherits_through_tasks_in_root_order(
     }
     fake = _install_graph(monkeypatch, tmp_path, graph)
     issue = read_issue("x-1", tmp_path)
-    assert issue.epic_guidance == (
+    assert issue.epic_context == (
         ("outer", "General"),
         ("inner", "Specific"),
     )
@@ -276,7 +276,7 @@ def test_epic_guidance_inherits_through_tasks_in_root_order(
     ]
 
 
-def test_blockers_and_origin_do_not_supply_guidance(
+def test_blockers_and_origin_do_not_supply_epic_context(
     monkeypatch, tmp_path
 ):
     node = _node("x-1")
@@ -285,7 +285,7 @@ def test_blockers_and_origin_do_not_supply_guidance(
         for kind in ("blocks", "discovered-from")
     ]
     fake = _install_graph(monkeypatch, tmp_path, {"x-1": node})
-    assert read_issue("x-1", tmp_path).epic_guidance == ()
+    assert read_issue("x-1", tmp_path).epic_context == ()
     assert [call[3] for call in fake.calls] == ["x-1"]
 
 
@@ -304,19 +304,19 @@ def test_invalid_epic_hint_is_visible_error(
     with pytest.raises(BeadsReadError) as info:
         read_issue("x-1", tmp_path)
     assert str(info.value) == (
-        "Ungültige Metadaten in Bead epic: metadata.handoff.guidance"
+        "Ungültige Metadaten in Bead epic: metadata.handoff.epic_context"
     )
 
 
 def test_null_epic_hint_is_visible_error(monkeypatch, tmp_path):
     epic = _node("epic", kind="epic")
-    epic["metadata"] = {"handoff": {"guidance": None}}
+    epic["metadata"] = {"handoff": {"epic_context": None}}
     _install_graph(
         monkeypatch,
         tmp_path,
         {"x-1": _node("x-1", "epic"), "epic": epic},
     )
-    with pytest.raises(BeadsReadError, match="handoff.guidance"):
+    with pytest.raises(BeadsReadError, match="handoff.epic_context"):
         read_issue("x-1", tmp_path)
 
 
@@ -351,7 +351,7 @@ def test_invalid_metadata_on_ancestors_is_rejected(
         read_issue("x-1", tmp_path)
 
 
-def test_epic_without_handoff_gives_no_guidance(monkeypatch, tmp_path):
+def test_epic_without_handoff_gives_no_epic_context(monkeypatch, tmp_path):
     epic = _node("epic", kind="epic")
     epic["metadata"] = {"other": 1}
     _install_graph(
@@ -359,7 +359,7 @@ def test_epic_without_handoff_gives_no_guidance(monkeypatch, tmp_path):
         tmp_path,
         {"x-1": _node("x-1", "epic"), "epic": epic},
     )
-    assert read_issue("x-1", tmp_path).epic_guidance == ()
+    assert read_issue("x-1", tmp_path).epic_context == ()
 
 
 def test_parent_cycle_is_visible_error(monkeypatch, tmp_path):

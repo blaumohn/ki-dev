@@ -181,13 +181,13 @@ def test_build_may_test_review_may_not():
 
 
 @pytest.mark.parametrize("step", list(Step))
-def test_every_step_includes_epic_guidance_with_origin(step):
+def test_every_step_includes_epic_context_with_origin(step):
     context = (
         "Wir erproben manuelle Übergaben vor der Automatisierung. "
         "Der Mensch startet die Sitzungen."
     )
     issue = _issue(
-        epic_guidance=(("epic-1", context),)
+        epic_context=(("epic-1", context),)
     )
     text = render_handoff(issue, step)
     assert f"Epic-Hinweis (epic-1):\n{context}" in text
@@ -201,7 +201,7 @@ def test_every_step_includes_epic_guidance_with_origin(step):
 
 def test_epic_context_instruction_appears_once_before_ordered_hints():
     issue = _issue(
-        epic_guidance=(("outer", "Ziel"), ("inner", "Beitrag"))
+        epic_context=(("outer", "Ziel"), ("inner", "Beitrag"))
     )
     text = render_handoff(issue, Step.BUILD)
     instruction = "Die Epic-Hinweise vermitteln"

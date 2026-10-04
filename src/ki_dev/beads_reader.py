@@ -40,7 +40,7 @@ _EPIC_METADATA_SCHEMA = {
                 "handoff": {
                     "type": "object",
                     "properties": {
-                        "guidance": {
+                        "epic_context": {
                             **NONEMPTY_TEXT_SCHEMA,
                             "maxLength": 600,
                         }
@@ -65,7 +65,7 @@ def read_issue(bead_id: str, workdir: Path) -> HandoffIssue:
     raw = _read_raw(bead_id, workdir)
     _check_metadata(raw, _METADATA_SCHEMA)
     return replace(
-        _normalize(raw), epic_guidance=_epic_guidance(raw, workdir)
+        _normalize(raw), epic_context=_inherited_epic_context(raw, workdir)
     )
 
 
@@ -77,7 +77,7 @@ def _read_raw(bead_id: str, workdir: Path) -> dict:
     return _single_object(stdout, bead_id)
 
 
-def _epic_guidance(
+def _inherited_epic_context(
     raw: dict, workdir: Path
 ) -> tuple[tuple[str, str], ...]:
     hints: list[tuple[str, str]] = []
@@ -91,13 +91,13 @@ def _epic_guidance(
         _check_metadata(
             raw, _EPIC_METADATA_SCHEMA if is_epic else _METADATA_SCHEMA
         )
-        if is_epic and (hint := _guidance(raw)) is not None:
+        if is_epic and (hint := _epic_context(raw)) is not None:
             hints.append((parent, hint))
     return tuple(reversed(hints))
 
 
-def _guidance(raw: dict) -> str | None:
-    return raw.get("metadata", {}).get("handoff", {}).get("guidance")
+def _epic_context(raw: dict) -> str | None:
+    return raw.get("metadata", {}).get("handoff", {}).get("epic_context")
 
 
 def _check_metadata(raw: dict, schema: dict) -> None:
