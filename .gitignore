@@ -17,3 +17,6 @@ dist/
 
 # Beads-Journal ersetzt den versionierten Export (ki-dev-ablauf-yl5)
 .beads/issues.jsonl
+.beads/interactions.jsonl
+# Workspace-Sperre, von bd neben .beads/ angelegt
+.beads.gate.lock
