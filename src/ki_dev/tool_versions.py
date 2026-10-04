@@ -4,8 +4,18 @@ from __future__ import annotations
 
 import json
 from importlib.resources import files
+from pathlib import Path
 
 from jsonschema import Draft202012Validator
+
+from ki_dev.config_sources import ConfigSource
+
+_FILE_NAME = "tool-versions.json"
+CONFIG_SOURCE = ConfigSource(
+    "loop (Agenten-CLI-Versionen)",
+    f"ki_dev/{_FILE_NAME} (Paket)",
+    path=Path(str(files("ki_dev").joinpath(_FILE_NAME))),
+)
 
 _VERSION_KEYS = (
     "BD_VERSION",
@@ -45,7 +55,7 @@ _VALIDATOR = Draft202012Validator(
 
 
 def load_tool_versions() -> dict[str, str]:
-    resource = files("ki_dev").joinpath("tool-versions.json")
+    resource = files("ki_dev").joinpath(_FILE_NAME)
     try:
         values = json.loads(resource.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeError) as exc:

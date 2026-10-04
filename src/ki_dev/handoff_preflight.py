@@ -25,8 +25,8 @@ import re
 import shlex
 import shutil
 import tomllib
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -36,12 +36,19 @@ from jsonschema.exceptions import ValidationError
 from plumbum import ProcessTimedOut, local
 from plumbum.machines.local import LocalCommand
 
+from ki_dev.config_sources import ConfigSource
 from ki_dev.handoff import HandoffIssue, Step, render_handoff
 
 ARTIFACT_DIR = Path(".local/handoff/preflight")
 
-_TABLE_KEYS = ("tool", "ki-dev", "handoff", "preflight")
-_CONFIG_PATH = "tool.ki-dev.handoff.preflight"
+# Ort der Vorlauf-Konfiguration; maßgeblich für Laden, Fehlbefund und
+# Auflistung (ki-dev config).
+CONFIG_FILE = Path("pyproject.toml")
+CONFIG_TABLE = "tool.ki-dev.handoff.preflight"
+_TABLE_KEYS = tuple(CONFIG_TABLE.split("."))
+CONFIG_SOURCE = ConfigSource(
+    "handoff --step review", str(CONFIG_FILE), CONFIG_TABLE, CONFIG_FILE
+)
 
 # Ausgabegrenzen je Befehl: Ein Fehlschlag behält Anfang und Ende der
 # Ausgabe, ein Erfolg nur die letzte Zeile (z. B. eine Testzusammen-
@@ -52,10 +59,14 @@ _MAX_SUCCESS_DETAIL_CHARS = 200
 # unterliegt im Bericht aber derselben Begrenzungs-/Bereinigungspflicht
 # wie bounded_detail (kein voller Log, keine Steuerzeichen/ANSI-Codes
 # im Agentenkontext). Beide Ausgabewege -- Prüfartefakt und
-# Terminalausgabe -- verwenden dafür ``_report_name``. argv ist bereits
-# beim Konfigurationsladen auf höchstens _MAX_COMMAND_CHARS begrenzt
-# und wird vollständig gezeigt.
-_MAX_COMMAND_CHARS = 100
+# Terminalausgabe -- verwenden dafür ``report_name``. argv selbst ist
+# nicht in der Länge begrenzt: Das Prüfartefakt enthält sie vollständig,
+# Übergabe und Reparaturbefund zeigen sie einzeilig gekürzt und
+# verweisen einmal auf das Artefakt (``artifact_line``).
+_MAX_ARGV_DISPLAY_CHARS = 100
+# Steht nie gekürzt neben argv, damit eine Abwahl per --check-args auch
+# bei gekürzter argv sichtbar bleibt.
+ADDED_MARKER = "[ergänzt per --check-args]"
 
 _PATH_SEPARATORS = tuple(sep for sep in (os.sep, os.altsep) if sep)
 
@@ -67,6 +78,10 @@ Status = Literal["pass", "fail", "omitted"]
 
 class PreflightConfigError(ValueError):
     """Aufruf/Bead/Konfiguration ungültig; keine Schreibwirkung."""
+
+
+class CheckArgsError(ValueError):
+    """--check-args ungültig; Aufruffehler vor jeder Schreibwirkung."""
 
 
 class PreflightExecutionError(RuntimeError):
@@ -90,11 +105,16 @@ class PreflightExecutionError(RuntimeError):
 
 @dataclass(frozen=True)
 class CommandSpec:
-    """Ein Korrektur- oder Prüfbefehl aus der Projektkonfiguration."""
+    """Ein Korrektur- oder Prüfbefehl aus der Projektkonfiguration.
+
+    ``added`` nennt die per ``--check-args`` an ``argv`` angehängten
+    Argumente (bereits in ``argv`` enthalten); leer ohne Ergänzung.
+    """
 
     name: str
     argv: tuple[str, ...]
     timeout_s: float
+    added: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -111,6 +131,7 @@ class CommandResult:
     exit_code: int | None
     bounded_detail: str
     omitted: bool
+    added: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -127,6 +148,7 @@ class PreflightReport:
     started_at: str
     commands: tuple[CommandResult, ...]
     valid: bool
+    artifact: Path
 
 
 # Strukturregeln (Typen, Pflichtfelder, Listenformen) stehen als
@@ -135,16 +157,20 @@ class PreflightReport:
 # bewusst erlaubt: Der Vorlauf liest eine fremde pyproject.toml und
 # darf zusätzliche Projektangaben nicht zum Konfigurationsfehler
 # machen.
+# Gemeinsame Regel für argv aus der Konfiguration und für per
+# --check-args ergänzte Argumente.
+_ARGV_SCHEMA = {
+    "type": "array",
+    "minItems": 1,
+    "items": {"type": "string", "minLength": 1},
+}
+
 _COMMAND_SCHEMA = {
     "type": "object",
     "required": ["name", "argv", "timeout_s"],
     "properties": {
         "name": {"type": "string", "minLength": 1, "pattern": r"\S"},
-        "argv": {
-            "type": "array",
-            "minItems": 1,
-            "items": {"type": "string", "minLength": 1},
-        },
+        "argv": _ARGV_SCHEMA,
         "timeout_s": {"type": "number", "exclusiveMinimum": 0},
     },
 }
@@ -179,7 +205,7 @@ def load_preflight_config(project_root: Path) -> PreflightConfig:
     Tabelle oder ``checks``, ist das ein Konfigurationsfehler, kein
     Anlass für einen automatischen Modellstart.
     """
-    raw = _read_preflight_table(project_root / "pyproject.toml")
+    raw = _read_preflight_table(project_root / CONFIG_FILE)
     table = _validate_structure(raw)
     corrections = _commands(table.get("corrections", ()), "corrections")
     checks = _commands(table["checks"], "checks")
@@ -212,7 +238,7 @@ def _read_preflight_table(path: Path) -> object:
     for key in _TABLE_KEYS:
         if not isinstance(table, dict) or key not in table:
             raise PreflightConfigError(
-                f"{_CONFIG_PATH} fehlt in {path}"
+                f"{CONFIG_TABLE} fehlt in {path}"
             )
         table = table[key]
     return table
@@ -221,7 +247,7 @@ def _read_preflight_table(path: Path) -> object:
 def _validate_structure(table: object) -> dict:
     if isinstance(table, dict) and "checks" not in table:
         raise PreflightConfigError(
-            f"{_CONFIG_PATH}.checks fehlt; mindestens eine Prüfung ist "
+            f"{CONFIG_TABLE}.checks fehlt; mindestens eine Prüfung ist "
             "für eine erfolgreiche Review-Übergabe erforderlich"
         )
     try:
@@ -252,7 +278,7 @@ def _diagnosis(error: ValidationError) -> str:
 
 
 def _field_path(path: Iterable[str | int]) -> str:
-    parts = [_CONFIG_PATH]
+    parts = [CONFIG_TABLE]
     for step in path:
         parts.append(
             f"[{step}]" if isinstance(step, int) else f".{step}"
@@ -264,7 +290,7 @@ def _commands(
     raw: Iterable[dict], field: str
 ) -> tuple[CommandSpec, ...]:
     return tuple(
-        _command(item, f"{_CONFIG_PATH}.{field}[{index}]")
+        _command(item, f"{CONFIG_TABLE}.{field}[{index}]")
         for index, item in enumerate(raw)
     )
 
@@ -274,39 +300,26 @@ def _command(item: dict, label: str) -> CommandSpec:
 
     Ergänzend zum Schema, weil sich diese Regeln dort nicht oder nicht
     unterscheidbar ausdrücken lassen: Ein einzelnes ``pattern`` kann
-    NUL und CR/LF nicht getrennt melden, die Befehlslänge gilt für
-    ``shlex.join(argv)`` statt für ein einzelnes Feld, und
-    ``exclusiveMinimum`` lässt ``inf``/``nan`` durch.
+    NUL und CR/LF nicht getrennt melden, und ``exclusiveMinimum`` lässt
+    ``inf``/``nan`` durch. Die Länge von argv ist nicht begrenzt.
     """
     argv = tuple(item["argv"])
-    _check_argv_characters(argv, label)
-    _check_command_length(argv, label)
+    problem = _argv_character_problem(argv)
+    if problem:
+        raise PreflightConfigError(f"{label}.argv {problem}")
     timeout_s = float(item["timeout_s"])
     _check_timeout_finite(timeout_s, label)
     return CommandSpec(item["name"], argv, timeout_s)
 
 
-def _check_argv_characters(argv: tuple[str, ...], label: str) -> None:
+def _argv_character_problem(argv: Sequence[str]) -> str | None:
+    """Zeichenregel für argv; ``None`` heißt zulässig."""
     joined = "".join(argv)
     if "\x00" in joined:
-        raise PreflightConfigError(
-            f"{label}.argv darf kein NUL-Zeichen enthalten"
-        )
+        return "darf kein NUL-Zeichen enthalten"
     if "\r" in joined or "\n" in joined:
-        raise PreflightConfigError(
-            f"{label}.argv darf kein Zeilenumbruchzeichen (CR/LF) "
-            "enthalten"
-        )
-
-
-def _check_command_length(argv: tuple[str, ...], label: str) -> None:
-    command = shlex.join(argv)
-    if len(command) > _MAX_COMMAND_CHARS:
-        raise PreflightConfigError(
-            f"{label}.argv ergibt mit Quoting {len(command)} Zeichen, "
-            f"erlaubt sind höchstens {_MAX_COMMAND_CHARS}: lange Logik "
-            "gehört in ein benanntes Skript/Modul"
-        )
+        return "darf kein Zeilenumbruchzeichen (CR/LF) enthalten"
+    return None
 
 
 def _check_timeout_finite(timeout_s: float, label: str) -> None:
@@ -320,8 +333,76 @@ def _check_unique_names(specs: tuple[CommandSpec, ...]) -> None:
     names = [spec.name for spec in specs]
     if len(names) != len(set(names)):
         raise PreflightConfigError(
-            f"{_CONFIG_PATH}: name ist mehrfach vergeben"
+            f"{CONFIG_TABLE}: name ist mehrfach vergeben"
         )
+
+
+def parse_check_args(
+    values: Sequence[str],
+) -> dict[str, tuple[str, ...]]:
+    """``NAME=ARGS``-Angaben in Prüfname -> Zusatzargumente übersetzen.
+
+    ARGS werden wie in einer Shell zerlegt (``shlex.split``) und
+    unterliegen derselben argv-Regel wie die Konfiguration, aber keiner
+    Längengrenze. Rohwerte erscheinen nicht in Fehlermeldungen.
+    """
+    parsed: dict[str, tuple[str, ...]] = {}
+    for position, value in enumerate(values, start=1):
+        name, separator, text = value.partition("=")
+        label = f"--check-args (Angabe {position})"
+        if not separator or not name.strip():
+            raise CheckArgsError(f"{label}: erwartet NAME=ARGS")
+        if name in parsed:
+            raise CheckArgsError(
+                f"{label}: Prüfung mehrfach angegeben; Argumente in "
+                "einer Angabe zusammenfassen"
+            )
+        parsed[name] = _extra_args(text, label)
+    return parsed
+
+
+def _extra_args(text: str, label: str) -> tuple[str, ...]:
+    try:
+        args = shlex.split(text)
+    except ValueError as exc:
+        raise CheckArgsError(
+            f"{label}: ARGS nicht zerlegbar (Quoting unvollständig)"
+        ) from exc
+    if not Draft202012Validator(_ARGV_SCHEMA).is_valid(args):
+        raise CheckArgsError(f"{label}: ARGS ist leer")
+    problem = _argv_character_problem(args)
+    if problem:
+        raise CheckArgsError(f"{label}: ARGS {problem}")
+    return tuple(args)
+
+
+def apply_check_args(
+    config: PreflightConfig, extra: Mapping[str, tuple[str, ...]]
+) -> PreflightConfig:
+    """Zusatzargumente an die genannten Prüfungen anhängen.
+
+    Nur Prüfungen (checks) sind ergänzbar; ein unbekannter oder
+    Korrektur-Name ist ein Aufruffehler, kein stilles Ignorieren.
+    """
+    check_names = [spec.name for spec in config.checks]
+    for name in extra:
+        if name not in check_names:
+            raise CheckArgsError(
+                f"--check-args: {report_name(name)!r} ist keine "
+                "konfigurierte Prüfung (vorhanden: "
+                f"{', '.join(report_name(n) for n in check_names)})"
+            )
+    checks = tuple(
+        replace(
+            spec,
+            argv=spec.argv + extra[spec.name],
+            added=extra[spec.name],
+        )
+        if spec.name in extra
+        else spec
+        for spec in config.checks
+    )
+    return replace(config, checks=checks)
 
 
 def run_preflight(
@@ -356,6 +437,7 @@ def run_preflight(
                     None,
                     "ausgelassen: vorherige Korrektur fehlgeschlagen",
                     omitted=True,
+                    added=spec.added,
                 )
             )
             continue
@@ -375,6 +457,7 @@ def run_preflight(
                     "ausgelassen: Korrektur fehlgeschlagen, Prüfung "
                     "nicht gestartet",
                     omitted=True,
+                    added=spec.added,
                 )
             )
         return _finish(project_root, results, started_at, valid=False)
@@ -391,7 +474,7 @@ def run_preflight(
 def progress_line(spec: CommandSpec) -> str:
     """Fortschrittszeile für einen gestarteten Befehl."""
     return (
-        f"Vorlauf: {_report_name(spec.name)} läuft "
+        f"Vorlauf: {report_name(spec.name)} läuft "
         f"(Timeout {spec.timeout_s:g} s) …"
     )
 
@@ -424,11 +507,16 @@ def _finish(
     *,
     valid: bool,
 ) -> PreflightReport:
-    report = PreflightReport(started_at, tuple(results), valid)
-    _with_partial_results(
-        results, _write_artifact, project_root, report
+    commands = tuple(results)
+    artifact = _with_partial_results(
+        results,
+        _write_artifact,
+        project_root,
+        started_at,
+        commands,
+        valid,
     )
-    return report
+    return PreflightReport(started_at, commands, valid, artifact)
 
 
 def _utc_now() -> datetime:
@@ -476,6 +564,7 @@ def _run_command(
             None,
             f"Timeout nach {spec.timeout_s:g} s",
             omitted=False,
+            added=spec.added,
         )
     except OSError as exc:
         return _start_failure(spec, str(exc))
@@ -486,6 +575,7 @@ def _run_command(
         exit_code,
         _exit_detail(exit_code, stdout + stderr),
         omitted=False,
+        added=spec.added,
     )
 
 
@@ -517,6 +607,7 @@ def _start_failure(spec: CommandSpec, reason: str) -> CommandResult:
         None,
         _bounded(f"Startfehler: {reason}", _MAX_FAILURE_DETAIL_CHARS),
         omitted=False,
+        added=spec.added,
     )
 
 
@@ -538,19 +629,26 @@ def _exit_detail(returncode: int, output: str) -> str:
     )
 
 
-def _bounded(text: str, limit: int) -> str:
+def _bounded(text: str, limit: int, *, inline: bool = False) -> str:
+    """Anfang und Ende behalten, die Auslassung sichtbar markieren.
+
+    ``inline`` hält das Ergebnis einzeilig (für argv im Bericht);
+    sonst steht die Markierung auf eigener Zeile (Prozessausgabe).
+    """
     if len(text) <= limit:
         return text
     head = limit // 2
     tail = limit - head
     omitted = len(text) - limit
+    if inline:
+        return f"{text[:head]}…(+{omitted})…{text[-tail:]}"
     return (
         f"{text[:head]}\n[... {omitted} Zeichen ausgelassen ...]\n"
         f"{text[-tail:]}"
     )
 
 
-def _report_name(name: str) -> str:
+def report_name(name: str) -> str:
     """Name für den Bericht bereinigen und begrenzen.
 
     Gemeinsam für Prüfartefakt und Terminalausgabe, damit beide
@@ -560,22 +658,28 @@ def _report_name(name: str) -> str:
 
 
 def _write_artifact(
-    project_root: Path, report: PreflightReport
+    project_root: Path,
+    started_at: str,
+    commands: tuple[CommandResult, ...],
+    valid: bool,
 ) -> Path:
+    """Bericht mit vollständiger argv ablegen; Pfad relativ zur
+    Projektwurzel zurückgeben (so erscheint er in der Ausgabe)."""
     directory = project_root / ARTIFACT_DIR
     payload = {
-        "started_at": report.started_at,
-        "valid": report.valid,
+        "started_at": started_at,
+        "valid": valid,
         "commands": [
             {
-                "name": _report_name(item.name),
+                "name": report_name(item.name),
                 "argv": list(item.argv),
                 "status": item.status,
                 "exit_code": item.exit_code,
                 "detail": item.bounded_detail,
                 "omitted": item.omitted,
+                "added_args": list(item.added),
             }
-            for item in report.commands
+            for item in commands
         ],
     }
     try:
@@ -583,15 +687,15 @@ def _write_artifact(
         # Mikrosekunden, damit zwei Vorläufe in derselben Sekunde nicht
         # dasselbe Artefakt überschreiben.
         stamp = _utc_now().strftime("%Y%m%dT%H%M%S.%fZ")
-        path = directory / f"{stamp}.json"
-        path.write_text(
+        name = f"{stamp}.json"
+        (directory / name).write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         )
     except OSError as exc:
         raise PreflightExecutionError(
             f"Prüfartefakt nicht schreibbar: {exc}"
         ) from exc
-    return path
+    return ARTIFACT_DIR / name
 
 
 def format_command_result(item: CommandResult) -> str:
@@ -601,23 +705,25 @@ def format_command_result(item: CommandResult) -> str:
     den Reparaturbefund bei Fehlschlag genutzt, damit beide Pfade
     dieselben Angaben (einschließlich ausgelassener Befehle und der
     tatsächlichen argv) zeigen. name stammt aus der Konfiguration,
-    nicht aus Prozessausgabe, wird über ``_report_name`` aber ebenso
+    nicht aus Prozessausgabe, wird über ``report_name`` aber ebenso
     bereinigt und begrenzt wie bounded_detail: kein voller Log, keine
     Steuerzeichen/ANSI-Codes im Agentenkontext; das Prüfartefakt
-    verwendet dieselbe Aufbereitung. argv dagegen bleibt unverändert:
-    Sie ist beim
-    Konfigurationsladen bereits auf höchstens _MAX_COMMAND_CHARS
-    begrenzt und frei von CR/LF/NUL (siehe ``_parse_command``), und der
-    Mensch soll den Befehl daraus wörtlich nachvollziehen und erneut
-    starten können. Deshalb wird nichts still entfernt und nichts
-    maskiert; ``shlex.join`` hält nur die Argumentgrenzen eindeutig.
+    verwendet dieselbe Aufbereitung. argv ist frei von CR/LF/NUL (siehe
+    ``_command``) und wird nicht maskiert; ``shlex.join`` hält die
+    Argumentgrenzen eindeutig. Lange argv werden sichtbar gekürzt
+    (``…(+N)…``); vollständig stehen sie im Prüfartefakt, auf das
+    ``artifact_line`` einmal je Ausgabe verweist.
     """
-    name = _report_name(item.name)
-    argv_text = shlex.join(item.argv)
+    name = report_name(item.name)
+    argv_text = _bounded(
+        shlex.join(item.argv), _MAX_ARGV_DISPLAY_CHARS, inline=True
+    )
     parts = [f"- {name}: {item.status.upper()}"]
     if item.bounded_detail:
         parts.append(item.bounded_detail)
     parts.append(f"[argv={argv_text}]")
+    if item.added:
+        parts.append(ADDED_MARKER)
     return " ".join(parts)
 
 
@@ -628,9 +734,15 @@ def render_review_handoff(
     Review-Übergabe (``handoff.render_handoff``) an."""
     lines = [f"PRUEFBERICHT vorlauf-start={report.started_at}"]
     lines += [format_command_result(item) for item in report.commands]
+    lines.append(artifact_line(report))
     lines.append(
         "Hinweis: Der Zeitpunkt dient der manuellen Zuordnung, nicht "
         "als Beweis eines unveränderten Quellstands; nach weiteren "
         "Änderungen den Vorlauf erneut starten."
     )
     return render_handoff(issue, Step.REVIEW) + "\n".join(lines) + "\n"
+
+
+def artifact_line(report: PreflightReport) -> str:
+    """Einziger Verweis je Ausgabe auf den vollständigen Bericht."""
+    return f"Vollständig: {report.artifact}"

@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
+from ki_dev.config_sources import ConfigSource
 from ki_dev.executors import Effort, build_executor
 from ki_dev.executors.contract import TurnBudget
 from ki_dev.loop import AgentBuildMode, AgentReviewer, LoopTask
@@ -26,6 +27,11 @@ from ki_dev.repository_finalization import RepositoryFinalizer
 from ki_dev.review_context import ProjectionLimits
 from ki_dev.run_store import RunStore
 from ki_dev.usage_accounting import metadata
+
+# Neue Läufe lesen ihre JSON-Konfiguration aus der hier benannten
+# Option; der Ort wird je Aufruf angegeben.
+CONFIG_OPTION = "--config"
+CONFIG_SOURCE = ConfigSource("loop", f"{CONFIG_OPTION} DATEI")
 
 
 class LoopConfigError(ValueError):

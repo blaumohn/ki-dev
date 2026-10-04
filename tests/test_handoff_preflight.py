@@ -14,14 +14,18 @@ from plumbum.machines.local import LocalMachine
 
 from ki_dev.handoff import HandoffIssue
 from ki_dev.handoff_preflight import (
+    ADDED_MARKER,
     ARTIFACT_DIR,
+    CheckArgsError,
     CommandResult,
     CommandSpec,
     PreflightConfig,
     PreflightConfigError,
     PreflightExecutionError,
+    apply_check_args,
     format_command_result,
     load_preflight_config,
+    parse_check_args,
     progress_line,
     render_review_handoff,
     run_preflight,
@@ -205,51 +209,16 @@ def test_invalid_toml_is_config_error(tmp_path: Path):
         load_preflight_config(tmp_path)
 
 
-def test_command_of_exactly_100_chars_after_quoting_is_accepted(
-    tmp_path: Path,
-):
-    """len(shlex.join(argv)) <= 100 ist die Grenze, nicht < 100
-    (Vorlaufvertrag P2)."""
-    argv = ["x" * 100]
-    assert len(shlex.join(argv)) == 100
+def test_long_argv_is_accepted_without_length_limit(tmp_path: Path):
+    """argv ist nicht in der Länge begrenzt (zip.5 ersetzt die frühere
+    100-Zeichen-Grenze); begrenzt wird nur die Anzeige."""
+    argv = ["pytest", "--deselect", "tests/" + "x" * 300]
     _pyproject(
         tmp_path, f"checks = [{{name = 'c', argv = {argv!r}, "
         "timeout_s = 1.0}]\n",
     )
     config = load_preflight_config(tmp_path)
     assert config.checks[0].argv == tuple(argv)
-
-
-def test_command_of_101_chars_after_quoting_is_config_error(
-    tmp_path: Path,
-):
-    argv = ["x" * 101]
-    assert len(shlex.join(argv)) == 101
-    _pyproject(
-        tmp_path, f"checks = [{{name = 'c', argv = {argv!r}, "
-        "timeout_s = 1.0}]\n",
-    )
-    with pytest.raises(PreflightConfigError, match="100"):
-        load_preflight_config(tmp_path)
-
-
-def test_command_length_counts_quoting_not_just_plain_text(
-    tmp_path: Path,
-):
-    """Ein Token mit Leerzeichen braucht Quoting; die Grenze gilt fuer
-    len(shlex.join(argv)), nicht fuer eine naive Verkettung ohne
-    Quoting -- sonst koennte ein Befehl die 100 Zeichen inklusive
-    Quoting ueberschreiten, ohne dass die Pruefung es bemerkt."""
-    argv = ["x" * 95, "a b"]
-    plain_length = len(" ".join(argv))
-    quoted_length = len(shlex.join(argv))
-    assert plain_length <= 100 < quoted_length
-    _pyproject(
-        tmp_path, f"checks = [{{name = 'c', argv = {argv!r}, "
-        "timeout_s = 1.0}]\n",
-    )
-    with pytest.raises(PreflightConfigError, match="100"):
-        load_preflight_config(tmp_path)
 
 
 # ---------------------------------------------------------------------
@@ -721,10 +690,9 @@ def test_format_command_result_keeps_argv_verbatim():
     assert f"[argv={shlex.join(argv)}]" in format_command_result(item)
 
 
-def test_format_command_result_shows_valid_argv_completely():
-    """Gültige argv sind beim Konfigurationsladen bereits auf höchstens
-    100 Zeichen begrenzt; der Bericht zeigt sie deshalb vollständig,
-    ohne Interpreterlisten, Optionsparser oder Maskierung."""
+def test_format_command_result_shows_short_argv_completely():
+    """Kurze argv erscheinen vollständig, ohne Interpreterlisten,
+    Optionsparser oder Maskierung."""
     argv = ("python", "-c", "print('geheimes skript')")
     item = CommandResult("x", argv, "pass", 0, "", omitted=False)
     line = format_command_result(item)
@@ -828,3 +796,179 @@ def test_render_review_handoff_does_not_touch_filesystem(
     # waere hier wirkungslos.
     monkeypatch.setattr(LocalMachine, "_popen", _forbidden)
     render_review_handoff(_issue(), report)
+
+
+def test_format_command_result_shortens_long_argv_visibly_on_one_line():
+    """Lange argv werden einzeilig gekürzt; Anfang, Ende und die Zahl
+    ausgelassener Zeichen bleiben sichtbar (nichts still entfernt)."""
+    argv = ("pytest", "--deselect", "tests/" + "x" * 200 + "::t_ende")
+    item = CommandResult("t", argv, "pass", 0, "", omitted=False)
+    line = format_command_result(item)
+    full = shlex.join(argv)
+    assert full not in line
+    assert "\n" not in line
+    assert "[argv=pytest --deselect" in line
+    assert "::t_ende]" in line
+    assert f"…(+{len(full) - 100})…" in line
+
+
+def test_artifact_keeps_long_argv_completely(tmp_path: Path):
+    repo = _repo(tmp_path)
+    argv = (sys.executable, "-c", "pass", "y" * 300)
+    config = PreflightConfig(
+        corrections=(), checks=(CommandSpec("lang", argv, 10.0),)
+    )
+    report = run_preflight(config, repo)
+    payload = json.loads((repo / report.artifact).read_text())
+    assert payload["commands"][0]["argv"] == list(argv)
+
+
+def test_report_artifact_is_relative_file_under_artifact_dir(
+    tmp_path: Path,
+):
+    repo = _repo(tmp_path)
+    report = run_preflight(_ok_config(), repo)
+    assert not report.artifact.is_absolute()
+    assert report.artifact.parent == ARTIFACT_DIR
+    assert (repo / report.artifact).is_file()
+
+
+def test_render_review_handoff_names_artifact_exactly_once(
+    tmp_path: Path,
+):
+    """Ein gemeinsamer Verweis statt einer Fundstelle je Kürzung."""
+    repo = _repo(tmp_path)
+    long_argv = (sys.executable, "-c", "pass", "y" * 300)
+    config = PreflightConfig(
+        corrections=(),
+        checks=(
+            CommandSpec("a", long_argv, 10.0),
+            CommandSpec("b", long_argv, 10.0),
+        ),
+    )
+    report = run_preflight(config, repo)
+    text = render_review_handoff(_issue(), report)
+    assert text.count("Vollständig:") == 1
+    assert f"Vollständig: {report.artifact}\n" in text
+
+
+
+# ---------------------------------------------------------------------
+# --check-args: parse_check_args / apply_check_args
+# ---------------------------------------------------------------------
+
+
+def test_parse_check_args_splits_like_a_shell():
+    parsed = parse_check_args(
+        ['tests=-k "not langsam" --deselect a.py::t', "lint=--fix"]
+    )
+    assert parsed == {
+        "tests": ("-k", "not langsam", "--deselect", "a.py::t"),
+        "lint": ("--fix",),
+    }
+
+
+def test_parse_check_args_has_no_length_limit():
+    parsed = parse_check_args(["tests=--deselect " + "x" * 500])
+    assert parsed["tests"] == ("--deselect", "x" * 500)
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("tests", "NAME=ARGS"),
+        ("=-k x", "NAME=ARGS"),
+        ("  =-k x", "NAME=ARGS"),
+        ("tests=", "leer"),
+        ("tests=   ", "leer"),
+        ("tests=''", "leer"),
+        ("tests=-k 'offen", "Quoting"),
+        ("tests=-k 'a\nb'", "CR/LF"),
+        ("tests=-k a\x00b", "NUL"),
+    ],
+)
+def test_parse_check_args_rejects_malformed_values(value, message):
+    with pytest.raises(CheckArgsError, match=message):
+        parse_check_args([value])
+
+
+def test_parse_check_args_error_does_not_echo_raw_value():
+    with pytest.raises(CheckArgsError) as excinfo:
+        parse_check_args(["tests=-k 'GEHEIM"])
+    assert "GEHEIM" not in str(excinfo.value)
+
+
+def test_parse_check_args_rejects_duplicate_name():
+    """Zwei Angaben für dieselbe Prüfung werden nicht still
+    zusammengeführt oder überschrieben."""
+    with pytest.raises(CheckArgsError, match="mehrfach"):
+        parse_check_args(["tests=-x", "tests=-q"])
+
+
+def _two_checks_config() -> PreflightConfig:
+    return PreflightConfig(
+        corrections=(_py("fmt", "pass"),),
+        checks=(_py("tests", "pass"), _py("lint", "pass")),
+    )
+
+
+def test_apply_check_args_appends_to_named_check_only():
+    config = apply_check_args(
+        _two_checks_config(), {"tests": ("-k", "x")}
+    )
+    tests, lint = config.checks
+    assert tests.argv[-2:] == ("-k", "x")
+    assert tests.added == ("-k", "x")
+    assert lint == _two_checks_config().checks[1]
+    assert config.corrections == _two_checks_config().corrections
+
+
+def test_apply_check_args_without_extra_keeps_config():
+    assert apply_check_args(_two_checks_config(), {}) == (
+        _two_checks_config()
+    )
+
+
+@pytest.mark.parametrize("name", ["tset", "fmt"])
+def test_apply_check_args_rejects_unknown_or_correction_name(name):
+    """Ein Tippfehler oder eine Korrektur wird nicht still ignoriert;
+    die Meldung nennt die vorhandenen Prüfungen."""
+    with pytest.raises(CheckArgsError, match="vorhanden: tests, lint"):
+        apply_check_args(_two_checks_config(), {name: ("-x",)})
+
+
+def test_added_args_reach_process_artifact_and_report(tmp_path: Path):
+    repo = _repo(tmp_path)
+    code = (
+        "import sys; sys.exit(0 if sys.argv[1:] == ['--skip'] else 1)"
+    )
+    config = apply_check_args(
+        PreflightConfig(corrections=(), checks=(_py("tests", code),)),
+        {"tests": ("--skip",)},
+    )
+    report = run_preflight(config, repo)
+    assert report.valid
+    payload = json.loads((repo / report.artifact).read_text())
+    assert payload["commands"][0]["added_args"] == ["--skip"]
+    assert ADDED_MARKER in render_review_handoff(_issue(), report)
+
+
+def test_added_marker_survives_shortened_argv():
+    """Auch wenn argv gekürzt ist, bleibt die Ergänzung sichtbar."""
+    item = CommandResult(
+        "tests",
+        ("pytest", "--deselect", "x" * 300),
+        "pass",
+        0,
+        "",
+        omitted=False,
+        added=("--deselect", "x" * 300),
+    )
+    line = format_command_result(item)
+    assert "…(+" in line
+    assert line.endswith(ADDED_MARKER)
+
+
+def test_unmodified_result_has_no_added_marker():
+    item = CommandResult("t", ("true",), "pass", 0, "", omitted=False)
+    assert ADDED_MARKER not in format_command_result(item)

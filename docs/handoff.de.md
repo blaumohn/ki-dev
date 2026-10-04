@@ -88,6 +88,27 @@ Option ist nur zusammen mit `--step review` zulässig; jede andere Kombination
 `bd`-Anfrage. Ohne `--review-of` bleibt `--step review` unverändert die
 bisherige Build-Review; `--review-of build` ist dazu gleichwertig.
 
+### `--check-args`: Prüfbefehl einmalig ergänzen
+
+Scheitert der Vorlauf an einem unabhängigen Test, hängt `--check-args
+NAME=ARGS` die Argumente einmalig an die Prüfung `NAME` an, ohne
+`pyproject.toml` zu ändern:
+
+```bash
+ki-dev handoff projekt-42 --step review --check-args 'tests=-k "not langsam"'
+ki-dev handoff projekt-42 --step review \
+  --check-args 'tests=--deselect tests/a.py::test_x --deselect tests/b.py::test_y'
+```
+
+`ARGS` wird wie in einer Shell zerlegt und hat keine Längengrenze. Die Option
+ist wiederholbar (je Prüfung einmal) und gilt nur für den Vorlauf
+(`--step review`, Prüfgegenstand `build`). Exit 2 vor jeder Schreibwirkung:
+fehlendes `=`, leerer Name oder leere `ARGS`, unvollständiges Quoting,
+NUL/CR/LF, doppelte Prüfung, unbekannter Name oder Name einer Korrektur
+(stderr nennt die vorhandenen Prüfungen). Die Ergänzung bleibt sichtbar:
+Bericht und Übergabe markieren die Zeile mit `[ergänzt per --check-args]`,
+das Prüfartefakt nennt sie unter `added_args`.
+
 Die frische Sitzung startest du selbst; `handoff` startet keinen Agenten
 und schließt sie nicht automatisch. Optional kannst du dafür ein anderes
 Modell oder einen anderen Anbieter wählen – kein Anbieter ist
@@ -146,7 +167,7 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 | Exit | Bedeutung |
 | --- | --- |
 | 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht) |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--check-args` außerhalb des Vorlaufs oder ungültig, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
 | 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
@@ -254,18 +275,16 @@ Arbeitsstand liegt beim Menschen; der Vorlauf erzeugt weder Fingerprints noch
 Git-Snapshots und erkennt keine Änderungen zwischen Prüfungen. Er braucht
 dafür auch kein Git-Repository.
 
-**Konfiguration:** projektlokale `pyproject.toml`, Tabelle
+**Konfiguration:** projektlokale `pyproject.toml` (Orte aller
+ki-dev-Konfigurationen listet `ki-dev config`), Tabelle
 `tool.ki-dev.handoff.preflight`, Listen `corrections` (darf leer sein) und
 `checks` (mindestens ein Eintrag), je Eintrag `name` (eindeutig über beide
 Listen), nichtleere `argv`-Liste nichtleerer Zeichenketten ohne NUL/CR/LF,
-positiver endlicher `timeout_s`. Zusätzlich gilt je Eintrag
-`len(shlex.join(argv)) <= 100` (inklusive Quoting/Leerzeichen); längere
-Prüflogik gehört in ein benanntes Skript oder Modul, dessen Hauptfluss
-benannte Teilaufgaben zeigt, statt als Inline-Code in `argv` zu stehen.
+positiver endlicher `timeout_s`. Die Länge von `argv` ist nicht begrenzt;
+lange Befehle kürzt nur die Ausgabe (siehe **Ausgabe**).
 Keine Autodetektion, keine automatische Installation, keine impliziten
-Fixes; fehlt die Tabelle oder `checks`, enthält `argv` NUL/CR/LF,
-überschreitet ein Befehl die 100-Zeichen-Grenze, oder ist die Datei kein
-gültiges UTF-8/TOML, ist das ein Konfigurationsfehler (Exit 2, vor jedem
+Fixes; fehlt die Tabelle oder `checks`, enthält `argv` NUL/CR/LF, oder ist
+die Datei kein gültiges UTF-8/TOML, ist das ein Konfigurationsfehler (Exit 2, vor jedem
 Korrekturbefehl erkannt, unabhängig davon, welcher Eintrag betroffen ist). Prozessaufrufe laufen
 ohne Shell im aktuellen Arbeitsverzeichnis (Projektwurzel) mit geerbter
 Umgebung. Enthält das erste `argv`-Element einen Pfadtrenner, gilt es relativ
@@ -281,19 +300,23 @@ damit ein langer Lauf nicht wie ein Hänger aussieht; stdout bleibt davon
 frei und lässt sich weiter umleiten (`> uebergabe.txt`).
 Erfolg (Exit 0) — stdout enthält nur die Übergabe, angereichert
 um einen kompakten Bericht (`PRUEFBERICHT vorlauf-start=…`, je Befehl
-Status, gekürzter Ausgabe und vollständiger `argv` mit eindeutigem Quoting
-mehrteiliger Argumente). `name` und die Prozessausgabe werden von
-Steuerzeichen/ANSI-Codes bereinigt und begrenzt; aus `argv` wird dagegen
-nichts still entfernt, damit der Befehl wörtlich nachvollziehbar und erneut
-startbar bleibt — keine Interpreterlisten, Optionsparser oder Maskierung von
-vermeintlichem Inline-Code. Eine abschließende Hinweiszeile nennt, dass der
+Status, gekürzter Ausgabe und `argv` mit eindeutigem Quoting mehrteiliger
+Argumente). `name` und die Prozessausgabe werden von Steuerzeichen/ANSI-Codes
+bereinigt und begrenzt. `argv` wird nicht maskiert; über 100 Zeichen wird sie
+einzeilig mit sichtbarer Restlänge gekürzt (`pytest --desel…(+87)…test_y`).
+Vollständig steht sie im Prüfartefakt, auf das genau eine Zeile verweist
+(`Vollständig: .local/handoff/preflight/<Zeitstempel>.json`) — bei Erfolg in
+der Übergabe, bei Exit 1 im Reparaturbefund. Eine abschließende Hinweiszeile nennt, dass der
 Zeitpunkt der manuellen Zuordnung dient und kein Beweis eines unveränderten
 Quellstands ist; nach weiteren Änderungen ist der Vorlauf erneut zu starten.
 Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer, stderr listet
 jeden konfigurierten Befehl mit seinem tatsächlichen Status (auch bereits
 erfolgreiche Korrekturen und wegen eines vorherigen Fehlschlags ausgelassene
 Befehle), statt nur die fehlgeschlagenen zu zeigen; volle Prozesslogs
-bleiben außen vor. Ein Prüfartefaktfehler außerhalb eines
+bleiben außen vor. Der Befund endet mit dem Ort der Konfiguration
+(`Konfiguration: pyproject.toml [tool.ki-dev.handoff.preflight]`) und, wenn
+eine Prüfung (nicht eine Korrektur) gescheitert ist, dem einmaligen Ausweg
+(`Einmalig ergänzen: --check-args tests=ARGS`). Ein Prüfartefaktfehler außerhalb eines
 einzelnen konfigurierten Befehls (z. B. Artefaktverzeichnis nicht schreibbar)
 erscheint als eigener kurzer `Vorlauf-Ausführungsfehler` statt eines
 unbehandelten Programmabbruchs; bereits gelaufene Befehle (bestanden wie

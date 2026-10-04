@@ -9,8 +9,10 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from ki_dev.config_cli import config
 from ki_dev.handoff_cli import handoff
 from ki_dev.loop_cli import (
+    CONFIG_OPTION,
     LoopConfigError,
     result_document,
     resume_run,
@@ -34,6 +36,7 @@ loop_app = typer.Typer(
 app.add_typer(loop_app, name="loop")
 app.add_typer(planning_app, name="planning")
 app.command("handoff")(handoff)
+app.command("config")(config)
 
 
 def main() -> None:
@@ -46,7 +49,7 @@ def loop(
     config: Annotated[
         Path | None,
         typer.Option(
-            "--config",
+            CONFIG_OPTION,
             help="JSON-Konfiguration fuer einen neuen Lauf.",
         ),
     ] = None,

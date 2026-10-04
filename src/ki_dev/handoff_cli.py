@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 
@@ -28,13 +29,20 @@ from ki_dev.handoff import (
 )
 from ki_dev.handoff_map import map_handoff
 from ki_dev.handoff_preflight import (
-    ARTIFACT_DIR,
+    CONFIG_FILE,
+    CONFIG_TABLE,
+    CheckArgsError,
+    PreflightConfig,
     PreflightConfigError,
     PreflightExecutionError,
     PreflightReport,
+    apply_check_args,
+    artifact_line,
     format_command_result,
     load_preflight_config,
+    parse_check_args,
     render_review_handoff,
+    report_name,
     run_preflight,
 )
 from ki_dev.handoff_source import HandoffSourceError
@@ -63,6 +71,7 @@ BEISPIELE
   ki-dev handoff projekt-42 --step materialize
   ki-dev handoff projekt-42 --step build > uebergabe.txt
   ki-dev handoff projekt-42 --step review
+  ki-dev handoff projekt-42 --step review --check-args 'tests=-k x'
   ki-dev handoff projekt-42 --step review --review-of materialize
   ki-dev handoff map --agent codex --session SESSION_ID
 
@@ -70,6 +79,8 @@ REVIEW
   Standard: build. Führt vorab konfigurierte Korrekturen und Tests aus.
   Korrekturen können Dateien ändern. Konfiguration: pyproject.toml,
   tool.ki-dev.handoff.preflight.
+  --check-args NAME=ARGS hängt ARGS einmalig an die Prüfung NAME an
+  (wiederholbar, z. B. um einen unabhängigen Test abzuwählen).
   --review-of map, graph oder materialize: nur lesen, ohne Vorlauf.
 
 SITZUNGSIMPORT (map --agent codex --session SESSION_ID)
@@ -112,6 +123,16 @@ def handoff(
             show_default=False,
         ),
     ] = None,
+    check_args: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--check-args",
+            metavar="NAME=ARGS",
+            help="ARGS an die Vorlauf-Prüfung NAME anhängen "
+            "(wiederholbar); nur mit --step review.",
+            show_default=False,
+        ),
+    ] = None,
     agent: Annotated[
         str | None,
         typer.Option(
@@ -131,16 +152,18 @@ def handoff(
         ),
     ] = None,
 ) -> None:
+    check_args = check_args or []
     if agent is not None or session is not None or bead_id == MAP_WORD:
-        _map_form(bead_id, step, review_of, agent, session)
+        _map_form(bead_id, step, review_of, check_args, agent, session)
     else:
-        _bead_form(bead_id, step, review_of)
+        _bead_form(bead_id, step, review_of, check_args)
 
 
 def _bead_form(
     bead_id: str | None,
     step: Step | None,
     review_of: ReviewTarget | None,
+    check_args: list[str],
 ) -> None:
     if bead_id is None or step is None:
         _fail(
@@ -148,15 +171,11 @@ def _bead_form(
             "--session SESSION_ID",
             code=2,
         )
-    if review_of is not None and step is not Step.REVIEW:
-        _fail(
-            "--review-of ist nur zusammen mit --step review zulässig",
-            code=2,
-        )
+    extra = _review_options(step, review_of, check_args)
     try:
         issue = read_issue(bead_id, Path.cwd())
         if step is Step.REVIEW:
-            text = _review_handoff(issue, review_of)
+            text = _review_handoff(issue, review_of, extra)
         else:
             text = render_handoff(issue, step)
     except InvalidBeadIdError as exc:
@@ -175,8 +194,42 @@ def _bead_form(
     typer.echo(text, nl=False)
 
 
+def _review_options(
+    step: Step,
+    review_of: ReviewTarget | None,
+    check_args: list[str],
+) -> dict[str, tuple[str, ...]]:
+    """--review-of/--check-args vor jedem Lesen prüfen.
+
+    Gibt die zerlegten Zusatzargumente zurück; --check-args gilt nur
+    für den Vorlauf (Prüfgegenstand build).
+    """
+    if review_of is not None and step is not Step.REVIEW:
+        _fail(
+            "--review-of ist nur zusammen mit --step review zulässig",
+            code=2,
+        )
+    if not check_args:
+        return {}
+    if step is not Step.REVIEW or review_of not in (
+        None,
+        ReviewTarget.BUILD,
+    ):
+        _fail(
+            "--check-args gilt nur für den Vorlauf: --step review "
+            "(Prüfgegenstand build)",
+            code=2,
+        )
+    try:
+        return parse_check_args(check_args)
+    except CheckArgsError as exc:
+        _fail(f"Aufruf ungültig: {exc}", code=2)
+
+
 def _review_handoff(
-    issue: HandoffIssue, review_of: ReviewTarget | None
+    issue: HandoffIssue,
+    review_of: ReviewTarget | None,
+    extra: dict[str, tuple[str, ...]],
 ) -> str:
     """Übergabe für ``--step review``.
 
@@ -195,14 +248,27 @@ def _review_handoff(
     if problems:
         raise HandoffInvalidError(problems)
     project_root = Path.cwd()
-    config = load_preflight_config(project_root)
+    config = _with_check_args(
+        load_preflight_config(project_root), extra
+    )
     try:
         report = run_preflight(config, project_root, _progress)
     except PreflightExecutionError as exc:
         _fail(_execution_error_finding(exc), code=1)
     if not report.valid:
-        _fail(_repair_finding(report), code=1)
+        _fail(_repair_finding(report, config), code=1)
     return render_review_handoff(issue, report)
+
+
+def _with_check_args(
+    config: PreflightConfig, extra: dict[str, tuple[str, ...]]
+) -> PreflightConfig:
+    """Zusatzargumente anwenden; ein unbekannter Prüfname ist ein
+    Aufruffehler (Exit 2) vor dem ersten Befehl."""
+    try:
+        return apply_check_args(config, extra)
+    except CheckArgsError as exc:
+        _fail(f"Aufruf ungültig: {exc}", code=2)
 
 
 def _progress(line: str) -> None:
@@ -231,7 +297,9 @@ def _execution_error_finding(exc: PreflightExecutionError) -> str:
     return message
 
 
-def _repair_finding(report: PreflightReport) -> str:
+def _repair_finding(
+    report: PreflightReport, config: PreflightConfig
+) -> str:
     """Listet jeden Befehl (auch erfolgreiche und ausgelassene) auf.
 
     Sowohl bestandene als auch fehlgeschlagene Befehle können den
@@ -239,21 +307,42 @@ def _repair_finding(report: PreflightReport) -> str:
     Datei ändert und danach an einer anderen scheitert); kein
     automatischer Rückbau. Ausgelassene Prüfungen und die tatsächlichen
     argv müssen deshalb ebenfalls sichtbar bleiben, nicht nur die
-    fehlgeschlagenen Befehle.
+    fehlgeschlagenen Befehle. Abschließend nennt der Befund den Ort der
+    Konfiguration und, bei einer fehlgeschlagenen Prüfung, den
+    einmaligen Ausweg über --check-args.
     """
     lines = [format_command_result(item) for item in report.commands]
+    lines.append(artifact_line(report))
+    lines.append(f"Konfiguration: {CONFIG_FILE} [{CONFIG_TABLE}]")
+    failed_check = _first_failed_check(report, config)
+    if failed_check is not None:
+        hint = shlex.quote(f"{report_name(failed_check)}=ARGS")
+        lines.append(
+            f"Einmalig ergänzen: --check-args {hint} (ARGS werden an "
+            "argv der Prüfung angehängt)"
+        )
     return (
-        "Vorlauf ohne Review-Übergabe (Details unter "
-        f"{ARTIFACT_DIR}); bereits ausgeführte Befehle (PASS wie "
-        "FAIL) wurden nicht automatisch zurückgesetzt:\n"
+        "Vorlauf ohne Review-Übergabe; bereits ausgeführte Befehle "
+        "(PASS wie FAIL) wurden nicht automatisch zurückgesetzt:\n"
         + "\n".join(lines)
     )
+
+
+def _first_failed_check(
+    report: PreflightReport, config: PreflightConfig
+) -> str | None:
+    check_names = {spec.name for spec in config.checks}
+    for item in report.commands:
+        if item.name in check_names and item.status == "fail":
+            return item.name
+    return None
 
 
 def _map_form(
     bead_id: str | None,
     step: Step | None,
     review_of: ReviewTarget | None,
+    check_args: list[str],
     agent: str | None,
     session: str | None,
 ) -> None:
@@ -264,9 +353,9 @@ def _map_form(
             "Positionsargumenten mischen)",
             code=2,
         )
-    if step is not None or review_of is not None:
+    if step is not None or review_of is not None or check_args:
         _fail(
-            "--step/--review-of lassen sich nicht mit map "
+            "--step/--review-of/--check-args lassen sich nicht mit map "
             "--agent/--session mischen",
             code=2,
         )
@@ -299,6 +388,6 @@ def _map_form(
 handoff.__doc__ = HELP
 
 
-def _fail(message: str, *, code: int) -> None:
+def _fail(message: str, *, code: int) -> NoReturn:
     typer.echo(message, err=True)
     raise typer.Exit(code=code)
