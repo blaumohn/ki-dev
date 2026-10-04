@@ -10,20 +10,29 @@ runner = CliRunner()
 
 
 def _lines(tmp_path: Path, monkeypatch) -> dict[str, str]:
+    """Zeile je Befehl; breites Terminal, damit Rich nicht umbricht."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("COLUMNS", "200")
     result = runner.invoke(app, ["config"])
     assert result.exit_code == 0
     lines = result.stdout.splitlines()
-    assert lines[0].split() == ["BEFEHL", "ORT", "ABSCHNITT", "ZUSTAND"]
+    header = ["Befehl", "Ort", "/", "Abschnitt", "Zustand"]
+    assert lines[0].split() == header
     by_command = {}
-    for line in lines[1:]:
+    for line in lines[2:]:
         # Längster passender Befehl: "loop" ist Präfix eines anderen.
-        command = max(
-            (s.command for s in SOURCES if line.startswith(s.command)),
-            key=len,
-        )
-        by_command[command] = line
+        matches = [
+            s.command for s in SOURCES if line.startswith(s.command)
+        ]
+        if matches:
+            by_command[max(matches, key=len)] = line.rstrip()
     return by_command
+
+
+def _output(tmp_path: Path, monkeypatch) -> str:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("COLUMNS", "200")
+    return runner.invoke(app, ["config"]).stdout
 
 
 def test_config_lists_every_source_from_module_constants(
@@ -37,10 +46,12 @@ def test_config_lists_every_source_from_module_constants(
         tool_versions.CONFIG_SOURCE,
     )
     assert len(lines) == len(SOURCES)
+    output = _output(tmp_path, monkeypatch)
     for source in SOURCES:
         assert source.location in lines[source.command]
         if source.section:
-            assert source.section in lines[source.command]
+            # Abschnitt in eigener Zeile, wörtlich (nicht als Markup).
+            assert f"[{source.section}]" in output
 
 
 def test_config_reports_missing_and_present_project_file(

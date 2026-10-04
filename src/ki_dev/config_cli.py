@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import typer
+from rich import box
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 
 from ki_dev import handoff_preflight, loop_cli, tool_versions
 from ki_dev.config_sources import ConfigSource
@@ -16,7 +19,13 @@ SOURCES = (
     tool_versions.CONFIG_SOURCE,
 )
 
-_HEADER = ("BEFEHL", "ORT", "ABSCHNITT", "ZUSTAND")
+_STATE_STYLES = {
+    "vorhanden": "green",
+    "fehlt": "red",
+    "je Aufruf": "dim",
+}
+
+console = Console()
 
 
 def config() -> None:
@@ -25,22 +34,28 @@ def config() -> None:
     Bezogen auf das aktuelle Verzeichnis; geprüft wird nur, ob eine
     Datei vorhanden ist, nicht ihr Inhalt.
     """
-    rows = [_HEADER, *(_row(source, Path.cwd()) for source in SOURCES)]
-    widths = [max(len(row[i]) for row in rows) for i in range(3)]
-    for row in rows:
-        cells = [
-            cell.ljust(width)
-            for cell, width in zip(row, widths, strict=False)
-        ]
-        typer.echo("  ".join([*cells, row[3]]))
+    table = Table(box=box.SIMPLE_HEAD, show_edge=False, pad_edge=False)
+    table.add_column("Befehl", style="bold", overflow="fold")
+    # Pfade vollständig umbrechen statt mit … abschneiden.
+    table.add_column("Ort / Abschnitt", overflow="fold")
+    table.add_column("Zustand", no_wrap=True)
+    for source in SOURCES:
+        table.add_row(*_row(source, Path.cwd()))
+    console.print(table)
 
 
-def _row(source: ConfigSource, cwd: Path) -> tuple[str, str, str, str]:
+def _row(source: ConfigSource, cwd: Path) -> tuple[Text, Text, Text]:
+    # Text statt Markup-Zeichenketten: Abschnitte wie
+    # [tool.ki-dev.handoff.preflight] dürfen nicht als Rich-Markup
+    # gelesen werden.
+    location = Text(source.location)
+    if source.section:
+        location.append(f"\n[{source.section}]", style="cyan")
+    state = _state(source, cwd)
     return (
-        source.command,
-        source.location,
-        source.section or "-",
-        _state(source, cwd),
+        Text(source.command),
+        location,
+        Text(state, style=_STATE_STYLES[state]),
     )
 
 
