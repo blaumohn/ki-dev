@@ -3,13 +3,15 @@
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
-from ki_dev.beads_journal import cli, journal
+from ki_dev.beads_journal import cli, drain, journal, queue
 from ki_dev.beads_journal.git import GitError
 from ki_dev.beads_journal.journal import ERRORS_LOG, MARKER
 
@@ -49,6 +51,84 @@ def subjects(directory):
     return git(directory, "log", "--format=%s").splitlines()[::-1]
 
 
+def trailers(directory):
+    """Journal-Event-Trailer je Commit, älteste zuerst ("" ohne)."""
+    output = git(
+        directory,
+        "log",
+        "--format=%(trailers:key=Journal-Event,valueonly)%x00",
+    )
+    return [part.strip() for part in output.split("\0")[:-1]][::-1]
+
+
+def queue_state(journal_dir):
+    with queue.opened(journal_dir) as connection:
+        return (
+            queue.pending_count(connection),
+            queue.failed_entries(connection),
+        )
+
+
+@contextmanager
+def held_lock(journal_dir):
+    """Hält die Journal-Sperre in einem fremden Prozess."""
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from filelock import FileLock;"
+            f"lock = FileLock({str(journal_dir / '.lock')!r});"
+            "lock.acquire();"
+            "print('gesperrt', flush=True); sys.stdin.read()",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "gesperrt"
+        yield
+    finally:
+        holder.communicate("", timeout=10)
+
+
+def git_wrapper(tmp_path, body):
+    """PATH-Ordner mit einem git, das body vor dem echten git ausführt.
+
+    body sieht die Argumente von run_git: $1=-C, $2=Journal, $3=Befehl.
+    """
+    folder = tmp_path / "bin"
+    folder.mkdir()
+    wrapper = folder / "git"
+    wrapper.write_text(
+        f'#!/bin/sh\n{body}\nexec {shutil.which("git")} "$@"\n'
+    )
+    wrapper.chmod(0o755)
+    return {
+        **os.environ,
+        "PATH": f"{folder}{os.pathsep}{os.environ['PATH']}",
+        "PYTHONPATH": str(ROOT / "src"),
+    }
+
+
+def drain_process(journal_dir, prelude="pass", env=None):
+    """drain in eigenem Prozess; prelude kann Funktionen ersetzen."""
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import os, sys; from pathlib import Path;"
+            "from ki_dev.beads_journal import drain, queue;"
+            f"{prelude};"
+            "drain.drain(Path(sys.argv[1]))",
+            str(journal_dir),
+        ],
+        env=env or {**os.environ, "PYTHONPATH": str(ROOT / "src")},
+        timeout=30,
+        check=False,
+    )
+
+
 @pytest.fixture
 def repo(tmp_path):
     path = tmp_path / "repo"
@@ -80,7 +160,7 @@ def call_hook(monkeypatch, repo, event, payload, hook_id=None):
     return cli.main(["--repo", str(repo), "hook", hook_id, event])
 
 
-def hook_process(repo, event, payload):
+def hook_process(repo, event, payload, env=None):
     return subprocess.Popen(
         [
             sys.executable,
@@ -93,7 +173,7 @@ def hook_process(repo, event, payload):
             event,
         ],
         stdin=subprocess.PIPE,
-        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+        env=env or {**os.environ, "PYTHONPATH": str(ROOT / "src")},
     )
 
 
@@ -138,6 +218,8 @@ def test_create_update_close_commit_each_event(
     )
     assert stored == normalized(events[-1][1])
     assert git(journal_dir, "status", "--porcelain") == ""
+    assert trailers(journal_dir) == ["", "1", "2", "3"]
+    assert queue_state(journal_dir) == (0, [])
 
 
 def test_identical_payload_gives_two_commits(
@@ -236,33 +318,177 @@ def test_parallel_hooks_each_commit(repo, journal_dir):
     )
 
 
-def test_lock_timeout_logs_without_commit(
+def test_busy_lock_keeps_event_for_next_drain_in_queue_order(
     monkeypatch, repo, journal_dir
 ):
-    holder = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "import sys; from filelock import FileLock;"
-            f"lock = FileLock({str(journal_dir / '.lock')!r});"
-            "lock.acquire();"
-            "print('gesperrt', flush=True); sys.stdin.read()",
-        ],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        text=True,
+    """Prüffälle 1 und 7: A wartet in der Queue, B committet A und B."""
+    monkeypatch.setattr(journal, "LOCK_TIMEOUT", 0.2)
+    with held_lock(journal_dir):
+        assert call_hook(monkeypatch, repo, "create", issue("t-a")) == 0
+        assert subjects(journal_dir) == ["init: 0 Issues aus bd export"]
+        assert queue_state(journal_dir) == (1, [])
+
+    assert call_hook(monkeypatch, repo, "create", issue("t-b")) == 0
+
+    assert subjects(journal_dir)[1:] == [
+        "create t-a: Titel t-a [open]",
+        "create t-b: Titel t-b [open]",
+    ]
+    assert trailers(journal_dir)[1:] == ["1", "2"]
+    assert queue_state(journal_dir) == (0, [])
+    assert not (journal_dir / ERRORS_LOG).exists()
+
+
+def test_parallel_hooks_with_slow_git_lose_no_event(
+    tmp_path, repo, journal_dir
+):
+    """Prüffall 2: Wartende geben nach 5 s auf, der Halter committet."""
+    env = git_wrapper(tmp_path, "sleep 0.4")
+    payloads = [issue(f"t-{number}") for number in range(5)]
+    processes = [
+        hook_process(repo, "create", payload, env)
+        for payload in payloads
+    ]
+    for process, payload in zip(processes, payloads, strict=True):
+        process.stdin.write(json.dumps(payload).encode())
+        process.stdin.close()
+    for process in processes:
+        process.wait(timeout=60)
+
+    assert [process.returncode for process in processes] == [0] * 5
+    assert sorted(subjects(journal_dir)[1:]) == sorted(
+        f"create t-{number}: Titel t-{number} [open]"
+        for number in range(5)
     )
-    try:
-        assert holder.stdout.readline().strip() == "gesperrt"
-        monkeypatch.setattr(journal, "LOCK_TIMEOUT", 0.2)
+    assert sorted(trailers(journal_dir)[1:]) == [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+    ]
+    assert queue_state(journal_dir) == (0, [])
 
-        assert call_hook(monkeypatch, repo, "update", issue()) == 1
-    finally:
-        holder.communicate("", timeout=10)
 
-    assert subjects(journal_dir) == ["init: 0 Issues aus bd export"]
-    log = (journal_dir / ERRORS_LOG).read_text()
-    assert "update t-1: Sperre nicht binnen 0.2 s erhalten" in log
+def test_kill_between_commit_and_ack_gives_no_second_commit(
+    journal_dir,
+):
+    """Prüffall 3."""
+    drain.enqueue(journal_dir, "create", issue())
+
+    killed = drain_process(
+        journal_dir, "queue.ack = lambda *_args: os._exit(9)"
+    )
+
+    assert killed.returncode == 9
+    assert trailers(journal_dir)[1:] == ["1"]
+    assert queue_state(journal_dir) == (1, [])
+
+    assert drain.drain(journal_dir) == drain.DrainResult(0, 0)
+    assert subjects(journal_dir)[1:] == ["create t-1: Titel t-1 [open]"]
+    assert queue_state(journal_dir) == (0, [])
+
+
+def test_kill_during_git_commit_is_committed_once(
+    tmp_path, journal_dir
+):
+    """Prüffall 4: verwaiste index.lock, unbestätigter Eintrag."""
+    env = git_wrapper(
+        tmp_path,
+        'if [ "$3" = commit ]; then\n'
+        '  touch "$2/.git/index.lock"; kill -9 "$PPID"; exit 1\n'
+        "fi",
+    )
+    drain.enqueue(journal_dir, "create", issue())
+
+    killed = drain_process(journal_dir, env=env)
+
+    assert killed.returncode == -9
+    assert (journal_dir / ".git" / "index.lock").exists()
+    assert len(subjects(journal_dir)) == 1
+
+    assert drain.drain(journal_dir) == drain.DrainResult(1, 0)
+    assert subjects(journal_dir)[1:] == ["create t-1: Titel t-1 [open]"]
+    assert trailers(journal_dir)[1:] == ["1"]
+    assert not (journal_dir / ".git" / "index.lock").exists()
+    assert git(journal_dir, "status", "--porcelain") == ""
+    assert (
+        "verwaiste .git/index.lock entfernt"
+        in (journal_dir / ERRORS_LOG).read_text()
+    )
+
+
+def test_trailer_match_is_exact(monkeypatch, repo, journal_dir):
+    """Prüffall 5: Ereignis 10 committet, 1 gilt nicht als erledigt."""
+    git(
+        journal_dir,
+        "commit",
+        "--allow-empty",
+        "-q",
+        "-m",
+        "fremd",
+        "--trailer",
+        "Journal-Event: 10",
+    )
+
+    assert call_hook(monkeypatch, repo, "create", issue()) == 0
+
+    assert subjects(journal_dir)[-1] == "create t-1: Titel t-1 [open]"
+    assert trailers(journal_dir)[-2:] == ["10", "1"]
+
+
+def test_queue_ids_are_not_reused_after_ack(journal_dir):
+    first = drain.enqueue(journal_dir, "create", issue())
+    drain.drain(journal_dir)
+
+    assert drain.enqueue(journal_dir, "update", issue()) > first
+
+
+def test_concurrent_first_open_creates_queue_once(tmp_path):
+    """Rauchtest der atomaren Erstanlage (queue._create).
+
+    Das Wettrennen um PRAGMA journal_mode=WAL tritt nur selten auf;
+    dieser Test fängt eine Regression deshalb nicht verlässlich, er
+    prüft nur, dass gleichzeitige Erstöffnungen gelingen und keine
+    temporären Dateien zurückbleiben.
+    """
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    script = (
+        "import sys; from pathlib import Path;"
+        "from ki_dev.beads_journal import queue;"
+        "handle_ctx = queue.opened(Path(sys.argv[1]));"
+        "handle = handle_ctx.__enter__();"
+        "queue.put(handle, 'create', {'id': 't-1'});"
+        "handle_ctx.__exit__(None, None, None)"
+    )
+    for attempt in range(3):
+        folder = tmp_path / f"q{attempt}"
+        folder.mkdir()
+        processes = [
+            subprocess.Popen(
+                [sys.executable, "-c", script, str(folder)], env=env
+            )
+            for _ in range(8)
+        ]
+        assert [process.wait(timeout=30) for process in processes] == [
+            0
+        ] * 8
+        assert sorted(path.name for path in folder.iterdir()) == [
+            queue.QUEUE_FILE
+        ]
+        with queue.opened(folder) as handle:
+            assert queue.pending_count(handle) == 8
+
+
+def test_drain_command_commits_waiting_entries(
+    repo, journal_dir, capsys
+):
+    drain.enqueue(journal_dir, "create", issue())
+
+    assert cli.main(["--repo", str(repo), "drain"]) == 0
+
+    assert "Abgearbeitet: 1 Commits" in capsys.readouterr().out
+    assert subjects(journal_dir)[-1] == "create t-1: Titel t-1 [open]"
 
 
 @pytest.mark.parametrize(
@@ -303,8 +529,9 @@ def test_lock_timeout_logs_without_commit(
     ],
 )
 def test_invalid_payload_logs_field_path_without_value(
-    monkeypatch, repo, journal_dir, payload, hook_id, reason
+    monkeypatch, repo, journal_dir, payload, hook_id, reason, capsys
 ):
+    """Prüffall 6: fehlgeschlagen vermerkt und in status sichtbar."""
     assert call_hook(monkeypatch, repo, "update", payload, hook_id) == 1
 
     assert subjects(journal_dir) == ["init: 0 Issues aus bd export"]
@@ -312,6 +539,16 @@ def test_invalid_payload_logs_field_path_without_value(
     assert reason in log
     assert SECRET not in log
     assert list((journal_dir / "issues").iterdir()) == []
+    capsys.readouterr()
+    assert cli.main(["--repo", str(repo), "status"]) == 0
+    output = capsys.readouterr().out
+    assert "Warteschlange: 0 offen" in output
+    assert "Fehlgeschlagen: 1" in output
+    shown_id = "?" if "/" in hook_id else hook_id
+    assert f"#1 update {shown_id}: {reason}" in output
+    assert SECRET not in output
+    stored = (journal_dir / queue.QUEUE_FILE).read_bytes()
+    assert SECRET.encode() not in stored
 
 
 def test_unknown_event_is_logged(monkeypatch, repo, journal_dir):

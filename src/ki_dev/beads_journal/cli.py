@@ -1,4 +1,4 @@
-"""Befehle init, hook und status des Beads-Journals.
+"""Befehle init, hook, drain und status des Beads-Journals.
 
 argparse statt typer: der Hook startet je bd-Ereignis neu und hat 10 s
 Frist. Ort des Journals: git config ki-dev.beadsJournal im Projekt-Repo
@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from plumbum import local
@@ -19,6 +20,7 @@ from plumbum.commands.processes import (
     ProcessTimedOut,
 )
 
+from ki_dev.beads_journal import queue
 from ki_dev.beads_journal.contract import (
     EVENTS,
     PayloadError,
@@ -26,14 +28,21 @@ from ki_dev.beads_journal.contract import (
     check_issue,
     is_issue_id,
 )
+from ki_dev.beads_journal.drain import (
+    DrainStopped,
+    drain,
+    enqueue,
+    record_invalid,
+)
 from ki_dev.beads_journal.git import GitError, run_git
 from ki_dev.beads_journal.journal import (
     ERRORS_LOG,
     JournalError,
+    LockBusy,
     initialize,
+    io_error,
     is_active,
     log_error,
-    record_event,
 )
 
 CONFIG_KEY = "ki-dev.beadsJournal"
@@ -50,7 +59,7 @@ EXPORT_ONLY_FIELDS = (
     "dependency_count",
     "dependent_count",
 )
-_EXPECTED = (PayloadError, JournalError, GitError)
+_EXPECTED = (PayloadError, JournalError, GitError, queue.QueueError)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_hook(repo, arguments.issue_id, arguments.event)
     if arguments.command == "init":
         return run_init(repo, arguments.path)
+    if arguments.command == "drain":
+        return run_drain(repo)
     return run_status(repo)
 
 
@@ -89,26 +100,84 @@ def _parser() -> argparse.ArgumentParser:
     hook.add_argument("issue_id")
     hook.add_argument("event")
     commands.add_parser(
-        "status", help="Ort, Zustand und Fehlerzahl zeigen"
+        "drain", help="Warteschlange abarbeiten (Wiederanlauf)"
+    )
+    commands.add_parser(
+        "status",
+        help="Warteschlange abarbeiten, dann Ort, Zustand, offene und "
+        "fehlgeschlagene Einträge zeigen",
     )
     return parser
 
 
 def run_hook(repo: Path, issue_id: str, event: str) -> int:
-    """Ohne Marker sofort 0 (Klon ohne Journal); Fehler ins Log."""
+    """Ohne Marker sofort 0 (Klon ohne Journal); Fehler ins Log.
+
+    Gültige Ereignisse landen zuerst in der Warteschlange, ungültige
+    dort als fehlgeschlagen. Belegte Sperre ist kein Fehler: Der Halter
+    oder der nächste drain committet den Eintrag.
+    """
     try:
         journal = journal_path(repo)
     except GitError as exc:
         return _fail(exc)
     if not is_active(journal):
         return 0
+    safe_event = event if event in EVENTS else "?"
+    safe_id = issue_id if is_issue_id(issue_id) else "?"
     try:
         issue = _read_payload()
         check_event(event, issue_id, issue)
-        record_event(journal, event, issue)
+    except PayloadError as exc:
+        reason = str(exc)
+        _report(
+            journal,
+            safe_event,
+            safe_id,
+            lambda: record_invalid(
+                journal, safe_event, safe_id, reason
+            ),
+        )
+        return _fail(exc)
+    return _report(
+        journal,
+        safe_event,
+        safe_id,
+        lambda: _enqueue_and_drain(journal, event, issue),
+    )
+
+
+def _enqueue_and_drain(journal: Path, event: str, issue: dict) -> None:
+    enqueue(journal, event, issue)
+    try:
+        result = drain(journal)
+    except LockBusy as exc:
+        print(
+            f"beads-journal: {exc}; Ereignis bleibt in der "
+            "Warteschlange",
+            file=sys.stderr,
+        )
+        return
+    if result.failed:
+        # Grund steht schon je Eintrag im Log.
+        raise DrainStopped(_failed_text(result.failed))
+
+
+def _report(
+    journal: Path, event: str, issue_id: str, action: Callable[[], None]
+) -> int:
+    """Führt action aus; Fehler ins Log und Exit 1.
+
+    DrainStopped hat seinen Grund schon beim betroffenen Eintrag
+    protokolliert.
+    """
+    try:
+        action()
+    except DrainStopped as exc:
+        return _fail(exc)
     except (*_EXPECTED, OSError) as exc:
-        error = _io_error(exc) if isinstance(exc, OSError) else exc
-        return _hook_error(journal, event, issue_id, error)
+        failure = io_error(exc) if isinstance(exc, OSError) else exc
+        return _hook_error(journal, event, issue_id, failure)
     return 0
 
 
@@ -116,21 +185,10 @@ def _hook_error(
     journal: Path, event: str, issue_id: str, error: Exception
 ) -> int:
     try:
-        log_error(
-            journal,
-            event if event in EVENTS else "?",
-            issue_id if is_issue_id(issue_id) else "?",
-            str(error),
-        )
+        log_error(journal, event, issue_id, str(error))
     except OSError as exc:
-        _fail(_io_error(exc))
+        _fail(io_error(exc))
     return _fail(error)
-
-
-def _io_error(error: OSError) -> JournalError:
-    return JournalError(
-        f"Dateizugriff fehlgeschlagen (errno={error.errno})"
-    )
 
 
 def run_init(repo: Path, path: Path | None) -> int:
@@ -148,33 +206,82 @@ def run_init(repo: Path, path: Path | None) -> int:
         )
         return 1
     except OSError as exc:
-        return _fail(_io_error(exc))
+        return _fail(io_error(exc))
     print(
         f"Beads-Journal eingerichtet: {journal} ({len(issues)} Issues)"
     )
-    return 0
+    return _guarded_drain(journal)
+
+
+def run_drain(repo: Path) -> int:
+    try:
+        journal = journal_path(repo)
+    except GitError as exc:
+        return _fail(exc)
+    if not is_active(journal):
+        print(f"{journal}: nicht eingerichtet (kein Marker)")
+        return 0
+    return _guarded_drain(journal)
 
 
 def run_status(repo: Path) -> int:
+    """Arbeitet zuerst die Warteschlange ab, dann die Übersicht."""
     try:
         journal = journal_path(repo)
-        print(f"Ort: {journal}")
-        if not is_active(journal):
-            print("Zustand: nicht eingerichtet (kein Marker)")
-            return 0
-        _, count = run_git(journal, "rev-list", "--count", "HEAD")
-        _, last = run_git(
-            journal, "log", "-1", "--format=%ad %s", "--date=iso"
-        )
     except GitError as exc:
         return _fail(exc)
+    print(f"Ort: {journal}")
+    if not is_active(journal):
+        print("Zustand: nicht eingerichtet (kein Marker)")
+        return 0
+    drained = _guarded_drain(journal)
+    try:
+        _print_status(journal)
+    except (GitError, queue.QueueError) as exc:
+        return _fail(exc)
+    return drained
+
+
+def _print_status(journal: Path) -> None:
+    _, count = run_git(journal, "rev-list", "--count", "HEAD")
+    _, last = run_git(
+        journal, "log", "-1", "--format=%ad %s", "--date=iso"
+    )
+    with queue.opened(journal) as handle:
+        pending = queue.pending_count(handle)
+        failed = queue.failed_entries(handle)
     print("Zustand: aktiv")
     print(f"Commits: {count.strip()}")
     print(f"Letzter: {last.strip()}")
+    print(f"Warteschlange: {pending} offen")
+    print(f"Fehlgeschlagen: {len(failed)}")
+    for entry in failed:
+        print(
+            f"  #{entry.queue_id} {entry.event} {entry.issue_id}: "
+            f"{entry.reason}"
+        )
     print(
         f"Fehler in {ERRORS_LOG}: {_count_lines(journal / ERRORS_LOG)}"
     )
-    return 0
+
+
+def _guarded_drain(journal: Path) -> int:
+    """drain für init, drain, status; belegte Sperre ist kein Fehler."""
+    try:
+        result = drain(journal)
+    except LockBusy as exc:
+        print(f"Abarbeiten: {exc}; Einträge bleiben in der Queue")
+        return 0
+    except (DrainStopped, GitError, queue.QueueError, OSError) as exc:
+        return _fail(io_error(exc) if isinstance(exc, OSError) else exc)
+    print(f"Abgearbeitet: {result.committed} Commits")
+    if not result.failed:
+        return 0
+    return _fail(DrainStopped(_failed_text(result.failed)))
+
+
+def _failed_text(count: int) -> str:
+    return f"{count} Einträge fehlgeschlagen; Gründe in {ERRORS_LOG}"
 
 
 def repo_root(repo: Path) -> Path:

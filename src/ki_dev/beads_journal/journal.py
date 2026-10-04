@@ -2,8 +2,9 @@
 
 Alle Schreibzugriffe laufen unter einer flock-Sperre auf
 <journal>/.lock; das Betriebssystem gibt sie frei, wenn bd den Hook nach
-seiner Frist tötet. Commits folgen der Reihenfolge des Sperrerwerbs.
-Eine verspätete Nutzlast (updated_at in ganzen Sekunden älter als in
+seiner Frist tötet. Jeder Commit trägt den Trailer Journal-Event mit
+der Queue-ID seines Ereignisses (Ablauf in drain.py). Eine verspätete
+Nutzlast (updated_at in ganzen Sekunden älter als in
 der Datei) überschreibt nichts und ergibt einen leeren Commit mit
 Vermerk.
 """
@@ -21,6 +22,7 @@ from filelock import FileLock, Timeout
 
 from ki_dev.beads_journal.contract import PayloadError, check_issue
 from ki_dev.beads_journal.git import GitError, run_git
+from ki_dev.beads_journal.queue import QUEUE_FILE
 from ki_dev.beads_journal.timestamps import timestamp
 
 MARKER = ".beads-journal"
@@ -28,7 +30,8 @@ ISSUES = "issues"
 LOCK = ".lock"
 ERRORS_LOG = ".errors.log"
 LOCK_TIMEOUT = 5
-_GITIGNORE = f"{LOCK}\n{ERRORS_LOG}\n{ISSUES}/.*.tmp\n"
+TRAILER = "Journal-Event"
+_GITIGNORE = f"{LOCK}\n{ERRORS_LOG}\n{QUEUE_FILE}*\n{ISSUES}/.*.tmp\n"
 _MARKER_TEXT = "Beads-Journal von ki-dev; siehe README.md.\n"
 _README = """\
 # Beads-Journal
@@ -54,20 +57,35 @@ git log --since=1.week --format='%ad %s' --date=short
 ```
 
 Einrichtung im Projekt-Repo: `python -m ki_dev.beads_journal init`
-(optional `--path P`); `status` zeigt Ort, Commits und Fehlerzahl.
-Ohne `.beads-journal` bleibt der Hook inaktiv.
+(optional `--path P`); `status` arbeitet zuerst die Warteschlange ab
+und zeigt dann Ort, Commits, offene und fehlgeschlagene Einträge sowie
+die Fehlerzahl; `drain` arbeitet nur ab. Ohne `.beads-journal` bleibt
+der Hook inaktiv. Voraussetzung: git >= 2.32 (`commit --trailer`).
 
-Hooks laufen asynchron; die Commit-Reihenfolge folgt dem Sperrerwerb.
+Jeder Hook legt sein Ereignis zuerst in die Warteschlange `.queue.db`
+und arbeitet sie dann unter der Sperre `.lock` ab. Die Commits folgen
+der Eingangsreihenfolge der Warteschlange; der Trailer
+`Journal-Event: <Queue-ID>` verhindert Doppel-Commits nach einem
+Abbruch. Ist die Sperre belegt (5 s), bleibt das Ereignis in der
+Warteschlange; der Halter oder der nächste Hook bzw. `status`
+committet es. Nach einem Abbruch (bd beendet Hooks nach 10 s) setzt der
+nächste Lauf unbestätigte Einträge zurück und entfernt eine verwaiste
+`.git/index.lock`. Ungültige Nutzlasten werden als fehlgeschlagen
+vermerkt, ohne Rohwerte; Git-Fehler lassen das Ereignis in der
+Warteschlange. Gründe stehen in `.errors.log`, mit `#<Queue-ID>` wie
+in `status`. `.queue.db` gehört zum Journal: Wer sie löscht, verliert
+offene Einträge, und neue Queue-IDs gelten fälschlich als schon
+committet.
+
 "Verspätet" zählt in ganzen Sekunden von `updated_at`; innerhalb
 derselben Sekunde bleiben Vertauschungen unerkannt.
-Ungültige Nutzlasten, Git-Fehler und Sperr-Timeouts (5 s) verwerfen
-das Ereignis und erscheinen in `.errors.log`. Wiederanlauf und
-Verlustfreiheit folgen erst mit ki-dev-ablauf-yl5.1. bd beendet Hooks
-nach 10 s; ein erzwungener Abbruch kann deshalb auch die
-Fehlerdiagnose verhindern.
 
 Kein gleichzeitiger bd-Betrieb auf Host und Container: flock-Sperren
-über virtiofs sind dafür unzuverlässig. Keine manuellen
+über virtiofs sind dafür unzuverlässig. Die Warteschlange
+(persist-queue) läuft fest im WAL-Modus; nach einem Abbruch bleiben
+`.queue.db-wal` und `-shm` liegen. Ob ein anschließender Wechsel
+zwischen Host und Container über virtiofs sauber weiterläuft, ist
+ungeprüft. Keine manuellen
 Git-Schreibzugriffe im Journal, solange Hooks laufen können. Das
 Journal wird lokal geführt; ein Push ist ein getrennter Schritt.
 """
@@ -77,14 +95,12 @@ class JournalError(RuntimeError):
     """Journal nicht beschreibbar: Sperre fehlt oder Ordner belegt."""
 
 
+class LockBusy(JournalError):
+    """Sperre belegt; offene Einträge bleiben in der Warteschlange."""
+
+
 def is_active(journal: Path) -> bool:
     return (journal / MARKER).is_file()
-
-
-def record_event(journal: Path, event: str, issue: dict) -> None:
-    """Schreibt issues/<ID>.json und committet unter der Sperre."""
-    with _locked(journal):
-        _commit_event(journal, event, issue)
 
 
 def initialize(
@@ -103,7 +119,7 @@ def initialize(
             "leeren oder anderen --path wählen"
         )
     (journal / ISSUES).mkdir(parents=True, exist_ok=True)
-    with _locked(journal):
+    with locked(journal):
         run_git(journal, "init", "-q", "-b", "main")
         for key, value in identity.items():
             run_git(journal, "config", key, value)
@@ -132,22 +148,37 @@ def initialize(
 
 
 def log_error(
-    journal: Path, event: str, issue_id: str, reason: str
+    journal: Path,
+    event: str,
+    issue_id: str,
+    reason: str,
+    queue_id: int | None = None,
 ) -> None:
-    """Hängt eine Zeile an .errors.log; ohne Rohwerte der Nutzlast."""
+    """Hängt eine Zeile an .errors.log; ohne Rohwerte der Nutzlast.
+
+    Mit Queue-ID beginnt der Grund mit #<ID>, wie in status.
+    """
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
-    line = f"{stamp} {event} {issue_id}: {reason}\n"
+    entry = "" if queue_id is None else f"#{queue_id} "
+    line = f"{stamp} {entry}{event} {issue_id}: {reason}\n"
     with (journal / ERRORS_LOG).open("a", encoding="utf-8") as log:
         log.write(line)
 
 
+def io_error(error: OSError) -> JournalError:
+    """Dateifehler ohne Pfad und Meldungstext (tragen evtl. Inhalte)."""
+    return JournalError(
+        f"Dateizugriff fehlgeschlagen (errno={error.errno})"
+    )
+
+
 @contextmanager
-def _locked(journal: Path) -> Iterator[None]:
+def locked(journal: Path) -> Iterator[None]:
     lock = FileLock(journal / LOCK, timeout=LOCK_TIMEOUT)
     try:
         lock.acquire()
     except Timeout as exc:
-        raise JournalError(
+        raise LockBusy(
             f"Sperre nicht binnen {LOCK_TIMEOUT} s erhalten"
         ) from exc
     try:
@@ -156,7 +187,14 @@ def _locked(journal: Path) -> Iterator[None]:
         lock.release()
 
 
-def _commit_event(journal: Path, event: str, issue: dict) -> None:
+def commit_event(
+    journal: Path, event: str, issue: dict, queue_id: int
+) -> None:
+    """Schreibt issues/<ID>.json und committet mit Queue-ID-Trailer.
+
+    Nur unter locked() aufrufen. Ein Fehler nimmt die Datei zurück,
+    damit sie nicht in den nächsten Commit gerät.
+    """
     target = _issue_file(journal, issue["id"])
     late = _is_late(issue, target)
     previous = (
@@ -176,6 +214,8 @@ def _commit_event(journal: Path, event: str, issue: dict) -> None:
             "-q",
             "-m",
             commit_message(event, issue, late),
+            "--trailer",
+            f"{TRAILER}: {queue_id}",
         )
     except (GitError, OSError):
         if not late:

@@ -7,7 +7,8 @@ hook_dir=$(cd -- "$(dirname -- "$0")" && pwd) || exit 1
 repo_dir=$(dirname -- "$(dirname -- "$hook_dir")")
 python="$repo_dir/.venv/bin/python"
 if [ ! -x "$python" ]; then
-  # Klone ohne Projekt-venv: Python 3 mit jsonschema, plumbum und filelock.
+  # Klone ohne Projekt-venv: Python 3 mit jsonschema, plumbum, filelock
+  # und persist-queue.
   python=python3
 fi
 export PYTHONPATH="$repo_dir/src"

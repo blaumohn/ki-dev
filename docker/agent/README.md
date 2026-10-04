@@ -413,7 +413,26 @@ Hook ohne Wirkung; ein Klon ohne Journal bleibt also unberührt.
 Für Commits übernimmt das Journal `user.name` und `user.email` des
 Projekt-Repos. Eigene Zusätze gehören in ein ausführbares
 `.beads/hooks/on_<ereignis>.local`, das dieselben Argumente und dieselbe
-stdin erhält.
+stdin erhält. Voraussetzung ist git >= 2.32 (`commit --trailer`).
+
+Wiederanlauf: Jeder Hook legt sein Ereignis zuerst in die Warteschlange
+`<journal>/.queue.db` (persist-queue) und arbeitet sie dann unter der
+Sperre ab, bis sie leer ist. Jeder Commit trägt den Trailer
+`Journal-Event: <Queue-ID>`. Wird ein Hook zwischen Commit und
+Bestätigung getötet, erkennt der nächste Lauf den Commit am Trailer und
+committet nicht doppelt. Stirbt er während git schreibt, entfernt der
+nächste Lauf die verwaiste `.git/index.lock` und committet das Ereignis
+genau einmal. Ist die Sperre 5 s belegt, bleibt das Ereignis liegen;
+der Halter oder der nächste Hook committet es.
+
+```bash
+./.venv/bin/python -m ki_dev.beads_journal status   # arbeitet zuerst ab
+./.venv/bin/python -m ki_dev.beads_journal drain    # nur abarbeiten
+```
+
+`status` zeigt zusätzlich `Warteschlange: N offen` und
+`Fehlgeschlagen: N` mit je einer Zeile `#<Queue-ID> <Ereignis> <ID>:
+<Grund>`. Dieselbe `#<Queue-ID>` steht in `.errors.log`.
 
 ```bash
 cd .local/beads-journal
@@ -424,27 +443,39 @@ git log -p -- issues/<ID>.json
 Grenzen:
 
 - Löschungen erzeugen kein Ereignis. Kommentartexte fehlen in der Nutzlast.
-- bd startet Hooks asynchron mit 10 s Frist. Die Commits folgen deshalb
-  der Reihenfolge des Sperrerwerbs, nicht garantiert der Ereignisfolge.
-  Trifft eine ältere Nutzlast verspätet ein, überschreibt sie die Datei
-  nicht. Sie ergibt einen leeren Commit mit dem Vermerk ` (verspätet)`.
+- bd startet Hooks asynchron mit 10 s Frist. Die Commits folgen der
+  Eingangsreihenfolge der Warteschlange, nicht garantiert der
+  Ereignisfolge. Trifft eine ältere Nutzlast verspätet ein, überschreibt
+  sie die Datei nicht. Sie ergibt einen leeren Commit mit dem Vermerk
+  ` (verspätet)`.
   Verglichen wird `updated_at` in ganzen Sekunden, Bruchteile werden
   abgeschnitten: bd liefert sie nur bei create, danach die Sekunde aus
-  der DB. Innerhalb derselben Sekunde entscheidet die Sperrreihenfolge;
-  Vertauschungen dort bleiben unerkannt (akzeptierte Präzisionsgrenze).
-- Ungültige Nutzlast, Sperr-Timeout (5 s) oder ein git-Fehler verwerfen
-  das Ereignis. Der Grund steht in `<journal>/.errors.log`, mit Feldpfad
-  und ohne Rohwerte. Verlustfreiheit liefert erst ki-dev-ablauf-yl5.1.
+  der DB. Innerhalb derselben Sekunde entscheidet die Reihenfolge der
+  Warteschlange; Vertauschungen dort bleiben unerkannt (akzeptierte
+  Präzisionsgrenze).
+- Ungültige Nutzlast wird als fehlgeschlagen vermerkt, mit Feldpfad und
+  ohne Rohwerte. Ein git-Fehler lässt das Ereignis in der Warteschlange;
+  der nächste Lauf versucht es erneut. Gründe stehen in
+  `<journal>/.errors.log`.
+- `.queue.db` gehört zum Journal. Wer sie löscht, verliert offene
+  Einträge, und neue Queue-IDs gelten fälschlich als schon committet.
 - Die Sperre ist ein `flock`. Zwischen Host und Container über
   virtiofs ist sie unzuverlässig. Deshalb gilt auch hier: keine
   gleichzeitigen bd-Prozesse auf Host und Container (siehe oben).
+- persist-queue betreibt die Warteschlange fest im WAL-Modus. Nach einem
+  Abbruch bleiben `.queue.db-wal` und `.queue.db-shm` liegen. Ob ein
+  anschließender Wechsel zwischen Host und Container über virtiofs
+  sauber weiterläuft, ist noch ungeprüft (offenes Prüfrisiko).
 - Ins Journal schreibt nur dieses Werkzeug. Solange Hooks laufen können,
   dort kein manuelles `git commit`, `reset` o. Ä. ausführen.
-- Neu ist die Abhängigkeit `filelock`. Das Host-venv braucht dafür
-  `./.venv/bin/pip install -e .`. Für den Container ist ein Rebuild
-  nötig (`./scripts/agent-container build`), danach die veraltete venv
-  per `reset` erneuern (siehe oben). Ohne `filelock` scheitert der Hook;
-  bd verwirft den Fehler stillschweigend.
+- Abhängigkeiten sind `filelock` und `persist-queue`. Das Host-venv
+  braucht dafür `./.venv/bin/pip install -e .`. Für den Container ist
+  ein Rebuild nötig (`./scripts/agent-container build`), danach die
+  veraltete venv per `reset` erneuern (siehe oben). Fehlt eine davon,
+  scheitert der Hook; bd verwirft den Fehler stillschweigend.
+- Ein vor dem Wiederanlauf angelegtes Journal führt `.queue.db*` nicht
+  in seiner `.gitignore`; `git status` zeigt die Dateien dort als
+  ungetrackt. Das stört die Hooks nicht (sie stagen gezielt).
 
 ### Direkter Dolt-Zugriff
 
