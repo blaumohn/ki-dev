@@ -87,24 +87,28 @@ def _needs_contract(
 # einmal je Regel definiert und wiederverwendet). metadata/handoff
 # bleiben rein deklarativ: source_refs ist eine nichtleere Liste
 # nichtleerer Texte, unabhängig vom internen HandoffIssue-Feldnamen.
-_NONEMPTY_TEXT = {"type": "string", "minLength": 1, "pattern": r"\S"}
+NONEMPTY_TEXT_SCHEMA = {
+    "type": "string",
+    "minLength": 1,
+    "pattern": r"\S",
+}
 
 _SOURCE_REFS_SCHEMA = {
     "type": "array",
     "minItems": 1,
-    "items": _NONEMPTY_TEXT,
+    "items": NONEMPTY_TEXT_SCHEMA,
 }
 
 _BASE_PROPERTIES = {
-    "id": _NONEMPTY_TEXT,
-    "title": _NONEMPTY_TEXT,
-    "description": _NONEMPTY_TEXT,
+    "id": NONEMPTY_TEXT_SCHEMA,
+    "title": NONEMPTY_TEXT_SCHEMA,
+    "description": NONEMPTY_TEXT_SCHEMA,
 }
 _BASE_REQUIRED = ("id", "title", "description")
 
 _CONTRACT_PROPERTIES = {
-    "acceptance_criteria": _NONEMPTY_TEXT,
-    "design": _NONEMPTY_TEXT,
+    "acceptance_criteria": NONEMPTY_TEXT_SCHEMA,
+    "design": NONEMPTY_TEXT_SCHEMA,
 }
 _CONTRACT_REQUIRED = ("acceptance_criteria", "design")
 

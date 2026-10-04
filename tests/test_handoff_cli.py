@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from ki_dev import beads_reader, handoff_preflight
 from ki_dev.cli import app
 from ki_dev.handoff import Step
+from tests.fake_bd_command import BdScript
 
 runner = CliRunner()
 
@@ -28,32 +29,13 @@ FULL = {
 
 
 @pytest.fixture
-def bd(monkeypatch):
-    calls = []
-    state = {
-        "stdout": json.dumps([FULL]),
-        "returncode": 0,
-        "raises": None,
-    }
-
-    real_run = subprocess.run
-
-    def fake(argv, **kwargs):
-        if not argv or argv[0] != "bd":
-            # Nur bd faken; git/Vorlauf-Prüfbefehle der Review-Tests
-            # laufen echt (beads_reader.subprocess ist dasselbe
-            # Modulobjekt wie subprocess, das Patchen wirkt global).
-            return real_run(argv, **kwargs)
-        calls.append(argv)
-        if state["raises"]:
-            raise state["raises"]
-        return subprocess.CompletedProcess(
-            argv, state["returncode"], state["stdout"], "boese\n" * 30
-        )
-
-    monkeypatch.setattr(beads_reader.subprocess, "run", fake)
-    fake.calls = calls
-    fake.state = state
+def bd(monkeypatch, tmp_path_factory):
+    fake = BdScript(
+        tmp_path_factory.mktemp("bd"),
+        stdout=json.dumps([FULL]),
+        stderr="boese\n" * 30,
+    )
+    fake.install(monkeypatch)
     return fake
 
 
@@ -190,11 +172,13 @@ def test_markup_like_field_path_is_printed_literally(bd):
         {"stdout": json.dumps([FULL, FULL])},
         {"stdout": json.dumps([FULL | {"id": "andere"}])},
         {"returncode": 1},
-        {"raises": subprocess.TimeoutExpired(["bd"], 10)},
-        {"raises": FileNotFoundError("bd")},
+        {"hang": True},
     ],
 )
-def test_adapter_errors_exit_1_without_raw_output(bd, change):
+def test_adapter_errors_exit_1_without_raw_output(
+    bd, change, monkeypatch
+):
+    monkeypatch.setattr(beads_reader, "BD_TIMEOUT_S", 0.5)
     bd.state.update(change)
     result = runner.invoke(app, ["handoff", "x-1", "--step", "map"])
     assert result.exit_code == 1

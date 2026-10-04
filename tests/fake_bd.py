@@ -77,11 +77,12 @@ class FakeBd:
         ]
 
     def install(self, monkeypatch) -> None:
-        from ki_dev import beads_source
+        from ki_dev import beads_reader, beads_source
 
-        monkeypatch.setattr(
-            beads_source, "BD_PROGRAM", str(self.script)
-        )
+        # Plumbum sucht ueber sein beim Import erfasstes PATH; darum
+        # beide Adapter ausdruecklich auf das Skript zeigen lassen.
+        for adapter in (beads_source, beads_reader):
+            monkeypatch.setattr(adapter, "BD_PROGRAM", str(self.script))
         monkeypatch.setenv(
             "PATH",
             f"{self.script.parent}{os.pathsep}{os.environ['PATH']}",
