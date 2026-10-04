@@ -14,3 +14,6 @@ dist/
 .beads-credential-key
 .beads/proxieddb/
 .local/
+
+# Beads-Journal ersetzt den versionierten Export (ki-dev-ablauf-yl5)
+.beads/issues.jsonl

@@ -387,6 +387,65 @@ deren bd-Aktivitäten beenden. Ein Lock-Fehler muss vor dem Agentenlauf geklärt
 ./scripts/agent-container run bd --readonly list --limit 5
 ```
 
+### Beads-Journal
+
+Das Journal ist ein lokales Git-Repo, in dem jede Beads-Änderung als
+eigener Commit landet. So lässt sich der Projektverlauf ohne Dolt lesen.
+Die versionierten bd-Hooks `.beads/hooks/on_create`, `on_update` und
+`on_close` rufen dafür `python -m ki_dev.beads_journal hook` auf. Danach
+steht in `issues/<ID>.json` die letzte Nutzlast des Vorgangs. Die
+Commit-Nachricht lautet `<Ereignis> <ID>: <Titel> [<Status>]`. Updates
+lösen auch Labels, Abhängigkeiten, Kommentare und Typwechsel aus.
+
+Einrichtung, einmal je Klon, auf dem Host oder im Container:
+
+```bash
+./.venv/bin/python -m ki_dev.beads_journal init      # oder: init --path P
+./.venv/bin/python -m ki_dev.beads_journal status
+```
+
+`init` füllt das Journal einmalig aus `bd export` (ohne Memories) in
+einem einzigen Commit. Der Ort steht in `git config ki-dev.beadsJournal`.
+Ohne Angabe gilt `.local/beads-journal`. Ein Ort im Repo wird relativ
+gespeichert und gilt so auf dem Host und unter `/workspace`
+gleichermaßen; ein Ort außerhalb ist im Container nicht eingebunden. Fehlt der Marker `.beads-journal`, endet der
+Hook ohne Wirkung; ein Klon ohne Journal bleibt also unberührt.
+Für Commits übernimmt das Journal `user.name` und `user.email` des
+Projekt-Repos. Eigene Zusätze gehören in ein ausführbares
+`.beads/hooks/on_<ereignis>.local`, das dieselben Argumente und dieselbe
+stdin erhält.
+
+```bash
+cd .local/beads-journal
+jq -r 'select(.status != "closed") | [.id, .status, .title] | @tsv' issues/*.json
+git log -p -- issues/<ID>.json
+```
+
+Grenzen:
+
+- Löschungen erzeugen kein Ereignis. Kommentartexte fehlen in der Nutzlast.
+- bd startet Hooks asynchron mit 10 s Frist. Die Commits folgen deshalb
+  der Reihenfolge des Sperrerwerbs, nicht garantiert der Ereignisfolge.
+  Trifft eine ältere Nutzlast verspätet ein, überschreibt sie die Datei
+  nicht. Sie ergibt einen leeren Commit mit dem Vermerk ` (verspätet)`.
+  Verglichen wird `updated_at` in ganzen Sekunden, Bruchteile werden
+  abgeschnitten: bd liefert sie nur bei create, danach die Sekunde aus
+  der DB. Innerhalb derselben Sekunde entscheidet die Sperrreihenfolge;
+  Vertauschungen dort bleiben unerkannt (akzeptierte Präzisionsgrenze).
+- Ungültige Nutzlast, Sperr-Timeout (5 s) oder ein git-Fehler verwerfen
+  das Ereignis. Der Grund steht in `<journal>/.errors.log`, mit Feldpfad
+  und ohne Rohwerte. Verlustfreiheit liefert erst ki-dev-ablauf-yl5.1.
+- Die Sperre ist ein `flock`. Zwischen Host und Container über
+  virtiofs ist sie unzuverlässig. Deshalb gilt auch hier: keine
+  gleichzeitigen bd-Prozesse auf Host und Container (siehe oben).
+- Ins Journal schreibt nur dieses Werkzeug. Solange Hooks laufen können,
+  dort kein manuelles `git commit`, `reset` o. Ä. ausführen.
+- Neu ist die Abhängigkeit `filelock`. Das Host-venv braucht dafür
+  `./.venv/bin/pip install -e .`. Für den Container ist ein Rebuild
+  nötig (`./scripts/agent-container build`), danach die veraltete venv
+  per `reset` erneuern (siehe oben). Ohne `filelock` scheitert der Hook;
+  bd verwirft den Fehler stillschweigend.
+
 ### Direkter Dolt-Zugriff
 
 Das Dolt-CLI liegt im Image und arbeitet auf demselben Verzeichnis wie bd:

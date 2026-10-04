@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# bd-Ereignis-Hook; Rumpf in beads-journal.
+exec "$(dirname -- "$0")/beads-journal" "$@"

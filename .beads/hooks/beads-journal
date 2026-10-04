@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+# Gemeinsamer Rumpf der bd-Ereignis-Hooks on_create, on_update, on_close:
+# übergibt ID, Ereignis und Issue-JSON (stdin) an das Beads-Journal
+# (docker/agent/README.md, Abschnitt Beads-Journal). Ein ausführbares
+# on_<ereignis>.local daneben erhält dieselben Argumente und dieselbe stdin.
+hook_dir=$(cd -- "$(dirname -- "$0")" && pwd) || exit 1
+repo_dir=$(dirname -- "$(dirname -- "$hook_dir")")
+python="$repo_dir/.venv/bin/python"
+if [ ! -x "$python" ]; then
+  # Klone ohne Projekt-venv: Python 3 mit jsonschema, plumbum und filelock.
+  python=python3
+fi
+export PYTHONPATH="$repo_dir/src"
+cd -- "$repo_dir" || exit 1
+case "${2:-}" in
+  create | update | close) local_hook="$hook_dir/on_$2.local" ;;
+  *) local_hook="" ;;
+esac
+if [ -z "$local_hook" ] || [ ! -x "$local_hook" ]; then
+  exec "$python" -m ki_dev.beads_journal hook "$@"
+fi
+payload=$(cat)
+printf '%s' "$payload" | "$python" -m ki_dev.beads_journal hook "$@"
+status=$?
+printf '%s' "$payload" | "$local_hook" "$@" || status=$?
+exit "$status"
