@@ -418,6 +418,44 @@ def test_kill_during_git_commit_is_committed_once(
     )
 
 
+def test_kill_during_ref_update_leaves_no_stuck_queue(journal_dir):
+    """Echter Abbruch: git hält HEAD.lock und refs/heads/main.lock.
+
+    Der reference-transaction-Hook läuft im Zustand "prepared", während
+    git die Ref-Sperren hält (--no-verify überspringt ihn nicht), und
+    tötet git sowie den drain-Prozess.
+    """
+    hooks = journal_dir.parent / "kill-hooks"
+    hooks.mkdir()
+    hook = hooks / "reference-transaction"
+    hook.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = prepared ] || exit 0\n'
+        "git_pid=$PPID\n"
+        "drain_pid=$(ps -o ppid= -p \"$git_pid\" | tr -d ' ')\n"
+        'kill -9 "$git_pid" "$drain_pid"\n'
+    )
+    hook.chmod(0o755)
+    git(journal_dir, "config", "core.hooksPath", str(hooks))
+    drain.enqueue(journal_dir, "create", issue())
+
+    killed = drain_process(journal_dir)
+
+    assert killed.returncode == -9
+    git_dir = journal_dir / ".git"
+    assert (git_dir / "refs" / "heads" / "main.lock").exists()
+    assert len(subjects(journal_dir)) == 1
+
+    git(journal_dir, "config", "--unset", "core.hooksPath")
+    assert drain.drain(journal_dir) == drain.DrainResult(1, 0)
+    assert subjects(journal_dir)[1:] == ["create t-1: Titel t-1 [open]"]
+    assert trailers(journal_dir)[1:] == ["1"]
+    assert list(git_dir.rglob("*.lock")) == []
+    assert git(journal_dir, "status", "--porcelain") == ""
+    log = (journal_dir / ERRORS_LOG).read_text()
+    assert "verwaiste .git/refs/heads/main.lock entfernt" in log
+
+
 def test_trailer_match_is_exact(monkeypatch, repo, journal_dir):
     """Prüffall 5: Ereignis 10 committet, 1 gilt nicht als erledigt."""
     git(
@@ -435,6 +473,25 @@ def test_trailer_match_is_exact(monkeypatch, repo, journal_dir):
 
     assert subjects(journal_dir)[-1] == "create t-1: Titel t-1 [open]"
     assert trailers(journal_dir)[-2:] == ["10", "1"]
+
+
+def test_line_breaks_in_title_cannot_inject_trailers(
+    monkeypatch, repo, journal_dir
+):
+    """Titel mit "Journal-Event: 2" darf Eintrag 2 nicht erledigen."""
+    title = "Titel\n\nJournal-Event: 2\nX: Text"
+    payload = issue(title=title, status="open\r\nJournal-Event: 3")
+
+    assert call_hook(monkeypatch, repo, "create", payload) == 0
+    assert call_hook(monkeypatch, repo, "update", issue()) == 0
+
+    assert subjects(journal_dir)[1:] == [
+        "create t-1: Titel Journal-Event: 2 X: Text "
+        "[open Journal-Event: 3]",
+        "update t-1: Titel t-1 [open]",
+    ]
+    assert trailers(journal_dir)[1:] == ["1", "2"]
+    assert queue_state(journal_dir) == (0, [])
 
 
 def test_queue_ids_are_not_reused_after_ack(journal_dir):
@@ -623,7 +680,7 @@ def test_init_fills_once_from_bd_export(
     journal_dir = repo / ".local" / "beads-journal"
 
     assert cli.main(["--repo", str(repo), "init"]) == 0
-    assert cli.main(["--repo", str(repo), "init"]) == 1
+    assert cli.main(["--repo", str(repo), "init"]) == 0
 
     assert subjects(journal_dir) == ["init: 2 Issues aus bd export"]
     assert (journal_dir / MARKER).is_file()
@@ -633,7 +690,25 @@ def test_init_fills_once_from_bd_export(
         "Journal Test <journal@test.invalid>\n"
     )
     assert git(journal_dir, "status", "--porcelain") == ""
-    assert "bereits eingerichtet" in capsys.readouterr().err
+    assert "bereits eingerichtet" in capsys.readouterr().out
+
+
+def test_init_on_existing_journal_drains_queue(
+    monkeypatch, tmp_path, repo, journal_dir, capsys
+):
+    fake_bd(tmp_path, monkeypatch, [{"_type": "issue", **issue("t-9")}])
+    drain.enqueue(journal_dir, "create", issue())
+
+    assert cli.main(["--repo", str(repo), "init"]) == 0
+
+    output = capsys.readouterr().out
+    assert "bereits eingerichtet" in output
+    assert "Abgearbeitet: 1 Commits" in output
+    assert subjects(journal_dir) == [
+        "init: 0 Issues aus bd export",
+        "create t-1: Titel t-1 [open]",
+    ]
+    assert queue_state(journal_dir) == (0, [])
 
 
 def test_init_keeps_only_fields_the_hooks_deliver(

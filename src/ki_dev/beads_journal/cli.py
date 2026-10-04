@@ -192,11 +192,11 @@ def _hook_error(
 
 
 def run_init(repo: Path, path: Path | None) -> int:
+    """Richtet ein; ein bestehendes Journal wird nur abgearbeitet."""
     try:
         root = repo_root(repo)
         journal = path.resolve() if path else journal_path(repo)
-        issues = export_issues(root)
-        initialize(journal, issues, read_identity(root))
+        print(_initialize_once(root, journal))
         if path:
             store_location(root, journal)
     except _EXPECTED as exc:
@@ -207,10 +207,17 @@ def run_init(repo: Path, path: Path | None) -> int:
         return 1
     except OSError as exc:
         return _fail(io_error(exc))
-    print(
+    return _guarded_drain(journal)
+
+
+def _initialize_once(root: Path, journal: Path) -> str:
+    if is_active(journal):
+        return f"Beads-Journal bereits eingerichtet: {journal}"
+    issues = export_issues(root)
+    initialize(journal, issues, read_identity(root))
+    return (
         f"Beads-Journal eingerichtet: {journal} ({len(issues)} Issues)"
     )
-    return _guarded_drain(journal)
 
 
 def run_drain(repo: Path) -> int:

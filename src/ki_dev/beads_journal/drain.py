@@ -10,8 +10,12 @@ committet ihn.
 Ein Kill durch die Hookfrist kann zwischen Commit und ack fallen; der
 Wiederanlauf setzt den Eintrag dann zurück, und die Doppelprüfung
 findet seinen Trailer im Log. Ein Kill während git schreibt hinterlässt
-.git/index.lock; unter der Sperre ist sie verwaist (nur dieses Werkzeug
-schreibt das Journal) und wird entfernt.
+Sperrdateien: .git/index.lock (etwa bei git add), .git/HEAD.lock und
+.git/refs/heads/<branch>.lock (beim Ref-Update des Commits), bei einem
+automatischen gc auch .git/packed-refs.lock. Unter der Journal-Sperre
+sind sie verwaist (nur dieses Werkzeug schreibt das Journal) und werden
+entfernt. Ein Commit, dessen Ref-Update abbrach, hängt an keinem
+Branch; der Eintrag ist unbestätigt und wird neu committet.
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ from ki_dev.beads_journal.journal import (
 )
 
 RECOVERY_EVENT = "wiederanlauf"
+ORPHAN_LOCKS = ("index.lock", "HEAD.lock", "packed-refs.lock")
 
 
 class DrainStopped(JournalError):
@@ -100,15 +105,19 @@ def committed_event_ids(journal: Path) -> set[str]:
 
 def _recover(journal: Path, handle) -> None:
     queue.resume_unacked(handle)
-    index_lock = journal / ".git" / "index.lock"
-    if index_lock.exists():
-        index_lock.unlink()
-        log_error(
-            journal,
-            RECOVERY_EVENT,
-            "-",
-            "verwaiste .git/index.lock entfernt",
-        )
+    git_dir = journal / ".git"
+    locks = [git_dir / name for name in ORPHAN_LOCKS]
+    locks += sorted((git_dir / "refs").rglob("*.lock"))
+    for lock in locks:
+        if lock.is_file():
+            lock.unlink()
+            name = lock.relative_to(git_dir).as_posix()
+            log_error(
+                journal,
+                RECOVERY_EVENT,
+                "-",
+                f"verwaiste .git/{name} entfernt",
+            )
 
 
 def _process(journal: Path, handle, entry: queue.Entry) -> bool:

@@ -43,6 +43,8 @@ fehlen.
 
 Commit-Nachricht: `<Ereignis> <ID>: <Titel> [<Status>]`; ` (verspätet)`
 markiert eine ältere Nutzlast, die die Datei nicht überschrieben hat.
+Zeilenumbrüche in Titel und Status werden im Betreff zu Leerzeichen;
+die Issue-Datei behält den Originaltext.
 
 ```bash
 # offene Vorgänge als Tabelle
@@ -69,13 +71,14 @@ der Eingangsreihenfolge der Warteschlange; der Trailer
 Abbruch. Ist die Sperre belegt (5 s), bleibt das Ereignis in der
 Warteschlange; der Halter oder der nächste Hook bzw. `status`
 committet es. Nach einem Abbruch (bd beendet Hooks nach 10 s) setzt der
-nächste Lauf unbestätigte Einträge zurück und entfernt eine verwaiste
-`.git/index.lock`. Ungültige Nutzlasten werden als fehlgeschlagen
-vermerkt, ohne Rohwerte; Git-Fehler lassen das Ereignis in der
-Warteschlange. Gründe stehen in `.errors.log`, mit `#<Queue-ID>` wie
-in `status`. `.queue.db` gehört zum Journal: Wer sie löscht, verliert
-offene Einträge, und neue Queue-IDs gelten fälschlich als schon
-committet.
+nächste Lauf unbestätigte Einträge zurück und entfernt verwaiste
+Sperrdateien (`.git/index.lock`, `.git/HEAD.lock`,
+`.git/packed-refs.lock`, `.git/refs/**/*.lock`). Ungültige
+Nutzlasten werden als fehlgeschlagen vermerkt, ohne Rohwerte;
+Git-Fehler lassen das Ereignis in der Warteschlange. Gründe stehen in
+`.errors.log`, mit `#<Queue-ID>` wie in `status`. `.queue.db` gehört
+zum Journal: Wer sie löscht, verliert offene Einträge, und neue
+Queue-IDs gelten fälschlich als schon committet.
 
 "Verspätet" zählt in ganzen Sekunden von `updated_at`; innerhalb
 derselben Sekunde bleiben Vertauschungen unerkannt.
@@ -242,10 +245,23 @@ def _restore_issue(
 
 
 def commit_message(event: str, issue: dict, late: bool) -> str:
+    """Einzeiliger Betreff; issues/<ID>.json behält den Originaltext.
+
+    Ein Zeilenumbruch in Titel oder Status ergäbe Absätze, die git als
+    Trailer liest; ein eingeschleustes "Journal-Event: 2" ließe die
+    Doppelprüfung den echten Eintrag 2 ohne Commit bestätigen.
+    """
+    title = _one_line(issue["title"])
     message = (
-        f"{event} {issue['id']}: {issue['title']} [{issue['status']}]"
+        f"{event} {issue['id']}: {title} [{_one_line(issue['status'])}]"
     )
     return f"{message} (verspätet)" if late else message
+
+
+def _one_line(text: str) -> str:
+    return " ".join(
+        part.strip() for part in text.splitlines() if part.strip()
+    )
 
 
 def _is_late(issue: dict, target: Path) -> bool:

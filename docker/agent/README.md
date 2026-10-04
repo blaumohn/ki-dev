@@ -394,7 +394,8 @@ eigener Commit landet. So lässt sich der Projektverlauf ohne Dolt lesen.
 Die versionierten bd-Hooks `.beads/hooks/on_create`, `on_update` und
 `on_close` rufen dafür `python -m ki_dev.beads_journal hook` auf. Danach
 steht in `issues/<ID>.json` die letzte Nutzlast des Vorgangs. Die
-Commit-Nachricht lautet `<Ereignis> <ID>: <Titel> [<Status>]`. Updates
+Commit-Nachricht lautet `<Ereignis> <ID>: <Titel> [<Status>]`;
+Zeilenumbrüche in Titel und Status werden dort zu Leerzeichen. Updates
 lösen auch Labels, Abhängigkeiten, Kommentare und Typwechsel aus.
 
 Einrichtung, einmal je Klon, auf dem Host oder im Container:
@@ -405,7 +406,8 @@ Einrichtung, einmal je Klon, auf dem Host oder im Container:
 ```
 
 `init` füllt das Journal einmalig aus `bd export` (ohne Memories) in
-einem einzigen Commit. Der Ort steht in `git config ki-dev.beadsJournal`.
+einem einzigen Commit; auf einem bestehenden Journal arbeitet es nur die
+Warteschlange ab. Der Ort steht in `git config ki-dev.beadsJournal`.
 Ohne Angabe gilt `.local/beads-journal`. Ein Ort im Repo wird relativ
 gespeichert und gilt so auf dem Host und unter `/workspace`
 gleichermaßen; ein Ort außerhalb ist im Container nicht eingebunden. Fehlt der Marker `.beads-journal`, endet der
@@ -421,8 +423,9 @@ Sperre ab, bis sie leer ist. Jeder Commit trägt den Trailer
 `Journal-Event: <Queue-ID>`. Wird ein Hook zwischen Commit und
 Bestätigung getötet, erkennt der nächste Lauf den Commit am Trailer und
 committet nicht doppelt. Stirbt er während git schreibt, entfernt der
-nächste Lauf die verwaiste `.git/index.lock` und committet das Ereignis
-genau einmal. Ist die Sperre 5 s belegt, bleibt das Ereignis liegen;
+nächste Lauf die verwaisten Sperrdateien (`.git/index.lock`,
+`.git/HEAD.lock`, `.git/packed-refs.lock`, `.git/refs/**/*.lock`) und
+committet das Ereignis genau einmal. Ist die Sperre 5 s belegt, bleibt das Ereignis liegen;
 der Halter oder der nächste Hook committet es.
 
 ```bash
