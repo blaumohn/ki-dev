@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from jsonschema import Draft202012Validator
 
 from ki_dev.handoff_limit import check_base_length
+from ki_dev.step_flow import load_step_flow
 
 if TYPE_CHECKING:
     from ki_dev.handoff_guidelines import GuidelineSection
@@ -304,8 +305,18 @@ def _base_lines(
     if _needs_refs(step, review_target):
         lines += ["", "Quellenreferenzen (unaufgelöst):"]
         lines += [f"- {_line(ref)}" for ref in issue.source_refs]
-    lines += ["", _NEXT[step]]
+    flow = load_step_flow()
+    state = flow_state(step, review_target)
+    lines += ["", *flow.hint_lines(state, _line(issue.id))]
     return lines
+
+
+def flow_state(step: Step, review_target: ReviewTarget | None) -> str:
+    """Zustand der Tabelle step-flow.toml, in dem diese Übergabe
+    entsteht (Schreibschritt oder Review der jeweiligen Phase)."""
+    if step is Step.REVIEW:
+        return f"{(review_target or ReviewTarget.BUILD).value}.review"
+    return step.value
 
 
 def ensure_base_fits(
@@ -364,7 +375,8 @@ def _roles(
 ) -> tuple[str, ...]:
     if step is not Step.REVIEW:
         return _ROLES[step]
-    return _REVIEW_ROLES[review_target or ReviewTarget.BUILD]
+    role = _REVIEW_ROLES[review_target or ReviewTarget.BUILD]
+    return (*role, *load_step_flow().class_lines())
 
 
 def _line(value: object) -> str:
@@ -400,6 +412,10 @@ _ROLES = {
         "begründet irrelevant /",
         "offen). Bewahre Einschränkungen, Widersprüche und offene",
         "Fragen. Die Karte ersetzt die Originalquellen nicht.",
+        "Ist der Bead schon eine Karte oder nennt der Mensch eine",
+        "bestehende Karte, ergänze diese: neue Quellen in ihre",
+        "source_refs, Abdeckung fortschreiben, geklärte offene Fragen",
+        "mit Fundstelle schließen; lege keine zweite Karte an.",
         "Hinterlasse bei Kontextende den aktuellen Stand und den",
         "nächsten unbearbeiteten Abschnitt in Beads. Erstelle noch",
         "keine Executor-Aufträge.",
@@ -411,6 +427,8 @@ _ROLES = {
         "Quellenbezügen und echten Abhängigkeiten; noch keine",
         "vollständigen Executor-Aufträge. Du verantwortest den",
         "fachlichen Zuschnitt und meldest unentscheidbare Konflikte.",
+        "Bestehen aus dieser Karte schon Vorgänge, ergänze oder",
+        "ersetze deren Inhalt, statt Doppel anzulegen.",
     ),
     Step.MATERIALIZE: (
         "Rolle: Materialisierungsagent.",
@@ -527,22 +545,4 @@ _REVIEW_ROLES = {
         "automatische Autorität gegenüber dem Bau-Agenten und",
         "schließt nichts automatisch.",
     ),
-}
-
-_NEXT = {
-    Step.MAP: "Hinweis für den Menschen: danach getrennte "
-    "Kartenprüfung mit `ki-dev step BEAD_ID --step review "
-    "--review-of map` starten (BEAD_ID des erstellten Karten-Beads).",
-    Step.GRAPH: "Hinweis für den Menschen: danach die angelegten "
-    "dünnen Vorgänge mit `ki-dev step BEAD_ID --step review "
-    "--review-of graph` prüfen lassen (BEAD_ID je dünnem Vorgang); "
-    "erst danach je Vorgang materialize starten.",
-    Step.MATERIALIZE: "Hinweis für den Menschen: danach die "
-    "Ausführungsreife mit `ki-dev step BEAD_ID --step review "
-    "--review-of materialize` getrennt prüfen lassen.",
-    Step.BUILD: "Hinweis für den Menschen: danach eine getrennte "
-    "Review-Sitzung mit `ki-dev step BEAD_ID --step review` "
-    "starten.",
-    Step.REVIEW: "Hinweis für den Menschen: Schließen und weitere "
-    "Schritte entscheidest du selbst.",
 }

@@ -1,0 +1,359 @@
+# Zustandstabelle für `ki-dev step`: Daten, kein Code.
+#
+# Jede Phase (map, graph, materialize, build) hat eigene Zustände:
+#   P             Schreibsitzung (erstellt oder ergänzt das Ergebnis)
+#   P.review      getrennte Review-Sitzung
+#   P.korrektur   Schreibagent behebt Befunde der Klasse fix
+#   P.entscheidung  der Mensch entscheidet
+# Gemeinsam: quelle (offene Frage braucht eine neue Quelle) und fertig.
+#
+# Ein Review endet mit PASS oder mit der stärksten Befundklasse nach
+# `vorrang`; das Urteil (CHANGES/NEEDS_DECISION) folgt aus der Klasse.
+# `befehl` ist ein Hinweis für den Menschen; {bead} setzt ki-dev ein.
+# Nichts davon läuft automatisch. Geprüft von src/ki_dev/step_flow.py.
+
+start = "map"
+ende = "fertig"
+vorrang = ["entscheidung", "quelle", "fix"]
+
+[befundklasse.fix]
+urteil = "CHANGES"
+text = "aus vorhandenen Quellen korrigierbar"
+
+[befundklasse.quelle]
+urteil = "NEEDS_DECISION"
+text = "offene Frage, braucht eine neue Quelle"
+
+[befundklasse.entscheidung]
+urteil = "NEEDS_DECISION"
+text = "nur der Mensch kann entscheiden"
+
+# --- Zustände ---------------------------------------------------------
+
+[[zustand]]
+id = "map"
+art = "schreiben"
+wer = "Kartierungsagent"
+
+[[zustand]]
+id = "map.review"
+art = "review"
+wer = "Review-Agent (Kartenprüfung)"
+
+[[zustand]]
+id = "map.korrektur"
+art = "korrektur"
+wer = "Kartierungsagent (bisherige Sitzung)"
+
+[[zustand]]
+id = "map.entscheidung"
+art = "entscheidung"
+wer = "Mensch"
+
+[[zustand]]
+id = "graph"
+art = "schreiben"
+wer = "Auflösungsagent"
+
+[[zustand]]
+id = "graph.review"
+art = "review"
+wer = "Review-Agent (Graphprüfung)"
+
+[[zustand]]
+id = "graph.korrektur"
+art = "korrektur"
+wer = "Auflösungsagent (bisherige Sitzung)"
+
+[[zustand]]
+id = "graph.entscheidung"
+art = "entscheidung"
+wer = "Mensch"
+
+[[zustand]]
+id = "materialize"
+art = "schreiben"
+wer = "Materialisierungsagent"
+
+[[zustand]]
+id = "materialize.review"
+art = "review"
+wer = "Review-Agent (Materialisierungsprüfung)"
+
+[[zustand]]
+id = "materialize.korrektur"
+art = "korrektur"
+wer = "Materialisierungsagent (bisherige Sitzung)"
+
+[[zustand]]
+id = "materialize.entscheidung"
+art = "entscheidung"
+wer = "Mensch"
+
+[[zustand]]
+id = "build"
+art = "schreiben"
+wer = "Bau-Agent"
+
+[[zustand]]
+id = "build.review"
+art = "review"
+wer = "Review-Agent (nach deterministischem Vorlauf)"
+
+[[zustand]]
+id = "build.korrektur"
+art = "korrektur"
+wer = "Bau-Agent (bisherige Sitzung)"
+
+[[zustand]]
+id = "build.entscheidung"
+art = "entscheidung"
+wer = "Mensch"
+
+[[zustand]]
+id = "quelle"
+art = "quelle"
+wer = "Mensch (Planungssitzung)"
+
+[[zustand]]
+id = "fertig"
+art = "ende"
+wer = "Mensch"
+
+# --- map --------------------------------------------------------------
+
+[[uebergang]]
+von = "map"
+bei = "erledigt"
+nach = "map.review"
+befehl = "`ki-dev step KARTE --step review --review-of map` (KARTE = erstellte oder ergänzte Karte)"
+
+[[uebergang]]
+von = "map.review"
+bei = "PASS"
+nach = "graph"
+befehl = "`ki-dev step {bead} --step graph`"
+
+[[uebergang]]
+von = "map.review"
+bei = "fix"
+nach = "map.korrektur"
+befehl = "Befunde an den Kartierungsagenten (bisherige Sitzung)"
+
+[[uebergang]]
+von = "map.review"
+bei = "quelle"
+nach = "quelle"
+befehl = "offene Fragen in einer Planungssitzung klären"
+
+[[uebergang]]
+von = "map.review"
+bei = "entscheidung"
+nach = "map.entscheidung"
+befehl = "du entscheidest: annehmen, korrigieren oder quelle"
+
+[[uebergang]]
+von = "map.korrektur"
+bei = "erledigt"
+nach = "map.review"
+befehl = "`ki-dev step {bead} --step review --review-of map --next-turn`"
+
+[[uebergang]]
+von = "map.entscheidung"
+bei = "annehmen"
+nach = "graph"
+befehl = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step graph`"
+
+[[uebergang]]
+von = "map.entscheidung"
+bei = "korrigieren"
+nach = "map.korrektur"
+befehl = "Entscheidung an den Kartierungsagenten (bisherige Sitzung)"
+
+[[uebergang]]
+von = "map.entscheidung"
+bei = "quelle"
+nach = "quelle"
+befehl = "Entscheidung in einer Planungssitzung festhalten"
+
+# --- graph ------------------------------------------------------------
+
+[[uebergang]]
+von = "graph"
+bei = "erledigt"
+nach = "graph.review"
+befehl = "je dünnem Vorgang `ki-dev step VORGANG --step review --review-of graph`"
+
+[[uebergang]]
+von = "graph.review"
+bei = "PASS"
+nach = "materialize"
+befehl = "`ki-dev step {bead} --step materialize`"
+
+[[uebergang]]
+von = "graph.review"
+bei = "fix"
+nach = "graph.korrektur"
+befehl = "Befunde an den Auflösungsagenten (bisherige Sitzung)"
+
+[[uebergang]]
+von = "graph.review"
+bei = "quelle"
+nach = "quelle"
+befehl = "offene Fragen in einer Planungssitzung klären"
+
+[[uebergang]]
+von = "graph.review"
+bei = "entscheidung"
+nach = "graph.entscheidung"
+befehl = "du entscheidest: annehmen, korrigieren oder quelle"
+
+[[uebergang]]
+von = "graph.korrektur"
+bei = "erledigt"
+nach = "graph.review"
+befehl = "`ki-dev step {bead} --step review --review-of graph --next-turn`"
+
+[[uebergang]]
+von = "graph.entscheidung"
+bei = "annehmen"
+nach = "materialize"
+befehl = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step materialize`"
+
+[[uebergang]]
+von = "graph.entscheidung"
+bei = "korrigieren"
+nach = "graph.korrektur"
+befehl = "Entscheidung an den Auflösungsagenten (bisherige Sitzung)"
+
+[[uebergang]]
+von = "graph.entscheidung"
+bei = "quelle"
+nach = "quelle"
+befehl = "Entscheidung in einer Planungssitzung festhalten"
+
+# --- materialize ------------------------------------------------------
+
+[[uebergang]]
+von = "materialize"
+bei = "erledigt"
+nach = "materialize.review"
+befehl = "`ki-dev step {bead} --step review --review-of materialize`"
+
+[[uebergang]]
+von = "materialize.review"
+bei = "PASS"
+nach = "build"
+befehl = "`ki-dev step {bead} --step build`"
+
+[[uebergang]]
+von = "materialize.review"
+bei = "fix"
+nach = "materialize.korrektur"
+befehl = "Befunde an den Materialisierungsagenten (bisherige Sitzung)"
+
+[[uebergang]]
+von = "materialize.review"
+bei = "quelle"
+nach = "quelle"
+befehl = "offene Fragen in einer Planungssitzung klären"
+
+[[uebergang]]
+von = "materialize.review"
+bei = "entscheidung"
+nach = "materialize.entscheidung"
+befehl = "du entscheidest: annehmen, korrigieren oder quelle"
+
+[[uebergang]]
+von = "materialize.korrektur"
+bei = "erledigt"
+nach = "materialize.review"
+befehl = "`ki-dev step {bead} --step review --review-of materialize --next-turn`"
+
+[[uebergang]]
+von = "materialize.entscheidung"
+bei = "annehmen"
+nach = "build"
+befehl = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step build`"
+
+[[uebergang]]
+von = "materialize.entscheidung"
+bei = "korrigieren"
+nach = "materialize.korrektur"
+befehl = "Entscheidung an den Materialisierungsagenten (bisherige Sitzung)"
+
+[[uebergang]]
+von = "materialize.entscheidung"
+bei = "quelle"
+nach = "quelle"
+befehl = "Entscheidung in einer Planungssitzung festhalten"
+
+# --- build ------------------------------------------------------------
+
+[[uebergang]]
+von = "build"
+bei = "erledigt"
+nach = "build.review"
+befehl = "`ki-dev step {bead} --step review` (mit Vorlauf)"
+
+[[uebergang]]
+von = "build.review"
+bei = "PASS"
+nach = "fertig"
+befehl = "Schließen entscheidest du (`bd close {bead}`)"
+
+[[uebergang]]
+von = "build.review"
+bei = "fix"
+nach = "build.korrektur"
+befehl = "Befunde an den Bau-Agenten (bisherige Sitzung)"
+
+[[uebergang]]
+von = "build.review"
+bei = "quelle"
+nach = "quelle"
+befehl = "offene Fragen in einer Planungssitzung klären"
+
+[[uebergang]]
+von = "build.review"
+bei = "entscheidung"
+nach = "build.entscheidung"
+befehl = "du entscheidest: annehmen, korrigieren oder quelle"
+
+[[uebergang]]
+von = "build.korrektur"
+bei = "erledigt"
+nach = "build.review"
+befehl = "`ki-dev step {bead} --step review --next-turn` (Vorlauf, optional `--feedback-file DATEI|-`)"
+
+[[uebergang]]
+von = "build.korrektur"
+bei = "vorlauf_rot"
+nach = "build.korrektur"
+befehl = "Exit 1 von --next-turn: Nachricht an den Bau-Agenten"
+
+[[uebergang]]
+von = "build.entscheidung"
+bei = "annehmen"
+nach = "fertig"
+befehl = "Entscheidung im Bead festhalten (kein PASS); Schließen entscheidest du"
+
+[[uebergang]]
+von = "build.entscheidung"
+bei = "korrigieren"
+nach = "build.korrektur"
+befehl = "Entscheidung an den Bau-Agenten (bisherige Sitzung)"
+
+[[uebergang]]
+von = "build.entscheidung"
+bei = "quelle"
+nach = "quelle"
+befehl = "Entscheidung in einer Planungssitzung festhalten"
+
+# --- neue Quelle: immer über die bestehende Karte ---------------------
+
+[[uebergang]]
+von = "quelle"
+bei = "importiert"
+nach = "map"
+befehl = "`ki-dev step map --agent AGENT --session SITZUNG`; bestehende Karte ergänzen, keine zweite"

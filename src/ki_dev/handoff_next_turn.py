@@ -31,6 +31,7 @@ from ki_dev.handoff_preflight import (
     read_toml,
     render_report_lines,
 )
+from ki_dev.step_flow import load_step_flow
 
 CONFIG_TABLE = "tool.ki-dev.handoff"
 CONFIG_KEY = "feedback_max_chars"
@@ -220,9 +221,8 @@ _REVIEW_RULES = (
 _VERDICT = "Ausgabe: PASS | CHANGES | NEEDS_DECISION."
 
 _HUMAN_NOTE = (
-    "Hinweis für den Menschen: Empfänger, Befundkontext und Quellstand "
-    "verantwortest du; Schließen und weitere Schritte entscheidest du "
-    "selbst."
+    "Empfänger, Befundkontext und Quellstand verantwortest du; "
+    "Schließen und weitere Schritte entscheidest du selbst."
 )
 
 _FEEDBACK_HEADER = (
@@ -264,6 +264,7 @@ def render_review_turn(
         lines += ["", *render_report_lines(report)]
     lines += _feedback_lines(feedback, _FEEDBACK_REVIEW_TAIL)
     lines += ["", _HUMAN_NOTE]
+    lines += _flow_hint(f"{target.value}.review", issue)
     return "\n".join(lines) + "\n"
 
 
@@ -288,13 +289,14 @@ def render_repair_turn(
         finding,
     ]
     lines += _feedback_lines(feedback)
-    lines += [
-        "",
-        "Hinweis für den Menschen: danach erneut `ki-dev step "
-        "BEAD_ID --step review --next-turn` ausführen (optional mit "
-        "`--feedback-file DATEI|-`).",
-    ]
+    lines += _flow_hint("build.korrektur", issue)
     return "\n".join(lines) + "\n"
+
+
+def _flow_hint(state: str, issue: HandoffIssue) -> list[str]:
+    """Folgeschritte aus step-flow.toml als abschließender Block."""
+    flow = load_step_flow()
+    return ["", *flow.hint_lines(state, _one_line(issue.id))]
 
 
 def _feedback_lines(feedback: str | None, tail: str = "") -> list[str]:

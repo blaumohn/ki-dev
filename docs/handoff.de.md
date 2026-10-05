@@ -1,7 +1,7 @@
 # Manuelle Arbeitsübergaben mit `ki-dev step`
 
-`handoff` ist ein experimentelles Übergangswerkzeug: intern scherzhaft
-„mensch-dev loop“. Es soll kurzfristig helfen, Aufträge, Abläufe und Prompts
+`ki-dev step` ist der Spielplatz für den späteren automatischen Ablauf:
+intern scherzhaft „mensch-dev loop“. Es soll kurzfristig helfen, Aufträge, Abläufe und Prompts
 von Hand effizient zu erproben, bis `ki-dev loop` betrieblich nutzbar ist.
 Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
 ausführungsreife Aufträge bleiben auf einen kleinen Umsetzungsschnitt
@@ -9,7 +9,7 @@ begrenzt: notwendige Anforderungen, Schnittstellen und Prüfnachweise; bei
 fachlicher Übergröße teilen statt immer mehr Details anzuhäufen.
 
 Die Zuordnung von Auftrag, Arbeitsstand und Prüfbericht verantwortest du als
-Mensch. `handoff` garantiert keine Bindung an den Quellstand. Halte den
+Mensch. `step` garantiert keine Bindung an den Quellstand. Halte den
 Arbeitsstand während Vorlauf und Review passend; nach weiteren Änderungen
 starte den Vorlauf erneut.
 
@@ -21,7 +21,12 @@ selbst und fügst den Text dort ein. Diese Form liest den Bead nur
 Ausnahme vom sonst rein lesenden Vertrag: siehe
 [Deterministischer Vorlauf vor der Review-Übergabe](#deterministischer-vorlauf-vor-der-review-übergabe-step-review).
 Eine zweite Form, die eine Codex- oder Claude-Sitzung als Quelle erschließt
-und dabei schreibt, steht [weiter unten](#sitzung-als-quelle-handoff-map).
+und dabei schreibt, steht [weiter unten](#sitzung-als-quelle-step-map).
+
+Nur der Befehl heißt `step`. Datennamen behalten `handoff`, damit Beads und
+Konfiguration ohne Migration gelten: `metadata.handoff`, die
+pyproject-Abschnitte `tool.ki-dev.handoff.*`, Artefakte unter
+`.local/handoff/` und die Module `handoff_*.py`.
 
 ## Die fünf Aufrufe
 
@@ -39,7 +44,7 @@ Die Ausgabe ist unfarbiger Klartext ohne Zeilenumbruch nach Terminalbreite. Sie
 lässt sich umleiten (`ki-dev step … > uebergabe.txt`) oder aus dem Terminal
 kopieren. `ki-dev step --help` fasst das auf Deutsch zusammen.
 
-## Freie lokale Sitzung (`handoff local`)
+## Freie lokale Sitzung (`step local`)
 
 ```bash
 ki-dev step local > uebergabe.txt
@@ -286,10 +291,55 @@ Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen
    ein Ergebnis `PASS`, `CHANGES` oder `NEEDS_DECISION`. Das Schließen des
    Beads entscheidest du.
 
-Die „Hinweis für den Menschen“-Zeile am Ende jeder Übergabe nennt nur den
-üblichen Folgeschritt; sie wird nie automatisch ausgeführt.
+Der Block „Hinweis für den Menschen“ am Ende jeder Übergabe nennt die
+Folgeschritte des aktuellen Zustands aus der
+[Zustandstabelle](#zustände-und-befundklassen-step-flowtoml); nichts davon
+läuft automatisch.
 
-## Sitzung als Quelle (`handoff map`)
+## Zustände und Befundklassen (`step-flow.toml`)
+
+Jede Phase hat eigene Zustände; die Tabelle
+[`src/ki_dev/step-flow.toml`](../src/ki_dev/step-flow.toml) ist Daten, kein
+Code. `src/ki_dev/step_flow.py` prüft sie per JSON Schema und mit benannten
+Regeln: Jedes Ziel existiert, jedes Review kennt `PASS`, `fix`, `quelle` und
+`entscheidung`, und von jedem Zustand führt ein Weg zu `fertig`.
+
+| Zustand | Wer | Bedeutung |
+| --- | --- | --- |
+| `P` (`map`, `graph`, `materialize`, `build`) | Schreibagent | erstellt oder **ergänzt** das Ergebnis |
+| `P.review` | getrennter Review-Agent | Urteil mit Befundklassen |
+| `P.korrektur` | Schreibagent, bisherige Sitzung | behebt Befunde der Klasse `fix` |
+| `P.entscheidung` | Mensch | `annehmen`, `korrigieren` oder `quelle` |
+| `quelle` | Mensch, Planungssitzung | offene Frage braucht eine neue Quelle |
+| `fertig` | Mensch | Schließen entscheidest du |
+
+Review-Befunde tragen eine Klasse. Das Urteil folgt der stärksten Klasse
+(`entscheidung` > `quelle` > `fix`), ohne Befund `PASS`:
+
+| Klasse | Urteil | Weiter mit |
+| --- | --- | --- |
+| `fix` | `CHANGES` | `P.korrektur`, danach `--next-turn` |
+| `quelle` | `NEEDS_DECISION` | Planungssitzung, Import, **bestehende** Karte ergänzen |
+| `entscheidung` | `NEEDS_DECISION` | `P.entscheidung` |
+
+Beispiel: Ein Graph-Review findet eine offene Frage.
+
+```text
+graph.review --quelle--> quelle          Planungssitzung mit dem Menschen
+quelle --importiert--> map               ki-dev step map --agent claude --session S2
+                                         Agent ergänzt die bestehende Karte K
+map --erledigt--> map.review             ki-dev step K --step review --review-of map
+map.review --PASS--> graph               ki-dev step K --step graph
+                                         Agent ergänzt die bestehenden Vorgänge
+```
+
+Eine Entscheidung ohne erneutes Review (`annehmen`) hält der Mensch im Bead
+fest, etwa als `metadata.source_map.review = "ACCEPTED_BY_DECISION"` samt
+Begründung; sie ist kein PASS. Beads dürfen ihren Zustand als
+`metadata.step.zustand` (ID aus der Tabelle) tragen; `ki-dev` liest ihn in
+dieser Etappe noch nicht.
+
+## Sitzung als Quelle (`step map`)
 
 ```bash
 ki-dev step map --agent codex --session SESSION_ID

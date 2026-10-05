@@ -40,12 +40,18 @@ def assert_follow_up_message(text: str) -> None:
     assert "frischer" not in text
     assert "früheren Reviews" not in text
     assert "Rolle:" not in text
+    assert_flow_hint_closes(text)
+
+
+def assert_flow_hint_closes(text: str) -> None:
+    """Der Hinweisblock aus step-flow.toml schließt die Nachricht ab:
+    eine Kopfzeile, danach nur Folgeschritte."""
     assert text.count("Hinweis für den Menschen:") == 1
-    assert (
-        text.rstrip()
-        .splitlines()[-1]
-        .startswith("Hinweis für den Menschen:")
-    )
+    head, _, tail = text.rstrip().partition("Hinweis für den Menschen:")
+    steps = tail.splitlines()[1:]
+    assert head.endswith("\n")
+    assert steps
+    assert all(line.startswith("- ") for line in steps)
 
 
 def _project(tmp_path: Path, monkeypatch, *, check=None, limit=None):
