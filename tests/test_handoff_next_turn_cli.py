@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 from ki_dev.cli import app
 from tests.fake_bd_command import BdScript
+from tests.guideline_fixtures import write_guidelines
 from tests.test_handoff_cli import FULL, _command, _preflight_project
 
 runner = CliRunner()
@@ -256,6 +257,7 @@ def test_without_next_turn_failure_keeps_empty_stdout(
     bd, tmp_path, monkeypatch
 ):
     _project(tmp_path, monkeypatch, check=_command("tests", FAIL))
+    write_guidelines(tmp_path)
     result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -354,6 +356,7 @@ def test_without_feedback_option_stdin_is_not_read(
 
     monkeypatch.setattr("ki_dev.handoff_cli._stdin_binary", tripwire)
     monkeypatch.chdir(tmp_path)
+    write_guidelines(tmp_path)
     for args in (
         [*BASE, "--review-of", "map"],
         ["handoff", "x-1", "--step", "build"],

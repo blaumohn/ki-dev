@@ -3,6 +3,7 @@ layout: page
 title: Technikleitlinie für ki-dev
 permalink: /de/policies/technikleitlinie/
 ---
+<!-- Generiert aus docs/policies/technikleitlinie.de.yaml mit scripts/render-guidelines.py; Änderungen dort vornehmen. -->
 
 Diese projektweite Leitlinie konkretisiert die
 [Architektur- und Programmierleitlinien](programmierleitlinie.de.md).

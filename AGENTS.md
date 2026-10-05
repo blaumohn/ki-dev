@@ -9,10 +9,13 @@ Bei Planung, Materialisierung, Umsetzung und Review gelten projektweit:
 - [Technikleitlinie](docs/technikleitlinie.de.md): konkrete Werkzeugwahl
   für Validierung (`jsonschema`) und externe Prozesse (Plumbum).
 
-Vor Arbeiten an diesen Bereichen die jeweiligen Regeln lesen. Sie gelten
+Vor Arbeiten an diesen Bereichen die jeweiligen Regeln lesen. Liefert eine
+`ki-dev handoff`-Übergabe Regeltexte mit, diese direkt anwenden, ohne die
+Quelldokumente erneut vollständig zu lesen. Sie gelten
 unabhängig von Epic-Zugehörigkeit und Handoff-Schritt; Epic-Hinweise ergänzen
-bereichsspezifische Anforderungen. Projektweite Regeln an den verlinkten
-Stellen pflegen, nicht in einzelnen Aufträgen duplizieren.
+bereichsspezifische Anforderungen. Projektweite Regeln in
+`docs/policies/*.de.yaml` pflegen (die verlinkten Seiten erzeugt
+`scripts/render-guidelines.py`), nicht in einzelnen Aufträgen duplizieren.
 Planung und Materialisierung berücksichtigen insbesondere Zuständigkeiten,
 Schnittstellen, Konfiguration, Datenverträge und Werkzeugwahl; Umsetzung und
 Review prüfen zusätzlich die konkrete Codestruktur und Fehlerbehandlung.

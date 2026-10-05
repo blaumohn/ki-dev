@@ -406,6 +406,60 @@ Arbeit spart. Die vorhandenen Git-Helfer lesen Commit-Referenzen oder verlangen
 einen sauberen Arbeitsbaum; sie ersetzen keinen Vergleich uncommitteter
 Inhalte. Für diesen optionalen Schutz wird keine neue Infrastruktur gebaut.
 
+## Mitgelieferte Leitlinien
+
+Beide Formen (`BEAD_ID --step …` und `map --agent … --session …`) hängen die
+für den Schritt geltenden Regeltexte der Architektur-/Programmier- und der
+Technikleitlinie direkt an. Der Agent muss Leitlinien weder suchen noch ihre
+Phasenzuordnung selbst entscheiden; er wendet die mitgelieferten Texte an,
+ohne ihre Quelldokumente erneut vollständig zu lesen.
+
+**Quelle und Auswahl.** Die Regeln stehen in
+`docs/policies/programmierleitlinie.de.yaml` und
+`docs/policies/technikleitlinie.de.yaml` (in dieser Reihenfolge). Jede Datei
+enthält `title`, `permalink`, `sections` (geordnete Liste `{id, text}`, Text
+als Markdown-Literalblock `|-`), `common` sowie `stages` mit genau `map`,
+`graph`, `materialize` und `build`, jeweils `task` und `review` als
+ID-Listen. Ausgewählt wird fest, ohne Modell oder Themenklassifikation:
+`common` + `stages[ZIEL].task`; bei `--step review` zusätzlich
+`stages[ZIEL].review`. ZIEL ist der Schritt oder `--review-of`; ohne
+`--review-of` bleibt es `build`. Reihenfolge wie in `sections`, jede ID je
+Datei einmal, auch wenn sie mehrfach zugeordnet ist. Die Zuordnung verringert
+die Geltung nicht: Allgemeine Regeln stehen in `common` und erreichen jeden
+Schritt; `stages` tragen nur die Phasenschwerpunkte (Architektur in Planung
+und Materialisierung für graph/materialize, Programmierung in Umsetzung und
+Review sowie Docstrings für build).
+
+**Ausgabe.** Der Block `LEITLINIEN (mitgeliefert; …)` steht nach allen
+Teilen der Basisübergabe: nach dem Hinweis für den Menschen, beim map-Import
+nach dem Lesehinweis, bei der Build-Review nach dem `PRUEFBERICHT`. Jeder
+Abschnitt beginnt mit `--- YAML-DATEI#ABSCHNITTS-ID ---`; Zeilenumbrüche,
+Listen und Codeblöcke bleiben erhalten. Der Block ist ein gesondert
+ausgewiesener Kontextblock wie der Prüfbericht: Er wird nie gekürzt und zählt
+nicht zu einer Längengrenze der Basisübergabe. Die gesamte Ausgabe kann
+deshalb deutlich länger sein als die Basisübergabe. Das ist keine
+Tokenersparnis und keine Verbrauchszusage. `--next-turn` hängt keine
+Leitlinien erneut an; die Sitzungen haben sie bereits erhalten.
+
+**Fehler.** Die Quellen werden relativ zum aktuellen Verzeichnis geladen,
+ohne Ersatzquelle, und vor Vorlauf, Quellenablage und Beads-Anlage geprüft.
+Fehlende oder unlesbare Datei: Exit 1. Kein UTF-8, ungültiges YAML oder
+Vertragsverletzung (Typ, leerer Text, fehlendes oder unbekanntes Feld,
+doppelte oder unbekannte Abschnitts-ID): Exit 2. Diagnosen nennen Datei,
+Feldpfad und ggf. Zeile, nie Regeltexte.
+
+**Pflegeweg.** Regeln nur in den YAML-Dateien ändern, dann
+`./.venv/bin/python scripts/render-guidelines.py` ausführen. Das Skript
+erzeugt daraus vollständig `docs/programmierleitlinie.de.md` und
+`docs/technikleitlinie.de.md` (Frontmatter, Permalink, Überschriften und damit
+Anker bleiben erhalten; eine Kopfzeile kennzeichnet die Seite als generiert).
+`--check` schreibt nichts und endet bei Abweichung mit Exit 1. `handoff`
+selbst erzeugt keine Dokumentationsdateien.
+
+**Arbeit ohne `handoff`.** Sitzungen ohne Übergabe lesen die Regeln wie bisher
+über die in `AGENTS.md` verlinkten Markdown-Seiten; deren Inhalt ist
+derselbe.
+
 ## Grenzen
 
 - `handoff` übernimmt weder `notes` noch `comments` noch vollständige

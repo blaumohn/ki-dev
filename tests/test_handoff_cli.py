@@ -11,6 +11,7 @@ from ki_dev import beads_reader, handoff_preflight
 from ki_dev.cli import app
 from ki_dev.handoff import Step
 from tests.fake_bd_command import BdScript
+from tests.guideline_fixtures import write_guidelines
 
 runner = CliRunner()
 
@@ -26,6 +27,12 @@ FULL = {
     "comments": [{"text": "GEHEIMER KOMMENTAR"}],
     "metadata": {"handoff": {"source_refs": ["a.md#L1-L2", "bd:k"]}},
 }
+
+
+@pytest.fixture(autouse=True)
+def guideline_sources(tmp_path):
+    # Tests mit chdir(tmp_path) brauchen gültige Leitlinienquellen.
+    write_guidelines(tmp_path)
 
 
 @pytest.fixture
@@ -664,3 +671,101 @@ def test_repair_finding_after_correction_failure_has_no_hint(
     assert result.exit_code == 1
     assert "Konfiguration: pyproject.toml" in result.stderr
     assert "Einmalig ergänzen" not in result.stderr
+
+
+# ---------------------------------------------------------------------
+# Mitgelieferte Leitlinien (zip.1)
+# ---------------------------------------------------------------------
+
+_OK_CHECK = f"[{_command('ok', 'print(1)')}]"
+
+
+def test_productive_step_appends_selected_guidelines(
+    bd, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["handoff", "x-1", "--step", "materialize"]
+    )
+    assert result.exit_code == 0, result.stderr
+    base, block = result.stdout.split("\nLEITLINIEN (mitgeliefert", 1)
+    assert "Hinweis für den Menschen" in base
+    for prefix in ("Q0", "Q1"):
+        assert f"- {prefix}:materialize-task" in block
+        assert f"- {prefix}:shared" in block
+        assert block.count(f"- {prefix}:shared") == 1
+        assert f"{prefix}:materialize-review" not in block
+        assert f"{prefix}:build-task" not in block
+    assert (
+        "--- docs/policies/technikleitlinie.de.yaml#common ---\n"
+        "## Q1 common\n\n- Q1:common\n"
+    ) in block
+
+
+def test_source_review_appends_review_guidelines(
+    bd, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["handoff", "x-1", "--step", "review", "--review-of", "graph"],
+    )
+    assert result.exit_code == 0, result.stderr
+    assert "- Q0:graph-task" in result.stdout
+    assert "- Q0:graph-review" in result.stdout
+    assert ".local" not in {p.name for p in tmp_path.iterdir()}
+
+
+def test_build_review_appends_guidelines_after_report(
+    bd, tmp_path, monkeypatch
+):
+    _preflight_project(tmp_path, checks=_OK_CHECK)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 0, result.stderr
+    text = result.stdout
+    assert text.index("PRUEFBERICHT") < text.index("LEITLINIEN")
+    assert "- Q0:build-review" in text
+    assert "- Q1:build-task" in text
+
+
+def test_missing_guideline_source_blocks_preflight(
+    bd, tmp_path, monkeypatch
+):
+    _preflight_project(tmp_path, checks=_OK_CHECK)
+    (tmp_path / "docs/policies/technikleitlinie.de.yaml").unlink()
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "Leitlinienquelle nicht lesbar: docs/policies/"
+        "technikleitlinie.de.yaml: nicht lesbar (FileNotFoundError)\n"
+    )
+    assert not (tmp_path / ".local").exists()
+
+
+@pytest.mark.parametrize(
+    ("content", "problem"),
+    [
+        ("GEHEIM: [\n", "ungültiges YAML (Zeile 2, Spalte 1)"),
+        ('{"title": "GEHEIM"}', "(Wurzel): Pflichtfeld"),
+    ],
+)
+def test_invalid_guideline_source_exits_2_without_raw_text(
+    bd, tmp_path, monkeypatch, content, problem
+):
+    _preflight_project(tmp_path, checks=_OK_CHECK)
+    source = tmp_path / "docs/policies/programmierleitlinie.de.yaml"
+    source.write_text(content)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert result.stderr.startswith(
+        "Leitlinienquelle ungültig: "
+        "docs/policies/programmierleitlinie.de.yaml\n"
+    )
+    assert problem in result.stderr
+    assert "GEHEIM" not in result.stderr
+    assert not (tmp_path / ".local").exists()

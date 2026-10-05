@@ -13,6 +13,7 @@ from tests.codex_session_fixtures import (
     write_session,
 )
 from tests.fake_bd import FakeBd
+from tests.guideline_fixtures import write_guidelines
 
 runner = CliRunner()
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
@@ -25,6 +26,7 @@ def env(tmp_path, monkeypatch):
     sessions.mkdir()
     work = tmp_path / "work"
     work.mkdir()
+    write_guidelines(work)
     bd = FakeBd(tmp_path, SECRET)
     bd.install(monkeypatch)
     monkeypatch.setenv("KI_DEV_CODEX_SESSIONS_DIR", str(sessions))
@@ -337,3 +339,25 @@ def test_help_documents_both_forms_and_their_effects(env):
         "Statt einer Beads-ID; nicht mit --step kombinieren",
     ):
         assert text in " ".join(result.stdout.split()), text
+
+
+def test_map_appends_guidelines_after_reading_hint(env):
+    write_session(env.sessions, SID, dialog(2))
+    result = runner.invoke(app, MAP)
+    assert result.exit_code == 0, result.stderr
+    text = result.stdout
+    assert text.index("abschnittsweise") < text.index("LEITLINIEN")
+    assert "- Q0:map-task" in text
+    assert "- Q1:common" in text
+    assert "graph-task" not in text
+
+
+def test_map_guideline_error_precedes_any_write(env):
+    write_session(env.sessions, SID, dialog(2))
+    (env.work / "docs/policies/programmierleitlinie.de.yaml").unlink()
+    result = runner.invoke(app, MAP)
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Leitlinienquelle nicht lesbar" in result.stderr
+    assert artifacts(env.work) == []
+    assert "create" not in env.bd.commands()

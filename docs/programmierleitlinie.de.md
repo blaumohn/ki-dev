@@ -3,6 +3,7 @@ layout: page
 title: Architektur- und Programmierleitlinien
 permalink: /de/policies/programmierleitlinien/
 ---
+<!-- Generiert aus docs/policies/programmierleitlinie.de.yaml mit scripts/render-guidelines.py; Änderungen dort vornehmen. -->
 
 Diese Leitlinien sollen Code für Review, Wartung und Betrieb klar machen.
 

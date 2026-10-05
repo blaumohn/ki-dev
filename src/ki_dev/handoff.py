@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from jsonschema import Draft202012Validator
+
+if TYPE_CHECKING:
+    from ki_dev.handoff_guidelines import GuidelineSection
 
 
 class Step(StrEnum):
@@ -225,8 +230,20 @@ def render_handoff(
     issue: HandoffIssue,
     step: Step,
     review_target: ReviewTarget | None = None,
+    guidelines: Sequence[GuidelineSection] = (),
 ) -> str:
-    """Kopierbarer Klartext; lehnt formal unvollständige Beads ab."""
+    """Basisübergabe, danach der gesonderte Leitlinienblock."""
+    base = render_base_handoff(issue, step, review_target)
+    return base + render_guideline_block(guidelines)
+
+
+def render_base_handoff(
+    issue: HandoffIssue,
+    step: Step,
+    review_target: ReviewTarget | None = None,
+) -> str:
+    """Kopierbarer Klartext ohne Leitlinien; lehnt formal
+    unvollständige Beads ab."""
     problems = validate_handoff(issue, step, review_target)
     if problems:
         raise HandoffInvalidError(problems)
@@ -262,6 +279,24 @@ def render_handoff(
     return "\n".join(lines) + "\n"
 
 
+def render_guideline_block(
+    guidelines: Sequence[GuidelineSection],
+) -> str:
+    """Gesonderter Kontextblock nach allen Basisteilen; leer ohne
+    Abschnitte. Regeltexte bleiben unverändert (Markdown,
+    Zeilenumbrüche) und werden weder gekürzt noch zur Basis gezählt."""
+    if not guidelines:
+        return ""
+    lines = ["", *_GUIDELINE_INTRO]
+    for section in guidelines:
+        lines += [
+            "",
+            f"--- {_line(section.source)}#{_line(section.id)} ---",
+            section.text,
+        ]
+    return "\n".join(lines) + "\n"
+
+
 def _roles(
     step: Step, review_target: ReviewTarget | None
 ) -> tuple[str, ...]:
@@ -285,6 +320,13 @@ _COMMON = (
     "AGENTS.md, den geltenden Auftrag und den tatsächlichen",
     "Arbeitsstand gezielt. Melde konkrete fehlende Voraussetzungen,",
     "statt zu raten.",
+)
+
+_GUIDELINE_INTRO = (
+    "LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)",
+    "Diese Regeltexte gelten für diesen Schritt. Wende sie direkt",
+    "an; lies ihre Quelldokumente dafür nicht erneut vollständig.",
+    "Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.",
 )
 
 _ROLES = {

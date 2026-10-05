@@ -28,6 +28,15 @@ from ki_dev.handoff import (
     render_handoff,
     validate_handoff,
 )
+from ki_dev.handoff_guidelines import (
+    GuidelineContractError,
+    GuidelineSection,
+    select_guidelines,
+)
+from ki_dev.handoff_guidelines_source import (
+    GuidelineSourceError,
+    load_guidelines,
+)
 from ki_dev.handoff_map import map_handoff
 from ki_dev.handoff_next_turn import (
     FeedbackReadError,
@@ -102,6 +111,13 @@ NÄCHSTE NACHRICHT (--step review --next-turn)
   (UTF-8; - liest stdin; höchstens feedback_max_chars Zeichen, Standard
   600, in pyproject.toml, Abschnitt tool.ki-dev.handoff; nie gekürzt).
   Ohne die Option wird nichts gelesen.
+
+LEITLINIEN
+  Beide Formen hängen nach der Übergabe (und nach Lesehinweis bzw.
+  Prüfbericht) die für den Schritt geltenden Regeltexte aus
+  docs/policies/*.de.yaml an: gesonderter Block, nie gekürzt, nicht Teil
+  der Basisübergabe; die gesamte Ausgabe kann daher länger sein.
+  Fehlende Quelle Exit 1, ungültige Quelle Exit 2 (vor jedem Vorlauf).
 
 SITZUNGSIMPORT (map --agent codex --session SESSION_ID)
   Schreibt ein Transkript unter .local/handoff/ und legt einen
@@ -238,9 +254,11 @@ def _bead_form(
                 issue, review_of, extra, feedback_file
             )
         elif step is Step.REVIEW:
-            text = _review_handoff(issue, review_of, extra)
+            guidelines = _selected_guidelines(step, review_of)
+            text = _review_handoff(issue, review_of, extra, guidelines)
         else:
-            text = render_handoff(issue, step)
+            guidelines = _selected_guidelines(step, None)
+            text = render_handoff(issue, step, guidelines=guidelines)
     except InvalidBeadIdError as exc:
         _fail(str(exc), code=2)
     except HandoffInvalidError as exc:
@@ -308,10 +326,33 @@ def _review_options(
         _fail(f"Aufruf ungültig: {exc}", code=2)
 
 
+def _selected_guidelines(
+    step: Step, review_of: ReviewTarget | None
+) -> tuple[GuidelineSection, ...]:
+    """Leitlinien vor Vorlauf und Schreibwirkungen laden und auswählen.
+
+    Fehlend/unlesbar: Exit 1; kein UTF-8, ungültiges YAML oder
+    Vertragsverletzung: Exit 2. Diagnosen nennen Datei, Feldpfad und
+    ggf. Zeile, nie Regeltexte.
+    """
+    try:
+        documents = load_guidelines(Path.cwd())
+    except GuidelineSourceError as exc:
+        _fail(f"Leitlinienquelle nicht lesbar: {exc}", code=1)
+    except GuidelineContractError as exc:
+        problems = "\n".join(f"  {problem}" for problem in exc.problems)
+        _fail(
+            f"Leitlinienquelle ungültig: {exc.source}\n{problems}",
+            code=2,
+        )
+    return select_guidelines(documents, step, review_of)
+
+
 def _review_handoff(
     issue: HandoffIssue,
     review_of: ReviewTarget | None,
     extra: dict[str, tuple[str, ...]],
+    guidelines: tuple[GuidelineSection, ...],
 ) -> str:
     """Übergabe für ``--step review``.
 
@@ -325,14 +366,14 @@ def _review_handoff(
     kein Vorlauf, keine pyproject.toml nötig, keine Prozessaufrufe.
     """
     if review_of not in (None, ReviewTarget.BUILD):
-        return render_handoff(issue, Step.REVIEW, review_of)
+        return render_handoff(issue, Step.REVIEW, review_of, guidelines)
     problems = validate_handoff(issue, Step.REVIEW, review_of)
     if problems:
         raise HandoffInvalidError(problems)
     outcome = _preflight_outcome(extra)
     if outcome.failure is not None:
         _fail(outcome.failure, code=1)
-    return render_review_handoff(issue, outcome.report)
+    return render_review_handoff(issue, outcome.report, guidelines)
 
 
 class _PreflightOutcome(NamedTuple):
@@ -516,8 +557,9 @@ def _map_form(
         validate_session_request(agent, session)
     except TranscriptRequestError as exc:
         _fail(str(exc), code=2)
+    guidelines = _selected_guidelines(Step.MAP, None)
     try:
-        text = map_handoff(agent, session, Path.cwd())
+        text = map_handoff(agent, session, Path.cwd(), guidelines)
     except TranscriptError as exc:
         details = "\n".join(f"  {problem}" for problem in exc.problems)
         _fail(f"Sitzung nicht verwendbar:\n{details}", code=1)

@@ -13,7 +13,12 @@ from ki_dev.beads_reader import read_issue
 from ki_dev.beads_source import SourceBead, ensure_source_bead
 from ki_dev.executors.session_transcript import SessionTranscript
 from ki_dev.executors.transcript import read_session_transcript
-from ki_dev.handoff import Step, render_handoff
+from ki_dev.handoff import (
+    Step,
+    render_base_handoff,
+    render_guideline_block,
+)
+from ki_dev.handoff_guidelines import GuidelineSection
 from ki_dev.handoff_source import (
     HandoffSourceError,
     source_key,
@@ -29,8 +34,17 @@ _READING_HINT = (
 )
 
 
-def map_handoff(agent: str, session_id: str, workdir: Path) -> str:
-    """Kurzer map-Auftrag; schreibt Quellen-Datei und -Bead."""
+def map_handoff(
+    agent: str,
+    session_id: str,
+    workdir: Path,
+    guidelines: tuple[GuidelineSection, ...],
+) -> str:
+    """Kurzer map-Auftrag; schreibt Quellen-Datei und -Bead.
+
+    ``guidelines`` sind bereits geladen und geprüft, damit Quellenfehler
+    vor jeder Schreibwirkung auffallen.
+    """
     transcript = read_session_transcript(agent, session_id)
     relative = store_source(transcript, workdir).as_posix()
     bead_id = ensure_source_bead(
@@ -43,7 +57,8 @@ def map_handoff(agent: str, session_id: str, workdir: Path) -> str:
         raise HandoffSourceError(
             "Quellen-Bead verweist nicht auf das lokale Artefakt"
         )
-    return f"{render_handoff(issue, Step.MAP)}\n{_READING_HINT}\n"
+    base = f"{render_base_handoff(issue, Step.MAP)}\n{_READING_HINT}\n"
+    return base + render_guideline_block(guidelines)
 
 
 def _source_bead(

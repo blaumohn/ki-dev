@@ -37,7 +37,13 @@ from plumbum import ProcessTimedOut, local
 from plumbum.machines.local import LocalCommand
 
 from ki_dev.config_sources import ConfigSource
-from ki_dev.handoff import HandoffIssue, Step, render_handoff
+from ki_dev.handoff import (
+    HandoffIssue,
+    Step,
+    render_base_handoff,
+    render_guideline_block,
+)
+from ki_dev.handoff_guidelines import GuidelineSection
 
 ARTIFACT_DIR = Path(".local/handoff/preflight")
 
@@ -734,12 +740,19 @@ def format_command_result(item: CommandResult) -> str:
 
 
 def render_review_handoff(
-    issue: HandoffIssue, report: PreflightReport
+    issue: HandoffIssue,
+    report: PreflightReport,
+    guidelines: Sequence[GuidelineSection] = (),
 ) -> str:
-    """Reines Rendering: hängt den kompakten Vorlaufbericht an die
-    Review-Übergabe (``handoff.render_handoff``) an."""
+    """Reines Rendering: Basis-Review-Übergabe, kompakter
+    Vorlaufbericht, danach der gesonderte Leitlinienblock."""
     lines = render_report_lines(report)
-    return render_handoff(issue, Step.REVIEW) + "\n".join(lines) + "\n"
+    return (
+        render_base_handoff(issue, Step.REVIEW)
+        + "\n".join(lines)
+        + "\n"
+        + render_guideline_block(guidelines)
+    )
 
 
 def render_report_lines(report: PreflightReport) -> list[str]:

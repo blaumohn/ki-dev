@@ -1,0 +1,79 @@
+# Quelle für docs/technikleitlinie.de.md und die handoff-Übergaben.
+# Nach Änderungen: scripts/render-guidelines.py (erzeugt das Markdown).
+title: Technikleitlinie für ki-dev
+permalink: /de/policies/technikleitlinie/
+# Gilt laut einleitung in allen Phasen; daher vollständig gemeinsam.
+common: [einleitung, validierung, prozesse, ausnahmen]
+stages:
+  map:
+    task: []
+    review: []
+  graph:
+    task: []
+    review: []
+  materialize:
+    task: []
+    review: []
+  build:
+    task: []
+    review: []
+sections:
+  - id: einleitung
+    text: |-
+      Diese projektweite Leitlinie konkretisiert die
+      [Architektur- und Programmierleitlinien](programmierleitlinie.de.md).
+      Sie ist bei Planung, Materialisierung, Umsetzung und Review zu berücksichtigen
+      und gilt für neue und
+      fachlich geänderte Validierungs- und Prozessgrenzen. Bestehende Abweichungen
+      sind keine Vorbilder; ihre Migration erfolgt im passenden Auftrag, ohne
+      unbeteiligten Code nebenbei umzubauen.
+  - id: validierung
+    text: |-
+      ## Gemeinsame Validierungssprache
+
+      - JSON Schema mit der vorhandenen Python-Bibliothek `jsonschema` verwenden;
+        im Projekt ist `Draft202012Validator` das bestehende Muster.
+      - Geprüft werden auch Python-Dictionaries und Listen im Speicher. JSON lesen
+        oder schreiben ist dafür keine Voraussetzung; Parsing und Validierung
+        bleiben getrennte Schritte.
+      - Schemata bei der fachlich zuständigen Komponente bündeln und gemeinsame
+        Regeln wiederverwenden. Keine zentrale Sammlung unabhängiger Fachschemata
+        und keine eigene Validierungs-DSL aufbauen.
+      - Optionale Felder dürfen fehlen. Vorhandene Werte müssen ihren Vertrag
+        erfüllen; `null`, falsche Typen und Leertexte sind nur erlaubt, wenn der
+        Vertrag das ausdrücklich vorsieht. Unbekannte Felder je Vertrag behandeln.
+      - Validierungsfehler an der zuständigen Grenze in bereinigte Diagnosen mit
+        Feldpfad übersetzen; keine ungefilterten Validator-Meldungen mit Rohwerten.
+
+      **Beispiel:** Ein optionales `handoff` erhält `type: object`; ein enthaltenes
+      `epic_context` erhält `type: string`, `minLength: 1`, `maxLength: 600` und
+      das Muster `\S` (mindestens ein Nicht-Leerraumzeichen). Die Grenze wird
+      einmal im zuständigen Vertrag definiert. `{}` ist als fehlende optionale
+      Angabe erlaubt, `{"handoff": 7}` wird am Feld `handoff` abgelehnt.
+
+      Graphzyklen und andere Beziehungen außerhalb des Schemas prüfen benannte
+      Funktionen. Das ergänzt die gemeinsame Validierung, ohne deren Typ- und
+      Feldregeln nochmals zu implementieren.
+  - id: prozesse
+    text: |-
+      ## Externe Prozesse
+
+      - Externe Programme über Plumbum starten. Prozessmechanik gehört an benannte
+        I/O-Grenzen; fachlicher Kerncode erhält normalisierte Daten.
+      - Argumente getrennt übergeben, keine zusammengesetzten Shell-Befehle.
+        Arbeitsverzeichnis, Zeitgrenze und erwartete Exitcodes ausdrücklich festlegen.
+      - Startfehler, Timeout und fehlerhaften Exitstatus sichtbar unterscheiden.
+        Prozessausgaben nicht ungefiltert in Diagnosen übernehmen.
+      - Vorhandene Prozesshelfer nur wiederverwenden, wenn ihre Ein-/Ausgabe- und
+        Fehlerverträge passen; keine Kopplung unabhängiger Fachmodule erzwingen.
+
+      **Beispiel:** `bd --readonly show BEAD_ID --json` wird am Beads-Adapter über
+      Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
+      10 Sekunden Frist gestartet. Der Kern erhält den normalisierten Bead.
+  - id: ausnahmen
+    text: |-
+      ## Ausnahmen
+
+      Abweichende Werkzeuge benötigen eine konkrete technische Begründung an der
+      betroffenen Grenze und einen Verweis aus dieser Leitlinie. Bequemlichkeit
+      oder ein bestehender abweichender Aufruf begründen keine neue Ausnahme.
