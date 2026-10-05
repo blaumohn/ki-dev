@@ -57,6 +57,10 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 - If a required sync or push is blocked, stop and report the exact command and error.
 <!-- END BEADS INTEGRATION -->
 
+Bei `ki-dev handoff` gehen die Rollenrechte aus Übergabe und
+„Manueller Handoff“ in AGENTS.md diesem Block vor (z. B. kein
+`--claim`/`close` für Umsetzer).
+
 
 ## Build & Test
 

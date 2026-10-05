@@ -44,6 +44,10 @@ bd prime                # Refresh Beads context
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 <!-- END BEADS CODEX SETUP -->
 
+Bei `ki-dev handoff` gehen die Rollenrechte aus Übergabe und
+„Manueller Handoff“ diesem Block vor (z. B. kein `--claim`/`close`
+für Umsetzer).
+
 ## Manueller Handoff
 
 Aufträge und Projektdokumentation enthalten den aktuellen Stand, keine
