@@ -1,11 +1,15 @@
 """Codex-Transkriptadapter: Dialog aus einer Sitzungs-JSONL lesen.
 
-Fachliches Vorbild: der Extraktor ``codex-session-transcript.py``.
-Unterstuetzt ist nur der enge Eingangsvertrag (Benutzer-``UserMessage``
-und Assistenten-``final_answer``, Pruefungen T1-T7). Abweichungen sind
-Plausibilitaets-/Formatfehler und werden ohne Reparatur gemeldet; ein
-CLI-Versionswechsel ist damit nicht bewiesen. Diagnosen nennen nur
-Pruefcode, Zeile, Feldpfad und Zaehler -- nie Gespraechsinhalte.
+Fachliches Vorbild: ``mdman-ai-session/adapters/codex_transcript.py``.
+Eingangsvertrag: Benutzer-``UserMessage`` und Assistenten-
+``final_answer``. Die fruehere strenge Dialogannahme (cg1: strikter
+Wechsel und gleiche Anzahl) ist abgeloest: wiederholte Rollen,
+Nachtraege und offene Dialogenden sind gueltig; T1/T2/T4 erscheinen nur
+als Zaehler in ``diagnostics``. T0 (keine Nachricht), T3, T5-T8 und
+Strukturfehler bleiben Fehler und werden
+ohne Reparatur gemeldet; ein CLI-Versionswechsel ist damit nicht
+bewiesen. Diagnosen nennen nur Pruefcode, Zeile, Feldpfad und Zaehler
+-- nie Gespraechsinhalte.
 """
 
 from __future__ import annotations
@@ -26,10 +30,16 @@ from .session_transcript import (
     SessionTranscript,
     TranscriptError,
     TranscriptMessage,
+    decode_utf8,
+    dialog_advisories,
+    is_timestamp,
+    line_count,
+    parse_timestamp,
+    validate_transcript,
 )
 
 AGENT = "codex"
-PARSER_VERSION = "codex-dialog-1"
+PARSER_VERSION = "codex-dialog-2"
 MAX_CASES = 10
 _PHASES = {"final_answer"}
 _KNOWN_PHASES = {"final_answer", "commentary"}
@@ -77,23 +87,31 @@ def transcript_from_bytes(
 ) -> SessionTranscript:
     """Reine Extraktion aus genau den Bytes, ueber die der Hash geht."""
     digest = hashlib.sha256(data).hexdigest()
-    lines = _decode(data).split("\n")
+    lines = decode_utf8(data).split("\n")
     findings = _Findings()
-    hits = _classify_lines(lines, data.endswith(b"\n"), findings)
-    messages = _ordered_messages(hits, findings)
+    scan = _classify_lines(
+        lines, data.endswith(b"\n"), session_id, findings
+    )
+    messages = _ordered_messages(scan.hits, findings)
+    started_at = _started_at(scan.starts, findings)
     findings.raise_if_any()
-    return SessionTranscript(
+    transcript = SessionTranscript(
         agent=AGENT,
         session_id=session_id,
         source_digest=digest,
         parser_version=PARSER_VERSION,
+        started_at=started_at,
+        last_activity_at=_last_activity(started_at, messages),
         messages=messages,
         diagnostics={
-            "lines": data.count(b"\n") + (not data.endswith(b"\n")),
+            "lines": line_count(data),
             "user_messages": _count(messages, "user"),
             "assistant_messages": _count(messages, "assistant"),
+            **dialog_advisories([m.role for m in messages]),
         },
     )
+    validate_transcript(transcript)
+    return transcript
 
 
 def _single_rollout(root: Path, session_id: str) -> Path:
@@ -109,15 +127,6 @@ def _single_rollout(root: Path, session_id: str) -> Path:
     return found[0]
 
 
-def _decode(data: bytes) -> str:
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise TranscriptError(
-            (f"J0 Datei ist kein gueltiges UTF-8 (Byte {exc.start})",)
-        ) from None
-
-
 @dataclass(frozen=True)
 class _Hit:
     line: int
@@ -125,6 +134,14 @@ class _Hit:
     text: str
     turn: object
     ordinal: object
+    timestamp: str | None
+
+
+@dataclass
+class _Scan:
+    hits: list[_Hit]
+    # Belegte Startzeitpunkte aus session_meta dieser Sitzung.
+    starts: list[tuple[int, str]]
 
 
 class _Findings:
@@ -160,9 +177,12 @@ class _Findings:
 
 
 def _classify_lines(
-    lines: list[str], ends_with_newline: bool, findings: _Findings
-) -> list[_Hit]:
-    hits = []
+    lines: list[str],
+    ends_with_newline: bool,
+    session_id: str,
+    findings: _Findings,
+) -> _Scan:
+    scan = _Scan([], [])
     for number, raw in enumerate(lines, 1):
         if not raw.strip():
             continue
@@ -181,10 +201,34 @@ def _classify_lines(
                 ),
             )
             continue
+        if _get(entry, "type") == "session_meta":
+            _record_start(entry, number, session_id, scan, findings)
+            continue
         hit = _classify_entry(entry, number, findings)
         if hit is not None:
-            hits.append(hit)
-    return hits
+            scan.hits.append(hit)
+    return scan
+
+
+def _record_start(
+    entry: dict,
+    line: int,
+    session_id: str,
+    scan: _Scan,
+    findings: _Findings,
+) -> None:
+    # Nur session_meta mit passender id belegt den Start dieser Sitzung.
+    if _get(entry, "payload", "id") != session_id:
+        return
+    stamp = _get(entry, "payload", "timestamp")
+    if not is_timestamp(stamp):
+        findings.add(
+            "T8",
+            "Zeitstempel fehlt oder ist ungueltig",
+            f"Zeile {line} payload.timestamp",
+        )
+        return
+    scan.starts.append((line, stamp))
 
 
 def _classify_entry(
@@ -221,6 +265,7 @@ def _user_hit(
             text,
             payload.get("turn_id"),
             entry.get("ordinal"),
+            _message_timestamp(entry, line, findings),
         )
     if isinstance(item_type, str) and "user" in item_type.lower():
         _suspect(findings, line, "payload.item.type")
@@ -243,7 +288,32 @@ def _assistant_hit(
     turn = _get(
         payload, "internal_chat_message_metadata_passthrough", "turn_id"
     )
-    return _Hit(line, "assistant", text, turn, entry.get("ordinal"))
+    return _Hit(
+        line,
+        "assistant",
+        text,
+        turn,
+        entry.get("ordinal"),
+        _message_timestamp(entry, line, findings),
+    )
+
+
+def _message_timestamp(
+    entry: dict, line: int, findings: _Findings
+) -> str | None:
+    """Fehlt der Zeitstempel, bleibt er fehlend; ein vorhandener
+    ungueltiger Wert ist ein Fehler."""
+    if "timestamp" not in entry:
+        return None
+    stamp = entry["timestamp"]
+    if not is_timestamp(stamp):
+        findings.add(
+            "T8",
+            "Zeitstempel fehlt oder ist ungueltig",
+            f"Zeile {line} timestamp",
+        )
+        return None
+    return stamp
 
 
 def _suspect(findings: _Findings, line: int, path: str) -> None:
@@ -278,33 +348,34 @@ def _join_texts(content: object, wanted_type: str) -> str | None:
 def _ordered_messages(
     hits: list[_Hit], findings: _Findings
 ) -> tuple[TranscriptMessage, ...]:
-    _check_counts(hits, findings)
+    _check_not_empty(hits, findings)
     ordinals_ok = _check_ordinals(hits, findings)
     _check_texts(hits, findings)
     if not ordinals_ok:
         return ()
     ordered = sorted(hits, key=lambda h: (h.ordinal, h.line))
-    _check_alternation_and_turns(ordered, findings)
+    _check_turns(ordered, findings)
     return tuple(
-        TranscriptMessage(h.ordinal, h.role, h.text, h.line)
-        for h in ordered
+        TranscriptMessage(
+            ordinal=h.ordinal,
+            role=h.role,
+            text=h.text,
+            source_line=h.line,
+            position=position,
+            timestamp=h.timestamp,
+        )
+        for position, h in enumerate(ordered, 1)
     )
 
 
-def _check_counts(hits: list[_Hit], findings: _Findings) -> None:
-    users = sum(h.role == "user" for h in hits)
-    assistants = len(hits) - users
-    if users == 0 or assistants == 0:
+def _check_not_empty(hits: list[_Hit], findings: _Findings) -> None:
+    # T1/T2 sind nur Zaehler (dialog_advisories); ohne jede Nachricht
+    # ist das Transkript aber kein Erfolg.
+    if not hits:
         findings.add(
-            "T1",
-            "Benutzer- und Assistentennachricht erforderlich",
-            f"user={users}, assistant={assistants}",
-        )
-    elif users != assistants:
-        findings.add(
-            "T2",
-            "Anzahl Benutzer- und Assistentennachrichten ungleich",
-            f"user={users}, assistant={assistants}",
+            "T0",
+            "keine Dialognachrichten gefunden",
+            "user=0, assistant=0",
         )
 
 
@@ -340,18 +411,12 @@ def _check_texts(hits: list[_Hit], findings: _Findings) -> None:
             findings.add("T6", "leerer Text", f"Zeile {hit.line}")
 
 
-def _check_alternation_and_turns(
-    ordered: list[_Hit], findings: _Findings
-) -> None:
-    for index, hit in enumerate(ordered):
-        expected = "user" if index % 2 == 0 else "assistant"
-        if hit.role != expected:
-            findings.add(
-                "T4",
-                "kein Wechsel Benutzer/Assistent (erster Bruch)",
-                f"Position {index + 1}, Zeile {hit.line}",
-            )
-            return
+def _check_turns(ordered: list[_Hit], findings: _Findings) -> None:
+    # Turn-Paare sind nur bei sauberem Wechsel zuordenbar (wie T7 im
+    # Vorbild); T4 selbst ist nur ein Zaehler.
+    roles = [hit.role for hit in ordered]
+    if dialog_advisories(roles)["T4_role_breaks"]:
+        return
     for user, assistant in zip(
         ordered[0::2], ordered[1::2], strict=False
     ):
@@ -361,6 +426,28 @@ def _check_alternation_and_turns(
                 "turn_id von Benutzer und Assistent ungleich",
                 f"Zeilen {user.line} und {assistant.line}",
             )
+
+
+def _started_at(
+    starts: list[tuple[int, str]], findings: _Findings
+) -> str | None:
+    if len({parse_timestamp(stamp) for _, stamp in starts}) > 1:
+        findings.add(
+            "T8",
+            "session_meta nennt widerspruechliche Startzeiten",
+            "Zeilen " + ", ".join(str(line) for line, _ in starts),
+        )
+        return None
+    return starts[0][1] if starts else None
+
+
+def _last_activity(
+    started_at: str | None, messages: tuple[TranscriptMessage, ...]
+) -> str | None:
+    stamps = [m.timestamp for m in messages if m.timestamp is not None]
+    if started_at is not None:
+        stamps.append(started_at)
+    return max(stamps, key=parse_timestamp, default=None)
 
 
 def _count(messages: tuple[TranscriptMessage, ...], role: str) -> int:

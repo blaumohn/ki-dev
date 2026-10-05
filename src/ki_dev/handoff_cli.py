@@ -89,7 +89,8 @@ AUFRUFE
   ki-dev handoff BEAD_ID --step STEP
     Übergabe aus einem vorhandenen Bead erstellen.
   ki-dev handoff map --agent codex --session SESSION_ID
-    Codex-Sitzung als Quelle importieren und Kartierung vorbereiten.
+    Codex- oder Claude-Sitzung als Quelle importieren und Kartierung
+    vorbereiten.
   ki-dev handoff local
     Allgemeine Übergabe für eine freie lokale Sitzung ohne Bead.
 
@@ -226,7 +227,7 @@ def handoff(
         typer.Option(
             "--agent",
             metavar="AGENT",
-            help="Anbieter der Quellsitzung (nur codex).",
+            help="Anbieter der Quellsitzung (codex oder claude).",
             show_default=False,
         ),
     ] = None,

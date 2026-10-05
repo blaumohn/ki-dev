@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from .claude_sessions import validate_claude_session_id
+from .claude_transcript import read_claude_session
 from .codex_sessions import validate_codex_session_id
 from .codex_transcript import read_codex_session
 from .session_transcript import (
@@ -18,9 +20,11 @@ from .session_transcript import (
 
 _VALIDATORS: dict[str, Callable[[str], None]] = {
     "codex": validate_codex_session_id,
+    "claude": validate_claude_session_id,
 }
 _READERS: dict[str, Callable[[str], SessionTranscript]] = {
     "codex": read_codex_session,
+    "claude": read_claude_session,
 }
 
 

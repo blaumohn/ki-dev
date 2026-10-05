@@ -8,7 +8,11 @@ import re
 import tempfile
 from pathlib import Path
 
-from ki_dev.executors.session_transcript import SessionTranscript
+from ki_dev.executors.session_transcript import (
+    SessionTranscript,
+    TranscriptError,
+    validate_transcript,
+)
 
 SOURCE_ROOT = Path(".local/handoff")
 _COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
@@ -49,10 +53,12 @@ def serialize_messages(transcript: SessionTranscript) -> bytes:
     lines = (
         json.dumps(
             {
+                "position": message.position,
                 "ordinal": message.ordinal,
                 "role": message.role,
                 "text": message.text,
                 "source_line": message.source_line,
+                "timestamp": message.timestamp,
             },
             ensure_ascii=False,
             allow_nan=False,
@@ -66,8 +72,16 @@ def store_source(transcript: SessionTranscript, workdir: Path) -> Path:
     """Artefakt atomar ablegen; identisches wiederverwenden.
 
     Rueckgabe ist der relative Pfad. Abweichender Inhalt am selben
-    Schluessel ist ein Fehler, nie ein stilles Ueberschreiben.
+    Schluessel ist ein Fehler, nie ein stilles Ueberschreiben; ein
+    Transkript ausserhalb des gemeinsamen Vertrags wird nie abgelegt.
     """
+    try:
+        validate_transcript(transcript)
+    except TranscriptError as exc:
+        raise HandoffSourceError(
+            "Transkript verletzt den Vertrag: "
+            + "; ".join(exc.problems)
+        ) from None
     relative = source_path(transcript)
     target = workdir / relative
     content = serialize_messages(transcript)

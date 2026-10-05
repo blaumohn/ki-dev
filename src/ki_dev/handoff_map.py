@@ -1,4 +1,4 @@
-"""handoff map: Codex-Sitzung als Quellen-Bead uebergeben.
+"""handoff map: Codex- oder Claude-Sitzung als Quellen-Bead uebergeben.
 
 Ablauf: Adapter lesen/pruefen -> normalisierte Quelle speichern ->
 Quellen-Bead finden/anlegen -> bestehende map-Uebergabe rendern. Der
@@ -27,10 +27,12 @@ from ki_dev.handoff_source import (
 
 _READING_HINT = (
     "Quelle: normalisiertes Transkript, eine Nachricht je Zeile "
-    "(ordinal, role, text, source_line). Abschnittsweise lesen und "
-    "Fundstellen über source_line/ordinal angeben. Wiederholungen, "
-    "Präzisierungen und Widersprüche gehören in die Karte; die "
-    "Quelle wurde nicht inhaltlich bereinigt."
+    "(position, ordinal, role, text, source_line, timestamp). "
+    "Abschnittsweise lesen und Fundstellen über source_line angeben; "
+    "ordinal ist die Herkunftsnummer und kann fehlen (null). "
+    "Wiederholte Rollen und offene Eingaben sind gültig. "
+    "Wiederholungen, Präzisierungen und Widersprüche gehören in die "
+    "Karte; die Quelle wurde nicht inhaltlich bereinigt."
 )
 
 

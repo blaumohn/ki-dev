@@ -255,12 +255,16 @@ fehlender, veralteter oder zu alter Nachweis hier den naechsten Aufruf
 
 `executors/transcript.py` liest die lokale Sitzung eines Anbieters als
 neutrales `SessionTranscript` (`agent`, `session_id`, `source_digest`,
-`parser_version`, Nachrichten mit `ordinal`, `role`, `text`,
-`source_line`, begrenzte Diagnosezaehler). Die Faehigkeit ist
-unabhaengig von `available_executors()`: sie haengt nur an
-`read_session_transcript(agent, session_id)` und einer eigenen
-Dispatch-Tabelle. Unterstuetzt ist nur `codex`; ein Claude-
-Transkriptfilter existiert nicht und wird erst bei Nachfrage ergaenzt.
+`parser_version`, optional belegte `started_at`/`last_activity_at`,
+Nachrichten mit `position`, `ordinal`, `role`, `text`, `source_line`,
+optionalem `timestamp`, begrenzte Diagnosezaehler). `position` ist die
+normalisierte Reihenfolge, `ordinal` die Herkunftsnummer (Claude:
+`None`). `validate_transcript` prueft den Typ als Daten im Speicher
+gegen einen gemeinsamen JSON-Schema-Vertrag; `require_started_at`
+laesst datumsbasierte Ablage ohne belegten Start sichtbar scheitern.
+Die Faehigkeit ist unabhaengig von `available_executors()`: sie haengt
+nur an `read_session_transcript(agent, session_id)` und einer eigenen
+Dispatch-Tabelle. Unterstuetzt sind `codex` und `claude`.
 
 Alle Codex-Einzelheiten liegen in `codex_sessions.py` (ID-Regeln,
 Verzeichnis, Dateisuche) und `codex_transcript.py` (Filter, Pruefungen,
@@ -274,18 +278,44 @@ unveraendert.
   Die Umgebung wird nur in `read_codex_session` gelesen.
 - **ID:** nur `[A-Za-z0-9][A-Za-z0-9_-]*`; keine Pfadseparatoren, keine
   Glob-Metazeichen. Genau ein Treffer, kein neuester-Treffer-Fallback.
-- **Enger Eingangsvertrag:** Benutzer-`UserMessage` und Assistenten-
-  `final_answer` im strikten Wechsel; Pruefungen T1-T7 (beide Rollen,
-  gleiche Anzahl, endliches eindeutiges `ordinal`, Wechsel,
-  Beinahe-Treffer, leere Texte, `turn_id`-Paare) plus J1 (ungueltiges
-  JSON, auch als Teilzeile am Ende). Abweichungen sind Plausibilitaets-/
-  Formatfehler, kein bewiesener CLI-Versionswechsel; es gibt keine
-  Abschwaechung und keine stille Reparatur.
+- **Eingangsvertrag:** Benutzer-`UserMessage` und Assistenten-
+  `final_answer`. Die strenge cg1-Annahme (strikter Wechsel, gleiche
+  Anzahl) ist abgeloest: T1 (nur eine Rolle), T2 (ungleiche Anzahl) und
+  T4 (Rollenbrueche) sind nur Zaehler in `diagnostics`. Fehler bleiben
+  T0 (keine Nachricht), T3 (endliches eindeutiges `ordinal`), T5
+  (Beinahe-Treffer), T6 (leere Texte), T7 (`turn_id`-Paare bei sauberem
+  Wechsel), T8 (ungueltiger Zeitstempel, widerspruechlicher Start) und
+  J1 (ungueltiges JSON, auch als Teilzeile am Ende). Abweichungen sind
+  Plausibilitaets-/Formatfehler, kein bewiesener CLI-Versionswechsel;
+  es gibt keine stille Reparatur.
+- **Start:** `started_at` nur aus `session_meta` mit passender
+  `payload.id`; nie aus Dateiname, mtime oder Exportdatum.
 - **Diagnosen:** nur Pruefcode, Zeile, Feldpfad und Zaehler, hoechstens
   10 Faelle je Pruefung samt Zahl der ausgelassenen; nie
   Gespraechsausschnitte oder Rohereignisse.
 - **Ein Lesevorgang:** Die Datei wird einmal als Bytes gelesen; Hash und
   Extraktion beziehen sich auf genau diesen Stand.
+
+Claude-Einzelheiten liegen in `claude_sessions.py` (ID-Regeln,
+Projektwurzel, Dateisuche; geteilt mit `claude_context_tokens`) und
+`claude_transcript.py` (fachlich aus `mdman-ai-session` uebernommen):
+
+- **Verzeichnis:** `KI_DEV_CLAUDE_SESSIONS_DIR` (ausdrueckliche
+  Projektwurzel), sonst `~/.claude/projects`; gesucht wird
+  `PROJEKT/SESSION_ID.jsonl`. Leerer Wert ist ein Fehler. Der Executor
+  (`measure_context`) nutzt weiter fest `~/.claude/projects`.
+- **Filter:** menschliche Eingaben (`origin.kind=human`,
+  `promptSource` `typed`/`queued`) und `end_turn`-Text. Aufgabenmeldungen
+  nur bei belegter technischer Herkunft ausgelassen und gezaehlt,
+  Slash-Befehlszeilen nur ohne jede Herkunftsangabe; menschliche Zitate
+  (auch mit fuehrendem Tag) bleiben. Jede `sessionId` muss der
+  angeforderten Sitzung entsprechen. Unbekannte Herkunft, ungueltiges
+  JSON, Schema- und Kettenfehler sowie leere Transkripte sind Fehler.
+  Wiederholte Rollen und offene Eingaben sind gueltig und gezaehlt.
+- **Zeit:** `timestamp` ist optional; fehlt er, bleibt er fehlend
+  (gezaehlt als `records_without_timestamp`), ein ungueltiger Wert ist
+  ein Fehler. `started_at` ist der frueheste, `last_activity_at` der
+  spaeteste vorhandene Zeitstempel der Sitzungsbeitraege, sonst `None`.
 
 ## Effort im Turn-Vertrag
 

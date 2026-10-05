@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
+from .claude_sessions import find_claude_sessions
 from .codex_sessions import find_session_rollout
 from .contract import TurnResult, TurnStatus
 
@@ -233,9 +234,7 @@ def _codex_usage_event(
 
 def claude_context_tokens(session_id: str, root: Path) -> int:
     """Letzten realen Request ohne synthetische Nullusage lesen."""
-    if Path(session_id).name != session_id or not session_id:
-        raise ValueError("ungueltige Claude-session_id")
-    paths = list(root.glob(f"*/{session_id}.jsonl"))
+    paths = find_claude_sessions(root, session_id)
     if len(paths) != 1:
         raise ValueError(
             "Claude-Sitzungsverbrauch fehlt oder ist mehrdeutig"

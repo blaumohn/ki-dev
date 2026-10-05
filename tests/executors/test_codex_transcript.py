@@ -55,12 +55,13 @@ def test_extracts_normalized_messages_and_ignores_known_noise():
     rows = noise() + dialog(2) + noise()
     transcript = extract(rows)
     assert [
-        (m.ordinal, m.role, m.text) for m in transcript.messages
+        (m.ordinal, m.position, m.role, m.text)
+        for m in transcript.messages
     ] == [
-        (1, "user", "Frage 0"),
-        (2, "assistant", "Antwort 0"),
-        (3, "user", "Frage 1"),
-        (4, "assistant", "Antwort 1"),
+        (1, 1, "user", "Frage 0"),
+        (2, 2, "assistant", "Antwort 0"),
+        (3, 3, "user", "Frage 1"),
+        (4, 4, "assistant", "Antwort 1"),
     ]
     assert transcript.messages[0].source_line == 4
     assert transcript.agent == "codex"
@@ -68,6 +69,9 @@ def test_extracts_normalized_messages_and_ignores_known_noise():
         "lines": len(rows),
         "user_messages": 2,
         "assistant_messages": 2,
+        "T1_single_role": 0,
+        "T2_count_mismatch": 0,
+        "T4_role_breaks": 0,
     }
 
 
@@ -198,22 +202,44 @@ def test_float_ordinals_are_allowed():
     assert [m.ordinal for m in extract(rows).messages] == [1.5, 2.5]
 
 
-def test_t1_needs_both_roles():
-    assert "T1" in problems_of([])
-    assert "T1" in problems_of([user(1)])
+def test_empty_transcript_is_an_error_not_an_advisory():
+    text = problems_of([])
+    assert "T0" in text
+    assert "T0" in problems_of(noise())
 
 
-def test_t2_counts_must_match():
-    text = problems_of([user(1), assistant(2), user(3)])
-    assert "T2" in text
-    assert "user=2, assistant=1" in text
+def test_t1_single_role_is_only_an_advisory_counter():
+    transcript = extract([user(1)])
+    assert [m.role for m in transcript.messages] == ["user"]
+    assert transcript.diagnostics["T1_single_role"] == 1
 
 
-def test_t4_alternation_reports_the_first_break():
+def test_t2_open_input_at_the_end_is_kept():
+    transcript = extract([user(1), assistant(2), user(3)])
+    assert [m.role for m in transcript.messages] == [
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert transcript.diagnostics["T2_count_mismatch"] == 1
+    assert transcript.diagnostics["T4_role_breaks"] == 0
+
+
+def test_t4_repeated_roles_are_kept_and_counted():
     rows = [user(1), user(2), assistant(3), assistant(4)]
-    text = problems_of(rows)
-    assert "T4" in text
-    assert "Position 2, Zeile 2" in text
+    transcript = extract(rows)
+    assert [m.ordinal for m in transcript.messages] == [1, 2, 3, 4]
+    assert transcript.diagnostics["T4_role_breaks"] == 2
+    assert transcript.diagnostics["T2_count_mismatch"] == 0
+
+
+def test_t7_is_not_checked_once_roles_repeat():
+    rows = [
+        user(1, turn="a"),
+        user(2, turn="b"),
+        assistant(3, turn="c"),
+    ]
+    assert len(extract(rows).messages) == 3
 
 
 def test_t6_empty_text():
@@ -242,7 +268,7 @@ def test_cases_are_capped_at_ten_and_the_rest_is_counted():
 
 
 def test_errors_carry_the_format_note_and_no_content():
-    rows = [user(1, text=SECRET), user(2, text=SECRET)]
+    rows = [user(1, text=SECRET), assistant(1, text=SECRET)]
     text = problems_of(rows)
     assert "kein bewiesener CLI-Versionswechsel" in text
     assert SECRET not in text
@@ -301,9 +327,9 @@ def test_invalid_ids_are_request_errors(session_id):
         validate_session_request("codex", session_id)
 
 
-def test_only_codex_is_a_transcript_provider():
-    assert transcript_agents() == ("codex",)
-    for agent in ("claude", "unbekannt", ""):
+def test_codex_and_claude_are_the_transcript_providers():
+    assert transcript_agents() == ("codex", "claude")
+    for agent in ("unbekannt", "Codex", ""):
         with pytest.raises(TranscriptRequestError, match="nicht"):
             validate_session_request(agent, SID)
 

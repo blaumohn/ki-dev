@@ -5,10 +5,12 @@ from typer.testing import CliRunner
 
 from ki_dev import beads_source
 from ki_dev.cli import app
+from tests import claude_session_fixtures as claude
 from tests.codex_session_fixtures import (
     SECRET,
     assistant,
     dialog,
+    noise,
     user,
     write_session,
 )
@@ -149,9 +151,8 @@ def test_reused_bead_without_matching_reference_is_rejected(env):
 @pytest.mark.parametrize(
     "rows, code",
     [
-        ([user(1, text=SECRET), user(2, text=SECRET)], "T4"),
         ([user(1, text=SECRET), assistant(1, text=SECRET)], "T3"),
-        ([user(1, text=SECRET)], "T1"),
+        (noise(), "T0"),
         ([user(1), assistant(2, phase=SECRET)], "T5"),
     ],
 )
@@ -170,6 +171,75 @@ def test_invalid_dialog_fails_without_bead_artifact_or_content(
     assert env.bd.get()["calls"] == []
 
 
+@pytest.mark.parametrize(
+    "rows, counter",
+    [
+        (
+            [user(1, text=SECRET), user(2), assistant(3)],
+            "T4_role_breaks",
+        ),
+        (
+            [user(1), assistant(2), user(3, text=SECRET)],
+            "T2_count_mismatch",
+        ),
+        ([user(1, text=SECRET)], "T1_single_role"),
+    ],
+)
+def test_advisory_dialog_variants_pass_completely(env, rows, counter):
+    write_session(env.sessions, SID, rows)
+    result = runner.invoke(app, MAP)
+    assert result.exit_code == 0, result.stderr
+    assert not leaked(result)
+    [artifact] = artifacts(env.work)
+    stored = [
+        json.loads(line) for line in artifact.read_text().splitlines()
+    ]
+    assert [row["ordinal"] for row in stored] == [
+        r["ordinal"] for r in rows
+    ]
+    assert [row["position"] for row in stored] == list(
+        range(1, len(rows) + 1)
+    )
+
+
+def test_claude_session_is_mapped_through_the_same_path(
+    env, monkeypatch
+):
+    claude_root = env.sessions.parent / "claude-projects"
+    monkeypatch.setenv("KI_DEV_CLAUDE_SESSIONS_DIR", str(claude_root))
+    rows = claude.chain(
+        [claude.human(SECRET), claude.human("Nachtrag"), claude.reply()]
+    )
+    claude.write_session(claude_root, claude.SESSION, rows)
+    args = ["handoff", "map", "--agent", "claude", "--session"]
+    result = runner.invoke(app, [*args, claude.SESSION])
+    assert result.exit_code == 0, result.stderr
+    assert not leaked(result)
+    assert SECRET not in json.dumps(env.bd.rows)
+    [artifact] = artifacts(env.work)
+    assert f"/claude/{claude.SESSION}/" in artifact.as_posix()
+    stored = [
+        json.loads(line) for line in artifact.read_text().splitlines()
+    ]
+    assert [row["ordinal"] for row in stored] == [None, None, None]
+    assert [row["role"] for row in stored] == [
+        "user",
+        "user",
+        "assistant",
+    ]
+
+
+def test_claude_empty_sessions_dir_variable_is_a_clean_error(
+    env, monkeypatch
+):
+    monkeypatch.setenv("KI_DEV_CLAUDE_SESSIONS_DIR", "")
+    args = ["handoff", "map", "--agent", "claude", "--session"]
+    result = runner.invoke(app, [*args, claude.SESSION])
+    _assert_clean_failure(
+        result, env, "KI_DEV_CLAUDE_SESSIONS_DIR ist gesetzt, aber leer"
+    )
+
+
 def test_truncated_json_fails_visibly(env):
     path = write_session(env.sessions, SID, dialog(1))
     path.write_text(path.read_text() + '{"type": "event_')
@@ -184,7 +254,7 @@ def test_truncated_json_fails_visibly(env):
     [
         ["handoff", "map", "--agent", "codex"],
         ["handoff", "map", "--session", SID],
-        ["handoff", "map", "--agent", "claude", "--session", SID],
+        ["handoff", "map", "--agent", "gemini", "--session", SID],
         ["handoff", "map", "--agent", "", "--session", SID],
         ["handoff", "map", "--agent", "codex", "--session", "../x"],
         ["handoff", "map", "--agent", "codex", "--session", "a*"],

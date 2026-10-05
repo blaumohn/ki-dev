@@ -41,7 +41,14 @@ def test_serialization_is_one_message_per_line_and_deterministic():
     lines = content.decode("utf-8").splitlines()
     assert len(lines) == len(transcript.messages) == 4
     first = json.loads(lines[0])
-    assert set(first) == {"ordinal", "role", "text", "source_line"}
+    assert set(first) == {
+        "position",
+        "ordinal",
+        "role",
+        "text",
+        "source_line",
+        "timestamp",
+    }
     assert first["source_line"] == 1
     assert content == serialize_messages(make())
 

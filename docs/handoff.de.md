@@ -20,8 +20,8 @@ selbst und fügst den Text dort ein. Diese Form liest den Bead nur
 10 s) und startet keinen Agenten. Für `--step review` gilt eine ausdrückliche
 Ausnahme vom sonst rein lesenden Vertrag: siehe
 [Deterministischer Vorlauf vor der Review-Übergabe](#deterministischer-vorlauf-vor-der-review-übergabe-step-review).
-Eine zweite Form, die eine Codex-Sitzung als Quelle erschließt und dabei
-schreibt, steht [weiter unten](#codex-sitzung-als-quelle-handoff-map).
+Eine zweite Form, die eine Codex- oder Claude-Sitzung als Quelle erschließt
+und dabei schreibt, steht [weiter unten](#sitzung-als-quelle-handoff-map).
 
 ## Die fünf Aufrufe
 
@@ -261,7 +261,7 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 | Exit | Bedeutung |
 | --- | --- |
 | 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht; mit `--next-turn` die Review-Nachricht) |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--check-args` außerhalb des Vorlaufs oder ungültig, `--next-turn` ohne `--step review`, `--feedback-file` ohne `--next-turn`, leere oder zu lange Rückmeldung, ungültige `feedback_max_chars` oder `base_max_chars`, zu lange Basisübergabe, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--check-args` außerhalb des Vorlaufs oder ungültig, `--next-turn` ohne `--step review`, `--feedback-file` ohne `--next-turn`, leere oder zu lange Rückmeldung, ungültige `feedback_max_chars` oder `base_max_chars`, zu lange Basisübergabe, fehlendes `map`, anderer Anbieter als `codex` oder `claude`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
 | 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe; mit `--next-turn` stattdessen die Bau-Nachricht auf stdout), nicht lesbare Rückmeldung (Datei/stdin, kein UTF-8), nicht lesbare `pyproject.toml` (Basisgrenze). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
@@ -289,32 +289,44 @@ Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen
 Die „Hinweis für den Menschen“-Zeile am Ende jeder Übergabe nennt nur den
 üblichen Folgeschritt; sie wird nie automatisch ausgeführt.
 
-## Codex-Sitzung als Quelle (`handoff map`)
+## Sitzung als Quelle (`handoff map`)
 
 ```bash
 ki-dev handoff map --agent codex --session SESSION_ID
+ki-dev handoff map --agent claude --session SESSION_ID
 ```
 
-Erschließt eine lokale Codex-Sitzung als Quelle für den Schritt `map`. Das
+Erschließt eine lokale Codex- oder Claude-Sitzung als Quelle für den Schritt
+`map`. Beide Anbieter liefern denselben geprüften Transkripttyp. Das
 Positionswort `map` ist Teil des Aufrufs und das einzige erlaubte
 Positionsargument. `--agent` und `--session` sind beide erforderlich; `--agent` bezeichnet den
-Anbieter der **Quellsitzung** (heute nur `codex`), nicht den späteren
+Anbieter der **Quellsitzung** (`codex` oder `claude`), nicht den späteren
 Kartierungsagenten. Es gibt kein Dateipfadargument und keine automatische Wahl
 der letzten Sitzung. Die Form lässt sich nicht mit einer `BEAD_ID`, einem
 anderen Positionsargument oder `--step` mischen; auch `--agent`/`--session`
 ohne `map` wird abgelehnt (Exit 2, vor jeder Schreibwirkung).
 
-**Sitzungsordner:** `KI_DEV_CODEX_SESSIONS_DIR` (ausdrücklicher Ordner), sonst
-`CODEX_HOME/sessions`, sonst `~/.codex/sessions`. Ein gesetzter, aber leerer
+**Sitzungsordner:** Codex: `KI_DEV_CODEX_SESSIONS_DIR` (ausdrücklicher
+Ordner), sonst `CODEX_HOME/sessions`, sonst `~/.codex/sessions`. Claude:
+`KI_DEV_CLAUDE_SESSIONS_DIR` (ausdrückliche Projektwurzel), sonst
+`~/.claude/projects`; gesucht wird `PROJEKT/SESSION_ID.jsonl`. Ein gesetzter, aber leerer
 Wert ist ein Fehler (mit Klartextmeldung, ohne Traceback), ebenso ein nicht
 lesbarer Ordner oder eine nicht lesbare Sitzungsdatei. Die ID darf nur aus Buchstaben, Ziffern, `_` und `-`
 bestehen und muss genau eine Sitzung treffen.
 
-**Strenge Dialogprüfung:** Erwartet wird ein sauberer Wechsel aus
-Benutzernachricht und `final_answer`, mit eindeutigem, endlichem `ordinal` und
-passenden `turn_id`-Paaren. Ungültiges JSON (auch eine abgeschnittene letzte
-Zeile), unbekannte Phasen, leere Texte oder ein unvollständiger Dialog brechen
-mit Exit 1 ab; es entsteht weder Datei noch Bead. Die Meldung nennt nur
+**Dialogprüfung:** Die frühere strenge Annahme eines sauberen Wechsels mit
+gleicher Anzahl (cg1) ist abgelöst. Wiederholte Rollen, Nachträge und eine
+offene letzte Eingabe sind gültig und bleiben vollständig erhalten; bei Codex
+zählen T1 (nur eine Rolle), T2 (ungleiche Anzahl) und T4 (Rollenbrüche) nur
+als Diagnose, bei Claude zusätzlich offene Eingaben. Codex verlangt ein
+eindeutiges, endliches `ordinal` und bei sauberem Wechsel passende
+`turn_id`-Paare. Claude übernimmt menschliche Eingaben und `end_turn`-Text;
+technische Aufgabenmeldungen werden nur bei belegter Herkunft (`origin.kind`,
+`turnOrigin`, `promptSource`) ausgelassen und gezählt, Slash-Befehlszeilen
+nur ohne jede Herkunftsangabe; menschliche Zitate bleiben, auch mit führendem
+Tag. Jede `sessionId` muss der angeforderten Sitzung entsprechen. Ungültiges JSON (auch eine abgeschnittene letzte Zeile), unbekannte
+Phasen oder Herkunft, ungültige Zeitstempel, leere Texte oder ein Transkript
+ohne Beiträge brechen mit Exit 1 ab; es entsteht weder Datei noch Bead. Die Meldung nennt nur
 Prüfcode, Zeile und Feldpfad (höchstens 10 Fälle je Prüfung), nie
 Gesprächsinhalt. Sie weist auf eine Plausibilitäts-/Formatabweichung hin, nicht
 auf einen bewiesenen CLI-Versionswechsel. Es gibt kein `--force`. Für neue
@@ -323,8 +335,10 @@ seine Ausgabe gehört nicht ungefiltert in einen Agentenkontext.
 
 **Schreibwirkungen (lokal):**
 
-1. Das normalisierte Transkript (eine Nachricht je Zeile mit `ordinal`, `role`,
-   `text`, `source_line`) wird atomar unter
+1. Das normalisierte Transkript (eine Nachricht je Zeile mit `position`
+   (normalisierte Reihenfolge), `ordinal` (Herkunftsnummer, bei Claude
+   `null`), `role`, `text`, `source_line`, optionalem `timestamp`) wird
+   atomar unter
    `.local/handoff/AGENT/SESSION_ID/DIGEST-PARSERVERSION.jsonl` abgelegt. Der
    Ordner ist nicht versioniert. Ein identisches Artefakt wird wiederverwendet,
    abweichender Inhalt am selben Schlüssel ist ein Fehler.
@@ -589,4 +603,8 @@ wieder befülltem Beads-Block gehen die Rollenrechte der Übergabe vor
   Agent arbeitet, steuerst du in der jeweiligen Sitzung.
 - Keine Schrittwahl, Statusverwaltung, Claims oder Schließungen und keine
   Agentenstarts.
-- Nur Codex-Sitzungen; ein Claude-Transkriptfilter existiert nicht.
+- Nur Codex- und Claude-Sitzungen; keine Rekonstruktion von Resume-/Fork-
+  Zweigen. Der Sitzungsstart (`started_at`) stammt nur aus Sitzungsdaten
+  (Codex: `session_meta` dieser Sitzung; Claude: frühester vorhandener
+  Zeitstempel ihrer Beiträge), nie aus Datei- oder Exportdatum. Fehlt er, bleibt die Anzeige
+  möglich; ein datumsbasierter Export scheitert sichtbar.
