@@ -52,8 +52,9 @@ ki-dev step local > uebergabe.txt
 
 Für Sitzungen ohne Auftrag aus Beads. Der Aufruf braucht weder Bead noch
 Datenbankverbindung noch `bd` im PATH, hat keine `--step`-Pflicht und schreibt
-nichts. Mit `--step`, `--review-of`, `--check-args`, `--next-turn`,
-`--feedback-file`, `--agent` oder `--session` kombiniert endet er mit Exit 2.
+nichts. Mit `--step`, `--review-of`, `--preflight-args`, `--preflight-skip`,
+`--next-turn`, `--feedback-file`, `--agent` oder `--session` kombiniert endet
+er mit Exit 2.
 Die Ausgabe besteht aus einer festen kurzen Basis (`Schritt: local`) und dem
 gesonderten Leitlinienblock mit den allgemeinen Abschnitten (`common`) aller
 Regelquellen (siehe [Mitgelieferte Leitlinien](#mitgelieferte-leitlinien));
@@ -158,7 +159,7 @@ Rollenübergabe; eine frische Sitzung startest du mit `--step review` ohne
 | `map`, `graph`, `materialize` | ohne Code-Vorlauf | dieselbe Review-Sitzung: erneute, phasengerechte Prüfung; Exit 0 |
 
 Nur der Prüfgegenstand `build` braucht `tool.ki-dev.handoff.preflight`;
-`--check-args` gilt wie bisher nur dort. Der Fortschritt des Vorlaufs steht auf
+`--preflight-args`/`--preflight-skip` gelten wie bisher nur dort. Der Fortschritt des Vorlaufs steht auf
 stderr, die Nachricht auf stdout (auch bei Exit 1). Ohne `--next-turn` bleibt
 alles unverändert, insbesondere ist stdout bei einem Vorlauffehler leer.
 
@@ -187,28 +188,43 @@ Eingabefehler liefern keine Übergabe und starten keinen Vorlauf: leere oder
 nur aus Leerraum bestehende Rückmeldung und Überlänge (keine Kürzung) sind
 Exit 2; Lese- oder UTF-8-Fehler sind Exit 1, ohne Textinhalt in der Meldung.
 
-### `--check-args`: Prüfbefehl einmalig ergänzen
+### `--preflight-args`/`--preflight-skip`: Teillauf mit begründetem Umfang
 
-Scheitert der Vorlauf an einem unabhängigen Test, hängt `--check-args
-NAME=ARGS` die Argumente einmalig an die Prüfung `NAME` an, ohne
-`pyproject.toml` zu ändern:
+Scheitert der Vorlauf an einem unabhängigen Test, hängt `--preflight-args
+NAME=ARGS` die Argumente einmalig an die Prüfung `NAME` an;
+`--preflight-skip NAME=GRUND` lässt sie begründet aus. `pyproject.toml`
+bleibt unverändert:
 
 ```bash
-ki-dev step projekt-42 --step review --check-args 'tests=-k "not langsam"'
-ki-dev step projekt-42 --step review \
-  --check-args 'tests=--deselect tests/a.py::test_x --deselect tests/b.py::test_y'
+ki-dev step projekt-42 --step review --preflight-args 'tests=-k "not langsam"'
+ki-dev step projekt-42 --step review --preflight-skip 'lint=nur Doku geändert'
 ```
 
-`ARGS` wird wie in einer Shell zerlegt und hat keine Längengrenze. Die Option
-ist wiederholbar (je Prüfung einmal) und gilt nur für den Vorlauf
-(`--step review`, Prüfgegenstand `build`). Exit 2 vor jeder Schreibwirkung:
-fehlendes `=`, leerer Name oder leere `ARGS`, unvollständiges Quoting,
-NUL/CR/LF, doppelte Prüfung, unbekannter Name oder Name einer Korrektur
-(stderr nennt die vorhandenen Prüfungen). Die Ergänzung bleibt sichtbar:
-Bericht und Übergabe markieren die Zeile mit `[ergänzt per --check-args]`,
-das Prüfartefakt nennt sie unter `added_args`.
+`ARGS` wird wie in einer Shell zerlegt und hat keine Längengrenze. `GRUND`
+ist einzeilig, nichtleer und höchstens 200 Zeichen lang. Beide Optionen sind
+wiederholbar (je Prüfung einmal), gelten nur für den Vorlauf (`--step review`,
+Prüfgegenstand `build`, auch mit `--next-turn`) und nur für Prüfungen, nie
+für Korrekturen. Exit 2 vor jeder Schreibwirkung: fehlendes `=`, leerer Name,
+leere `ARGS`, ungültiger `GRUND`, unvollständiges Quoting, NUL/CR/LF,
+doppelte Prüfung, dieselbe Prüfung in beiden Optionen, unbekannter Name oder
+Name einer Korrektur (stderr nennt die vorhandenen Prüfungen).
 
-Die frische Sitzung startest du selbst; `handoff` startet keinen Agenten
+Jede Angabe macht den Lauf zum **Teillauf**. Er erlaubt ein Zwischenreview,
+aber keinen PASS: Bericht und Folgerunde enthalten den Absatz `TEILLAUF`, die
+Folgerunde verlangt `CHANGES | NEEDS_DECISION`. Ein PASS braucht einen
+vollständigen Vorlauf ohne diese Optionen. Drei Dinge bleiben getrennt:
+
+| Begriff | Bedeutung | Folge |
+| --- | --- | --- |
+| `valid` | alle gelaufenen Befehle bestanden | sonst Nachricht an den Bau-Agenten (Exit 1) |
+| `partial` | Zusatzargumente oder Auslassungen | kein PASS |
+| Ausführungsfehler | Vorlauf nicht kontrolliert abgeschlossen | Exit 1, keine Übergabe |
+
+Die Angaben bleiben sichtbar: Ergänzte Zeilen tragen `[ergänzt per
+--preflight-args]`, ausgelassene stehen als `SKIPPED` mit Grund im Bericht.
+Das Prüfartefakt nennt `added_args`, `skip_reason` und `partial`.
+
+Die frische Sitzung startest du selbst; `step` startet keinen Agenten
 und schließt sie nicht automatisch. Optional kannst du dafür ein anderes
 Modell oder einen anderen Anbieter wählen – kein Anbieter ist
 vorgeschrieben, es gibt keine automatische Übermittlung oder
@@ -266,7 +282,7 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 | Exit | Bedeutung |
 | --- | --- |
 | 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht; mit `--next-turn` die Review-Nachricht) |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--check-args` außerhalb des Vorlaufs oder ungültig, `--next-turn` ohne `--step review`, `--feedback-file` ohne `--next-turn`, leere oder zu lange Rückmeldung, ungültige `feedback_max_chars` oder `base_max_chars`, zu lange Basisübergabe, fehlendes `map`, anderer Anbieter als `codex` oder `claude`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--preflight-args`/`--preflight-skip` außerhalb des Vorlaufs oder ungültig, das entfernte `--check-args`, `--next-turn` ohne `--step review`, `--feedback-file` ohne `--next-turn`, leere oder zu lange Rückmeldung, ungültige `feedback_max_chars` oder `base_max_chars`, zu lange Basisübergabe, fehlendes `map`, anderer Anbieter als `codex` oder `claude`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
 | 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe; mit `--next-turn` stattdessen die Bau-Nachricht auf stdout), nicht lesbare Rückmeldung (Datei/stdin, kein UTF-8), nicht lesbare `pyproject.toml` (Basisgrenze). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
@@ -474,7 +490,7 @@ Befehle), statt nur die fehlgeschlagenen zu zeigen; volle Prozesslogs
 bleiben außen vor. Der Befund endet mit dem Ort der Konfiguration
 (`Konfiguration: pyproject.toml [tool.ki-dev.handoff.preflight]`) und, wenn
 eine Prüfung (nicht eine Korrektur) gescheitert ist, dem einmaligen Ausweg
-(`Einmalig ergänzen: --check-args tests=ARGS`). Ein Prüfartefaktfehler außerhalb eines
+(`Einmalig ergänzen: --preflight-args tests=ARGS`). Ein Prüfartefaktfehler außerhalb eines
 einzelnen konfigurierten Befehls (z. B. Artefaktverzeichnis nicht schreibbar)
 erscheint als eigener kurzer `Vorlauf-Ausführungsfehler` statt eines
 unbehandelten Programmabbruchs; bereits gelaufene Befehle (bestanden wie

@@ -16,19 +16,23 @@ from ki_dev.handoff import HandoffIssue
 from ki_dev.handoff_preflight import (
     ADDED_MARKER,
     ARTIFACT_DIR,
-    CheckArgsError,
+    PARTIAL_RUN_NOTE,
     CommandResult,
     CommandSpec,
     PreflightConfig,
     PreflightConfigError,
     PreflightExecutionError,
-    apply_check_args,
     format_command_result,
     load_preflight_config,
-    parse_check_args,
     progress_line,
     render_review_handoff,
     run_preflight,
+)
+from ki_dev.preflight_options import (
+    PreflightOptionError,
+    apply_preflight_options,
+    parse_preflight_args,
+    parse_preflight_skip,
 )
 
 
@@ -854,12 +858,12 @@ def test_render_review_handoff_names_artifact_exactly_once(
 
 
 # ---------------------------------------------------------------------
-# --check-args: parse_check_args / apply_check_args
+# --preflight-args/--preflight-skip: preflight_options
 # ---------------------------------------------------------------------
 
 
-def test_parse_check_args_splits_like_a_shell():
-    parsed = parse_check_args(
+def test_parse_preflight_args_splits_like_a_shell():
+    parsed = parse_preflight_args(
         ['tests=-k "not langsam" --deselect a.py::t', "lint=--fix"]
     )
     assert parsed == {
@@ -868,8 +872,8 @@ def test_parse_check_args_splits_like_a_shell():
     }
 
 
-def test_parse_check_args_has_no_length_limit():
-    parsed = parse_check_args(["tests=--deselect " + "x" * 500])
+def test_parse_preflight_args_has_no_length_limit():
+    parsed = parse_preflight_args(["tests=--deselect " + "x" * 500])
     assert parsed["tests"] == ("--deselect", "x" * 500)
 
 
@@ -887,22 +891,22 @@ def test_parse_check_args_has_no_length_limit():
         ("tests=-k a\x00b", "NUL"),
     ],
 )
-def test_parse_check_args_rejects_malformed_values(value, message):
-    with pytest.raises(CheckArgsError, match=message):
-        parse_check_args([value])
+def test_parse_preflight_args_rejects_malformed_values(value, message):
+    with pytest.raises(PreflightOptionError, match=message):
+        parse_preflight_args([value])
 
 
-def test_parse_check_args_error_does_not_echo_raw_value():
-    with pytest.raises(CheckArgsError) as excinfo:
-        parse_check_args(["tests=-k 'GEHEIM"])
+def test_parse_preflight_args_error_does_not_echo_raw_value():
+    with pytest.raises(PreflightOptionError) as excinfo:
+        parse_preflight_args(["tests=-k 'GEHEIM"])
     assert "GEHEIM" not in str(excinfo.value)
 
 
-def test_parse_check_args_rejects_duplicate_name():
+def test_parse_preflight_args_rejects_duplicate_name():
     """Zwei Angaben für dieselbe Prüfung werden nicht still
     zusammengeführt oder überschrieben."""
-    with pytest.raises(CheckArgsError, match="mehrfach"):
-        parse_check_args(["tests=-x", "tests=-q"])
+    with pytest.raises(PreflightOptionError, match="mehrfach"):
+        parse_preflight_args(["tests=-x", "tests=-q"])
 
 
 def _two_checks_config() -> PreflightConfig:
@@ -912,9 +916,9 @@ def _two_checks_config() -> PreflightConfig:
     )
 
 
-def test_apply_check_args_appends_to_named_check_only():
-    config = apply_check_args(
-        _two_checks_config(), {"tests": ("-k", "x")}
+def test_apply_preflight_args_appends_to_named_check_only():
+    config = apply_preflight_options(
+        _two_checks_config(), {"tests": ("-k", "x")}, {}
     )
     tests, lint = config.checks
     assert tests.argv[-2:] == ("-k", "x")
@@ -923,18 +927,22 @@ def test_apply_check_args_appends_to_named_check_only():
     assert config.corrections == _two_checks_config().corrections
 
 
-def test_apply_check_args_without_extra_keeps_config():
-    assert apply_check_args(_two_checks_config(), {}) == (
+def test_apply_preflight_args_without_extra_keeps_config():
+    assert apply_preflight_options(_two_checks_config(), {}, {}) == (
         _two_checks_config()
     )
 
 
 @pytest.mark.parametrize("name", ["tset", "fmt"])
-def test_apply_check_args_rejects_unknown_or_correction_name(name):
+def test_apply_preflight_args_rejects_unknown_or_correction_name(name):
     """Ein Tippfehler oder eine Korrektur wird nicht still ignoriert;
     die Meldung nennt die vorhandenen Prüfungen."""
-    with pytest.raises(CheckArgsError, match="vorhanden: tests, lint"):
-        apply_check_args(_two_checks_config(), {name: ("-x",)})
+    with pytest.raises(
+        PreflightOptionError, match="vorhanden: tests, lint"
+    ):
+        apply_preflight_options(
+            _two_checks_config(), {name: ("-x",)}, {}
+        )
 
 
 def test_added_args_reach_process_artifact_and_report(tmp_path: Path):
@@ -942,15 +950,20 @@ def test_added_args_reach_process_artifact_and_report(tmp_path: Path):
     code = (
         "import sys; sys.exit(0 if sys.argv[1:] == ['--skip'] else 1)"
     )
-    config = apply_check_args(
+    config = apply_preflight_options(
         PreflightConfig(corrections=(), checks=(_py("tests", code),)),
         {"tests": ("--skip",)},
+        {},
     )
     report = run_preflight(config, repo)
     assert report.valid
     payload = json.loads((repo / report.artifact).read_text())
     assert payload["commands"][0]["added_args"] == ["--skip"]
-    assert ADDED_MARKER in render_review_handoff(_issue(), report)
+    assert payload["partial"] is True
+    assert report.partial
+    text = render_review_handoff(_issue(), report)
+    assert ADDED_MARKER in text
+    assert PARTIAL_RUN_NOTE in text
 
 
 def test_added_marker_survives_shortened_argv():
@@ -972,3 +985,109 @@ def test_added_marker_survives_shortened_argv():
 def test_unmodified_result_has_no_added_marker():
     item = CommandResult("t", ("true",), "pass", 0, "", omitted=False)
     assert ADDED_MARKER not in format_command_result(item)
+
+
+# ---------------------------------------------------------------------
+# --preflight-skip: begründetes Auslassen, Teillauf ohne PASS
+# ---------------------------------------------------------------------
+
+
+def test_parse_preflight_skip_keeps_reason_per_check():
+    parsed = parse_preflight_skip(["lint=nur Doku geändert", "tests=x"])
+    assert parsed == {"lint": "nur Doku geändert", "tests": "x"}
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("lint", "NAME=GRUND"),
+        ("=nur Doku", "NAME=GRUND"),
+        ("lint=", "einzeilig, nichtleer"),
+        ("lint=   ", "einzeilig, nichtleer"),
+        ("lint=a\nb", "einzeilig, nichtleer"),
+        ("lint=" + "x" * 201, "höchstens 200"),
+    ],
+)
+def test_parse_preflight_skip_rejects_malformed_values(value, message):
+    with pytest.raises(PreflightOptionError, match=message):
+        parse_preflight_skip([value])
+
+
+def test_parse_preflight_skip_rejects_duplicate_name():
+    with pytest.raises(PreflightOptionError, match="mehrfach"):
+        parse_preflight_skip(["lint=a", "lint=b"])
+
+
+@pytest.mark.parametrize("name", ["tset", "fmt"])
+def test_skip_rejects_unknown_or_correction_name(name):
+    with pytest.raises(PreflightOptionError, match="--preflight-skip"):
+        apply_preflight_options(_two_checks_config(), {}, {name: "x"})
+
+
+def test_same_check_cannot_be_extended_and_skipped():
+    with pytest.raises(PreflightOptionError, match="zugleich"):
+        apply_preflight_options(
+            _two_checks_config(), {"tests": ("-x",)}, {"tests": "x"}
+        )
+
+
+def test_skipped_check_does_not_start_and_is_reported(tmp_path: Path):
+    repo = _repo(tmp_path)
+    marker = repo / "gestartet"
+    code = f"open({str(marker)!r}, 'w').close()"
+    config = apply_preflight_options(
+        PreflightConfig(
+            corrections=(),
+            checks=(_py("tests", "pass"), _py("lint", code)),
+        ),
+        {},
+        {"lint": "nur Doku"},
+    )
+    report = run_preflight(config, repo)
+    assert not marker.exists()
+    assert report.valid
+    assert report.partial
+    tests, lint = report.commands
+    assert (tests.status, lint.status) == ("pass", "skipped")
+    assert lint.skip_reason == "nur Doku"
+    assert "ausgelassen per --preflight-skip: nur Doku" in (
+        format_command_result(lint)
+    )
+    payload = json.loads((repo / report.artifact).read_text())
+    assert payload["partial"] is True
+    assert payload["commands"][1]["skip_reason"] == "nur Doku"
+    assert payload["commands"][1]["status"] == "skipped"
+    text = render_review_handoff(_issue(), report)
+    assert PARTIAL_RUN_NOTE in text
+
+
+def test_failed_check_in_partial_run_is_not_valid(tmp_path: Path):
+    """Teillauf und Übergabefähigkeit sind getrennt: Eine rote Prüfung
+    bleibt rot, auch wenn eine andere ausgelassen wurde."""
+    repo = _repo(tmp_path)
+    config = apply_preflight_options(
+        PreflightConfig(
+            corrections=(),
+            checks=(
+                _py("tests", "import sys; sys.exit(1)"),
+                _py("lint", "pass"),
+            ),
+        ),
+        {},
+        {"lint": "nur Doku"},
+    )
+    report = run_preflight(config, repo)
+    assert report.partial
+    assert not report.valid
+
+
+def test_full_run_is_not_partial_and_keeps_pass(tmp_path: Path):
+    repo = _repo(tmp_path)
+    config = PreflightConfig(corrections=(), checks=(_py("t", "pass"),))
+    report = run_preflight(config, repo)
+    assert report.valid
+    assert not report.partial
+    text = render_review_handoff(_issue(), report)
+    assert PARTIAL_RUN_NOTE not in text
+    payload = json.loads((repo / report.artifact).read_text())
+    assert payload["partial"] is False

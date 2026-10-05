@@ -25,8 +25,8 @@ import re
 import shlex
 import shutil
 import tomllib
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -70,24 +70,28 @@ _MAX_SUCCESS_DETAIL_CHARS = 200
 # Übergabe und Reparaturbefund zeigen sie einzeilig gekürzt und
 # verweisen einmal auf das Artefakt (``artifact_line``).
 _MAX_ARGV_DISPLAY_CHARS = 100
-# Steht nie gekürzt neben argv, damit eine Abwahl per --check-args auch
-# bei gekürzter argv sichtbar bleibt.
-ADDED_MARKER = "[ergänzt per --check-args]"
+# Steht nie gekürzt neben argv, damit eine Abwahl per --preflight-args
+# auch bei gekürzter argv sichtbar bleibt.
+ADDED_MARKER = "[ergänzt per --preflight-args]"
+# Teillauf: Zusatzargumente oder ausgelassene Prüfungen. Gilt für
+# Erst-Review und Folgerunde; ein PASS braucht den vollen Vorlauf.
+PARTIAL_RUN_NOTE = (
+    "TEILLAUF: Zusatzargumente oder ausgelassene Prüfungen (siehe "
+    "Bericht). Abweichend von der Rolle ist PASS ausgeschlossen; "
+    "Ausgabe: CHANGES | NEEDS_DECISION. PASS erst nach einem "
+    "vollständigen Vorlauf ohne --preflight-args/--preflight-skip."
+)
 
 _PATH_SEPARATORS = tuple(sep for sep in (os.sep, os.altsep) if sep)
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
-Status = Literal["pass", "fail", "omitted"]
+Status = Literal["pass", "fail", "omitted", "skipped"]
 
 
 class PreflightConfigError(ValueError):
     """Aufruf/Bead/Konfiguration ungültig; keine Schreibwirkung."""
-
-
-class CheckArgsError(ValueError):
-    """--check-args ungültig; Aufruffehler vor jeder Schreibwirkung."""
 
 
 class PreflightExecutionError(RuntimeError):
@@ -113,14 +117,17 @@ class PreflightExecutionError(RuntimeError):
 class CommandSpec:
     """Ein Korrektur- oder Prüfbefehl aus der Projektkonfiguration.
 
-    ``added`` nennt die per ``--check-args`` an ``argv`` angehängten
-    Argumente (bereits in ``argv`` enthalten); leer ohne Ergänzung.
+    ``added`` nennt die per ``--preflight-args`` an ``argv``
+    angehängten Argumente (bereits in ``argv`` enthalten); leer ohne
+    Ergänzung. ``skip_reason`` ist der Grund aus ``--preflight-skip``;
+    eine Prüfung mit Grund startet nicht.
     """
 
     name: str
     argv: tuple[str, ...]
     timeout_s: float
     added: tuple[str, ...] = ()
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -138,6 +145,7 @@ class CommandResult:
     bounded_detail: str
     omitted: bool
     added: tuple[str, ...] = ()
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -156,6 +164,22 @@ class PreflightReport:
     valid: bool
     artifact: Path
 
+    @property
+    def partial(self) -> bool:
+        """Teillauf: Zusatzargumente oder ausgelassene Prüfungen.
+
+        Unabhängig von ``valid`` (Übergabefähigkeit): Ein bestandener
+        Teillauf erlaubt ein Zwischenreview, aber keinen PASS.
+        """
+        return is_partial(self.commands)
+
+
+def is_partial(commands: Iterable[CommandResult]) -> bool:
+    """Gemeinsame Teillauf-Regel für Bericht und Prüfartefakt."""
+    return any(
+        item.added or item.status == "skipped" for item in commands
+    )
+
 
 # Strukturregeln (Typen, Pflichtfelder, Listenformen) stehen als
 # JSON Schema beim zuständigen Vertrag; geprüft werden die bereits
@@ -164,8 +188,8 @@ class PreflightReport:
 # darf zusätzliche Projektangaben nicht zum Konfigurationsfehler
 # machen.
 # Gemeinsame Regel für argv aus der Konfiguration und für per
-# --check-args ergänzte Argumente.
-_ARGV_SCHEMA = {
+# --preflight-args ergänzte Argumente (preflight_options).
+ARGV_SCHEMA = {
     "type": "array",
     "minItems": 1,
     "items": {"type": "string", "minLength": 1},
@@ -176,7 +200,7 @@ _COMMAND_SCHEMA = {
     "required": ["name", "argv", "timeout_s"],
     "properties": {
         "name": {"type": "string", "minLength": 1, "pattern": r"\S"},
-        "argv": _ARGV_SCHEMA,
+        "argv": ARGV_SCHEMA,
         "timeout_s": {"type": "number", "exclusiveMinimum": 0},
     },
 }
@@ -316,7 +340,7 @@ def _command(item: dict, label: str) -> CommandSpec:
     ``inf``/``nan`` durch. Die Länge von argv ist nicht begrenzt.
     """
     argv = tuple(item["argv"])
-    problem = _argv_character_problem(argv)
+    problem = argv_character_problem(argv)
     if problem:
         raise PreflightConfigError(f"{label}.argv {problem}")
     timeout_s = float(item["timeout_s"])
@@ -324,7 +348,7 @@ def _command(item: dict, label: str) -> CommandSpec:
     return CommandSpec(item["name"], argv, timeout_s)
 
 
-def _argv_character_problem(argv: Sequence[str]) -> str | None:
+def argv_character_problem(argv: Sequence[str]) -> str | None:
     """Zeichenregel für argv; ``None`` heißt zulässig."""
     joined = "".join(argv)
     if "\x00" in joined:
@@ -347,74 +371,6 @@ def _check_unique_names(specs: tuple[CommandSpec, ...]) -> None:
         raise PreflightConfigError(
             f"{CONFIG_TABLE}: name ist mehrfach vergeben"
         )
-
-
-def parse_check_args(
-    values: Sequence[str],
-) -> dict[str, tuple[str, ...]]:
-    """``NAME=ARGS``-Angaben in Prüfname -> Zusatzargumente übersetzen.
-
-    ARGS werden wie in einer Shell zerlegt (``shlex.split``) und
-    unterliegen derselben argv-Regel wie die Konfiguration, aber keiner
-    Längengrenze. Rohwerte erscheinen nicht in Fehlermeldungen.
-    """
-    parsed: dict[str, tuple[str, ...]] = {}
-    for position, value in enumerate(values, start=1):
-        name, separator, text = value.partition("=")
-        label = f"--check-args (Angabe {position})"
-        if not separator or not name.strip():
-            raise CheckArgsError(f"{label}: erwartet NAME=ARGS")
-        if name in parsed:
-            raise CheckArgsError(
-                f"{label}: Prüfung mehrfach angegeben; Argumente in "
-                "einer Angabe zusammenfassen"
-            )
-        parsed[name] = _extra_args(text, label)
-    return parsed
-
-
-def _extra_args(text: str, label: str) -> tuple[str, ...]:
-    try:
-        args = shlex.split(text)
-    except ValueError as exc:
-        raise CheckArgsError(
-            f"{label}: ARGS nicht zerlegbar (Quoting unvollständig)"
-        ) from exc
-    if not Draft202012Validator(_ARGV_SCHEMA).is_valid(args):
-        raise CheckArgsError(f"{label}: ARGS ist leer")
-    problem = _argv_character_problem(args)
-    if problem:
-        raise CheckArgsError(f"{label}: ARGS {problem}")
-    return tuple(args)
-
-
-def apply_check_args(
-    config: PreflightConfig, extra: Mapping[str, tuple[str, ...]]
-) -> PreflightConfig:
-    """Zusatzargumente an die genannten Prüfungen anhängen.
-
-    Nur Prüfungen (checks) sind ergänzbar; ein unbekannter oder
-    Korrektur-Name ist ein Aufruffehler, kein stilles Ignorieren.
-    """
-    check_names = [spec.name for spec in config.checks]
-    for name in extra:
-        if name not in check_names:
-            raise CheckArgsError(
-                f"--check-args: {report_name(name)!r} ist keine "
-                "konfigurierte Prüfung (vorhanden: "
-                f"{', '.join(report_name(n) for n in check_names)})"
-            )
-    checks = tuple(
-        replace(
-            spec,
-            argv=spec.argv + extra[spec.name],
-            added=extra[spec.name],
-        )
-        if spec.name in extra
-        else spec
-        for spec in config.checks
-    )
-    return replace(config, checks=checks)
 
 
 def run_preflight(
@@ -476,11 +432,28 @@ def run_preflight(
 
     checks_ok = True
     for spec in config.checks:
+        if spec.skip_reason is not None:
+            results.append(_skipped(spec))
+            continue
         result = _run_started(project_root, spec, on_start)
         results.append(result)
         if result.status != "pass":
             checks_ok = False
     return _finish(project_root, results, started_at, valid=checks_ok)
+
+
+def _skipped(spec: CommandSpec) -> CommandResult:
+    """Per --preflight-skip ausgelassene Prüfung; startet nicht."""
+    return CommandResult(
+        spec.name,
+        spec.argv,
+        "skipped",
+        None,
+        f"ausgelassen per --preflight-skip: {spec.skip_reason}",
+        omitted=True,
+        added=spec.added,
+        skip_reason=spec.skip_reason,
+    )
 
 
 def progress_line(spec: CommandSpec) -> str:
@@ -681,6 +654,7 @@ def _write_artifact(
     payload = {
         "started_at": started_at,
         "valid": valid,
+        "partial": is_partial(commands),
         "commands": [
             {
                 "name": report_name(item.name),
@@ -690,6 +664,7 @@ def _write_artifact(
                 "detail": item.bounded_detail,
                 "omitted": item.omitted,
                 "added_args": list(item.added),
+                "skip_reason": item.skip_reason,
             }
             for item in commands
         ],
@@ -761,6 +736,8 @@ def render_report_lines(report: PreflightReport) -> list[str]:
     lines = [f"PRUEFBERICHT vorlauf-start={report.started_at}"]
     lines += [format_command_result(item) for item in report.commands]
     lines.append(artifact_line(report))
+    if report.partial:
+        lines.append(PARTIAL_RUN_NOTE)
     lines.append(
         "Hinweis: Der Zeitpunkt dient der manuellen Zuordnung, nicht "
         "als Beweis eines unveränderten Quellstands; nach weiteren "

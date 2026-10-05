@@ -551,7 +551,7 @@ def test_review_validates_bead_before_preflight_config(
 
 
 # ---------------------------------------------------------------------
-# --check-args und Reparaturbefund (zip.6)
+# --preflight-args und Reparaturbefund (zip.6)
 # ---------------------------------------------------------------------
 
 _NEEDS_SKIP = (
@@ -564,7 +564,7 @@ def _preflight_artifacts(tmp_path: Path) -> list[Path]:
     return list(directory.glob("*"))
 
 
-def test_review_check_args_are_appended_and_marked(
+def test_review_preflight_args_are_appended_and_marked(
     bd, tmp_path, monkeypatch
 ):
     _preflight_project(
@@ -575,15 +575,15 @@ def test_review_check_args_are_appended_and_marked(
         app,
         [
             "step", "x-1", "--step", "review",
-            "--check-args", "tests=--skip",
+            "--preflight-args", "tests=--skip",
         ],
     )
     assert result.exit_code == 0, result.stderr
     assert "- tests: PASS" in result.stdout
-    assert "[ergänzt per --check-args]" in result.stdout
+    assert "[ergänzt per --preflight-args]" in result.stdout
 
 
-def test_review_without_check_args_still_fails_the_same_check(
+def test_review_without_preflight_args_still_fails_the_same_check(
     bd, tmp_path, monkeypatch
 ):
     _preflight_project(
@@ -597,7 +597,7 @@ def test_review_without_check_args_still_fails_the_same_check(
 @pytest.mark.parametrize(
     "value", ["tset=--skip", "tests", "tests=", "tests=-k 'offen"]
 )
-def test_review_invalid_check_args_exit_2_before_any_write(
+def test_review_invalid_preflight_args_exit_2_before_any_write(
     bd, tmp_path, monkeypatch, value
 ):
     _preflight_project(
@@ -606,11 +606,11 @@ def test_review_invalid_check_args_exit_2_before_any_write(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
-        ["step", "x-1", "--step", "review", "--check-args", value],
+        ["step", "x-1", "--step", "review", "--preflight-args", value],
     )
     assert result.exit_code == 2
     assert result.stdout == ""
-    assert result.stderr.startswith("Aufruf ungültig: --check-args")
+    assert result.stderr.startswith("Aufruf ungültig: --preflight-args")
     assert "Vorlauf:" not in result.stderr
     assert _preflight_artifacts(tmp_path) == []
 
@@ -623,7 +623,7 @@ def test_review_invalid_check_args_exit_2_before_any_write(
         ["--step", "review", "--review-of", "materialize"],
     ],
 )
-def test_check_args_outside_build_review_is_call_error(
+def test_preflight_args_outside_build_review_is_call_error(
     bd, tmp_path, monkeypatch, extra
 ):
     _preflight_project(
@@ -631,28 +631,30 @@ def test_check_args_outside_build_review_is_call_error(
     )
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, ["step", "x-1", *extra, "--check-args", "tests=-x"]
+        app, ["step", "x-1", *extra, "--preflight-args", "tests=-x"]
     )
     assert result.exit_code == 2
-    assert "--check-args gilt nur für den Vorlauf" in result.stderr
+    assert "gelten nur für den Vorlauf" in result.stderr
     assert bd.calls == []
     assert _preflight_artifacts(tmp_path) == []
 
 
-def test_check_args_with_map_form_is_call_error(tmp_path, monkeypatch):
+def test_preflight_args_with_map_form_is_call_error(
+    tmp_path, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
         [
             "step", "map", "--agent", "codex", "--session", "s",
-            "--check-args", "tests=-x",
+            "--preflight-args", "tests=-x",
         ],
     )
     assert result.exit_code == 2
-    assert "--check-args" in result.stderr
+    assert "--preflight-args" in result.stderr
 
 
-def test_repair_finding_names_config_and_check_args_way_out(
+def test_repair_finding_names_config_and_preflight_args_way_out(
     bd, tmp_path, monkeypatch
 ):
     _preflight_project(
@@ -669,15 +671,15 @@ def test_repair_finding_names_config_and_check_args_way_out(
         "Konfiguration: pyproject.toml [tool.ki-dev.handoff.preflight]"
         in result.stderr
     )
-    hint = "Einmalig ergänzen: --check-args tests=ARGS"
+    hint = "Einmalig ergänzen: --preflight-args tests=ARGS"
     assert hint in result.stderr
 
 
 def test_repair_finding_after_correction_failure_has_no_hint(
     bd, tmp_path, monkeypatch
 ):
-    """Eine fehlgeschlagene Korrektur lässt sich nicht per --check-args
-    umgehen; der Befund nennt nur die Konfiguration."""
+    """Eine fehlgeschlagene Korrektur lässt sich nicht per
+    --preflight-args umgehen; der Befund nennt nur die Konfiguration."""
     _preflight_project(
         tmp_path,
         corrections=f"[{_command('fmt', 'import sys; sys.exit(3)')}]",
@@ -688,6 +690,89 @@ def test_repair_finding_after_correction_failure_has_no_hint(
     assert result.exit_code == 1
     assert "Konfiguration: pyproject.toml" in result.stderr
     assert "Einmalig ergänzen" not in result.stderr
+
+
+def test_former_check_args_option_is_gone(bd, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["step", "x-1", "--step", "review", "--check-args", "tests=-x"],
+    )
+    assert result.exit_code == 2
+    assert bd.calls == []
+
+
+def test_review_preflight_skip_is_a_partial_run_without_pass(
+    bd, tmp_path, monkeypatch
+):
+    marker = tmp_path / "lint-gestartet"
+    lint = _command("lint", f"open({str(marker)!r}, 'w').close()")
+    _preflight_project(
+        tmp_path, checks=f"[{_command('tests', 'pass')}, {lint}]"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "step", "x-1", "--step", "review",
+            "--preflight-skip", "lint=nur Doku geändert",
+        ],
+    )
+    assert result.exit_code == 0, result.stderr
+    assert not marker.exists()
+    assert "- tests: PASS" in result.stdout
+    skipped = "- lint: SKIPPED ausgelassen per --preflight-skip: nur"
+    assert skipped in result.stdout
+    assert "TEILLAUF:" in result.stdout
+    assert "ist PASS ausgeschlossen" in result.stdout
+
+
+def test_full_review_run_keeps_pass_without_partial_note(
+    bd, tmp_path, monkeypatch
+):
+    _preflight_project(
+        tmp_path, checks=f"[{_command('tests', 'pass')}]"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    assert result.exit_code == 0, result.stderr
+    assert "TEILLAUF:" not in result.stdout
+    assert "PASS | CHANGES | NEEDS_DECISION" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (["--preflight-skip", "fmt=x"], "keine konfigurierte Prüfung"),
+        (["--preflight-skip", "lint="], "einzeilig, nichtleer"),
+        (
+            [
+                "--preflight-args", "tests=-x",
+                "--preflight-skip", "tests=x",
+            ],
+            "zugleich",
+        ),
+    ],
+)
+def test_invalid_preflight_skip_exit_2_before_any_command(
+    bd, tmp_path, monkeypatch, options, message
+):
+    _preflight_project(
+        tmp_path,
+        corrections=f"[{_command('fmt', 'pass')}]",
+        checks=(
+            f"[{_command('tests', 'pass')}, "
+            f"{_command('lint', 'pass')}]"
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["step", "x-1", "--step", "review", *options]
+    )
+    assert result.exit_code == 2
+    assert message in result.stderr
+    assert "Vorlauf:" not in result.stderr
+    assert _preflight_artifacts(tmp_path) == []
 
 
 # ---------------------------------------------------------------------

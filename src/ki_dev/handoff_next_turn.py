@@ -219,6 +219,9 @@ _REVIEW_RULES = (
 )
 
 _VERDICT = "Ausgabe: PASS | CHANGES | NEEDS_DECISION."
+_PARTIAL_VERDICT = (
+    "Ausgabe: CHANGES | NEEDS_DECISION (Teillauf, kein PASS)."
+)
 
 _HUMAN_NOTE = (
     "Empfänger, Befundkontext und Quellstand verantwortest du; "
@@ -258,7 +261,7 @@ def render_review_turn(
         f"Bead: {_one_line(issue.id)} - {_one_line(issue.title)}",
         "",
         f"Erneute Prüfung nach Korrekturen: {_RE_REVIEW_FOCUS[target]} "
-        f"{_REVIEW_RULES} {_VERDICT}",
+        f"{_REVIEW_RULES} {_verdict(report)}",
     ]
     if report is not None:
         lines += ["", *render_report_lines(report)]
@@ -266,6 +269,13 @@ def render_review_turn(
     lines += ["", _HUMAN_NOTE]
     lines += _flow_hint(f"{target.value}.review", issue)
     return "\n".join(lines) + "\n"
+
+
+def _verdict(report: PreflightReport | None) -> str:
+    """Ein Teillauf trägt keinen PASS (PARTIAL_RUN_NOTE im Bericht)."""
+    if report is not None and report.partial:
+        return _PARTIAL_VERDICT
+    return _VERDICT
 
 
 def render_repair_turn(

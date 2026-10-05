@@ -185,7 +185,7 @@ def test_artifact_failure_routes_to_builder_without_artifact_line(
     assert "Vollständig:" not in result.stdout
 
 
-def test_check_args_still_apply_with_next_turn(
+def test_preflight_args_still_apply_with_next_turn(
     bd, tmp_path, monkeypatch
 ):
     needs_skip = _command(
@@ -193,9 +193,13 @@ def test_check_args_still_apply_with_next_turn(
         "import sys; sys.exit(0 if sys.argv[1:] == ['--skip'] else 1)",
     )
     _project(tmp_path, monkeypatch, check=needs_skip)
-    result = runner.invoke(app, [*BASE, "--check-args", "tests=--skip"])
+    result = runner.invoke(
+        app, [*BASE, "--preflight-args", "tests=--skip"]
+    )
     assert result.exit_code == 0, result.stderr
-    assert "[ergänzt per --check-args]" in result.stdout
+    assert "[ergänzt per --preflight-args]" in result.stdout
+    assert "(Teillauf, kein PASS)" in result.stdout
+    assert "PASS | CHANGES" not in result.stdout
 
 
 @pytest.mark.parametrize("target", ["map", "graph", "materialize"])

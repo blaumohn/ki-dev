@@ -89,7 +89,7 @@ def test_local_carries_former_entry_texts_without_claim_or_close(
     [
         ["--step", "build"],
         ["--step", "review", "--review-of", "build"],
-        ["--step", "review", "--check-args", "tests=-k x"],
+        ["--step", "review", "--preflight-args", "tests=-k x"],
         ["--step", "review", "--next-turn"],
         ["--step", "review", "--next-turn", "--feedback-file", "-"],
         ["--agent", "codex"],

@@ -59,21 +59,24 @@ from ki_dev.handoff_next_turn import (
 from ki_dev.handoff_preflight import (
     CONFIG_FILE,
     CONFIG_TABLE,
-    CheckArgsError,
     PreflightConfig,
     PreflightConfigError,
     PreflightExecutionError,
     PreflightReport,
-    apply_check_args,
     artifact_line,
     format_command_result,
     load_preflight_config,
-    parse_check_args,
     render_review_handoff,
     report_name,
     run_preflight,
 )
 from ki_dev.handoff_source import HandoffSourceError
+from ki_dev.preflight_options import (
+    PreflightOptionError,
+    apply_preflight_options,
+    parse_preflight_args,
+    parse_preflight_skip,
+)
 
 MAP_WORD = "map"
 LOCAL_WORD = "local"
@@ -107,7 +110,8 @@ BEISPIELE
   ki-dev step projekt-42 --step materialize
   ki-dev step projekt-42 --step build > uebergabe.txt
   ki-dev step projekt-42 --step review
-  ki-dev step projekt-42 --step review --check-args 'tests=-k x'
+  ki-dev step projekt-42 --step review --preflight-args 'tests=-k x'
+  ki-dev step projekt-42 --step review --preflight-skip 'lint=nur Doku'
   ki-dev step projekt-42 --step review --review-of materialize
   ki-dev step projekt-42 --step review --next-turn
   ki-dev step projekt-42 --step review --next-turn --feedback-file -
@@ -118,8 +122,10 @@ REVIEW
   Standard: build. Führt vorab konfigurierte Korrekturen und Tests aus.
   Korrekturen können Dateien ändern. Konfiguration: pyproject.toml,
   tool.ki-dev.handoff.preflight.
-  --check-args NAME=ARGS hängt ARGS einmalig an die Prüfung NAME an
-  (wiederholbar, z. B. um einen unabhängigen Test abzuwählen).
+  --preflight-args NAME=ARGS hängt ARGS einmalig an die Prüfung NAME
+  an; --preflight-skip NAME=GRUND lässt sie begründet aus (beide
+  wiederholbar, auch mit --next-turn). Beides ergibt einen Teillauf:
+  Zwischenreview ja, PASS nein.
   --review-of map, graph oder materialize: nur lesen, ohne Vorlauf.
 
 NÄCHSTE NACHRICHT (--step review --next-turn)
@@ -193,13 +199,23 @@ def handoff(
             show_default=False,
         ),
     ] = None,
-    check_args: Annotated[
+    preflight_args: Annotated[
         list[str] | None,
         typer.Option(
-            "--check-args",
+            "--preflight-args",
             metavar="NAME=ARGS",
             help="ARGS an die Vorlauf-Prüfung NAME anhängen "
-            "(wiederholbar); nur mit --step review.",
+            "(wiederholbar; Teillauf); nur mit --step review.",
+            show_default=False,
+        ),
+    ] = None,
+    preflight_skip: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--preflight-skip",
+            metavar="NAME=GRUND",
+            help="Vorlauf-Prüfung NAME begründet auslassen "
+            "(wiederholbar; Teillauf); nur mit --step review.",
             show_default=False,
         ),
     ] = None,
@@ -241,12 +257,14 @@ def handoff(
         ),
     ] = None,
 ) -> None:
-    check_args = check_args or []
+    options = _PreflightValues(
+        preflight_args or [], preflight_skip or []
+    )
     if bead_id == LOCAL_WORD:
         _local_form(
             step,
             review_of,
-            check_args,
+            options,
             next_turn or feedback_file is not None,
             agent,
             session,
@@ -258,7 +276,7 @@ def handoff(
             bead_id,
             step,
             review_of,
-            check_args,
+            options,
             next_turn or feedback_file is not None,
             agent,
             session,
@@ -268,17 +286,37 @@ def handoff(
             bead_id,
             step,
             review_of,
-            check_args,
+            options,
             next_turn,
             feedback_file,
         )
+
+
+class _PreflightValues(NamedTuple):
+    """Rohangaben von --preflight-args/--preflight-skip."""
+
+    args: list[str]
+    skip: list[str]
+
+    def __bool__(self) -> bool:
+        return bool(self.args or self.skip)
+
+
+class _PreflightRequest(NamedTuple):
+    """Geprüfte Vorlauf-Optionen: Zusatzargumente und Auslassungen."""
+
+    extra: dict[str, tuple[str, ...]]
+    skip: dict[str, str]
+
+
+_NO_PREFLIGHT_OPTIONS = _PreflightRequest({}, {})
 
 
 def _bead_form(
     bead_id: str | None,
     step: Step | None,
     review_of: ReviewTarget | None,
-    check_args: list[str],
+    options: _PreflightValues,
     next_turn: bool,
     feedback_file: str | None,
 ) -> None:
@@ -289,7 +327,7 @@ def _bead_form(
             code=2,
         )
     extra = _review_options(
-        step, review_of, check_args, next_turn, feedback_file
+        step, review_of, options, next_turn, feedback_file
     )
     try:
         text, exit_code = _bead_output(
@@ -330,7 +368,7 @@ def _bead_output(
     bead_id: str,
     step: Step,
     review_of: ReviewTarget | None,
-    extra: dict[str, tuple[str, ...]],
+    extra: _PreflightRequest,
     next_turn: bool,
     feedback_file: str | None,
 ) -> tuple[str, int]:
@@ -360,15 +398,15 @@ def _bead_output(
 def _review_options(
     step: Step,
     review_of: ReviewTarget | None,
-    check_args: list[str],
+    options: _PreflightValues,
     next_turn: bool,
     feedback_file: str | None,
-) -> dict[str, tuple[str, ...]]:
-    """--review-of/--check-args/--next-turn/--feedback-file vor jedem
+) -> _PreflightRequest:
+    """--review-of/--preflight-*/--next-turn/--feedback-file vor jedem
     Lesen prüfen.
 
-    Gibt die zerlegten Zusatzargumente zurück; --check-args gilt nur
-    für den Vorlauf (Prüfgegenstand build).
+    Gibt die zerlegten Vorlauf-Optionen zurück; sie gelten nur für den
+    Vorlauf (Prüfgegenstand build).
     """
     if review_of is not None and step is not Step.REVIEW:
         _fail(
@@ -385,20 +423,23 @@ def _review_options(
             "--feedback-file ist nur zusammen mit --next-turn zulässig",
             code=2,
         )
-    if not check_args:
-        return {}
+    if not options:
+        return _NO_PREFLIGHT_OPTIONS
     if step is not Step.REVIEW or review_of not in (
         None,
         ReviewTarget.BUILD,
     ):
         _fail(
-            "--check-args gilt nur für den Vorlauf: --step review "
-            "(Prüfgegenstand build)",
+            "--preflight-args/--preflight-skip gelten nur für den "
+            "Vorlauf: --step review (Prüfgegenstand build)",
             code=2,
         )
     try:
-        return parse_check_args(check_args)
-    except CheckArgsError as exc:
+        return _PreflightRequest(
+            parse_preflight_args(options.args),
+            parse_preflight_skip(options.skip),
+        )
+    except PreflightOptionError as exc:
         _fail(f"Aufruf ungültig: {exc}", code=2)
 
 
@@ -440,7 +481,7 @@ def _guideline_documents() -> tuple[GuidelineDocument, ...]:
 def _review_handoff(
     issue: HandoffIssue,
     review_of: ReviewTarget | None,
-    extra: dict[str, tuple[str, ...]],
+    extra: _PreflightRequest,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
 ) -> str:
@@ -484,14 +525,14 @@ class _PreflightOutcome(NamedTuple):
 
 
 def _preflight_outcome(
-    extra: dict[str, tuple[str, ...]],
+    extra: _PreflightRequest,
 ) -> _PreflightOutcome:
     """Vorlauf für den Prüfgegenstand build; der Bead ist bereits
     validiert. Die Konfiguration wird vollständig geprüft, bevor der
     erste Korrekturbefehl läuft (kein Schreibeffekt vor dieser
     Prüfung)."""
     project_root = Path.cwd()
-    config = _with_check_args(
+    config = _with_preflight_options(
         load_preflight_config(project_root), extra
     )
     try:
@@ -507,7 +548,7 @@ def _preflight_outcome(
 def _next_turn_handoff(
     issue: HandoffIssue,
     review_of: ReviewTarget | None,
-    extra: dict[str, tuple[str, ...]],
+    extra: _PreflightRequest,
     feedback_file: str | None,
 ) -> tuple[str, int]:
     """Nächste Nachricht nach einer Korrektur und ihr Exitcode.
@@ -544,14 +585,16 @@ def _stdin_binary() -> BinaryIO:
     return sys.stdin.buffer
 
 
-def _with_check_args(
-    config: PreflightConfig, extra: dict[str, tuple[str, ...]]
+def _with_preflight_options(
+    config: PreflightConfig, request: _PreflightRequest
 ) -> PreflightConfig:
-    """Zusatzargumente anwenden; ein unbekannter Prüfname ist ein
-    Aufruffehler (Exit 2) vor dem ersten Befehl."""
+    """Vorlauf-Optionen anwenden; ein unbekannter Prüfname oder ein
+    Konflikt ist ein Aufruffehler (Exit 2) vor dem ersten Befehl."""
     try:
-        return apply_check_args(config, extra)
-    except CheckArgsError as exc:
+        return apply_preflight_options(
+            config, request.extra, request.skip
+        )
+    except PreflightOptionError as exc:
         _fail(f"Aufruf ungültig: {exc}", code=2)
 
 
@@ -593,7 +636,7 @@ def _repair_finding(
     argv müssen deshalb ebenfalls sichtbar bleiben, nicht nur die
     fehlgeschlagenen Befehle. Abschließend nennt der Befund den Ort der
     Konfiguration und, bei einer fehlgeschlagenen Prüfung, den
-    einmaligen Ausweg über --check-args.
+    einmaligen Ausweg über --preflight-args.
     """
     lines = [format_command_result(item) for item in report.commands]
     lines.append(artifact_line(report))
@@ -602,8 +645,8 @@ def _repair_finding(
     if failed_check is not None:
         hint = shlex.quote(f"{report_name(failed_check)}=ARGS")
         lines.append(
-            f"Einmalig ergänzen: --check-args {hint} (ARGS werden an "
-            "argv der Prüfung angehängt)"
+            f"Einmalig ergänzen: --preflight-args {hint} (ARGS werden "
+            "an argv der Prüfung angehängt; Teillauf ohne PASS)"
         )
     return (
         "Vorlauf ohne Review-Übergabe; bereits ausgeführte Befehle "
@@ -625,7 +668,7 @@ def _first_failed_check(
 def _local_form(
     step: Step | None,
     review_of: ReviewTarget | None,
-    check_args: list[str],
+    options: _PreflightValues,
     next_turn_option: bool,
     agent: str | None,
     session: str | None,
@@ -635,15 +678,15 @@ def _local_form(
     if (
         step is not None
         or review_of is not None
-        or check_args
+        or options
         or next_turn_option
         or agent is not None
         or session is not None
     ):
         _fail(
             "local lässt sich nicht mit --step/--review-of/"
-            "--check-args/--next-turn/--feedback-file/--agent/"
-            "--session mischen",
+            "--preflight-args/--preflight-skip/--next-turn/"
+            "--feedback-file/--agent/--session mischen",
             code=2,
         )
     limit = _base_limit()
@@ -659,7 +702,7 @@ def _map_form(
     bead_id: str | None,
     step: Step | None,
     review_of: ReviewTarget | None,
-    check_args: list[str],
+    options: _PreflightValues,
     next_turn_option: bool,
     agent: str | None,
     session: str | None,
@@ -674,12 +717,12 @@ def _map_form(
     if (
         step is not None
         or review_of is not None
-        or check_args
+        or options
         or next_turn_option
     ):
         _fail(
-            "--step/--review-of/--check-args/--next-turn/"
-            "--feedback-file lassen sich nicht mit map "
+            "--step/--review-of/--preflight-args/--preflight-skip/"
+            "--next-turn/--feedback-file lassen sich nicht mit map "
             "--agent/--session mischen",
             code=2,
         )
