@@ -239,8 +239,8 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 | Exit | Bedeutung |
 | --- | --- |
 | 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht; mit `--next-turn` die Review-Nachricht) |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--check-args` außerhalb des Vorlaufs oder ungültig, `--next-turn` ohne `--step review`, `--feedback-file` ohne `--next-turn`, leere oder zu lange Rückmeldung, ungültige `feedback_max_chars`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
-| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe; mit `--next-turn` stattdessen die Bau-Nachricht auf stdout), nicht lesbare Rückmeldung (Datei/stdin, kein UTF-8). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--check-args` außerhalb des Vorlaufs oder ungültig, `--next-turn` ohne `--step review`, `--feedback-file` ohne `--next-turn`, leere oder zu lange Rückmeldung, ungültige `feedback_max_chars` oder `base_max_chars`, zu lange Basisübergabe, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe; mit `--next-turn` stattdessen die Bau-Nachricht auf stdout), nicht lesbare Rückmeldung (Datei/stdin, kein UTF-8), nicht lesbare `pyproject.toml` (Basisgrenze). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
 Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen.
@@ -405,6 +405,49 @@ Betriebsverhalten anderer Features erhalten bleiben und dies tatsächlich
 Arbeit spart. Die vorhandenen Git-Helfer lesen Commit-Referenzen oder verlangen
 einen sauberen Arbeitsbaum; sie ersetzen keinen Vergleich uncommitteter
 Inhalte. Für diesen optionalen Schutz wird keine neue Infrastruktur gebaut.
+
+## Grenze der Basisübergabe
+
+Begrenzt wird nur die gerenderte Basis: Schritt/Reviewziel, Bead-ID und
+-Titel, gemeinsame und Rollentexte, Epic-Hinweise, Quellenreferenzen,
+Folgeschritthinweis und beim Sitzungsimport der Lesehinweis. Der gesonderte
+Leitlinienblock und der Prüfbericht des Vorlaufs zählen nicht mit und bleiben
+vollständig; die gesamte Ausgabe kann die Grenze daher überschreiten. Das ist
+keine Tokenzusage, keine Summe von Bead-Feldern und keine zweite Definition der
+Beads-Feldgrenzen.
+
+**Grenze:** `[tool.ki-dev.handoff] base_max_chars` in `pyproject.toml`, eine
+positive TOML-Ganzzahl (Standard 4000 bei fehlender Datei oder Angabe; dieses
+Projekt setzt sie ausdrücklich). Gezählt werden Unicode-Zeichen des
+tatsächlich ausgegebenen Basistexts einschließlich Leerzeichen,
+Zeilenumbrüchen und des abschließenden Zeilenumbruchs. Gleich der Grenze ist
+zulässig. `ki-dev config` zeigt den Ort.
+
+**Übergröße:** Exit 2, stdout leer, nie gekürzt. Die Diagnose (höchstens 1000
+Zeichen) nennt Ist und Grenze sowie die größten veränderlichen Anteile als
+Feld- bzw. Referenzindex (`title`, `epic_context[0]`, `source_refs[1]`,
+`Lesehinweis`) mit Zeichenzahl, nie deren Text; die vollständigen Quellen
+bleiben im Bead. Rollen- und Gemeinsamtexte zählen mit, stehen aber nicht in
+der Liste.
+
+**Ungültige Konfiguration:** boolesche, Fließkomma-, Text- und Listenwerte,
+Null und negative Zahlen, eine falsche Tabelle (`tool`, `ki-dev`,
+`handoff` ist keine Tabelle) und defektes TOML oder Nicht-UTF-8 sind Exit 2;
+eine nicht lesbare Datei ist Exit 1. Es gibt keinen stillen Ersatz.
+
+**Zeitpunkt:**
+
+- `BEAD_ID --step …`: Die Konfiguration wird vor jeder `bd`-Anfrage gelesen.
+  Bei `--step review` (Prüfgegenstand `build`) wird die Basis vor dem
+  Vorlauf geprüft, also vor allen Korrekturen; Leitlinien und Prüfbericht
+  kommen erst danach dazu.
+- `map --agent … --session …`: Die Konfiguration wird vor Quellenablage und
+  Beads-Anlage geprüft. Die endgültige Basis (mit Titel und Lesehinweis)
+  steht erst nach der Quellenanlage fest. Ist sie zu lang, gibt es weder
+  Übergabe noch Kürzung; Quelldatei und Quellen-Bead bleiben bestehen und
+  werden beim erneuten Aufruf wiederverwendet. Kein Rückbau.
+- `--next-turn` ist eine Folgenachricht und behält seinen Vertrag; die
+  Basisgrenze gilt dort nicht und wird nicht gelesen.
 
 ## Mitgelieferte Leitlinien
 

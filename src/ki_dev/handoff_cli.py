@@ -25,6 +25,7 @@ from ki_dev.handoff import (
     HandoffIssue,
     ReviewTarget,
     Step,
+    ensure_base_fits,
     render_handoff,
     validate_handoff,
 )
@@ -36,6 +37,12 @@ from ki_dev.handoff_guidelines import (
 from ki_dev.handoff_guidelines_source import (
     GuidelineSourceError,
     load_guidelines,
+)
+from ki_dev.handoff_limit import HandoffBaseTooLongError
+from ki_dev.handoff_limit_config import (
+    LimitConfigInvalidError,
+    LimitConfigReadError,
+    load_base_max_chars,
 )
 from ki_dev.handoff_map import map_handoff
 from ki_dev.handoff_next_turn import (
@@ -66,6 +73,10 @@ from ki_dev.handoff_preflight import (
 from ki_dev.handoff_source import HandoffSourceError
 
 MAP_WORD = "map"
+_MAP_KEPT_NOTE = (
+    "Quelle und Quellen-Bead bleiben bestehen und werden bei "
+    "erneutem Aufruf wiederverwendet."
+)
 
 HELP = """\
 Eine Arbeitsübergabe für eine neue Agentensitzung ausgeben.
@@ -111,6 +122,13 @@ NÄCHSTE NACHRICHT (--step review --next-turn)
   (UTF-8; - liest stdin; höchstens feedback_max_chars Zeichen, Standard
   600, in pyproject.toml, Abschnitt tool.ki-dev.handoff; nie gekürzt).
   Ohne die Option wird nichts gelesen.
+
+BASISGRENZE
+  Die gerenderte Basisübergabe (ohne Leitlinien und Prüfbericht) hat
+  höchstens base_max_chars Unicode-Zeichen (Standard 4000, in
+  pyproject.toml, Abschnitt tool.ki-dev.handoff). Zu lang: Exit 2, kein
+  stdout, nie gekürzt; bei map bleiben Quelle und Quellen-Bead erhalten.
+  Gilt nicht für --next-turn.
 
 LEITLINIEN
   Beide Formen hängen nach der Übergabe (und nach Lesehinweis bzw.
@@ -246,39 +264,70 @@ def _bead_form(
     extra = _review_options(
         step, review_of, check_args, next_turn, feedback_file
     )
-    exit_code = 0
     try:
-        issue = read_issue(bead_id, Path.cwd())
-        if step is Step.REVIEW and next_turn:
-            text, exit_code = _next_turn_handoff(
-                issue, review_of, extra, feedback_file
-            )
-        elif step is Step.REVIEW:
-            guidelines = _selected_guidelines(step, review_of)
-            text = _review_handoff(issue, review_of, extra, guidelines)
-        else:
-            guidelines = _selected_guidelines(step, None)
-            text = render_handoff(issue, step, guidelines=guidelines)
-    except InvalidBeadIdError as exc:
+        text, exit_code = _bead_output(
+            bead_id, step, review_of, extra, next_turn, feedback_file
+        )
+    except (
+        InvalidBeadIdError,
+        NextTurnInputError,
+        LimitConfigInvalidError,
+        HandoffBaseTooLongError,
+    ) as exc:
         _fail(str(exc), code=2)
     except HandoffInvalidError as exc:
-        fields = "\n".join(f"  {path}" for path in exc.problems)
-        _fail(
-            f"Bead {bead_id} ist für Schritt {step.value} formal "
-            f"unvollständig:\n{fields}",
-            code=2,
-        )
+        _fail_incomplete(bead_id, step, exc)
     except BeadsReadError as exc:
         _fail(f"Beads-Lesefehler: {exc}", code=1)
     except PreflightConfigError as exc:
         _fail(f"Vorlauf-Konfiguration ungültig: {exc}", code=2)
-    except NextTurnInputError as exc:
-        _fail(str(exc), code=2)
-    except FeedbackReadError as exc:
+    except (FeedbackReadError, LimitConfigReadError) as exc:
         _fail(str(exc), code=1)
     typer.echo(text, nl=False)
     if exit_code:
         raise typer.Exit(code=exit_code)
+
+
+def _fail_incomplete(
+    bead_id: str, step: Step, error: HandoffInvalidError
+) -> NoReturn:
+    fields = "\n".join(f"  {path}" for path in error.problems)
+    _fail(
+        f"Bead {bead_id} ist für Schritt {step.value} formal "
+        f"unvollständig:\n{fields}",
+        code=2,
+    )
+
+
+def _bead_output(
+    bead_id: str,
+    step: Step,
+    review_of: ReviewTarget | None,
+    extra: dict[str, tuple[str, ...]],
+    next_turn: bool,
+    feedback_file: str | None,
+) -> tuple[str, int]:
+    """Übergabetext und Exitcode. Die Basisgrenze gilt nicht für
+    ``--next-turn`` (Folgenachricht, eigener Vertrag); sonst wird sie
+    vor jedem Beads-Zugriff und Vorlauf gelesen."""
+    if step is Step.REVIEW and next_turn:
+        issue = read_issue(bead_id, Path.cwd())
+        return _next_turn_handoff(
+            issue, review_of, extra, feedback_file
+        )
+    limit = load_base_max_chars(Path.cwd())
+    issue = read_issue(bead_id, Path.cwd())
+    if step is Step.REVIEW:
+        guidelines = _selected_guidelines(step, review_of)
+        text = _review_handoff(
+            issue, review_of, extra, guidelines, limit
+        )
+        return text, 0
+    guidelines = _selected_guidelines(step, None)
+    text = render_handoff(
+        issue, step, guidelines=guidelines, base_max_chars=limit
+    )
+    return text, 0
 
 
 def _review_options(
@@ -326,6 +375,17 @@ def _review_options(
         _fail(f"Aufruf ungültig: {exc}", code=2)
 
 
+def _base_limit() -> int:
+    """Basisgrenze vor jeder Schreibwirkung lesen (Exit 2 ungültig,
+    Exit 1 nicht lesbar)."""
+    try:
+        return load_base_max_chars(Path.cwd())
+    except LimitConfigInvalidError as exc:
+        _fail(str(exc), code=2)
+    except LimitConfigReadError as exc:
+        _fail(str(exc), code=1)
+
+
 def _selected_guidelines(
     step: Step, review_of: ReviewTarget | None
 ) -> tuple[GuidelineSection, ...]:
@@ -353,6 +413,7 @@ def _review_handoff(
     review_of: ReviewTarget | None,
     extra: dict[str, tuple[str, ...]],
     guidelines: tuple[GuidelineSection, ...],
+    base_max_chars: int,
 ) -> str:
     """Übergabe für ``--step review``.
 
@@ -363,13 +424,22 @@ def _review_handoff(
     Prüf-/Ausführungsfehler bricht mit Exit 1 und einem kurzen
     Reparaturbefund ab, statt eine Übergabe zu liefern. Für
     map/graph/materialize ist das Review eine reine Quellenprüfung:
-    kein Vorlauf, keine pyproject.toml nötig, keine Prozessaufrufe.
+    kein Vorlauf, keine Vorlauf-Konfiguration, keine Prozessaufrufe.
+    Die Basisgrenze wird vor dem Vorlauf geprüft, denn Korrekturen
+    können Dateien ändern.
     """
     if review_of not in (None, ReviewTarget.BUILD):
-        return render_handoff(issue, Step.REVIEW, review_of, guidelines)
+        return render_handoff(
+            issue,
+            Step.REVIEW,
+            review_of,
+            guidelines,
+            base_max_chars=base_max_chars,
+        )
     problems = validate_handoff(issue, Step.REVIEW, review_of)
     if problems:
         raise HandoffInvalidError(problems)
+    ensure_base_fits(issue, Step.REVIEW, review_of, base_max_chars)
     outcome = _preflight_outcome(extra)
     if outcome.failure is not None:
         _fail(outcome.failure, code=1)
@@ -557,9 +627,20 @@ def _map_form(
         validate_session_request(agent, session)
     except TranscriptRequestError as exc:
         _fail(str(exc), code=2)
+    typer.echo(_map_text(agent, session), nl=False)
+
+
+def _map_text(agent: str, session: str) -> str:
+    """Sitzungsimport mit Konfigurations- und Leitlinienprüfung vor
+    jeder Schreibwirkung."""
+    limit = _base_limit()
     guidelines = _selected_guidelines(Step.MAP, None)
     try:
-        text = map_handoff(agent, session, Path.cwd(), guidelines)
+        text = map_handoff(
+            agent, session, Path.cwd(), guidelines, limit
+        )
+    except HandoffBaseTooLongError as exc:
+        _fail(exc.diagnosis(_MAP_KEPT_NOTE), code=2)
     except TranscriptError as exc:
         details = "\n".join(f"  {problem}" for problem in exc.problems)
         _fail(f"Sitzung nicht verwendbar:\n{details}", code=1)
@@ -575,7 +656,7 @@ def _map_form(
             + ", ".join(exc.problems),
             code=1,
         )
-    typer.echo(text, nl=False)
+    return text
 
 
 handoff.__doc__ = HELP

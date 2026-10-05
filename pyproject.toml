@@ -38,4 +38,19 @@ markers = [
 ]
 
 [tool.ki-dev.handoff]
+base_max_chars = 4000
 feedback_max_chars = 600
+
+[tool.ki-dev.handoff.preflight]
+corrections = []
+
+[[tool.ki-dev.handoff.preflight.checks]]
+name = "tests"
+argv = ["./.venv/bin/pytest"]
+timeout_s = 360
+
+[[tool.ki-dev.handoff.preflight.checks]]
+name = "lint"
+argv = ["./.venv/bin/ruff", "check", "."]
+timeout_s = 60
+

@@ -39,11 +39,14 @@ def map_handoff(
     session_id: str,
     workdir: Path,
     guidelines: tuple[GuidelineSection, ...],
+    base_max_chars: int,
 ) -> str:
     """Kurzer map-Auftrag; schreibt Quellen-Datei und -Bead.
 
-    ``guidelines`` sind bereits geladen und geprüft, damit Quellenfehler
-    vor jeder Schreibwirkung auffallen.
+    ``guidelines`` und ``base_max_chars`` sind bereits geladen und
+    geprüft, damit Quellenfehler vor jeder Schreibwirkung auffallen.
+    Die Basis (mit Lesehinweis) lässt sich erst nach der Quellenanlage
+    prüfen; bei Übergröße bleiben Quelle und Bead bestehen.
     """
     transcript = read_session_transcript(agent, session_id)
     relative = store_source(transcript, workdir).as_posix()
@@ -57,7 +60,12 @@ def map_handoff(
         raise HandoffSourceError(
             "Quellen-Bead verweist nicht auf das lokale Artefakt"
         )
-    base = f"{render_base_handoff(issue, Step.MAP)}\n{_READING_HINT}\n"
+    base = render_base_handoff(
+        issue,
+        Step.MAP,
+        reading_hint=_READING_HINT,
+        max_chars=base_max_chars,
+    )
     return base + render_guideline_block(guidelines)
 
 

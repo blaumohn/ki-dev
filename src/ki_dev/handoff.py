@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from jsonschema import Draft202012Validator
 
+from ki_dev.handoff_limit import check_base_length
+
 if TYPE_CHECKING:
     from ki_dev.handoff_guidelines import GuidelineSection
 
@@ -231,9 +233,13 @@ def render_handoff(
     step: Step,
     review_target: ReviewTarget | None = None,
     guidelines: Sequence[GuidelineSection] = (),
+    base_max_chars: int | None = None,
 ) -> str:
-    """Basisübergabe, danach der gesonderte Leitlinienblock."""
-    base = render_base_handoff(issue, step, review_target)
+    """Basisübergabe, danach der gesonderte Leitlinienblock; die Grenze
+    gilt nur für die Basis (``None``: ungeprüft)."""
+    base = render_base_handoff(
+        issue, step, review_target, max_chars=base_max_chars
+    )
     return base + render_guideline_block(guidelines)
 
 
@@ -241,12 +247,35 @@ def render_base_handoff(
     issue: HandoffIssue,
     step: Step,
     review_target: ReviewTarget | None = None,
+    *,
+    reading_hint: str | None = None,
+    max_chars: int | None = None,
 ) -> str:
     """Kopierbarer Klartext ohne Leitlinien; lehnt formal
-    unvollständige Beads ab."""
+    unvollständige Beads ab.
+
+    ``reading_hint`` (Sitzungsimport) gehört zur Basis. Mit
+    ``max_chars`` wird der gerenderte Text einschließlich Hinweis und
+    abschließendem Zeilenumbruch gezählt; Übergröße wird abgelehnt,
+    nie gekürzt.
+    """
     problems = validate_handoff(issue, step, review_target)
     if problems:
         raise HandoffInvalidError(problems)
+    text = "\n".join(_base_lines(issue, step, review_target)) + "\n"
+    if reading_hint is not None:
+        text += f"\n{reading_hint}\n"
+    if max_chars is not None:
+        fields = _variable_fields(
+            issue, step, review_target, reading_hint
+        )
+        check_base_length(text, max_chars, fields)
+    return text
+
+
+def _base_lines(
+    issue: HandoffIssue, step: Step, review_target: ReviewTarget | None
+) -> list[str]:
     lines = [f"Schritt: {step.value}"]
     if step is Step.REVIEW:
         effective_target = review_target or ReviewTarget.BUILD
@@ -276,7 +305,40 @@ def render_base_handoff(
         lines += ["", "Quellenreferenzen (unaufgelöst):"]
         lines += [f"- {_line(ref)}" for ref in issue.source_refs]
     lines += ["", _NEXT[step]]
-    return "\n".join(lines) + "\n"
+    return lines
+
+
+def ensure_base_fits(
+    issue: HandoffIssue,
+    step: Step,
+    review_target: ReviewTarget | None,
+    max_chars: int,
+) -> None:
+    """Basisgrenze prüfen, ohne den Text zu verwenden (vor einem
+    Vorlauf, der Dateien ändern kann)."""
+    render_base_handoff(issue, step, review_target, max_chars=max_chars)
+
+
+def _variable_fields(
+    issue: HandoffIssue,
+    step: Step,
+    review_target: ReviewTarget | None,
+    reading_hint: str | None,
+) -> list[tuple[str, int]]:
+    """Zeichenanteile der veränderlichen Basisteile, ohne Rohwerte."""
+    fields = [
+        ("id", len(_line(issue.id))),
+        ("title", len(_line(issue.title))),
+    ]
+    for index, (epic_id, context) in enumerate(issue.epic_context):
+        size = len(_line(epic_id)) + len(_line(context))
+        fields.append((f"epic_context[{index}]", size))
+    if _needs_refs(step, review_target):
+        for index, ref in enumerate(issue.source_refs):
+            fields.append((f"source_refs[{index}]", len(_line(ref))))
+    if reading_hint is not None:
+        fields.append(("Lesehinweis", len(reading_hint)))
+    return fields
 
 
 def render_guideline_block(
