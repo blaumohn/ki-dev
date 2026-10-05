@@ -120,6 +120,9 @@ def test_help_explains_steps_and_shows_examples(bd):
         "BEISPIELE",
         "ki-dev handoff projekt-42 --step build > uebergabe.txt",
         "--review-of materialize",
+        "--next-turn --feedback-file",
+        "höchstens feedback_max_chars Zeichen",
+        "tool.ki-dev.handoff;",
         "docs/handoff.de.md",
     ):
         assert text in result.output

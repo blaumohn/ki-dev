@@ -9,12 +9,18 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from ki_dev import handoff_preflight, loop_cli, tool_versions
+from ki_dev import (
+    handoff_next_turn,
+    handoff_preflight,
+    loop_cli,
+    tool_versions,
+)
 from ki_dev.config_sources import ConfigSource
 
 # Reihenfolge der Ausgabe; die Orte selbst definieren die Module.
 SOURCES = (
     handoff_preflight.CONFIG_SOURCE,
+    handoff_next_turn.CONFIG_SOURCE,
     loop_cli.CONFIG_SOURCE,
     tool_versions.CONFIG_SOURCE,
 )

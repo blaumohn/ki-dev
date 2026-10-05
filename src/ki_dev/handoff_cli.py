@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import shlex
+import sys
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, BinaryIO, NamedTuple, NoReturn
 
 import typer
 
@@ -28,6 +29,14 @@ from ki_dev.handoff import (
     validate_handoff,
 )
 from ki_dev.handoff_map import map_handoff
+from ki_dev.handoff_next_turn import (
+    FeedbackReadError,
+    NextTurnInputError,
+    load_feedback_max_chars,
+    read_feedback,
+    render_repair_turn,
+    render_review_turn,
+)
 from ki_dev.handoff_preflight import (
     CONFIG_FILE,
     CONFIG_TABLE,
@@ -73,6 +82,8 @@ BEISPIELE
   ki-dev handoff projekt-42 --step review
   ki-dev handoff projekt-42 --step review --check-args 'tests=-k x'
   ki-dev handoff projekt-42 --step review --review-of materialize
+  ki-dev handoff projekt-42 --step review --next-turn
+  ki-dev handoff projekt-42 --step review --next-turn --feedback-file -
   ki-dev handoff map --agent codex --session SESSION_ID
 
 REVIEW
@@ -82,6 +93,15 @@ REVIEW
   --check-args NAME=ARGS hängt ARGS einmalig an die Prüfung NAME an
   (wiederholbar, z. B. um einen unabhängigen Test abzuwählen).
   --review-of map, graph oder materialize: nur lesen, ohne Vorlauf.
+
+NÄCHSTE NACHRICHT (--step review --next-turn)
+  Nach einer Korrektur: Vorlauf (Ziel build) fehlgeschlagen -> Nachricht
+  an den Bau-Agenten (stdout, Exit 1); bestanden oder map/graph/
+  materialize -> erneute Review-Nachricht (Exit 0).
+  --feedback-file DATEI|- hängt eine Rückmeldung des Schreibagenten an
+  (UTF-8; - liest stdin; höchstens feedback_max_chars Zeichen, Standard
+  600, in pyproject.toml, Abschnitt tool.ki-dev.handoff; nie gekürzt).
+  Ohne die Option wird nichts gelesen.
 
 SITZUNGSIMPORT (map --agent codex --session SESSION_ID)
   Schreibt ein Transkript unter .local/handoff/ und legt einen
@@ -133,6 +153,25 @@ def handoff(
             show_default=False,
         ),
     ] = None,
+    next_turn: Annotated[
+        bool,
+        typer.Option(
+            "--next-turn",
+            help="Nächste Nachricht nach einer Korrektur (Bau-Agent "
+            "bei Vorlauffehler, sonst Reviewer); nur mit --step "
+            "review.",
+        ),
+    ] = False,
+    feedback_file: Annotated[
+        str | None,
+        typer.Option(
+            "--feedback-file",
+            metavar="DATEI|-",
+            help="Rückmeldung des Schreibagenten (UTF-8; - liest "
+            "stdin); nur mit --next-turn.",
+            show_default=False,
+        ),
+    ] = None,
     agent: Annotated[
         str | None,
         typer.Option(
@@ -154,9 +193,24 @@ def handoff(
 ) -> None:
     check_args = check_args or []
     if agent is not None or session is not None or bead_id == MAP_WORD:
-        _map_form(bead_id, step, review_of, check_args, agent, session)
+        _map_form(
+            bead_id,
+            step,
+            review_of,
+            check_args,
+            next_turn or feedback_file is not None,
+            agent,
+            session,
+        )
     else:
-        _bead_form(bead_id, step, review_of, check_args)
+        _bead_form(
+            bead_id,
+            step,
+            review_of,
+            check_args,
+            next_turn,
+            feedback_file,
+        )
 
 
 def _bead_form(
@@ -164,6 +218,8 @@ def _bead_form(
     step: Step | None,
     review_of: ReviewTarget | None,
     check_args: list[str],
+    next_turn: bool,
+    feedback_file: str | None,
 ) -> None:
     if bead_id is None or step is None:
         _fail(
@@ -171,10 +227,17 @@ def _bead_form(
             "--session SESSION_ID",
             code=2,
         )
-    extra = _review_options(step, review_of, check_args)
+    extra = _review_options(
+        step, review_of, check_args, next_turn, feedback_file
+    )
+    exit_code = 0
     try:
         issue = read_issue(bead_id, Path.cwd())
-        if step is Step.REVIEW:
+        if step is Step.REVIEW and next_turn:
+            text, exit_code = _next_turn_handoff(
+                issue, review_of, extra, feedback_file
+            )
+        elif step is Step.REVIEW:
             text = _review_handoff(issue, review_of, extra)
         else:
             text = render_handoff(issue, step)
@@ -191,15 +254,24 @@ def _bead_form(
         _fail(f"Beads-Lesefehler: {exc}", code=1)
     except PreflightConfigError as exc:
         _fail(f"Vorlauf-Konfiguration ungültig: {exc}", code=2)
+    except NextTurnInputError as exc:
+        _fail(str(exc), code=2)
+    except FeedbackReadError as exc:
+        _fail(str(exc), code=1)
     typer.echo(text, nl=False)
+    if exit_code:
+        raise typer.Exit(code=exit_code)
 
 
 def _review_options(
     step: Step,
     review_of: ReviewTarget | None,
     check_args: list[str],
+    next_turn: bool,
+    feedback_file: str | None,
 ) -> dict[str, tuple[str, ...]]:
-    """--review-of/--check-args vor jedem Lesen prüfen.
+    """--review-of/--check-args/--next-turn/--feedback-file vor jedem
+    Lesen prüfen.
 
     Gibt die zerlegten Zusatzargumente zurück; --check-args gilt nur
     für den Vorlauf (Prüfgegenstand build).
@@ -207,6 +279,16 @@ def _review_options(
     if review_of is not None and step is not Step.REVIEW:
         _fail(
             "--review-of ist nur zusammen mit --step review zulässig",
+            code=2,
+        )
+    if next_turn and step is not Step.REVIEW:
+        _fail(
+            "--next-turn ist nur zusammen mit --step review zulässig",
+            code=2,
+        )
+    if feedback_file is not None and not next_turn:
+        _fail(
+            "--feedback-file ist nur zusammen mit --next-turn zulässig",
             code=2,
         )
     if not check_args:
@@ -247,6 +329,27 @@ def _review_handoff(
     problems = validate_handoff(issue, Step.REVIEW, review_of)
     if problems:
         raise HandoffInvalidError(problems)
+    outcome = _preflight_outcome(extra)
+    if outcome.failure is not None:
+        _fail(outcome.failure, code=1)
+    return render_review_handoff(issue, outcome.report)
+
+
+class _PreflightOutcome(NamedTuple):
+    """``failure`` ist der Reparaturbefund; ``None`` heißt bestanden
+    (dann liegt ``report`` vor)."""
+
+    report: PreflightReport | None
+    failure: str | None
+
+
+def _preflight_outcome(
+    extra: dict[str, tuple[str, ...]],
+) -> _PreflightOutcome:
+    """Vorlauf für den Prüfgegenstand build; der Bead ist bereits
+    validiert. Die Konfiguration wird vollständig geprüft, bevor der
+    erste Korrekturbefehl läuft (kein Schreibeffekt vor dieser
+    Prüfung)."""
     project_root = Path.cwd()
     config = _with_check_args(
         load_preflight_config(project_root), extra
@@ -254,10 +357,51 @@ def _review_handoff(
     try:
         report = run_preflight(config, project_root, _progress)
     except PreflightExecutionError as exc:
-        _fail(_execution_error_finding(exc), code=1)
+        return _PreflightOutcome(None, _execution_error_finding(exc))
     if not report.valid:
-        _fail(_repair_finding(report, config), code=1)
-    return render_review_handoff(issue, report)
+        finding = _repair_finding(report, config)
+        return _PreflightOutcome(report, finding)
+    return _PreflightOutcome(report, None)
+
+
+def _next_turn_handoff(
+    issue: HandoffIssue,
+    review_of: ReviewTarget | None,
+    extra: dict[str, tuple[str, ...]],
+    feedback_file: str | None,
+) -> tuple[str, int]:
+    """Nächste Nachricht nach einer Korrektur und ihr Exitcode.
+
+    Alle Eingaben (Bead, Grenze, Rückmeldung) sind geprüft, bevor der
+    Vorlauf startet. Nur der Prüfgegenstand build läuft durch den
+    Vorlauf: Fehlschlag -> Bau-Agent (Exit 1, Nachricht auf stdout),
+    Erfolg -> Reviewer. map/graph/materialize gehen ohne Vorlauf zur
+    erneuten Review-Übergabe. Die Grenze wird für jedes Ziel gelesen
+    und geprüft (ungültiges TOML oder ein ungültiger Wert wird
+    abgelehnt); eine fehlende Vorlauf-Konfiguration bleibt für
+    map/graph/materialize erlaubt.
+    """
+    target = review_of or ReviewTarget.BUILD
+    problems = validate_handoff(issue, Step.REVIEW, target)
+    if problems:
+        raise HandoffInvalidError(problems)
+    limit = load_feedback_max_chars(Path.cwd())
+    feedback = None
+    if feedback_file is not None:
+        feedback = read_feedback(feedback_file, limit, _stdin_binary)
+    if target is not ReviewTarget.BUILD:
+        return render_review_turn(issue, target, None, feedback), 0
+    outcome = _preflight_outcome(extra)
+    if outcome.failure is not None:
+        return render_repair_turn(
+            issue, outcome.failure, limit, feedback
+        ), 1
+    text = render_review_turn(issue, target, outcome.report, feedback)
+    return text, 0
+
+
+def _stdin_binary() -> BinaryIO:
+    return sys.stdin.buffer
 
 
 def _with_check_args(
@@ -343,6 +487,7 @@ def _map_form(
     step: Step | None,
     review_of: ReviewTarget | None,
     check_args: list[str],
+    next_turn_option: bool,
     agent: str | None,
     session: str | None,
 ) -> None:
@@ -353,9 +498,15 @@ def _map_form(
             "Positionsargumenten mischen)",
             code=2,
         )
-    if step is not None or review_of is not None or check_args:
+    if (
+        step is not None
+        or review_of is not None
+        or check_args
+        or next_turn_option
+    ):
         _fail(
-            "--step/--review-of/--check-args lassen sich nicht mit map "
+            "--step/--review-of/--check-args/--next-turn/"
+            "--feedback-file lassen sich nicht mit map "
             "--agent/--session mischen",
             code=2,
         )

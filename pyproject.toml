@@ -35,3 +35,6 @@ testpaths = ["tests"]
 markers = [
   "docker: echter Docker-Lauf; braucht Daemon, Image ki-dev-agent:local und CLI-Anmeldungen",
 ]
+
+[tool.ki-dev.handoff]
+feedback_max_chars = 600

@@ -2,7 +2,12 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from ki_dev import handoff_preflight, loop_cli, tool_versions
+from ki_dev import (
+    handoff_next_turn,
+    handoff_preflight,
+    loop_cli,
+    tool_versions,
+)
 from ki_dev.cli import app
 from ki_dev.config_cli import SOURCES
 
@@ -42,6 +47,7 @@ def test_config_lists_every_source_from_module_constants(
     lines = _lines(tmp_path, monkeypatch)
     assert SOURCES == (
         handoff_preflight.CONFIG_SOURCE,
+        handoff_next_turn.CONFIG_SOURCE,
         loop_cli.CONFIG_SOURCE,
         tool_versions.CONFIG_SOURCE,
     )

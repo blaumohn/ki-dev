@@ -108,6 +108,58 @@ Option ist nur zusammen mit `--step review` zulässig; jede andere Kombination
 `bd`-Anfrage. Ohne `--review-of` bleibt `--step review` unverändert die
 bisherige Build-Review; `--review-of build` ist dazu gleichwertig.
 
+### `--next-turn`: nächste Nachricht nach einer Korrektur
+
+```bash
+ki-dev handoff projekt-42 --step review --next-turn
+ki-dev handoff projekt-42 --step review --next-turn --feedback-file rueckmeldung.txt
+ki-dev handoff projekt-42 --step review --next-turn --feedback-file - < rueckmeldung.txt
+```
+
+Nach einer Korrektur erzeugt `--next-turn` die nächste Nachricht, die du selbst
+übergibst; die erste Zeile nennt den Empfänger. Die Review-Nachricht ist eine
+kurze Folgenachricht in die bisherige, vom Autor getrennte Review-Sitzung
+(Reviewziel, Bead, Prüfauftrag, Bericht, Rückmeldung), keine zweite
+Rollenübergabe; eine frische Sitzung startest du mit `--step review` ohne
+`--next-turn`. Es gibt keinen eigenen
+`check`-Befehl, keine Sitzungs- oder Rundenzustände und keinen Agentenstart.
+
+| Prüfgegenstand | Ergebnis | Empfänger, stdout, Exit |
+| --- | --- | --- |
+| `build` (Standard) | Vorlauf fehlgeschlagen (Korrektur, Prüfung, Start, Timeout, Artefakt) | Bau-Agent: „Bitte die gemeldeten Fehler beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht …“, Befund wie beim Reparaturbefund (ohne Artefaktzeile, wenn kein Artefakt entstand), Grenze für die Rückmeldung; Exit 1 |
+| `build` | Vorlauf bestanden | bisherige, vom Schreibagenten getrennte Review-Sitzung: Korrekturen und betroffene Kriterien samt Regressionen fachlich erneut prüfen, `PASS \| CHANGES \| NEEDS_DECISION`, Prüfbericht beigefügt; grüne Tests sind kein Review-PASS; Exit 0 |
+| `map`, `graph`, `materialize` | ohne Code-Vorlauf | dieselbe Review-Sitzung: erneute, phasengerechte Prüfung; Exit 0 |
+
+Nur der Prüfgegenstand `build` braucht `tool.ki-dev.handoff.preflight`;
+`--check-args` gilt wie bisher nur dort. Der Fortschritt des Vorlaufs steht auf
+stderr, die Nachricht auf stdout (auch bei Exit 1). Ohne `--next-turn` bleibt
+alles unverändert, insbesondere ist stdout bei einem Vorlauffehler leer.
+
+`--next-turn` gilt nur mit `BEAD_ID` und `--step review`; `--feedback-file`
+nur zusammen mit `--next-turn` (sonst Exit 2 vor jeder `bd`-Anfrage).
+
+**Rückmeldung (`--feedback-file DATEI|-`):** Eine UTF-8-Datei oder, mit `-`,
+stdin; beide Wege sind gleichwertig. Ohne die Option wird nichts gelesen,
+auch nicht stdin. Der Text erscheint als unbestätigte Aussage des
+Schreibagenten (nicht geprüft, kein Beleg, Zeilen mit `| ` zitiert,
+Steuerzeichen entfernt) in beiden Nachrichten. Verlangt wird nur, was nicht aus
+Diff und Prüfergebnissen hervorgeht. `bd`-Notizen und -Kommentare werden weder
+gelesen noch beschrieben; es gibt keine dauerhafte Ablage.
+
+**Grenze:** `[tool.ki-dev.handoff] feedback_max_chars` in `pyproject.toml`, eine
+positive ganze Zahl (Standard 600 bei fehlender Angabe, auch ohne Datei; dieses
+Projekt setzt sie ausdrücklich). Gezählt werden Unicode-Zeichen einschließlich
+Leerzeichen und Zeilenumbrüchen (CRLF = 2); eingelesen werden höchstens Grenze
++ 1 Zeichen; Bytes dahinter werden weder gelesen noch dekodiert. Die
+Reparaturnachricht nennt die Grenze. Mit `--next-turn` wird sie für jedes Ziel
+geprüft: Ein vorhandener ungültiger Wert oder ungültiges TOML ist Exit 2, auch
+für `map`/`graph`/`materialize` ohne Rückmeldung; eine fehlende
+Vorlauf-Konfiguration bleibt dort erlaubt.
+
+Eingabefehler liefern keine Übergabe und starten keinen Vorlauf: leere oder
+nur aus Leerraum bestehende Rückmeldung und Überlänge (keine Kürzung) sind
+Exit 2; Lese- oder UTF-8-Fehler sind Exit 1, ohne Textinhalt in der Meldung.
+
 ### `--check-args`: Prüfbefehl einmalig ergänzen
 
 Scheitert der Vorlauf an einem unabhängigen Test, hängt `--check-args
@@ -186,9 +238,9 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 
 | Exit | Bedeutung |
 | --- | --- |
-| 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht) |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--check-args` außerhalb des Vorlaufs oder ungültig, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
-| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
+| 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht; mit `--next-turn` die Review-Nachricht) |
+| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--check-args` außerhalb des Vorlaufs oder ungültig, `--next-turn` ohne `--step review`, `--feedback-file` ohne `--next-turn`, leere oder zu lange Rückmeldung, ungültige `feedback_max_chars`, fehlendes `map`, anderer Anbieter als `codex`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `build`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe; mit `--next-turn` stattdessen die Bau-Nachricht auf stdout), nicht lesbare Rückmeldung (Datei/stdin, kein UTF-8). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
 Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
 Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen.

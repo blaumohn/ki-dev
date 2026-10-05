@@ -219,6 +219,19 @@ def _read_preflight_table(path: Path) -> object:
     Das ist reines Nachschlagen der Fundstelle, keine Validierung: Der
     Datenvertrag der gefundenen Tabelle steht im Schema.
     """
+    table: object = read_toml(path)
+    for key in _TABLE_KEYS:
+        if not isinstance(table, dict) or key not in table:
+            raise PreflightConfigError(
+                f"{CONFIG_TABLE} fehlt in {path}"
+            )
+        table = table[key]
+    return table
+
+
+def read_toml(path: Path) -> object:
+    """TOML-Datei lesen; Lese-, UTF-8- und Syntaxfehler als
+    ``PreflightConfigError``. Gemeinsam mit ``--next-turn``."""
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -230,18 +243,11 @@ def _read_preflight_table(path: Path) -> object:
             f"{path} ist nicht als UTF-8 lesbar: {exc}"
         ) from exc
     try:
-        table: object = tomllib.loads(raw)
+        return tomllib.loads(raw)
     except tomllib.TOMLDecodeError as exc:
         raise PreflightConfigError(
             f"{path} ist kein gültiges TOML: {exc}"
         ) from exc
-    for key in _TABLE_KEYS:
-        if not isinstance(table, dict) or key not in table:
-            raise PreflightConfigError(
-                f"{CONFIG_TABLE} fehlt in {path}"
-            )
-        table = table[key]
-    return table
 
 
 def _validate_structure(table: object) -> dict:
@@ -732,6 +738,13 @@ def render_review_handoff(
 ) -> str:
     """Reines Rendering: hängt den kompakten Vorlaufbericht an die
     Review-Übergabe (``handoff.render_handoff``) an."""
+    lines = render_report_lines(report)
+    return render_handoff(issue, Step.REVIEW) + "\n".join(lines) + "\n"
+
+
+def render_report_lines(report: PreflightReport) -> list[str]:
+    """Kompakter Vorlaufbericht (``PRUEFBERICHT …``) als Zeilen;
+    gemeinsam für Review-Übergabe und ``--next-turn``."""
     lines = [f"PRUEFBERICHT vorlauf-start={report.started_at}"]
     lines += [format_command_result(item) for item in report.commands]
     lines.append(artifact_line(report))
@@ -740,7 +753,7 @@ def render_review_handoff(
         "als Beweis eines unveränderten Quellstands; nach weiteren "
         "Änderungen den Vorlauf erneut starten."
     )
-    return render_handoff(issue, Step.REVIEW) + "\n".join(lines) + "\n"
+    return lines
 
 
 def artifact_line(report: PreflightReport) -> str:
