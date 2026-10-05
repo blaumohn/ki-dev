@@ -13,7 +13,7 @@ Bei Planung, Materialisierung, Umsetzung und Review gelten projektweit die
 und die [Technikleitlinie](technikleitlinie.de.md) (Werkzeugwahl für
 Validierung mit `jsonschema` und externe Prozesse mit Plumbum).
 
-Liefert eine `ki-dev handoff`-Übergabe Regeltexte mit, diese direkt
+Liefert eine `ki-dev step`-Übergabe Regeltexte mit, diese direkt
 anwenden, ohne die Quelldokumente erneut vollständig zu lesen. Die lokale
 Übergabe enthält nur die allgemeinen Abschnitte; die Phasenschwerpunkte
 (Architektur in Planung und Materialisierung, Programmierung in Umsetzung
@@ -48,7 +48,7 @@ Die lokale Übergabe braucht weder Bead noch Datenbankverbindung.
 
 ## Manueller Handoff
 
-Bei `ki-dev handoff` gehen die Rollenrechte aus Übergabe und diesem
+Bei `ki-dev step` gehen die Rollenrechte aus Übergabe und diesem
 Abschnitt einem Beads-Block vor (z. B. kein `--claim`/`close` für
 Umsetzer). Den Beads-Status (`--claim`, `close`) ändern nur Rollen, denen
 die Übergabe oder der Mensch das ausdrücklich zuweist.

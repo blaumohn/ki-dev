@@ -19,7 +19,7 @@ from tests.guideline_fixtures import write_guidelines
 
 runner = CliRunner()
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
-MAP = ["handoff", "map", "--agent", "codex", "--session", SID]
+MAP = ["step", "map", "--agent", "codex", "--session", SID]
 
 
 @pytest.fixture
@@ -211,7 +211,7 @@ def test_claude_session_is_mapped_through_the_same_path(
         [claude.human(SECRET), claude.human("Nachtrag"), claude.reply()]
     )
     claude.write_session(claude_root, claude.SESSION, rows)
-    args = ["handoff", "map", "--agent", "claude", "--session"]
+    args = ["step", "map", "--agent", "claude", "--session"]
     result = runner.invoke(app, [*args, claude.SESSION])
     assert result.exit_code == 0, result.stderr
     assert not leaked(result)
@@ -233,7 +233,7 @@ def test_claude_empty_sessions_dir_variable_is_a_clean_error(
     env, monkeypatch
 ):
     monkeypatch.setenv("KI_DEV_CLAUDE_SESSIONS_DIR", "")
-    args = ["handoff", "map", "--agent", "claude", "--session"]
+    args = ["step", "map", "--agent", "claude", "--session"]
     result = runner.invoke(app, [*args, claude.SESSION])
     _assert_clean_failure(
         result, env, "KI_DEV_CLAUDE_SESSIONS_DIR ist gesetzt, aber leer"
@@ -252,20 +252,20 @@ def test_truncated_json_fails_visibly(env):
 @pytest.mark.parametrize(
     "args",
     [
-        ["handoff", "map", "--agent", "codex"],
-        ["handoff", "map", "--session", SID],
-        ["handoff", "map", "--agent", "gemini", "--session", SID],
-        ["handoff", "map", "--agent", "", "--session", SID],
-        ["handoff", "map", "--agent", "codex", "--session", "../x"],
-        ["handoff", "map", "--agent", "codex", "--session", "a*"],
-        ["handoff", "map", "--agent", "codex", "--session", ""],
-        ["handoff", "--agent", "codex", "--session", SID],
-        ["handoff", "x-1", "--agent", "codex", "--session", SID],
-        ["handoff", "map", "x-1", "--agent", "codex", "--session", SID],
-        ["handoff", "--agent", "codex"],
-        ["handoff", "--session", SID],
+        ["step", "map", "--agent", "codex"],
+        ["step", "map", "--session", SID],
+        ["step", "map", "--agent", "gemini", "--session", SID],
+        ["step", "map", "--agent", "", "--session", SID],
+        ["step", "map", "--agent", "codex", "--session", "../x"],
+        ["step", "map", "--agent", "codex", "--session", "a*"],
+        ["step", "map", "--agent", "codex", "--session", ""],
+        ["step", "--agent", "codex", "--session", SID],
+        ["step", "x-1", "--agent", "codex", "--session", SID],
+        ["step", "map", "x-1", "--agent", "codex", "--session", SID],
+        ["step", "--agent", "codex"],
+        ["step", "--session", SID],
         [
-            "handoff",
+            "step",
             "--step",
             "map",
             "--agent",
@@ -274,7 +274,7 @@ def test_truncated_json_fails_visibly(env):
             SID,
         ],
         [
-            "handoff",
+            "step",
             "map",
             "--step",
             "map",
@@ -298,7 +298,7 @@ def test_exact_contract_call_without_extra_words_works(env):
     write_session(env.sessions, SID, dialog(1))
     result = runner.invoke(
         app,
-        ["handoff", "map", "--agent", "codex", "--session", SID],
+        ["step", "map", "--agent", "codex", "--session", SID],
     )
     assert result.exit_code == 0, result.stderr
 
@@ -383,20 +383,20 @@ def test_existing_bead_form_stays_read_only_and_compatible(env):
             }
         ]
     )
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "map"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "map"])
     assert result.exit_code == 0
     assert env.bd.commands() == ["show"]
     assert artifacts(env.work) == []
 
 
 def test_bead_form_without_step_still_exits_2(env):
-    result = runner.invoke(app, ["handoff", "x-1"])
+    result = runner.invoke(app, ["step", "x-1"])
     assert result.exit_code == 2
     assert env.bd.get()["calls"] == []
 
 
 def test_help_documents_both_forms_and_their_effects(env):
-    result = runner.invoke(app, ["handoff", "--help"])
+    result = runner.invoke(app, ["step", "--help"])
     assert result.exit_code == 0
     for text in (
         "--agent codex --session",

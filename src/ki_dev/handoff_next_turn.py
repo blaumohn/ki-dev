@@ -290,7 +290,7 @@ def render_repair_turn(
     lines += _feedback_lines(feedback)
     lines += [
         "",
-        "Hinweis für den Menschen: danach erneut `ki-dev handoff "
+        "Hinweis für den Menschen: danach erneut `ki-dev step "
         "BEAD_ID --step review --next-turn` ausführen (optional mit "
         "`--feedback-file DATEI|-`).",
     ]

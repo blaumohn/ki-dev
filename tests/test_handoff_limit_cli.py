@@ -62,7 +62,7 @@ def bd(monkeypatch, tmp_path_factory):
 
 
 def _handoff(*args: str):
-    return runner.invoke(app, ["handoff", "x-1", *args])
+    return runner.invoke(app, ["step", "x-1", *args])
 
 
 def _measured_base(project, *args: str) -> int:
@@ -317,7 +317,7 @@ def test_help_and_doc_explain_the_limit():
 # --- Sitzungsform ---------------------------------------------------
 
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
-MAP = ["handoff", "map", "--agent", "codex", "--session", SID]
+MAP = ["step", "map", "--agent", "codex", "--session", SID]
 
 
 @pytest.fixture

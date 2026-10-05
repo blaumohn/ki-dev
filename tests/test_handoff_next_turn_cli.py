@@ -1,4 +1,4 @@
-"""CLI-Tests für ``ki-dev handoff --step review --next-turn``.
+"""CLI-Tests für ``ki-dev step --step review --next-turn``.
 
 Alle Läufe mit Vorlauf (Ziel build) arbeiten in temporären Projekten;
 im Repo selbst liefe der Vorlauf rekursiv pytest.
@@ -17,7 +17,7 @@ from tests.test_handoff_cli import FULL, _command, _preflight_project
 
 runner = CliRunner()
 
-BASE = ["handoff", "x-1", "--step", "review", "--next-turn"]
+BASE = ["step", "x-1", "--step", "review", "--next-turn"]
 FAIL = "import sys; sys.exit(1)"
 READONLY_SHOW = ["bd", "--readonly", "show"]
 
@@ -258,7 +258,7 @@ def test_without_next_turn_failure_keeps_empty_stdout(
 ):
     _project(tmp_path, monkeypatch, check=_command("tests", FAIL))
     write_guidelines(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert result.stdout == ""
     assert "Vorlauf ohne Review-Übergabe" in result.stderr
@@ -272,12 +272,12 @@ def test_without_next_turn_failure_keeps_empty_stdout(
 @pytest.mark.parametrize(
     "args",
     [
-        ["handoff", "x-1", "--step", "build", "--next-turn"],
-        ["handoff", "x-1", "--step", "map", "--next-turn"],
-        ["handoff", "x-1", "--step", "review", "--feedback-file", "f"],
-        ["handoff", "x-1", "--step", "build", "--feedback-file", "f"],
+        ["step", "x-1", "--step", "build", "--next-turn"],
+        ["step", "x-1", "--step", "map", "--next-turn"],
+        ["step", "x-1", "--step", "review", "--feedback-file", "f"],
+        ["step", "x-1", "--step", "build", "--feedback-file", "f"],
         [
-            "handoff",
+            "step",
             "map",
             "--agent",
             "codex",
@@ -286,7 +286,7 @@ def test_without_next_turn_failure_keeps_empty_stdout(
             "--next-turn",
         ],
         [
-            "handoff",
+            "step",
             "map",
             "--agent",
             "codex",
@@ -295,7 +295,7 @@ def test_without_next_turn_failure_keeps_empty_stdout(
             "--feedback-file",
             "f",
         ],
-        ["handoff", "--next-turn", "--feedback-file", "f"],
+        ["step", "--next-turn", "--feedback-file", "f"],
     ],
 )
 def test_wrong_option_combination_exits_2_without_bd(bd, args):
@@ -359,7 +359,7 @@ def test_without_feedback_option_stdin_is_not_read(
     write_guidelines(tmp_path)
     for args in (
         [*BASE, "--review-of", "map"],
-        ["handoff", "x-1", "--step", "build"],
+        ["step", "x-1", "--step", "build"],
     ):
         result = runner.invoke(app, args, input=b"unbeachtet")
         assert result.exit_code == 0, result.exception

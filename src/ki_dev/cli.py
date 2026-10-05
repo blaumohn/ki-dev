@@ -35,7 +35,7 @@ loop_app = typer.Typer(
 )
 app.add_typer(loop_app, name="loop")
 app.add_typer(planning_app, name="planning")
-app.command("handoff")(handoff)
+app.command("step")(handoff)
 app.command("config")(config)
 
 

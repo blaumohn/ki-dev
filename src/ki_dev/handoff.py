@@ -1,4 +1,4 @@
-"""Reiner Kern für geprüfte Arbeitsübergaben (ki-dev handoff)."""
+"""Reiner Kern für geprüfte Arbeitsübergaben (ki-dev step)."""
 
 from __future__ import annotations
 
@@ -531,17 +531,17 @@ _REVIEW_ROLES = {
 
 _NEXT = {
     Step.MAP: "Hinweis für den Menschen: danach getrennte "
-    "Kartenprüfung mit `ki-dev handoff BEAD_ID --step review "
+    "Kartenprüfung mit `ki-dev step BEAD_ID --step review "
     "--review-of map` starten (BEAD_ID des erstellten Karten-Beads).",
     Step.GRAPH: "Hinweis für den Menschen: danach die angelegten "
-    "dünnen Vorgänge mit `ki-dev handoff BEAD_ID --step review "
+    "dünnen Vorgänge mit `ki-dev step BEAD_ID --step review "
     "--review-of graph` prüfen lassen (BEAD_ID je dünnem Vorgang); "
     "erst danach je Vorgang materialize starten.",
     Step.MATERIALIZE: "Hinweis für den Menschen: danach die "
-    "Ausführungsreife mit `ki-dev handoff BEAD_ID --step review "
+    "Ausführungsreife mit `ki-dev step BEAD_ID --step review "
     "--review-of materialize` getrennt prüfen lassen.",
     Step.BUILD: "Hinweis für den Menschen: danach eine getrennte "
-    "Review-Sitzung mit `ki-dev handoff BEAD_ID --step review` "
+    "Review-Sitzung mit `ki-dev step BEAD_ID --step review` "
     "starten.",
     Step.REVIEW: "Hinweis für den Menschen: Schließen und weitere "
     "Schritte entscheidest du selbst.",

@@ -262,7 +262,7 @@ Keine Schlüssel ins Image schreiben.
 - Claude lädt ausschließlich eine pro Aufruf erzeugte Settings-Datei (siehe
   „Container-Konfiguration“). Andere Benutzer-/Projekt-Settings und deren
   Sperr-Hooks bleiben deaktiviert. CLAUDE.md (im Repository leer; den
-  Einstiegskontext liefert `ki-dev handoff`) und Projektdaten bleiben
+  Einstiegskontext liefert `ki-dev step`) und Projektdaten bleiben
   verfügbar. Codex-Hooks sind abgeschaltet;
   die Host-Verzeichnisse `~/.codex/rules` und `~/.claude/rules` sowie
   `/workspace/.claude` werden mit leeren tmpfs überdeckt.

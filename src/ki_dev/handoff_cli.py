@@ -1,4 +1,4 @@
-"""Typer-Anbindung für ki-dev handoff."""
+"""Typer-Anbindung für ki-dev step."""
 
 from __future__ import annotations
 
@@ -86,12 +86,12 @@ HELP = """\
 Eine Arbeitsübergabe für eine neue Agentensitzung ausgeben.
 
 AUFRUFE
-  ki-dev handoff BEAD_ID --step STEP
+  ki-dev step BEAD_ID --step STEP
     Übergabe aus einem vorhandenen Bead erstellen.
-  ki-dev handoff map --agent codex --session SESSION_ID
+  ki-dev step map --agent codex --session SESSION_ID
     Codex- oder Claude-Sitzung als Quelle importieren und Kartierung
     vorbereiten.
-  ki-dev handoff local
+  ki-dev step local
     Allgemeine Übergabe für eine freie lokale Sitzung ohne Bead.
 
 SCHRITTE (--step)
@@ -102,17 +102,17 @@ SCHRITTE (--step)
   review       Ein Ergebnis in einer getrennten Sitzung prüfen.
 
 BEISPIELE
-  ki-dev handoff projekt-42 --step map
-  ki-dev handoff projekt-42 --step graph
-  ki-dev handoff projekt-42 --step materialize
-  ki-dev handoff projekt-42 --step build > uebergabe.txt
-  ki-dev handoff projekt-42 --step review
-  ki-dev handoff projekt-42 --step review --check-args 'tests=-k x'
-  ki-dev handoff projekt-42 --step review --review-of materialize
-  ki-dev handoff projekt-42 --step review --next-turn
-  ki-dev handoff projekt-42 --step review --next-turn --feedback-file -
-  ki-dev handoff map --agent codex --session SESSION_ID
-  ki-dev handoff local > uebergabe.txt
+  ki-dev step projekt-42 --step map
+  ki-dev step projekt-42 --step graph
+  ki-dev step projekt-42 --step materialize
+  ki-dev step projekt-42 --step build > uebergabe.txt
+  ki-dev step projekt-42 --step review
+  ki-dev step projekt-42 --step review --check-args 'tests=-k x'
+  ki-dev step projekt-42 --step review --review-of materialize
+  ki-dev step projekt-42 --step review --next-turn
+  ki-dev step projekt-42 --step review --next-turn --feedback-file -
+  ki-dev step map --agent codex --session SESSION_ID
+  ki-dev step local > uebergabe.txt
 
 REVIEW
   Standard: build. Führt vorab konfigurierte Korrekturen und Tests aus.
@@ -666,7 +666,7 @@ def _map_form(
 ) -> None:
     if bead_id != MAP_WORD:
         _fail(
-            "Sitzungsform: ki-dev handoff map --agent codex --session "
+            "Sitzungsform: ki-dev step map --agent codex --session "
             "SESSION_ID (nicht mit BEAD_ID oder anderen "
             "Positionsargumenten mischen)",
             code=2,

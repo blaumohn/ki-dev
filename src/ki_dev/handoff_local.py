@@ -27,7 +27,7 @@ _LOCAL_BASE = (
     "nur lesen. Lesebefehle und Rollenrechte stehen im Block unten.",
     "",
     "Hinweis für den Menschen: Für einen Beads-Auftrag stattdessen",
-    "`ki-dev handoff BEAD_ID --step STEP` verwenden.",
+    "`ki-dev step BEAD_ID --step STEP` verwenden.",
 )
 
 

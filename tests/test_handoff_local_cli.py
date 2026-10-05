@@ -1,4 +1,4 @@
-"""ki-dev handoff local: freie lokale Übergabe ohne Bead und ohne bd."""
+"""ki-dev step local: freie lokale Übergabe ohne Bead und ohne bd."""
 
 import shutil
 from pathlib import Path
@@ -14,7 +14,7 @@ from tests.guideline_fixtures import write_guidelines
 
 runner = CliRunner()
 REPO = Path(__file__).resolve().parents[1]
-LOCAL = ["handoff", "local"]
+LOCAL = ["step", "local"]
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def test_local_runs_without_bead_db_or_bd_on_path(offline):
     result = runner.invoke(app, LOCAL)
     assert result.exit_code == 0, result.stderr
     assert result.stdout.startswith("Schritt: local\n")
-    assert "ki-dev handoff BEAD_ID --step STEP" in result.stdout
+    assert "ki-dev step BEAD_ID --step STEP" in result.stdout
     assert result.stderr == ""
 
 

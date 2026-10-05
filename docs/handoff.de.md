@@ -1,4 +1,4 @@
-# Manuelle Arbeitsübergaben mit `ki-dev handoff`
+# Manuelle Arbeitsübergaben mit `ki-dev step`
 
 `handoff` ist ein experimentelles Übergangswerkzeug: intern scherzhaft
 „mensch-dev loop“. Es soll kurzfristig helfen, Aufträge, Abläufe und Prompts
@@ -13,7 +13,7 @@ Mensch. `handoff` garantiert keine Bindung an den Quellstand. Halte den
 Arbeitsstand während Vorlauf und Review passend; nach weiteren Änderungen
 starte den Vorlauf erneut.
 
-`ki-dev handoff BEAD_ID --step STEP` prüft einen Bead formal und gibt eine
+`ki-dev step BEAD_ID --step STEP` prüft einen Bead formal und gibt eine
 kurze, kopierbare Arbeitsübergabe aus. Du startest die passende Agentensitzung
 selbst und fügst den Text dort ein. Diese Form liest den Bead nur
 (`bd --readonly show BEAD_ID --json` im aktuellen Arbeitsverzeichnis, Frist
@@ -28,21 +28,21 @@ und dabei schreibt, steht [weiter unten](#sitzung-als-quelle-handoff-map).
 `--step` ist erforderlich; es gibt keine automatische Auswahl.
 
 ```bash
-ki-dev handoff projekt-42 --step map          # Rohnotizen kartieren
-ki-dev handoff projekt-42 --step graph        # dünne Vorgänge anlegen
-ki-dev handoff projekt-42 --step materialize  # einen Vorgang ausführungsreif machen
-ki-dev handoff projekt-42 --step build        # materialisierten Bead umsetzen
-ki-dev handoff projekt-42 --step review       # getrennt reviewen
+ki-dev step projekt-42 --step map          # Rohnotizen kartieren
+ki-dev step projekt-42 --step graph        # dünne Vorgänge anlegen
+ki-dev step projekt-42 --step materialize  # einen Vorgang ausführungsreif machen
+ki-dev step projekt-42 --step build        # materialisierten Bead umsetzen
+ki-dev step projekt-42 --step review       # getrennt reviewen
 ```
 
 Die Ausgabe ist unfarbiger Klartext ohne Zeilenumbruch nach Terminalbreite. Sie
-lässt sich umleiten (`ki-dev handoff … > uebergabe.txt`) oder aus dem Terminal
-kopieren. `ki-dev handoff --help` fasst das auf Deutsch zusammen.
+lässt sich umleiten (`ki-dev step … > uebergabe.txt`) oder aus dem Terminal
+kopieren. `ki-dev step --help` fasst das auf Deutsch zusammen.
 
 ## Freie lokale Sitzung (`handoff local`)
 
 ```bash
-ki-dev handoff local > uebergabe.txt
+ki-dev step local > uebergabe.txt
 ```
 
 Für Sitzungen ohne Auftrag aus Beads. Der Aufruf braucht weder Bead noch
@@ -98,7 +98,7 @@ verhindern eine unvollständige Übergabe (Exit 1). Eltern ohne Hinweis bleiben
 stumm; ihre Beschreibungen, Notizen und Kommentare werden nicht übernommen.
 
 Beispiel: `ki-dev-ablauf-zip` bündelt die Handoff-Vorgänge. Bei
-`ki-dev handoff ki-dev-ablauf-prx --step build` erscheint automatisch:
+`ki-dev step ki-dev-ablauf-prx --step build` erscheint automatisch:
 
 > Epic-Hinweis (ki-dev-ablauf-zip): Experimenteller „mensch-dev loop“ …
 
@@ -133,9 +133,9 @@ bisherige Build-Review; `--review-of build` ist dazu gleichwertig.
 ### `--next-turn`: nächste Nachricht nach einer Korrektur
 
 ```bash
-ki-dev handoff projekt-42 --step review --next-turn
-ki-dev handoff projekt-42 --step review --next-turn --feedback-file rueckmeldung.txt
-ki-dev handoff projekt-42 --step review --next-turn --feedback-file - < rueckmeldung.txt
+ki-dev step projekt-42 --step review --next-turn
+ki-dev step projekt-42 --step review --next-turn --feedback-file rueckmeldung.txt
+ki-dev step projekt-42 --step review --next-turn --feedback-file - < rueckmeldung.txt
 ```
 
 Nach einer Korrektur erzeugt `--next-turn` die nächste Nachricht, die du selbst
@@ -189,8 +189,8 @@ NAME=ARGS` die Argumente einmalig an die Prüfung `NAME` an, ohne
 `pyproject.toml` zu ändern:
 
 ```bash
-ki-dev handoff projekt-42 --step review --check-args 'tests=-k "not langsam"'
-ki-dev handoff projekt-42 --step review \
+ki-dev step projekt-42 --step review --check-args 'tests=-k "not langsam"'
+ki-dev step projekt-42 --step review \
   --check-args 'tests=--deselect tests/a.py::test_x --deselect tests/b.py::test_y'
 ```
 
@@ -231,7 +231,7 @@ Jede produktive Übergabe (`map`, `graph`, `materialize`, `build`) nennt am
 Ende den passenden Review-Aufruf, z. B. nach `materialize`:
 
 ```bash
-ki-dev handoff BEAD_ID --step review --review-of materialize
+ki-dev step BEAD_ID --step review --review-of materialize
 ```
 
 Alle vier Prüfgegenstände geben `PASS | CHANGES | NEEDS_DECISION` aus, nennen
@@ -292,8 +292,8 @@ Die „Hinweis für den Menschen“-Zeile am Ende jeder Übergabe nennt nur den
 ## Sitzung als Quelle (`handoff map`)
 
 ```bash
-ki-dev handoff map --agent codex --session SESSION_ID
-ki-dev handoff map --agent claude --session SESSION_ID
+ki-dev step map --agent codex --session SESSION_ID
+ki-dev step map --agent claude --session SESSION_ID
 ```
 
 Erschließt eine lokale Codex- oder Claude-Sitzung als Quelle für den Schritt
@@ -371,7 +371,7 @@ Prüfungen. Die Review-Sitzung selbst startet keine Formatter, Linter,
 Typprüfer oder Tests und keine Folgemodelle; sie liest Dateien, Diff,
 Anforderungen und den Prüfbericht und beurteilt anhand dessen auch Testqualität und Abdeckung.
 
-`ki-dev handoff BEAD_ID --step review` führt diesen Vorlauf jetzt selbst aus,
+`ki-dev step BEAD_ID --step review` führt diesen Vorlauf jetzt selbst aus,
 **bevor** die Übergabe entsteht — das erweitert den sonst rein lesenden
 Vertrag ausdrücklich für diesen einen Aufruf. Ablauf: konfigurierte
 Korrekturen seriell (Abbruch bei der ersten fehlgeschlagenen; restliche
@@ -542,7 +542,7 @@ Anker bleiben erhalten; eine Kopfzeile kennzeichnet die Seite als generiert).
 selbst erzeugt keine Dokumentationsdateien.
 
 **Arbeit ohne `handoff`.** `AGENTS.md` und `CLAUDE.md` sind leer. Sitzungen
-ohne Bead beginnen mit `ki-dev handoff local`; wer ganz ohne Übergabe arbeitet,
+ohne Bead beginnen mit `ki-dev step local`; wer ganz ohne Übergabe arbeitet,
 liest die erzeugten Seiten `docs/programmierleitlinie.de.md`,
 `docs/technikleitlinie.de.md` und `docs/arbeitsregeln.de.md`; deren Inhalt ist
 derselbe.

@@ -49,7 +49,7 @@ def bd(monkeypatch, tmp_path_factory):
 @pytest.mark.parametrize("step", NON_REVIEW_STEPS)
 def test_every_step_prints_plain_handoff(bd, step):
     result = runner.invoke(
-        app, ["handoff", "x-1", "--step", step.value]
+        app, ["step", "x-1", "--step", step.value]
     )
     assert result.exit_code == 0
     assert result.stdout.startswith(f"Schritt: {step.value}\n")
@@ -63,7 +63,7 @@ def test_every_step_prints_plain_handoff(bd, step):
 def test_same_input_gives_same_output(bd):
     # Nicht review: dessen Bericht trägt einen Zeitstempel, und ohne
     # eigenes Projekt liefe der Vorlauf dieses Repos (pytest) rekursiv.
-    args = ["handoff", "x-1", "--step", "build"]
+    args = ["step", "x-1", "--step", "build"]
     assert (
         runner.invoke(app, args).stdout
         == runner.invoke(app, args).stdout
@@ -77,7 +77,7 @@ def test_missing_bead_names_id_on_stderr(bd):
             {"error": "no issues found matching the provided IDs"}
         ),
     )
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "build"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "build"])
     assert result.exit_code == 1
     assert result.stdout == ""
     assert (
@@ -88,7 +88,7 @@ def test_missing_bead_names_id_on_stderr(bd):
 def test_long_lines_are_not_wrapped(bd):
     bd.state["stdout"] = json.dumps([FULL | {"title": "T" * 300}])
     result = runner.invoke(
-        app, ["handoff", "x-1", "--step", "build"], terminal_width=40
+        app, ["step", "x-1", "--step", "build"], terminal_width=40
     )
     assert f"Bead: x-1 - {'T' * 300}\n" in result.stdout
 
@@ -96,13 +96,13 @@ def test_long_lines_are_not_wrapped(bd):
 @pytest.mark.parametrize(
     "args",
     [
-        ["handoff"],
-        ["handoff", "x-1"],
-        ["handoff", "--step", "map"],
-        ["handoff", "x-1", "--step", "unbekannt"],
-        ["handoff", "x-1", "--step", ""],
-        ["handoff", "", "--step", "map"],
-        ["handoff", "-x", "--step", "map"],
+        ["step"],
+        ["step", "x-1"],
+        ["step", "--step", "map"],
+        ["step", "x-1", "--step", "unbekannt"],
+        ["step", "x-1", "--step", ""],
+        ["step", "", "--step", "map"],
+        ["step", "-x", "--step", "map"],
     ],
 )
 def test_incomplete_or_invalid_call_exits_2_without_bd(bd, args):
@@ -112,7 +112,7 @@ def test_incomplete_or_invalid_call_exits_2_without_bd(bd, args):
 
 
 def test_help_explains_steps_and_shows_examples(bd):
-    result = runner.invoke(app, ["handoff", "--help"])
+    result = runner.invoke(app, ["step", "--help"])
     assert result.exit_code == 0
     for text in (
         "BEAD_ID",
@@ -127,7 +127,7 @@ def test_help_explains_steps_and_shows_examples(bd):
         "Auftrag umsetzen",
         "getrennten Sitzung prüfen",
         "BEISPIELE",
-        "ki-dev handoff projekt-42 --step build > uebergabe.txt",
+        "ki-dev step projekt-42 --step build > uebergabe.txt",
         "--review-of materialize",
         "--next-turn --feedback-file",
         "höchstens feedback_max_chars Zeichen",
@@ -135,6 +135,21 @@ def test_help_explains_steps_and_shows_examples(bd):
         "docs/handoff.de.md",
     ):
         assert text in result.output
+    assert "ki-dev handoff" not in result.output
+    assert bd.calls == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["handoff", "x-1", "--step", "build"],
+        ["handoff", "map", "--agent", "codex", "--session", "s"],
+        ["handoff", "local"],
+    ],
+)
+def test_former_handoff_command_is_gone_without_alias(bd, args):
+    result = runner.invoke(app, args)
+    assert result.exit_code == 2
     assert bd.calls == []
 
 
@@ -142,7 +157,7 @@ def test_help_explains_steps_and_shows_examples(bd):
 def test_missing_source_refs_block_only_reference_steps(bd, step):
     bead = {k: v for k, v in FULL.items() if k != "metadata"}
     bd.state["stdout"] = json.dumps([bead])
-    result = runner.invoke(app, ["handoff", "x-1", "--step", step])
+    result = runner.invoke(app, ["step", "x-1", "--step", step])
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "metadata.handoff.source_refs" in result.stderr
@@ -153,7 +168,7 @@ def test_build_works_without_metadata(bd):
     bd.state["stdout"] = json.dumps([bead])
     assert (
         runner.invoke(
-            app, ["handoff", "x-1", "--step", "build"]
+            app, ["step", "x-1", "--step", "build"]
         ).exit_code
         == 0
     )
@@ -162,7 +177,7 @@ def test_build_works_without_metadata(bd):
 def test_missing_contract_fields_are_named_on_stderr(bd):
     bead = FULL | {"design": "", "acceptance_criteria": 5}
     bd.state["stdout"] = json.dumps([bead])
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "build"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "build"])
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "acceptance_criteria" in result.stderr
@@ -173,7 +188,7 @@ def test_markup_like_field_path_is_printed_literally(bd):
     bd.state["stdout"] = json.dumps(
         [FULL | {"metadata": {"handoff": {"source_refs": [3]}}}]
     )
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "map"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "map"])
     assert "metadata.handoff.source_refs[0]" in result.stderr
 
 
@@ -192,7 +207,7 @@ def test_adapter_errors_exit_1_without_raw_output(
 ):
     monkeypatch.setattr(beads_reader, "BD_TIMEOUT_S", 0.5)
     bd.state.update(change)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "map"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "map"])
     assert result.exit_code == 1
     assert result.stdout == ""
     assert "Beads-Lesefehler" in result.stderr
@@ -239,7 +254,7 @@ def test_review_preflight_success_runs_checks_and_appends_report(
         tmp_path, checks=f"[{_command('ok', 'print(1)')}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 0
     assert result.stdout.startswith("Schritt: review\n")
     assert "PRUEFBERICHT vorlauf-start=" in result.stdout
@@ -260,7 +275,7 @@ def test_review_preflight_check_failure_exits_1_without_handoff(
         tmp_path, checks=f"[{_command('fails', fail_code)}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert result.stdout == ""
     assert "Vorlauf ohne Review-Übergabe" in result.stderr
@@ -277,7 +292,7 @@ def test_review_preflight_repair_finding_names_artifact_file_once(
         checks=f"[{_command('fails', 'import sys; sys.exit(1)')}]",
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     (artifact,) = (tmp_path / ".local" / "handoff" / "preflight").glob(
         "*.json"
     )
@@ -299,7 +314,7 @@ def test_review_preflight_correction_failure_stops_before_checks(
         checks=f"[{_command('never-runs', 'raise SystemExit(1)')}]",
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert "bad-correction: FAIL" in result.stderr
     assert "never-runs: OMITTED" in result.stderr
@@ -317,7 +332,7 @@ def test_review_preflight_reports_passed_correction_after_check_fails(
         checks=(f"[{_command('fails', 'import sys; sys.exit(1)')}]"),
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert "good-correction: PASS" in result.stderr
     assert "fails: FAIL" in result.stderr
@@ -334,7 +349,7 @@ def test_review_preflight_repair_hint_covers_fail_not_only_pass(
         checks=f"[{_command('fails', 'import sys; sys.exit(1)')}]",
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert "PASS wie" in result.stderr
     assert "FAIL" in result.stderr
@@ -351,7 +366,7 @@ def test_review_preflight_without_git_repository_succeeds(
         f"checks = [{_command('ok', 'print(1)')}]\n"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 0
     assert "PRUEFBERICHT vorlauf-start=" in result.stdout
     assert result.stderr == "Vorlauf: ok läuft (Timeout 5 s) …\n"
@@ -370,7 +385,7 @@ def test_review_preflight_artifact_failure_without_traceback(
     blocker.parent.mkdir(parents=True, exist_ok=True)
     blocker.write_text("kein Verzeichnis")
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     # Ein kontrolliertes _fail() endet als SystemExit ueber typer.Exit;
     # ein unbehandelter OSError waere eine andere Exception-Klasse und
     # keine saubere Reparaturmeldung.
@@ -384,7 +399,7 @@ def test_review_without_preflight_config_exits_2(
     bd, tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "Vorlauf-Konfiguration ungültig" in result.stderr
@@ -393,10 +408,10 @@ def test_review_without_preflight_config_exits_2(
 @pytest.mark.parametrize(
     "args",
     [
-        ["handoff", "x-1", "--step", "build", "--review-of", "build"],
-        ["handoff", "x-1", "--review-of", "map"],
+        ["step", "x-1", "--step", "build", "--review-of", "build"],
+        ["step", "x-1", "--review-of", "map"],
         [
-            "handoff",
+            "step",
             "map",
             "--review-of",
             "build",
@@ -406,7 +421,7 @@ def test_review_without_preflight_config_exits_2(
             "s-1",
         ],
         [
-            "handoff",
+            "step",
             "x-1",
             "--step",
             "review",
@@ -431,7 +446,7 @@ def test_review_of_source_target_needs_only_refs(bd, target):
     bd.state["stdout"] = json.dumps([bead])
     result = runner.invoke(
         app,
-        ["handoff", "x-1", "--step", "review", "--review-of", target],
+        ["step", "x-1", "--step", "review", "--review-of", target],
     )
     assert result.exit_code == 0
     assert result.stdout.startswith("Schritt: review\n")
@@ -448,7 +463,7 @@ def test_review_of_source_target_runs_no_preflight_or_process(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
-        ["handoff", "x-1", "--step", "review", "--review-of", target],
+        ["step", "x-1", "--step", "review", "--review-of", target],
     )
     assert result.exit_code == 0
     assert "PRUEFBERICHT" not in result.stdout
@@ -471,7 +486,7 @@ def test_review_of_source_target_ignores_failing_preflight(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
-        ["handoff", "x-1", "--step", "review", "--review-of", target],
+        ["step", "x-1", "--step", "review", "--review-of", target],
     )
     assert result.exit_code == 0
     assert "PRUEFBERICHT" not in result.stdout
@@ -485,7 +500,7 @@ def test_review_of_materialize_needs_refs_and_contract(bd):
     result = runner.invoke(
         app,
         [
-            "handoff",
+            "step",
             "x-1",
             "--step",
             "review",
@@ -511,10 +526,10 @@ def test_review_of_build_matches_plain_review(
         "_utc_now",
         lambda: datetime(2026, 10, 3, 12, 0, tzinfo=UTC),
     )
-    plain = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    plain = runner.invoke(app, ["step", "x-1", "--step", "review"])
     explicit = runner.invoke(
         app,
-        ["handoff", "x-1", "--step", "review", "--review-of", "build"],
+        ["step", "x-1", "--step", "review", "--review-of", "build"],
     )
     assert plain.exit_code == explicit.exit_code == 0
     assert plain.stdout == explicit.stdout
@@ -529,7 +544,7 @@ def test_review_validates_bead_before_preflight_config(
         [{k: v for k, v in FULL.items() if k != "design"}]
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 2
     assert "design" in result.stderr
     assert "Vorlauf-Konfiguration" not in result.stderr
@@ -559,7 +574,7 @@ def test_review_check_args_are_appended_and_marked(
     result = runner.invoke(
         app,
         [
-            "handoff", "x-1", "--step", "review",
+            "step", "x-1", "--step", "review",
             "--check-args", "tests=--skip",
         ],
     )
@@ -575,7 +590,7 @@ def test_review_without_check_args_still_fails_the_same_check(
         tmp_path, checks=f"[{_command('tests', _NEEDS_SKIP)}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
 
 
@@ -591,7 +606,7 @@ def test_review_invalid_check_args_exit_2_before_any_write(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
-        ["handoff", "x-1", "--step", "review", "--check-args", value],
+        ["step", "x-1", "--step", "review", "--check-args", value],
     )
     assert result.exit_code == 2
     assert result.stdout == ""
@@ -616,7 +631,7 @@ def test_check_args_outside_build_review_is_call_error(
     )
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, ["handoff", "x-1", *extra, "--check-args", "tests=-x"]
+        app, ["step", "x-1", *extra, "--check-args", "tests=-x"]
     )
     assert result.exit_code == 2
     assert "--check-args gilt nur für den Vorlauf" in result.stderr
@@ -629,7 +644,7 @@ def test_check_args_with_map_form_is_call_error(tmp_path, monkeypatch):
     result = runner.invoke(
         app,
         [
-            "handoff", "map", "--agent", "codex", "--session", "s",
+            "step", "map", "--agent", "codex", "--session", "s",
             "--check-args", "tests=-x",
         ],
     )
@@ -648,7 +663,7 @@ def test_repair_finding_names_config_and_check_args_way_out(
         ),
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert (
         "Konfiguration: pyproject.toml [tool.ki-dev.handoff.preflight]"
@@ -669,7 +684,7 @@ def test_repair_finding_after_correction_failure_has_no_hint(
         checks=f"[{_command('tests', 'pass')}]",
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert "Konfiguration: pyproject.toml" in result.stderr
     assert "Einmalig ergänzen" not in result.stderr
@@ -687,7 +702,7 @@ def test_productive_step_appends_selected_guidelines(
 ):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, ["handoff", "x-1", "--step", "materialize"]
+        app, ["step", "x-1", "--step", "materialize"]
     )
     assert result.exit_code == 0, result.stderr
     base, block = result.stdout.split("\nLEITLINIEN (mitgeliefert", 1)
@@ -710,7 +725,7 @@ def test_source_review_appends_review_guidelines(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
-        ["handoff", "x-1", "--step", "review", "--review-of", "graph"],
+        ["step", "x-1", "--step", "review", "--review-of", "graph"],
     )
     assert result.exit_code == 0, result.stderr
     assert "- Q0:graph-task" in result.stdout
@@ -723,7 +738,7 @@ def test_build_review_appends_guidelines_after_report(
 ):
     _preflight_project(tmp_path, checks=_OK_CHECK)
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 0, result.stderr
     text = result.stdout
     assert text.index("PRUEFBERICHT") < text.index("LEITLINIEN")
@@ -737,7 +752,7 @@ def test_missing_guideline_source_blocks_preflight(
     _preflight_project(tmp_path, checks=_OK_CHECK)
     (tmp_path / "docs/policies/technikleitlinie.de.yaml").unlink()
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
     assert result.stdout == ""
     assert result.stderr == (
@@ -761,7 +776,7 @@ def test_invalid_guideline_source_exits_2_without_raw_text(
     source = tmp_path / "docs/policies/programmierleitlinie.de.yaml"
     source.write_text(content)
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["handoff", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 2
     assert result.stdout == ""
     assert result.stderr.startswith(
