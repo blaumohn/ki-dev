@@ -252,8 +252,8 @@ def test_agent_mode_allows_one_repo_with_deps(
     assert run_main(tmp_path, *args, *files) == code
     if agent:
         assert capsys.readouterr().err == (
-            "agent-container: Agent-Modus: höchstens ein Repo mit deps, "
-            "gewählt: lebens, keylita\n"
+            "agent-container: Agent-Modus: höchstens ein Repo mit "
+            "deps, gewählt: lebens, keylita\n"
         )
 
 
@@ -295,9 +295,9 @@ def fake_docker(tmp_path):
 def test_load_reads_compose_json(tmp_path, fake_docker):
     fake_docker('echo "$@" >&2; echo \'{"x-ki-dev": 7}\'')
     mount_file = tmp_path / "lebens.yaml"
-    assert agent_repo_contract.load_mount_file(mount_file, tmp_path) == {
-        "x-ki-dev": 7
-    }
+    assert agent_repo_contract.load_mount_file(
+        mount_file, tmp_path
+    ) == {"x-ki-dev": 7}
 
 
 @pytest.mark.parametrize(
@@ -308,10 +308,16 @@ def test_load_reads_compose_json(tmp_path, fake_docker):
             ContractError,
             "lebens.yaml: Compose kann die Datei nicht lesen (Exit 15)",
         ),
-        ("echo kaputt", ComposeError, "lebens.yaml: docker compose config "
-         "lieferte kein JSON"),
-        ("echo '[]'", ComposeError, "lebens.yaml: docker compose config "
-         "lieferte kein Objekt"),
+        (
+            "echo kaputt",
+            ComposeError,
+            "lebens.yaml: docker compose config lieferte kein JSON",
+        ),
+        (
+            "echo '[]'",
+            ComposeError,
+            "lebens.yaml: docker compose config lieferte kein Objekt",
+        ),
         (None, ComposeError, "docker nicht gefunden"),
     ],
 )
@@ -339,11 +345,16 @@ def test_load_passes_project_directory(tmp_path, fake_docker):
     ]
 
 
-@pytest.mark.parametrize(("code", "error"), [(2, ContractError), (1, ComposeError)])
+@pytest.mark.parametrize(
+    ("code", "error"), [(2, ContractError), (1, ComposeError)]
+)
 def test_cli_exit_codes(tmp_path, monkeypatch, capsys, code, error):
     def fail(mount_file, project_directory):
         raise error("lebens.yaml: kaputt")
 
     monkeypatch.setattr(agent_repo_contract, "load_mount_file", fail)
     assert run_main(tmp_path, "lebens.yaml") == code
-    assert capsys.readouterr().err == "agent-container: lebens.yaml: kaputt\n"
+    assert (
+        capsys.readouterr().err
+        == "agent-container: lebens.yaml: kaputt\n"
+    )

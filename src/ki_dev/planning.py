@@ -41,7 +41,8 @@ def resolve(
     store: Path, *, at: int | None = None,
     root: Path | None = None,
 ) -> dict:
-    """Replay a contiguous, hash-bound history; optionally verify sources."""
+    """Replay a contiguous, hash-bound history; optionally verify
+    sources."""
     state: dict = {
         "step": 0, "head": None, "types": {},
         "nodes": {}, "edges": {}, "retired": [],
@@ -63,7 +64,8 @@ def resolve(
 
 
 def append(store: Path, candidate: Path, root: Path) -> dict:
-    """Validate before exclusively creating the next immutable step file."""
+    """Validate before exclusively creating the next immutable step
+    file."""
     delta = read_json(candidate)
     state = apply_delta(resolve(store, root=root), delta, root=root)
     store.mkdir(parents=True, exist_ok=True)
@@ -79,7 +81,8 @@ def append(store: Path, candidate: Path, root: Path) -> dict:
 def apply_delta(
     previous: dict, delta: dict, *, root: Path | None = None,
 ) -> dict:
-    """Validate a complete transaction without mutating its input state."""
+    """Validate a complete transaction without mutating its input
+    state."""
     _validate(DELTA_SCHEMA, delta)
     if delta["step"] != previous["step"] + 1:
         raise PlanningError("step must follow the current head")
@@ -115,7 +118,9 @@ def source_ref(root: Path, path: str, start: int, end: int) -> dict:
     raw = source.read_bytes()
     count = len(raw.decode("utf-8").splitlines())
     if not 1 <= start <= end <= count:
-        raise PlanningError(f"invalid line range for {path}: {start}:{end}")
+        raise PlanningError(
+            f"invalid line range for {path}: {start}:{end}"
+        )
     return {
         "path": path, "sha256": hashlib.sha256(raw).hexdigest(),
         "start": start, "end": end,
@@ -125,7 +130,9 @@ def source_ref(root: Path, path: str, start: int, end: int) -> dict:
 def render(state: dict) -> str:
     """A stable human-readable view; no semantic rewriting."""
     lines = [f"# Planungsstand {state['step']}", ""]
-    for node in sorted(state["nodes"].values(), key=lambda obj: obj["id"]):
+    for node in sorted(
+        state["nodes"].values(), key=lambda obj: obj["id"]
+    ):
         lines.extend([
             f"## {node['id']}", "",
             f"Typ: `{node['type']}` · Ort: `{node['location']}` · "
@@ -139,11 +146,15 @@ def render(state: dict) -> str:
             )
         lines.append("")
     lines.extend(["## Beziehungen", ""])
-    for edge in sorted(state["edges"].values(), key=lambda obj: obj["id"]):
+    for edge in sorted(
+        state["edges"].values(), key=lambda obj: obj["id"]
+    ):
         lines.append(
             f"- {edge['id']}: {edge['source']} → {edge['target']} "
             f"({edge['type']}); "
-            + json.dumps(edge["data"], ensure_ascii=False, sort_keys=True)
+            + json.dumps(
+                edge["data"], ensure_ascii=False, sort_keys=True
+            )
         )
     return "\n".join(lines) + "\n"
 
@@ -171,7 +182,9 @@ def _apply_operation(state, collection, kind, operation, root):
         raise PlanningError(f"retired identity cannot be reused: {key}")
     definition = state["types"].get(operation["type"])
     if definition is None or definition["kind"] != kind:
-        raise PlanningError(f"unknown or wrong type: {operation['type']}")
+        raise PlanningError(
+            f"unknown or wrong type: {operation['type']}"
+        )
     _validate(definition["schema"], operation["data"])
     has_endpoints = "source" in operation or "target" in operation
     if kind == "node" and has_endpoints:
@@ -206,8 +219,10 @@ def _check_schema(schema):
         raise PlanningError(exc.message) from exc
     if isinstance(schema, dict):
         for key, value in schema.items():
-            if key in ("$ref", "$dynamicRef") and not value.startswith("#"):
-                raise PlanningError("only local schema references allowed")
+            if key in _REF_KEYS and not value.startswith("#"):
+                raise PlanningError(
+                    "only local schema references allowed"
+                )
             if isinstance(value, (dict, list)):
                 _check_local_refs(value)
 
@@ -215,8 +230,10 @@ def _check_schema(schema):
 def _check_local_refs(value):
     if isinstance(value, dict):
         for key, item in value.items():
-            if key in ("$ref", "$dynamicRef") and not item.startswith("#"):
-                raise PlanningError("only local schema references allowed")
+            if key in _REF_KEYS and not item.startswith("#"):
+                raise PlanningError(
+                    "only local schema references allowed"
+                )
             _check_local_refs(item)
     elif isinstance(value, list):
         for item in value:
@@ -225,7 +242,9 @@ def _check_local_refs(value):
 
 def _source_path(root, path):
     candidate = (root / path).resolve()
-    if Path(path).is_absolute() or not candidate.is_relative_to(root.resolve()):
+    if Path(path).is_absolute() or not candidate.is_relative_to(
+        root.resolve()
+    ):
         raise PlanningError(f"source outside repository: {path}")
     return candidate
 
@@ -251,6 +270,7 @@ def _object(properties, required=None):
     }
 
 
+_REF_KEYS = ("$ref", "$dynamicRef")
 _ID = {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.@/-]*$"}
 _HASH = {"type": "string", "pattern": "^[a-f0-9]{64}$"}
 _NULL_HASH = {"anyOf": [_HASH, {"type": "null"}]}

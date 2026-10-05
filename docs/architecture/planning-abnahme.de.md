@@ -16,9 +16,9 @@ Quelle der Abnahmefälle: `tests/test_planning.py`.
 | --- | --- | --- |
 | PB-1 (bedingte Rücknahme/Widerspruch) | `test_pb1_bedingte_ruecknahme_erhaelt_beide_anteile` | beide bedingten Anteile bleiben als getrennte Knoten erhalten |
 | PB-2 (Verwerfen/Ersetzen) | `test_pb2_ersetzung_verknuepft_statt_zu_loeschen` | alter Knoten bleibt, `ersetzt_durch`-Kante verknüpft statt zu löschen |
-| PB-3 (bereichsübergreifende Dublette) | `test_pb3_bereichsuebergreifende_dublette_ist_ohne_ortsbindung_verknuepfbar` | Kante zwischen Knoten an entfernten Orten ist ohne Ortsbindung darstellbar |
+| PB-3 (bereichsübergreifende Dublette) | `test_pb3_dublette_ist_ohne_ortsbindung_verknuepfbar` | Kante zwischen Knoten an entfernten Orten ist ohne Ortsbindung darstellbar |
 | PB-4 (LangGraph-Fall L: Empfehlung → Entscheidung → Zurückstellungsvorschlag) | `test_pb4_langgraph_fall_l_haelt_drei_modalitaeten_nebeneinander` | alle drei Modalitäten bleiben als getrennte Knoten bestehen; Vorschlag überschreibt Entscheidung nicht |
-| PB-5 (Rücknahme, KONSTRUIERT) | `test_pb5_konstruierte_ruecknahme_ist_neue_kante_auf_bestehende_entscheidung` | widerrufene Entscheidung bleibt erhalten, `hebt_auf`-Kante zeigt Rücknahme an |
+| PB-5 (Rücknahme, KONSTRUIERT) | `test_pb5_ruecknahme_ist_neue_kante_auf_bestehende_entscheidung` | widerrufene Entscheidung bleibt erhalten, `hebt_auf`-Kante zeigt Rücknahme an |
 | PB-6 (Raumumbau) | `test_pb6_raumumbau_ist_neue_revision_nicht_neue_identitaet` | Ortswechsel ist neue Revision derselben Kennung |
 
 PB-3 und PB-5 verwenden aus Testzwecken echte, strukturell gültige

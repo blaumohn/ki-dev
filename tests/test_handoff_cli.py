@@ -80,7 +80,9 @@ def test_missing_bead_names_id_on_stderr(bd):
     result = runner.invoke(app, ["handoff", "x-1", "--step", "build"])
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert result.stderr == "Beads-Lesefehler: Bead x-1 nicht gefunden\n"
+    assert (
+        result.stderr == "Beads-Lesefehler: Bead x-1 nicht gefunden\n"
+    )
 
 
 def test_long_lines_are_not_wrapped(bd):

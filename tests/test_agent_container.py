@@ -474,7 +474,9 @@ def lebens_with_npm(sandbox):
         (["--fresh"], "compose.fresh.yaml", "tmpfs"),
     ],
 )
-def test_mode_selects_compose_files(sandbox, options, mode_file, node_modules):
+def test_mode_selects_compose_files(
+    sandbox, options, mode_file, node_modules
+):
     lebens_with_npm(sandbox)
     sandbox.run(*options, "-m", "lebens", "run", "true")
     args = sandbox.logged("args")
@@ -624,9 +626,13 @@ def test_beads_path_extends_image_path():
     ]
 
 
-@pytest.mark.parametrize("args", [[], ["shell"], ["shell", "-lc", "pwd"]])
+@pytest.mark.parametrize(
+    "args", [[], ["shell"], ["shell", "-lc", "pwd"]]
+)
 def test_fresh_shell_is_default(sandbox, args):
     sandbox.run("--fresh", *args)
     logged = sandbox.logged("args")
-    assert str(sandbox.repo / "compose.fresh.yaml") in compose_files(logged)
+    assert str(sandbox.repo / "compose.fresh.yaml") in compose_files(
+        logged
+    )
     assert logged[logged.index("agent") + 1] == "bash"

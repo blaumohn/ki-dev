@@ -1,4 +1,5 @@
-"""Kontrollierte, wiederholbare Git-Finalisierung nach einem Review-PASS."""
+"""Kontrollierte, wiederholbare Git-Finalisierung nach einem
+Review-PASS."""
 
 from __future__ import annotations
 
@@ -44,11 +45,13 @@ class Finalizer(Protocol):
 
 @dataclass(frozen=True)
 class RepositoryFinalizer:
-    """Finalisiert einen isolierten Git-Arbeitszweig in einen Ziel-Worktree.
+    """Finalisiert einen isolierten Git-Arbeitszweig in einen
+    Ziel-Worktree.
 
-    Der kleine Schnitt unterstuetzt absichtlich nur dateibasierte Ergebnisse.
-    Ein Git-Worktree isoliert die von Beads verwendete Dolt-Datenbank nicht;
-    deshalb darf sich deren Referenz waehrend des Laufs nicht geaendert haben.
+    Der kleine Schnitt unterstuetzt absichtlich nur dateibasierte
+    Ergebnisse. Ein Git-Worktree isoliert die von Beads verwendete
+    Dolt-Datenbank nicht; deshalb darf sich deren Referenz waehrend des
+    Laufs nicht geaendert haben.
     """
 
     target_workdir: Path
@@ -59,9 +62,9 @@ class RepositoryFinalizer:
     def __post_init__(self) -> None:
         if self.data_mode != "file_proposal":
             raise ValueError(
-                "nur data_mode='file_proposal' wird unterstuetzt; direkte "
-                "Beads-/Dolt-Schreibauftraege brauchen einen isolierten, "
-                "versionierten DB-Arbeitsstand"
+                "nur data_mode='file_proposal' wird unterstuetzt; "
+                "direkte Beads-/Dolt-Schreibauftraege brauchen einen "
+                "isolierten, versionierten DB-Arbeitsstand"
             )
         if not self.target_ref.startswith("refs/heads/"):
             raise ValueError("target_ref muss mit refs/heads/ beginnen")
@@ -82,9 +85,9 @@ class RepositoryFinalizer:
         reviewed_beads = _ref_value(reviewed_refs, "beads")
         if base_beads != reviewed_beads:
             raise FinalizationFailure(
-                "direkte Beads-/Dolt-Aenderungen werden in diesem Schnitt "
-                "nicht uebernommen; einen dateibasierten Aenderungsvorschlag "
-                "erzeugen"
+                "direkte Beads-/Dolt-Aenderungen werden in diesem "
+                "Schnitt nicht uebernommen; einen dateibasierten "
+                "Aenderungsvorschlag erzeugen"
             )
         _require_equal(
             _capture_beads_value(source),
@@ -97,7 +100,13 @@ class RepositoryFinalizer:
             reviewed_git,
             "HEAD ist nicht mehr der vom Reviewer gepruefte Commit",
         )
-        _git(source, "merge-base", "--is-ancestor", base_git, reviewed_git)
+        _git(
+            source,
+            "merge-base",
+            "--is-ancestor",
+            base_git,
+            reviewed_git,
+        )
         reviewed_tree = _git(
             source, "rev-parse", f"{reviewed_git}^{{tree}}"
         )
@@ -216,7 +225,8 @@ class RepositoryFinalizer:
 
 @dataclass
 class StaticFinalizer:
-    """Deterministischer Finalizer fuer Laufzeittests ohne Git-Wirkung."""
+    """Deterministischer Finalizer fuer Laufzeittests ohne
+    Git-Wirkung."""
 
     fail_verify: bool = False
     fail_integrate: bool = False
@@ -244,7 +254,10 @@ class StaticFinalizer:
         final: dict[str, object],
     ) -> dict[str, object]:
         del frozen, final
-        return {"ok": not self.fail_integrate, "detail": "fake integrate"}
+        return {
+            "ok": not self.fail_integrate,
+            "detail": "fake integrate",
+        }
 
 
 def _ref_value(refs: dict[str, object], medium: str) -> str:
@@ -270,12 +283,16 @@ def _text(value: dict[str, object], name: str) -> str:
 
 def _require_clean(repo: Path, label: str) -> None:
     if _git(repo, "status", "--porcelain=v1", "--untracked-files=all"):
-        raise FinalizationFailure(f"{label} enthaelt fremde Aenderungen")
+        raise FinalizationFailure(
+            f"{label} enthaelt fremde Aenderungen"
+        )
 
 
 def _require_target_ref(repo: Path, expected: str) -> None:
     actual = _git(repo, "symbolic-ref", "-q", "HEAD")
-    _require_equal(actual, expected, "Ziel-Worktree steht auf fremder Referenz")
+    _require_equal(
+        actual, expected, "Ziel-Worktree steht auf fremder Referenz"
+    )
 
 
 def _require_same_repository(source: Path, target: Path) -> None:

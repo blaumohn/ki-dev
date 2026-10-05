@@ -20,8 +20,8 @@ from ki_dev.deltas import (
 from ki_dev.loop import BuildReport, LoopTask, ReviewAction
 from ki_dev.loop_runtime import LoopRuntime, StaticEvidenceCollector
 from ki_dev.machine import Limits, Phase
-from ki_dev.run_store import RunStore
 from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.run_store import RunStore
 
 
 class FakeBuilder:
@@ -160,7 +160,16 @@ def test_fake_e2e_changes_then_pass_reaches_passed(
     assert builder.calls == reviewer.calls == 2
     artifacts = list((tmp_path / "run-e2e" / "artifacts").iterdir())
     assert len(artifacts) == 10
-    assert len([path for path in artifacts if path.name.startswith("final-")]) == 4
+    assert (
+        len(
+            [
+                path
+                for path in artifacts
+                if path.name.startswith("final-")
+            ]
+        )
+        == 4
+    )
 
 
 def test_needs_decision_is_bound_and_resumes_same_run(tmp_path):
@@ -510,7 +519,9 @@ def test_saved_integration_is_not_repeated_after_restart(
     assert finalizer.integrate_calls == 1
 
 
-def test_failed_final_verification_never_passes_and_can_resume(tmp_path):
+def test_failed_final_verification_never_passes_and_can_resume(
+    tmp_path,
+):
     finalizer = StaticFinalizer(fail_verify=True)
     with LoopRuntime(
         RunStore(tmp_path, "run-final-drift"),
@@ -545,7 +556,9 @@ def test_failed_final_verification_never_passes_and_can_resume(tmp_path):
     assert result.phase is Phase.PASSED
 
 
-def test_resume_rechecks_integration_after_crash_without_artifact(tmp_path):
+def test_resume_rechecks_integration_after_crash_without_artifact(
+    tmp_path,
+):
     finalizer = CrashAfterIntegrationFinalizer()
     with (
         LoopRuntime(

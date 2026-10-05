@@ -304,7 +304,8 @@ def test_invalid_epic_hint_is_visible_error(
     with pytest.raises(BeadsReadError) as info:
         read_issue("x-1", tmp_path)
     assert str(info.value) == (
-        "Ungültige Metadaten in Bead epic: metadata.handoff.epic_context"
+        "Ungültige Metadaten in Bead epic: "
+        "metadata.handoff.epic_context"
     )
 
 
@@ -351,7 +352,9 @@ def test_invalid_metadata_on_ancestors_is_rejected(
         read_issue("x-1", tmp_path)
 
 
-def test_epic_without_handoff_gives_no_epic_context(monkeypatch, tmp_path):
+def test_epic_without_handoff_gives_no_epic_context(
+    monkeypatch, tmp_path
+):
     epic = _node("epic", kind="epic")
     epic["metadata"] = {"other": 1}
     _install_graph(

@@ -1,10 +1,15 @@
 """Normativer V1-Typentwurf; keine ausführbare Implementierung.
-Zielmodule laut ADR. Felder sind Pflicht, sofern nicht ausdrücklich optional.
+Zielmodule laut ADR. Felder sind Pflicht, sofern nicht ausdrücklich
+optional.
 """
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import StrEnum
 from decimal import Decimal
-from typing import Mapping, Protocol
+from enum import StrEnum
+from pathlib import Path
+from typing import Protocol
+
+from ki_dev.executors.contract import TurnResult
 
 class Decision(StrEnum):
     CONTINUE = 'CONTINUE'
@@ -126,15 +131,20 @@ class BudgetState:
 class ControlInput:
     """Booleans sind normalisierte lokale Befunde, keine Modellurteile.
     Unbekannte Pflichtbefunde setzen control_known=False.
-    elapsed_s und sample.source_age_s sind Laufzeitdauern, keine persistierten Uhren.
-    Start/Resume: sample=None, elapsed_s=0; Bindung/Basis des neuen Calls.
+    elapsed_s und sample.source_age_s sind Laufzeitdauern, keine
+    persistierten Uhren.
+    Start/Resume: sample=None, elapsed_s=0; Bindung/Basis des neuen
+    Calls.
     Tick: laufender Call, elapsed_s ab Prozessstart.
-    Phase: letzter Call, bestätigtes Ende und Abschlussabgleich; elapsed_s bis Ende,
-    Samplealter am Ende; ursprüngliche Zuteilung bleibt trotz Reservefreigabe erhalten.
+    Phase: letzter Call, bestätigtes Ende und Abschlussabgleich;
+    elapsed_s bis Ende, Samplealter am Ende; ursprüngliche Zuteilung
+    bleibt trotz Reservefreigabe erhalten.
     ledger_conflict entspricht RECONCILIATION_CONFLICT in budget.flags.
-    ledger_reconciled: Altverbrauch vollständig abgeglichen oder zulässig belastet;
-    kein ungelöster Konflikt. Nur Resume prüft dieses Feld.
-    call_end_confirmed: belegtes Prozessende; nur Phase prüft dieses Feld.
+    ledger_reconciled: Altverbrauch vollständig abgeglichen oder
+    zulässig belastet; kein ungelöster Konflikt. Nur Resume prüft
+    dieses Feld.
+    call_end_confirmed: belegtes Prozessende; nur Phase prüft dieses
+    Feld.
     """
     profile: ProfileSnapshot
     budget: BudgetState
@@ -173,7 +183,8 @@ class ControlDecision:
 class ControlPolicy(Protocol):
     def admit_start(self, state: ControlInput) -> ControlDecision: ...
     def evaluate_tick(self, state: ControlInput) -> ControlDecision: ...
-    def on_phase_complete(self, state: ControlInput) -> ControlDecision: ...
+    def on_phase_complete(
+        self, state: ControlInput) -> ControlDecision: ...
     def admit_resume(self, state: ControlInput) -> ControlDecision: ...
 
 @dataclass(frozen=True)
@@ -214,8 +225,9 @@ class EstimateResult:
     reason: ReasonCode
 
 class EstimateStrategy(Protocol):
-    def combine(self, estimates: tuple[Estimate, ...],
-                expected_estimators: tuple[str, ...]) -> EstimateResult: ...
+    def combine(
+        self, estimates: tuple[Estimate, ...],
+        expected_estimators: tuple[str, ...]) -> EstimateResult: ...
 
 @dataclass(frozen=True)
 class ConservativeCharge:
@@ -227,12 +239,15 @@ class ConservativeCharge:
     created_at_utc: str
 
 # Ziel: safety_profile.py
-def resolve_profile(project: Mapping, named: Mapping, overrides: Mapping,
+def resolve_profile(project: Mapping, named: Mapping,
+                    overrides: Mapping,
                     authorization: Mapping) -> ProfileSnapshot: ...
-def validate_profile(profile: SafetyProfile) -> tuple[ReasonCode, ...]: ...
+def validate_profile(
+    profile: SafetyProfile) -> tuple[ReasonCode, ...]: ...
 # Ziel: usage_estimation.py
-def max_upper_v1(estimates: tuple[Estimate, ...],
-                 expected_estimators: tuple[str, ...]) -> EstimateResult: ...
+def max_upper_v1(
+    estimates: tuple[Estimate, ...],
+    expected_estimators: tuple[str, ...]) -> EstimateResult: ...
 # Ziel: safety_policy.py
 def admit_start(state: ControlInput) -> ControlDecision: ...
 def evaluate_tick(state: ControlInput) -> ControlDecision: ...
@@ -246,31 +261,37 @@ class BudgetPlan:
     allocation_tokens: int | None
     reason: ReasonCode
 
-# Ziel: usage_estimation.py; required_call_tokens umfasst bei Resume auch Kontext.
+# Ziel: usage_estimation.py; required_call_tokens umfasst bei Resume
+# auch Kontext.
 def derive_budget(estimate: EstimateResult, profile: SafetyProfile,
                   measured_tokens: int, open_reservations: int,
-                  conservative_charges: int, pending_phases: tuple[str, ...],
+                  conservative_charges: int,
+                  pending_phases: tuple[str, ...],
                   required_call_tokens: int) -> BudgetPlan: ...
 
 # Erweiterung des vorhandenen CallLedger, KEIN zweiter Ledger.
 class LedgerExtension(Protocol):
     def reserve_tokens(self, event_id: str, binding: CallBinding,
                        required_call_tokens: int) -> BudgetState: ...
-    def apply_sample(self, event_id: str, sample: LiveSample) -> BudgetState: ...
-    def release_phase(self, event_id: str, phase: str) -> BudgetState: ...
-    def charge_unknown(self, charge: ConservativeCharge) -> BudgetState: ...
+    def apply_sample(self, event_id: str,
+                     sample: LiveSample) -> BudgetState: ...
+    def release_phase(self, event_id: str,
+                      phase: str) -> BudgetState: ...
+    def charge_unknown(
+        self, charge: ConservativeCharge) -> BudgetState: ...
     def recover_safety(self) -> BudgetState: ...
 
-# Erweiterung executors/process.py, bestehende Rückgabe TurnResult erhalten.
+# Erweiterung executors/process.py, bestehende Rückgabe TurnResult
+# erhalten.
 # TurnResult erhält zusätzlich stop_result: StopResult | None = None,
-# process_elapsed_s: Decimal | None = None und process_end_confirmed: bool = False.
-# process_elapsed_s: endlich >=0, monotone Dauer vom Start bis beobachtetem Ende,
-# keine Ausgabe-/Abrechnungsnachbearbeitung; None bei fehlendem Endzeitbeleg.
+# process_elapsed_s: Decimal | None = None und
+# process_end_confirmed: bool = False.
+# process_elapsed_s: endlich >=0, monotone Dauer vom Start bis
+# beobachtetem Ende, keine Ausgabe-/Abrechnungsnachbearbeitung; None
+# bei fehlendem Endzeitbeleg.
 # Phase übernimmt diese Dauer und Endbestätigung in ControlInput.
-# Keine automatische Umdeutung von TurnStatus.OK durch eine spätere Dispatch-Pause.
-from pathlib import Path
-from typing import Callable
-from ki_dev.executors.contract import TurnResult
+# Keine automatische Umdeutung von TurnStatus.OK durch eine spätere
+# Dispatch-Pause.
 
 @dataclass(frozen=True)
 class ProcessControl:
@@ -279,6 +300,8 @@ class ProcessControl:
     before_stop: Callable[[ControlDecision], None]
     after_stop: Callable[[StopResult], None]
 
-def run_cli_turn(argv: list[str], *, stdin: str, timeout_s: float = 900.0,
-                 cwd: Path | None = None, env: dict[str, str] | None = None,
-                 control: ProcessControl | None = None) -> TurnResult: ...
+def run_cli_turn(argv: list[str], *, stdin: str,
+                 timeout_s: float = 900.0, cwd: Path | None = None,
+                 env: dict[str, str] | None = None,
+                 control: ProcessControl | None = None,
+                 ) -> TurnResult: ...

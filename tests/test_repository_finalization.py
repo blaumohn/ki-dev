@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.deltas import ChangeMedium, VcsRef
 import ki_dev.repository_finalization
+from ki_dev.deltas import ChangeMedium, VcsRef
 from ki_dev.repository_finalization import (
     FinalizationFailure,
     RepositoryFinalizer,
@@ -35,7 +35,7 @@ def finalization_repo(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         ki_dev.repository_finalization,
         "capture_beads_ref",
-        lambda repo: VcsRef(ChangeMedium.BEADS, "dolt-base"),
+        lambda _repo: VcsRef(ChangeMedium.BEADS, "dolt-base"),
     )
     target = tmp_path / "target"
     source = tmp_path / "source"
@@ -47,7 +47,16 @@ def finalization_repo(tmp_path: Path, monkeypatch):
     _git(target, "add", "result.txt")
     _git(target, "commit", "-q", "-m", "base")
     base = _git(target, "rev-parse", "HEAD")
-    _git(target, "worktree", "add", "-q", "-b", "review", str(source), base)
+    _git(
+        target,
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "review",
+        str(source),
+        base,
+    )
     (source / "result.txt").write_text("reviewed\n", encoding="utf-8")
     _git(source, "add", "result.txt")
     _git(source, "commit", "-q", "-m", "reviewed")
@@ -60,7 +69,9 @@ def finalization_repo(tmp_path: Path, monkeypatch):
     return target, source, base, reviewed, finalizer
 
 
-def _freeze(source, base, reviewed, finalizer, *, reviewed_beads="dolt-base"):
+def _freeze(
+    source, base, reviewed, finalizer, *, reviewed_beads="dolt-base"
+):
     return finalizer.freeze(
         source=source,
         run_id="run-1",
@@ -78,7 +89,10 @@ def test_exact_reviewed_tree_is_fast_forwarded(finalization_repo):
     assert finalizer.integrate(frozen, final)["ok"] is True
     assert _git(target, "rev-parse", "HEAD") == final["final_commit"]
     assert _git(target, "rev-parse", "HEAD^") == base
-    assert _git(target, "rev-parse", "HEAD^{tree}") == frozen["reviewed_tree"]
+    assert (
+        _git(target, "rev-parse", "HEAD^{tree}")
+        == frozen["reviewed_tree"]
+    )
     assert (target / "result.txt").read_text() == "reviewed\n"
 
 
@@ -148,7 +162,9 @@ def test_git_integration_failure_does_not_report_success(
             raise FinalizationFailure("simulierter Integrationsfehler")
         return original(repo, *args, env=env)
 
-    monkeypatch.setattr(ki_dev.repository_finalization, "_git", fail_merge)
+    monkeypatch.setattr(
+        ki_dev.repository_finalization, "_git", fail_merge
+    )
 
     result = finalizer.integrate(frozen, final)
 
@@ -177,7 +193,7 @@ def test_beads_drift_after_review_is_rejected(
     monkeypatch.setattr(
         ki_dev.repository_finalization,
         "capture_beads_ref",
-        lambda repo: VcsRef(ChangeMedium.BEADS, "foreign-dolt"),
+        lambda _repo: VcsRef(ChangeMedium.BEADS, "foreign-dolt"),
     )
 
     with pytest.raises(FinalizationFailure, match="gedriftet"):

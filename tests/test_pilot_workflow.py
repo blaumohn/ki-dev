@@ -1,11 +1,12 @@
 """Agenten- und Reviewablauf-Abnahme (ki-dev-ablauf-urq.5).
 
 Prueft die in urq.5 verlangten Bausteine: begrenzter Kontext fuer den
-Abflachungsagenten, bereichsuebergreifende Kandidatensuche mit Stichprobe
-ausserhalb der Top-k, teilweise blinder Review, Lokalisierungspruefung,
-gesonderter Anteilslisten-Review, und eindeutige Unterscheidung von
-Entwuerfen, Befunden, Korrekturen, Paarurteilen, Ablehnungen sowie
-Ersturteilen vs. korrigierten Urteilen im Kontrollprotokoll. Bezug:
+Abflachungsagenten, bereichsuebergreifende Kandidatensuche mit
+Stichprobe ausserhalb der Top-k, teilweise blinder Review,
+Lokalisierungspruefung, gesonderter Anteilslisten-Review, und eindeutige
+Unterscheidung von Entwuerfen, Befunden, Korrekturen, Paarurteilen,
+Ablehnungen sowie Ersturteilen vs. korrigierten Urteilen im
+Kontrollprotokoll. Bezug:
 docs/architecture/planning-verarbeitungsvertrag.de.md (urq.1),
 docs/architecture/planning-pruefbeispiele.de.md (urq.2, PB-3, PB-6).
 """
@@ -28,7 +29,8 @@ def _unit(unit_id, location, text, revision="rev-1"):
 
 
 def test_embed_is_deterministic_and_local():
-    """Gleicher Text ergibt immer denselben Vektor; keine externen Aufrufe."""
+    """Gleicher Text ergibt immer denselben Vektor; keine externen
+    Aufrufe."""
     a = pilot_search.embed("Ralphex bleibt Teil des Bootstrap")
     b = pilot_search.embed("Ralphex bleibt Teil des Bootstrap")
     assert a == b
@@ -41,19 +43,24 @@ def test_embed_self_similarity_is_maximal():
 
 
 def test_search_pb3_findet_bereichsuebergreifende_dublette():
-    """PB-3: der fachliche Bezug liegt an einem anderen Ort; die Suche muss
-    ihn trotzdem unter den Top-k finden (bereichsuebergreifend, kein
-    Bereichsfilter)."""
+    """PB-3: der fachliche Bezug liegt an einem anderen Ort; die Suche
+    muss ihn trotzdem unter den Top-k finden (bereichsuebergreifend,
+    kein Bereichsfilter)."""
     units = [
         _unit(
-            "ralphex-ausfuehrung", "bootstrap/ausfuehrung",
+            "ralphex-ausfuehrung",
+            "bootstrap/ausfuehrung",
             "Ralphex als Ausfuehrungs- und Reviewmaschine im Bootstrap",
         ),
         _unit(
-            "unrelated-1", "andere/sache", "Datenbankmigration fuer Kunden",
+            "unrelated-1",
+            "andere/sache",
+            "Datenbankmigration fuer Kunden",
         ),
         _unit(
-            "unrelated-2", "andere/sache", "Deploy-Pipeline ueberarbeiten",
+            "unrelated-2",
+            "andere/sache",
+            "Deploy-Pipeline ueberarbeiten",
         ),
     ]
     rng = random.Random(42)
@@ -67,7 +74,9 @@ def test_search_pb3_findet_bereichsuebergreifende_dublette():
 
 
 def test_search_includes_random_sample_outside_top_k():
-    units = [_unit(f"u{i}", "loc", f"Inhalt Nummer {i}") for i in range(10)]
+    units = [
+        _unit(f"u{i}", "loc", f"Inhalt Nummer {i}") for i in range(10)
+    ]
     rng = random.Random(1)
     candidates = pilot_search.search_candidates(
         "Inhalt Nummer 0", units, top_k=2, sample_size=3, rng=rng,
@@ -135,7 +144,9 @@ def test_candidates_for_review_order_is_independent_of_search_rank():
     assert [c.unit_id for c in review_view] != [
         f"u{i}" for i in range(6)
     ]
-    assert all(c.rank is None and c.raw_score is None for c in review_view)
+    assert all(
+        c.rank is None and c.raw_score is None for c in review_view
+    )
 
 
 def test_localization_check_accepts_single_use_iterator():
@@ -147,7 +158,9 @@ def test_localization_check_accepts_single_use_iterator():
         "Unveraenderliche gespeicherte Eintraege und Hashketten",
     )
     same_location_peer = _unit(
-        "modell-peer", "planungsspeicher/modell", "Deploy-Pipeline Notizen",
+        "modell-peer",
+        "planungsspeicher/modell",
+        "Deploy-Pipeline Notizen",
     )
     other_location_match = _unit(
         "agentenablauf-peer", "planungsspeicher/agentenablauf",
@@ -170,7 +183,9 @@ def test_localization_check_warns_when_other_location_is_closer():
         "Unveraenderliche gespeicherte Eintraege und Hashketten",
     )
     same_location_peer = _unit(
-        "modell-peer", "planungsspeicher/modell", "Deploy-Pipeline Notizen",
+        "modell-peer",
+        "planungsspeicher/modell",
+        "Deploy-Pipeline Notizen",
     )
     other_location_match = _unit(
         "agentenablauf-peer", "planungsspeicher/agentenablauf",
@@ -180,17 +195,21 @@ def test_localization_check_warns_when_other_location_is_closer():
         moved, [same_location_peer, other_location_match],
     )
     assert warning is not None
-    assert warning["other_location_best"] > warning["same_location_best"]
+    assert (
+        warning["other_location_best"] > warning["same_location_best"]
+    )
 
 
 def test_localization_check_silent_when_same_location_closer():
     unit = _unit("a", "loc-a", "Ralphex bleibt Teil des Bootstrap")
-    same = _unit("b", "loc-a", "Ralphex bleibt Teil des Bootstrap-Vorgehens")
+    same = _unit(
+        "b", "loc-a", "Ralphex bleibt Teil des Bootstrap-Vorgehens"
+    )
     other = _unit("c", "loc-b", "Datenbankmigration fuer Kunden")
     assert pilot_search.localization_check(unit, [same, other]) is None
 
 
-# --- pilot_log: eindeutige Unterscheidung ------------------------------
+# --- pilot_log: eindeutige Unterscheidung -----------------------------
 
 
 def test_control_log_rejects_unknown_kind():
@@ -214,29 +233,45 @@ def test_draft_finding_correction_bleiben_unterscheidbar(tmp_path):
         log_path=log_path,
     )
     pilot_workflow.record_finding(
-        draft, verdict="rejected", notes="Bedingung fehlt", log_path=log_path,
+        draft,
+        verdict="rejected",
+        notes="Bedingung fehlt",
+        log_path=log_path,
     )
     correction = pilot_workflow.record_correction(
-        draft, assignment="ralphex-verbleib-bedingung",
-        operation="revision", notes="Bedingung ergaenzt", log_path=log_path,
+        draft,
+        assignment="ralphex-verbleib-bedingung",
+        operation="revision",
+        notes="Bedingung ergaenzt",
+        log_path=log_path,
     )
     records = pilot_log.read_all(log_path)
     kinds = [record["kind"] for record in records]
     assert kinds == ["draft", "finding", "correction"]
     assert pilot_log.by_kind(records, "draft")[0]["id"] == draft["id"]
-    assert pilot_log.by_kind(records, "correction")[0]["supersedes"] == draft["id"]
+    assert (
+        pilot_log.by_kind(records, "correction")[0]["supersedes"]
+        == draft["id"]
+    )
     assert correction["part_id"] == draft["part_id"]
 
 
-def test_pair_judgments_and_search_records_carry_full_provenance(tmp_path):
+def test_pair_judgments_and_search_records_carry_full_provenance(
+    tmp_path,
+):
     """AC: Rohwert, Rang, Auswahlart, Modellkennung und Sichtbarkeit im
     Review muessen je Kandidat festgehalten sein."""
     log_path = tmp_path / "control-log.jsonl"
     units = [_unit(f"u{i}", "loc", f"Text {i}") for i in range(6)]
     rng = random.Random(3)
     candidates = pilot_workflow.run_candidate_search(
-        {"id": "part-1", "text": "Text 0"}, units, top_k=2, sample_size=2,
-        blind_fraction=0.5, rng=rng, log_path=log_path,
+        {"id": "part-1", "text": "Text 0"},
+        units,
+        top_k=2,
+        sample_size=2,
+        blind_fraction=0.5,
+        rng=rng,
+        log_path=log_path,
     )
     for index, candidate in enumerate(candidates):
         pilot_workflow.record_pair_judgment(
@@ -263,14 +298,22 @@ def test_rejection_and_unclear_are_recorded_distinctly(tmp_path):
         log_path=log_path,
     )
     pilot_workflow.record_unclear(
-        "part-1", candidate_id="u2", reason="Modalitaet unklar", index=0,
+        "part-1",
+        candidate_id="u2",
+        reason="Modalitaet unklar",
+        index=0,
         log_path=log_path,
     )
     records = pilot_log.read_all(log_path)
-    assert [record["kind"] for record in records] == ["rejection", "unclear"]
+    assert [record["kind"] for record in records] == [
+        "rejection",
+        "unclear",
+    ]
 
 
-def test_share_list_review_ist_gesondert_und_geht_dem_delta_voraus(tmp_path):
+def test_share_list_review_ist_gesondert_und_geht_dem_delta_voraus(
+    tmp_path,
+):
     log_path = tmp_path / "control-log.jsonl"
     pilot_workflow.review_share_list(
         "passage-1", ["part-1", "part-2"], complete=True,
@@ -296,7 +339,9 @@ def test_localization_warning_is_logged(tmp_path):
         "agentenablauf-peer", "planungsspeicher/agentenablauf",
         "Unveraenderliche Eintraege, Hashketten und Revisionspruefung",
     )
-    same = _unit("modell-peer", "planungsspeicher/modell", "Deploy Notizen")
+    same = _unit(
+        "modell-peer", "planungsspeicher/modell", "Deploy Notizen"
+    )
     warning = pilot_workflow.check_localization(
         moved, [same, other], log_path=log_path,
     )
@@ -306,30 +351,50 @@ def test_localization_warning_is_logged(tmp_path):
     assert records[0]["part_id"] == "unveraenderlichkeit"
 
 
-# --- begrenzter Kontext -------------------------------------------------
+# --- begrenzter Kontext -----------------------------------------------
 
 
-def test_build_context_enthaelt_kein_roharchiv_und_keine_delta_kette(tmp_path):
+def test_build_context_enthaelt_kein_roharchiv_und_keine_delta_kette(
+    tmp_path,
+):
     """urq.5-Umfang: kein Zugriff auf Roharchiv, historische Deltas oder
-    verborgene Pruefererwartungen -- nur id/type/location/revision/data."""
+    verborgene Pruefererwartungen -- nur
+    id/type/location/revision/data."""
     root = tmp_path
     store = root / "steps"
     aussage_type = {
-        "id": "aussage@1", "kind": "node",
-        "schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+        "id": "aussage@1",
+        "kind": "node",
+        "schema": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
     }
     (root / "src.md").write_text("Zeile eins\n", encoding="utf-8")
     ref = planning.source_ref(root, "src.md", 1, 1)
     delta = {
-        "format": 1, "step": 1, "parent": None, "types": [aussage_type],
-        "nodes": [{
-            "id": "n1", "op": "put", "expected": None, "type": "aussage@1",
-            "location": "loc/a", "data": {"text": "Inhalt"}, "sources": [ref],
-        }],
+        "format": 1,
+        "step": 1,
+        "parent": None,
+        "types": [aussage_type],
+        "nodes": [
+            {
+                "id": "n1",
+                "op": "put",
+                "expected": None,
+                "type": "aussage@1",
+                "location": "loc/a",
+                "data": {"text": "Inhalt"},
+                "sources": [ref],
+            }
+        ],
         "edges": [],
     }
     candidate_path = tmp_path / "delta.json"
-    candidate_path.write_text(planning.encode(delta).decode(), encoding="utf-8")
+    candidate_path.write_text(
+        planning.encode(delta).decode(), encoding="utf-8"
+    )
     state = planning.append(store, candidate_path, root)
 
     context = pilot_workflow.build_context(
@@ -353,30 +418,50 @@ def test_build_context_ignoriert_nicht_freigegebene_knoten(tmp_path):
     root = tmp_path
     store = root / "steps"
     aussage_type = {
-        "id": "aussage@1", "kind": "node",
-        "schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+        "id": "aussage@1",
+        "kind": "node",
+        "schema": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
     }
-    (root / "src.md").write_text("Zeile eins\nZeile zwei\n", encoding="utf-8")
+    (root / "src.md").write_text(
+        "Zeile eins\nZeile zwei\n", encoding="utf-8"
+    )
     ref1 = planning.source_ref(root, "src.md", 1, 1)
     ref2 = planning.source_ref(root, "src.md", 2, 2)
     delta = {
-        "format": 1, "step": 1, "parent": None, "types": [aussage_type],
+        "format": 1,
+        "step": 1,
+        "parent": None,
+        "types": [aussage_type],
         "nodes": [
             {
-                "id": "visible", "op": "put", "expected": None,
-                "type": "aussage@1", "location": "loc/a",
-                "data": {"text": "sichtbar"}, "sources": [ref1],
+                "id": "visible",
+                "op": "put",
+                "expected": None,
+                "type": "aussage@1",
+                "location": "loc/a",
+                "data": {"text": "sichtbar"},
+                "sources": [ref1],
             },
             {
-                "id": "hidden", "op": "put", "expected": None,
-                "type": "aussage@1", "location": "loc/b",
-                "data": {"text": "nicht angefordert"}, "sources": [ref2],
+                "id": "hidden",
+                "op": "put",
+                "expected": None,
+                "type": "aussage@1",
+                "location": "loc/b",
+                "data": {"text": "nicht angefordert"},
+                "sources": [ref2],
             },
         ],
         "edges": [],
     }
     candidate_path = tmp_path / "delta.json"
-    candidate_path.write_text(planning.encode(delta).decode(), encoding="utf-8")
+    candidate_path.write_text(
+        planning.encode(delta).decode(), encoding="utf-8"
+    )
     state = planning.append(store, candidate_path, root)
 
     context = pilot_workflow.build_context(

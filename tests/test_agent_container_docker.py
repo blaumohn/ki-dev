@@ -2,8 +2,8 @@
 
 Läuft gegen eine Kopie des Checkouts; deren Pfad ergibt einen eigenen
 Volume-Schlüssel, sodass reset die echten Dev-Volumes nicht berührt. Die
-Kopie liegt unter .local/ im Checkout: Colima gibt nur das Home an die VM
-frei, nicht /tmp.
+Kopie liegt unter .local/ im Checkout: Colima gibt nur das Home an die
+VM frei, nicht /tmp.
 """
 
 from __future__ import annotations
@@ -54,7 +54,11 @@ def checkout(shared_tmp):
     tmp_path = shared_tmp
     repo = tmp_path / "ki-dev"
     repo.mkdir()
-    for name in ("compose.yaml", "compose.fresh.yaml", "compose.beads.yaml"):
+    for name in (
+        "compose.yaml",
+        "compose.fresh.yaml",
+        "compose.beads.yaml",
+    ):
         shutil.copy(ROOT / name, repo)
     shutil.copytree(ROOT / "scripts", repo / "scripts")
     shutil.copytree(ROOT / "src/ki_dev", repo / "src/ki_dev")
@@ -68,8 +72,9 @@ def checkout(shared_tmp):
     lebens = tmp_path / "lebens"
     lebens.mkdir()
     (lebens / "package.json").write_text("{}")
-    # Unique per run: repo volumes are global per name (label ki-dev.repo),
-    # so reset in the teardown must not hit another checkout's volume.
+    # Unique per run: repo volumes are global per name (label
+    # ki-dev.repo), so reset in the teardown must not hit another
+    # checkout's volume.
     name = "lebens-" + re.sub(r"[^a-z0-9]", "", tmp_path.name.lower())
     mounts = tmp_path / "config/ki-dev/agent-container/mounts"
     mounts.mkdir(parents=True)
@@ -77,7 +82,8 @@ def checkout(shared_tmp):
         "x-ki-dev:\n"
         "  repo: /lebens\n"
         "  deps:\n"
-        "    - {manager: npm, inputs: [package.json], install: node_modules}\n"
+        "    - {manager: npm, inputs: [package.json], install: "
+        "node_modules}\n"
         "services:\n"
         "  agent:\n"
         "    volumes:\n"
@@ -94,7 +100,9 @@ def checkout(shared_tmp):
 
     def run(*args, retcode=0):
         with local.env(**env), local.cwd(repo):
-            return script.run(args=list(args), retcode=retcode, timeout=300)
+            return script.run(
+                args=list(args), retcode=retcode, timeout=300
+            )
 
     yield run, name, tmp_path / "cache/agent-container"
     run("-m", name, "reset")
@@ -125,11 +133,11 @@ def volumes():
 
 FRESH_CHECKS = """
 test ! -e ~/dev-marker && echo home-frisch
-test ! -e /workspace/.venv/dev-marker && /workspace/.venv/bin/python -c 1 \
-  && echo venv-frisch
+test ! -e /workspace/.venv/dev-marker \
+  && /workspace/.venv/bin/python -c 1 && echo venv-frisch
 test -z "$(ls -A ~/.cache/go-build)" && echo go-build-leer
-test -z "$(ls -A /lebens/node_modules)" && touch /lebens/node_modules/x \
-  && echo node_modules-frisch
+test -z "$(ls -A /lebens/node_modules)" \
+  && touch /lebens/node_modules/x && echo node_modules-frisch
 grep -qs ' /lebens/node_modules tmpfs ' \
   /proc/mounts && echo node_modules-tmpfs
 test "$(cat ~/.npm/shared)" = treffer && echo cache-treffer
@@ -155,7 +163,9 @@ def test_dev_persists_fresh_is_temporary(checkout):
     assert any(name.endswith("-home") for name in created)
     assert volume_name(name, "node_modules") in created
 
-    _, stdout, _ = run("--fresh", "-m", name, "run", "sh", "-c", FRESH_CHECKS)
+    _, stdout, _ = run(
+        "--fresh", "-m", name, "run", "sh", "-c", FRESH_CHECKS
+    )
     assert stdout.split() == [
         "home-frisch",
         "venv-frisch",

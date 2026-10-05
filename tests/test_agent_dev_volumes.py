@@ -35,7 +35,9 @@ def test_dev_overlay_labels_volume_and_seeds_owner():
     overlay = dev_overlay(
         [
             contract("lebens", NPM, COMPOSER),
-            contract("site", Dependency("npm", ["a"], "web/node_modules")),
+            contract(
+                "site", Dependency("npm", ["a"], "web/node_modules")
+            ),
         ]
     )
     assert overlay == {
@@ -83,13 +85,17 @@ def test_without_npm_overlay_is_empty():
         "services": {"agent": {"volumes": []}},
         "volumes": {},
     }
-    assert fresh_overlay([], 1, 2) == {"services": {"agent": {"tmpfs": []}}}
+    assert fresh_overlay([], 1, 2) == {
+        "services": {"agent": {"tmpfs": []}}
+    }
 
 
 def test_dev_overlay_limited_to_seed_slots():
     dev_overlay([contract(f"r{n}", NPM) for n in range(SEED_SLOTS)])
     with pytest.raises(ContractError) as error:
-        dev_overlay([contract(f"r{n}", NPM) for n in range(SEED_SLOTS + 1)])
+        dev_overlay(
+            [contract(f"r{n}", NPM) for n in range(SEED_SLOTS + 1)]
+        )
     assert str(error.value) == (
         f"höchstens {SEED_SLOTS} Abhängigkeitsverzeichnisse je Lauf, "
         f"gewählt: {SEED_SLOTS + 1}"
@@ -105,7 +111,9 @@ def test_seed_slots_match_dockerfile():
 
 
 def test_fresh_overlay_uses_owned_tmpfs():
-    assert fresh_overlay([contract("lebens", NPM, COMPOSER)], 501, 20) == {
+    assert fresh_overlay(
+        [contract("lebens", NPM, COMPOSER)], 501, 20
+    ) == {
         "services": {
             "agent": {
                 "tmpfs": [
@@ -119,13 +127,18 @@ def test_fresh_overlay_uses_owned_tmpfs():
 
 def test_volume_name_keeps_docker_charset():
     name = volume_name("lebens", "a b/node_modules")
-    assert re.fullmatch(r"ki-dev-repo-lebens-a-b-node_modules-[0-9a-f]{12}", name)
+    assert re.fullmatch(
+        r"ki-dev-repo-lebens-a-b-node_modules-[0-9a-f]{12}", name
+    )
 
 
 @pytest.mark.parametrize(
     ("first", "second"),
     [
-        (("app", "packages/ui/node_modules"), ("app", "packages-ui/node_modules")),
+        (
+            ("app", "packages/ui/node_modules"),
+            ("app", "packages-ui/node_modules"),
+        ),
         (("app", "x/node_modules"), ("app-x", "node_modules")),
     ],
 )
@@ -140,9 +153,12 @@ def test_volume_name_is_stable():
 
 
 @pytest.mark.parametrize(
-    ("error", "code"), [(None, 0), (ContractError, 2), (ComposeError, 1)]
+    ("error", "code"),
+    [(None, 0), (ContractError, 2), (ComposeError, 1)],
 )
-def test_cli_prints_overlay_or_fails(monkeypatch, capsys, tmp_path, error, code):
+def test_cli_prints_overlay_or_fails(
+    monkeypatch, capsys, tmp_path, error, code
+):
     def read(mount_files, project_directory):
         assert project_directory == tmp_path
         if error is not None:

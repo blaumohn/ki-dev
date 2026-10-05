@@ -65,7 +65,8 @@ def read_issue(bead_id: str, workdir: Path) -> HandoffIssue:
     raw = _read_raw(bead_id, workdir)
     _check_metadata(raw, _METADATA_SCHEMA)
     return replace(
-        _normalize(raw), epic_context=_inherited_epic_context(raw, workdir)
+        _normalize(raw),
+        epic_context=_inherited_epic_context(raw, workdir),
     )
 
 
@@ -97,7 +98,9 @@ def _inherited_epic_context(
 
 
 def _epic_context(raw: dict) -> str | None:
-    return raw.get("metadata", {}).get("handoff", {}).get("epic_context")
+    return (
+        raw.get("metadata", {}).get("handoff", {}).get("epic_context")
+    )
 
 
 def _check_metadata(raw: dict, schema: dict) -> None:

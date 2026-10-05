@@ -2,10 +2,11 @@
 
 Eine Mount-Datei darf neben ihren Einbindungen ein Feld x-ki-dev tragen:
 welches eingebundene Repo welche Paketverwalter, Eingabedateien und
-Installationsverzeichnisse hat. Compose ignoriert x-Felder; dieser Helfer
-prüft sie und gibt die normalisierten Verträge als JSON aus. Das Modul
-importiert keine anderen ki_dev-Module, damit scripts/agent-container es
-auch mit einem Host-Python ohne Projekt-venv aufrufen kann.
+Installationsverzeichnisse hat. Compose ignoriert x-Felder; dieser
+Helfer prüft sie und gibt die normalisierten Verträge als JSON aus. Das
+Modul importiert keine anderen ki_dev-Module, damit
+scripts/agent-container es auch mit einem Host-Python ohne Projekt-venv
+aufrufen kann.
 """
 
 from __future__ import annotations
@@ -74,7 +75,8 @@ class ContractError(ValueError):
 
 
 class ComposeError(RuntimeError):
-    """docker compose config ist nicht nutzbar (fehlt, Frist, Ausgabe)."""
+    """docker compose config ist nicht nutzbar (fehlt, Frist,
+    Ausgabe)."""
 
 
 @dataclass(frozen=True)
@@ -136,8 +138,8 @@ def read_contracts(
 
 
 # Compose parses the YAML: the project needs no YAML library, and the
-# contract sees the same syntax, interpolation and path normalization as the
-# real run (relative sources against the ki-dev checkout).
+# contract sees the same syntax, interpolation and path normalization as
+# the real run (relative sources against the ki-dev checkout).
 def load_mount_file(mount_file: Path, project_directory: Path) -> dict:
     arguments = [
         "compose",
@@ -243,7 +245,9 @@ def check_deps(
         path = f"{prefix}.deps.{index}"
         install = inside_repo(dep["install"], f"{path}.install")
         if install in installs:
-            raise ContractError(f"{path}.install: doppelter install-Pfad")
+            raise ContractError(
+                f"{path}.install: doppelter install-Pfad"
+            )
         installs.add(install)
         inputs = [
             inside_repo(item, f"{path}.inputs.{position}")

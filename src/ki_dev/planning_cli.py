@@ -8,8 +8,12 @@ import typer
 from ki_dev import planning
 
 app = typer.Typer(help="Planungsdeltas prüfen, ablegen und auflösen.")
-Store = Annotated[Path, typer.Option(help="Verzeichnis der Schrittdeltas.")]
-Root = Annotated[Path, typer.Option(help="Wurzel der relativen Quellenpfade.")]
+Store = Annotated[
+    Path, typer.Option(help="Verzeichnis der Schrittdeltas.")
+]
+Root = Annotated[
+    Path, typer.Option(help="Wurzel der relativen Quellenpfade.")
+]
 
 
 def _run(function, *args, **kwargs):
@@ -30,7 +34,9 @@ def check(
     if candidate is not None:
         delta = _run(planning.read_json, candidate)
         state = _run(planning.apply_delta, state, delta, root=root)
-    typer.echo(f"OK: Schritt {state['step']}, {len(state['nodes'])} Knoten")
+    typer.echo(
+        f"OK: Schritt {state['step']}, {len(state['nodes'])} Knoten"
+    )
 
 
 @app.command("append")
@@ -51,7 +57,11 @@ def resolve(
 ):
     """Planungsstand als JSON oder Markdown auf stdout erzeugen."""
     state = _run(planning.resolve, store, at=at)
-    output = planning.render(state) if markdown else planning.encode(state).decode()
+    output = (
+        planning.render(state)
+        if markdown
+        else planning.encode(state).decode()
+    )
     typer.echo(output, nl=False)
 
 
@@ -67,4 +77,6 @@ def source(
 @app.command("schema")
 def schema():
     """Das verbindliche Delta-JSON-Schema ausgeben."""
-    typer.echo(planning.encode(planning.DELTA_SCHEMA).decode(), nl=False)
+    typer.echo(
+        planning.encode(planning.DELTA_SCHEMA).decode(), nl=False
+    )
