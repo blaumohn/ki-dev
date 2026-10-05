@@ -31,7 +31,9 @@ from ki_dev.handoff import (
 )
 from ki_dev.handoff_guidelines import (
     GuidelineContractError,
+    GuidelineDocument,
     GuidelineSection,
+    select_common_guidelines,
     select_guidelines,
 )
 from ki_dev.handoff_guidelines_source import (
@@ -44,6 +46,7 @@ from ki_dev.handoff_limit_config import (
     LimitConfigReadError,
     load_base_max_chars,
 )
+from ki_dev.handoff_local import render_local_handoff
 from ki_dev.handoff_map import map_handoff
 from ki_dev.handoff_next_turn import (
     FeedbackReadError,
@@ -73,6 +76,7 @@ from ki_dev.handoff_preflight import (
 from ki_dev.handoff_source import HandoffSourceError
 
 MAP_WORD = "map"
+LOCAL_WORD = "local"
 _MAP_KEPT_NOTE = (
     "Quelle und Quellen-Bead bleiben bestehen und werden bei "
     "erneutem Aufruf wiederverwendet."
@@ -86,6 +90,8 @@ AUFRUFE
     Übergabe aus einem vorhandenen Bead erstellen.
   ki-dev handoff map --agent codex --session SESSION_ID
     Codex-Sitzung als Quelle importieren und Kartierung vorbereiten.
+  ki-dev handoff local
+    Allgemeine Übergabe für eine freie lokale Sitzung ohne Bead.
 
 SCHRITTE (--step)
   map          Anforderungen aus Rohnotizen kartieren.
@@ -105,6 +111,7 @@ BEISPIELE
   ki-dev handoff projekt-42 --step review --next-turn
   ki-dev handoff projekt-42 --step review --next-turn --feedback-file -
   ki-dev handoff map --agent codex --session SESSION_ID
+  ki-dev handoff local > uebergabe.txt
 
 REVIEW
   Standard: build. Führt vorab konfigurierte Korrekturen und Tests aus.
@@ -137,6 +144,13 @@ LEITLINIEN
   der Basisübergabe; die gesamte Ausgabe kann daher länger sein.
   Fehlende Quelle Exit 1, ungültige Quelle Exit 2 (vor jedem Vorlauf).
 
+LOKALE ÜBERGABE (local)
+  Ohne Bead, Datenbank und bd im PATH, ohne --step und weitere Optionen
+  (sonst Exit 2). Gibt eine feste Basis und die allgemeinen Abschnitte
+  (common) der Regelquellen docs/policies/*.de.yaml aus: Lesebefehle,
+  Rollenrechte, Python/pytest, Messregeln und allgemeine Leitlinien.
+  Die Basisgrenze gilt wie sonst nur für die Basis.
+
 SITZUNGSIMPORT (map --agent codex --session SESSION_ID)
   Schreibt ein Transkript unter .local/handoff/ und legt einen
   Quellen-Bead an (bei gleichem Stand wiederverwendet).
@@ -155,7 +169,8 @@ def handoff(
         str | None,
         typer.Argument(
             metavar="[BEAD_ID]",
-            help="Beads-ID oder map für den Sitzungsimport.",
+            help="Beads-ID, map (Sitzungsimport) oder local "
+            "(freie Sitzung ohne Bead).",
         ),
     ] = None,
     step: Annotated[
@@ -226,7 +241,18 @@ def handoff(
     ] = None,
 ) -> None:
     check_args = check_args or []
-    if agent is not None or session is not None or bead_id == MAP_WORD:
+    if bead_id == LOCAL_WORD:
+        _local_form(
+            step,
+            review_of,
+            check_args,
+            next_turn or feedback_file is not None,
+            agent,
+            session,
+        )
+    elif (
+        agent is not None or session is not None or bead_id == MAP_WORD
+    ):
         _map_form(
             bead_id,
             step,
@@ -389,14 +415,17 @@ def _base_limit() -> int:
 def _selected_guidelines(
     step: Step, review_of: ReviewTarget | None
 ) -> tuple[GuidelineSection, ...]:
-    """Leitlinien vor Vorlauf und Schreibwirkungen laden und auswählen.
+    """Leitlinien vor Vorlauf und Schreibwirkungen laden, auswählen."""
+    return select_guidelines(_guideline_documents(), step, review_of)
 
-    Fehlend/unlesbar: Exit 1; kein UTF-8, ungültiges YAML oder
-    Vertragsverletzung: Exit 2. Diagnosen nennen Datei, Feldpfad und
-    ggf. Zeile, nie Regeltexte.
+
+def _guideline_documents() -> tuple[GuidelineDocument, ...]:
+    """Quellen laden. Fehlend/unlesbar: Exit 1; kein UTF-8, ungültiges
+    YAML oder Vertragsverletzung: Exit 2. Diagnosen nennen Datei,
+    Feldpfad und ggf. Zeile, nie Regeltexte.
     """
     try:
-        documents = load_guidelines(Path.cwd())
+        return load_guidelines(Path.cwd())
     except GuidelineSourceError as exc:
         _fail(f"Leitlinienquelle nicht lesbar: {exc}", code=1)
     except GuidelineContractError as exc:
@@ -405,7 +434,6 @@ def _selected_guidelines(
             f"Leitlinienquelle ungültig: {exc.source}\n{problems}",
             code=2,
         )
-    return select_guidelines(documents, step, review_of)
 
 
 def _review_handoff(
@@ -591,6 +619,39 @@ def _first_failed_check(
         if item.name in check_names and item.status == "fail":
             return item.name
     return None
+
+
+def _local_form(
+    step: Step | None,
+    review_of: ReviewTarget | None,
+    check_args: list[str],
+    next_turn_option: bool,
+    agent: str | None,
+    session: str | None,
+) -> None:
+    """``local``: weder Bead noch ``bd``; Konfiguration und Quellen
+    werden gelesen, sonst nichts (keine Schreibwirkung)."""
+    if (
+        step is not None
+        or review_of is not None
+        or check_args
+        or next_turn_option
+        or agent is not None
+        or session is not None
+    ):
+        _fail(
+            "local lässt sich nicht mit --step/--review-of/"
+            "--check-args/--next-turn/--feedback-file/--agent/"
+            "--session mischen",
+            code=2,
+        )
+    limit = _base_limit()
+    guidelines = select_common_guidelines(_guideline_documents())
+    try:
+        text = render_local_handoff(guidelines, limit)
+    except HandoffBaseTooLongError as exc:
+        _fail(str(exc), code=2)
+    typer.echo(text, nl=False)
 
 
 def _map_form(

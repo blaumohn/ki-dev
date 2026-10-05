@@ -39,6 +39,28 @@ Die Ausgabe ist unfarbiger Klartext ohne Zeilenumbruch nach Terminalbreite. Sie
 lässt sich umleiten (`ki-dev handoff … > uebergabe.txt`) oder aus dem Terminal
 kopieren. `ki-dev handoff --help` fasst das auf Deutsch zusammen.
 
+## Freie lokale Sitzung (`handoff local`)
+
+```bash
+ki-dev handoff local > uebergabe.txt
+```
+
+Für Sitzungen ohne Auftrag aus Beads. Der Aufruf braucht weder Bead noch
+Datenbankverbindung noch `bd` im PATH, hat keine `--step`-Pflicht und schreibt
+nichts. Mit `--step`, `--review-of`, `--check-args`, `--next-turn`,
+`--feedback-file`, `--agent` oder `--session` kombiniert endet er mit Exit 2.
+Die Ausgabe besteht aus einer festen kurzen Basis (`Schritt: local`) und dem
+gesonderten Leitlinienblock mit den allgemeinen Abschnitten (`common`) aller
+Regelquellen (siehe [Mitgelieferte Leitlinien](#mitgelieferte-leitlinien));
+die phasenspezifischen Abschnitte gehören nicht dazu. Die Basisgrenze
+(`base_max_chars`) gilt nur für die Basis; Leitlinienquelle fehlt: Exit 1,
+ungültig: Exit 2.
+
+Es ist keine Planungsrolle gewählt: Die Übergabe nennt nur Lesebefehle
+(`bd show/ready/prime`) und keine Aufforderung zu `--claim` oder `close`. Eine
+ausdrücklich wählbare Planungsrolle gibt es nicht; wer Beads-Status ändern
+soll, sagt das in der Sitzung selbst.
+
 ## Pflichtfelder je Schritt
 
 ### Geerbte Epic-Hinweise
@@ -451,15 +473,21 @@ eine nicht lesbare Datei ist Exit 1. Es gibt keinen stillen Ersatz.
 
 ## Mitgelieferte Leitlinien
 
-Beide Formen (`BEAD_ID --step …` und `map --agent … --session …`) hängen die
-für den Schritt geltenden Regeltexte der Architektur-/Programmier- und der
-Technikleitlinie direkt an. Der Agent muss Leitlinien weder suchen noch ihre
+Alle Formen hängen die geltenden Regeltexte der Architektur-/Programmier-
+und der Technikleitlinie sowie der Arbeitsregeln direkt an:
+`BEAD_ID --step …` und `map --agent … --session …` die Regeln des Schritts,
+`local` nur die allgemeinen Abschnitte (`common`). Der Agent muss Leitlinien weder suchen noch ihre
 Phasenzuordnung selbst entscheiden; er wendet die mitgelieferten Texte an,
 ohne ihre Quelldokumente erneut vollständig zu lesen.
 
 **Quelle und Auswahl.** Die Regeln stehen in
-`docs/policies/programmierleitlinie.de.yaml` und
-`docs/policies/technikleitlinie.de.yaml` (in dieser Reihenfolge). Jede Datei
+`docs/policies/programmierleitlinie.de.yaml`,
+`docs/policies/technikleitlinie.de.yaml` und
+`docs/policies/arbeitsregeln.de.yaml` (in dieser Reihenfolge). Die
+Arbeitsregeln ersetzen den früheren Einstiegstext von `AGENTS.md`/`CLAUDE.md`:
+Beads lesen, Rollenrechte („Manueller Handoff“), Sitzungsende, Python/pytest und
+Verbrauchsmessung; sie stehen vollständig in `common` und erreichen jede
+Sitzung. Jede Datei
 enthält `title`, `permalink`, `sections` (geordnete Liste `{id, text}`, Text
 als Markdown-Literalblock `|-`), `common` sowie `stages` mit genau `map`,
 `graph`, `materialize` und `build`, jeweils `task` und `review` als
@@ -493,15 +521,62 @@ Feldpfad und ggf. Zeile, nie Regeltexte.
 
 **Pflegeweg.** Regeln nur in den YAML-Dateien ändern, dann
 `./.venv/bin/python scripts/render-guidelines.py` ausführen. Das Skript
-erzeugt daraus vollständig `docs/programmierleitlinie.de.md` und
-`docs/technikleitlinie.de.md` (Frontmatter, Permalink, Überschriften und damit
+erzeugt daraus vollständig `docs/programmierleitlinie.de.md`,
+`docs/technikleitlinie.de.md` und `docs/arbeitsregeln.de.md` (Frontmatter, Permalink, Überschriften und damit
 Anker bleiben erhalten; eine Kopfzeile kennzeichnet die Seite als generiert).
 `--check` schreibt nichts und endet bei Abweichung mit Exit 1. `handoff`
 selbst erzeugt keine Dokumentationsdateien.
 
-**Arbeit ohne `handoff`.** Sitzungen ohne Übergabe lesen die Regeln wie bisher
-über die in `AGENTS.md` verlinkten Markdown-Seiten; deren Inhalt ist
+**Arbeit ohne `handoff`.** `AGENTS.md` und `CLAUDE.md` sind leer. Sitzungen
+ohne Bead beginnen mit `ki-dev handoff local`; wer ganz ohne Übergabe arbeitet,
+liest die erzeugten Seiten `docs/programmierleitlinie.de.md`,
+`docs/technikleitlinie.de.md` und `docs/arbeitsregeln.de.md`; deren Inhalt ist
 derselbe.
+
+## `AGENTS.md`/`CLAUDE.md` leer und lokal geschützt
+
+Die Einstiegstexte stehen nur noch in `docs/policies/*.de.yaml`; die beiden
+Dateien sind im Repository leer. Git transportiert keinen Schreibschutz (kein
+`0444` im Klon). Nach jedem frischen Klon einmal (das Skript braucht nur die
+Standardbibliothek; vor dem Anlegen der Projekt-venv genügt ein beliebiges
+Python 3, danach die venv wie sonst im Projekt):
+
+```bash
+./.venv/bin/python scripts/protect-agent-files.py          # chmod 0444, nur für leere Dateien
+./.venv/bin/python scripts/protect-agent-files.py --check  # leer und schreibgeschützt? (Exit 1: nein)
+```
+
+Das Skript fasst nur diese zwei Dateien im Klon an, ruft keine Fremdprogramme
+auf und ändert keine globale Konfiguration. Schutz aufheben:
+`chmod u+w AGENTS.md CLAUDE.md`.
+
+**Wirkung von `bd init`/`bd setup` (bd 1.3.0, geprüft in Wegwerfklons mit
+eigenem `HOME`/`CODEX_HOME`, ohne `origin`, Git-Identität per Umgebung).**
+Der Schreibschutz hält sie nicht auf:
+
+- `bd setup codex` und `bd setup claude` schreiben den Beads-Block trotz `0444`
+  in die Datei (Mode danach `0644`, nicht leer).
+- `bd init --non-interactive --prefix P` (mit Hooks, ohne `--skip-agents`) tut
+  dasselbe; die Meldung „open AGENTS.md: permission denied“ betrifft nur einen
+  Teilschritt, die Datei wird dennoch neu geschrieben. Zusätzlich legt es
+  `.claude/` und `.cursor/` an und committet selbst (`bd init: initialize
+  beads issue tracking`), darin die wieder befüllten `AGENTS.md` und
+  `CLAUDE.md`.
+- `bd init --non-interactive --prefix P --skip-agents` lässt beide Dateien
+  unverändert (leer, `0444`) und legt sie auch nicht in seinen Commit. Es
+  committet trotzdem seine Änderungen an `.gitignore`, `.beads/.gitignore` und
+  `.beads/hooks/*` und setzt lokal `core.hooksPath`; das gilt auch ohne
+  Schreibschutz und ist hier nicht Gegenstand.
+- Nicht geprüft: Wirkung der Beads-Git-Hooks nach späteren
+  Checkouts/Merges auf diese Dateien.
+
+Verwende daher `bd init --skip-agents` und starte `bd setup codex|claude` nicht
+in diesem Klon. Ist es passiert, meldet `--check` die nicht leere Datei. Ohne Commit mit
+`git checkout -- AGENTS.md CLAUDE.md` zurücksetzen; hat `bd init` sie schon
+committet, aus dem Stand davor mit `git checkout COMMIT_VOR_INIT -- AGENTS.md
+CLAUDE.md` wiederherstellen. Danach das Skript erneut ausführen. Auch mit
+wieder befülltem Beads-Block gehen die Rollenrechte der Übergabe vor
+(Abschnitt „Manueller Handoff“ der Arbeitsregeln).
 
 ## Grenzen
 

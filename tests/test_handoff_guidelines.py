@@ -20,6 +20,7 @@ from ki_dev.handoff_guidelines import (
     GuidelineSection,
     parse_guideline_document,
     render_guideline_documents,
+    select_common_guidelines,
     select_guidelines,
 )
 from ki_dev.handoff_guidelines_source import (
@@ -95,12 +96,39 @@ def test_review_without_target_stays_build_review():
     ) == select_guidelines(documents, Step.REVIEW, ReviewTarget.BUILD)
 
 
+def test_common_selection_has_no_stage_sections_and_keeps_order():
+    selected = select_common_guidelines(_documents())
+    for source in GUIDELINE_SOURCES:
+        assert _ids(selected, source) == ["common", "shared"]
+    sources = [s.source for s in selected]
+    assert sources == sorted(sources, key=sources.index)
+    assert sources[0] == str(GUIDELINE_SOURCES[0].path)
+
+
+def test_repository_common_sections_cover_former_entry_texts():
+    selected = select_common_guidelines(load_guidelines(REPO))
+    ids = {(Path(s.source).name, s.id) for s in selected}
+    assert {
+        ("arbeitsregeln.de.yaml", "leitlinien-pflege"),
+        ("arbeitsregeln.de.yaml", "beads-lesen"),
+        ("arbeitsregeln.de.yaml", "rollenrechte"),
+        ("arbeitsregeln.de.yaml", "sitzungsende"),
+        ("arbeitsregeln.de.yaml", "python-pytest"),
+        ("arbeitsregeln.de.yaml", "verbrauchsmessung"),
+    } <= ids
+
+
 def test_sources_keep_fixed_order_and_markdown():
     selected = select_guidelines(_documents(), Step.BUILD)
     sources = [s.source for s in selected]
     assert sources == sorted(sources, key=sources.index)
     assert sources[0] == "docs/policies/programmierleitlinie.de.yaml"
-    assert sources[-1] == "docs/policies/technikleitlinie.de.yaml"
+    assert [str(source.path) for source in GUIDELINE_SOURCES] == [
+        "docs/policies/programmierleitlinie.de.yaml",
+        "docs/policies/technikleitlinie.de.yaml",
+        "docs/policies/arbeitsregeln.de.yaml",
+    ]
+    assert sources[-1] == "docs/policies/arbeitsregeln.de.yaml"
     assert selected[0].text == "## Q0 common\n\n- Q0:common"
 
 
@@ -136,7 +164,7 @@ def test_repository_mapping_keeps_full_reach(step, target):
 
 
 def test_focus_sections_exist_in_repository_source():
-    [prog, _] = load_guidelines(REPO)
+    prog = load_guidelines(REPO)[0]
     assert set(_FOCUS) <= {sid for sid, _ in prog.sections}
 
 
@@ -311,10 +339,14 @@ def test_core_does_no_file_access(monkeypatch):
 # ---------------------------------------------------------------------
 
 
-def test_load_reads_both_sources_in_order(tmp_path):
+def test_load_reads_all_sources_in_order(tmp_path):
     write_guidelines(tmp_path)
     documents = load_guidelines(tmp_path)
-    assert [d.title for d in documents] == ["Titel Q0", "Titel Q1"]
+    assert [d.title for d in documents] == [
+        "Titel Q0",
+        "Titel Q1",
+        "Titel Q2",
+    ]
 
 
 def test_missing_source_is_read_error(tmp_path):
@@ -370,7 +402,7 @@ def test_repository_documents_match_sources():
 
 
 def test_rendered_document_keeps_front_matter_and_marks_generation():
-    [document, _] = _documents()
+    document = _documents()[0]
     text = render_guideline_documents((document,))[SOURCE.document]
     assert text.startswith(
         "---\nlayout: page\ntitle: Titel Q0\npermalink: /de/Q0/\n---\n"
@@ -382,7 +414,9 @@ def test_rendered_document_keeps_front_matter_and_marks_generation():
 
 def test_sync_writes_then_check_detects_drift_without_writing(tmp_path):
     write_guidelines(tmp_path)
-    assert len(sync_guideline_documents(tmp_path, check=False)) == 2
+    assert len(sync_guideline_documents(tmp_path, check=False)) == len(
+        GUIDELINE_SOURCES
+    )
     assert sync_guideline_documents(tmp_path, check=True) == ()
     target = tmp_path / SOURCE.document
     target.write_text("von Hand geändert\n")

@@ -24,7 +24,7 @@ class GuidelineSource:
     document: PurePosixPath
 
 
-# Feste Reihenfolge: Architektur/Programmierung, dann Technik.
+# Feste Reihenfolge: Architektur/Programmierung, Technik, Arbeitsregeln.
 GUIDELINE_SOURCES = (
     GuidelineSource(
         PurePosixPath("docs/policies/programmierleitlinie.de.yaml"),
@@ -33,6 +33,10 @@ GUIDELINE_SOURCES = (
     GuidelineSource(
         PurePosixPath("docs/policies/technikleitlinie.de.yaml"),
         PurePosixPath("docs/technikleitlinie.de.md"),
+    ),
+    GuidelineSource(
+        PurePosixPath("docs/policies/arbeitsregeln.de.yaml"),
+        PurePosixPath("docs/arbeitsregeln.de.md"),
     ),
 )
 
@@ -219,14 +223,29 @@ def select_guidelines(
         wanted = set(document.common) | set(stage["task"])
         if is_review:
             wanted |= set(stage["review"])
-        selected += [
-            GuidelineSection(
-                str(document.source.path), section_id, text
-            )
-            for section_id, text in document.sections
-            if section_id in wanted
-        ]
+        selected += _sections_of(document, wanted)
     return tuple(selected)
+
+
+def select_common_guidelines(
+    documents: tuple[GuidelineDocument, ...],
+) -> tuple[GuidelineSection, ...]:
+    """Nur ``common`` je Quelle, für Sitzungen ohne Schritt (lokal).
+    Reihenfolge und Einmaligkeit wie ``select_guidelines``."""
+    selected = []
+    for document in documents:
+        selected += _sections_of(document, set(document.common))
+    return tuple(selected)
+
+
+def _sections_of(
+    document: GuidelineDocument, wanted: set[str]
+) -> list[GuidelineSection]:
+    return [
+        GuidelineSection(str(document.source.path), section_id, text)
+        for section_id, text in document.sections
+        if section_id in wanted
+    ]
 
 
 def _target(

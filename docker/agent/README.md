@@ -261,7 +261,8 @@ Keine Schlüssel ins Image schreiben.
   Auch Reviewer haben damit Schreibzugriff; ihre fachliche Rolle bleibt im Prompt.
 - Claude lädt ausschließlich eine pro Aufruf erzeugte Settings-Datei (siehe
   „Container-Konfiguration“). Andere Benutzer-/Projekt-Settings und deren
-  Sperr-Hooks bleiben deaktiviert. CLAUDE.md und Projektdaten bleiben
+  Sperr-Hooks bleiben deaktiviert. CLAUDE.md (im Repository leer; den
+  Einstiegskontext liefert `ki-dev handoff`) und Projektdaten bleiben
   verfügbar. Codex-Hooks sind abgeschaltet;
   die Host-Verzeichnisse `~/.codex/rules` und `~/.claude/rules` sowie
   `/workspace/.claude` werden mit leeren tmpfs überdeckt.

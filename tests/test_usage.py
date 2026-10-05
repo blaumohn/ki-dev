@@ -3,7 +3,8 @@
 Fixtures spiegeln real beobachtete Feldnamen/-beziehungen aus lokalen
 Codex-Rollouts und Claude-Sitzungstranskripten wider (Schema per
 gezielter Feldnamen-/Zaehlerpruefung verifiziert, nie per Rohinhalt-
-Lesen -- siehe usage.py-Moduldoc und AGENTS.md). Die konkreten Werte
+Lesen -- siehe usage.py-Moduldoc und
+docs/policies/arbeitsregeln.de.yaml). Die konkreten Werte
 in diesen Tests sind erfunden, ihre Struktur/Beziehungen nicht.
 """
 

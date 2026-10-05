@@ -379,9 +379,9 @@ def _line(value: object) -> str:
 
 _COMMON = (
     "Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies",
-    "AGENTS.md, den geltenden Auftrag und den tatsächlichen",
-    "Arbeitsstand gezielt. Melde konkrete fehlende Voraussetzungen,",
-    "statt zu raten.",
+    "den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und",
+    "den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende",
+    "Voraussetzungen, statt zu raten.",
 )
 
 _GUIDELINE_INTRO = (

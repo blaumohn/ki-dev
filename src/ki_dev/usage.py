@@ -19,8 +19,8 @@ echten lokalen Sitzungen/Rollouts geprueft: Codex
 ``cache_creation.ephemeral_5m_input_tokens +
 _1h_input_tokens == cache_creation_input_tokens``).
 Diese Pruefung erfolgte ausschliesslich ueber Feldnamen/Zaehler
-lokaler Dateien, nie ueber deren Rohinhalt (siehe AGENTS.md,
-Abschnitt Verbrauchsmessung).
+lokaler Dateien, nie ueber deren Rohinhalt (siehe docs/policies/
+arbeitsregeln.de.yaml, Abschnitt verbrauchsmessung).
 
 Architekturquelle: docs/architecture/tokenmessung-estimatoren.de.md.
 """
