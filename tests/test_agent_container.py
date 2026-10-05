@@ -285,6 +285,33 @@ def test_beads_mount(sandbox, source):
         assert sandbox.logged("beads") == [str(beads)]
 
 
+@pytest.mark.parametrize(
+    "config, setup, retcode",
+    [
+        ("lint:\n    max-chars:\n        notes: 600\n", "absent", 1),
+        ("lint:\n    max-chars:\n        notes: 600\n", "unbuilt", 1),
+        ("lint:\n    max-chars:\n        notes: 600\n", "built", 0),
+        ("lint.max-chars.notes: 600\n", "absent", 1),
+        ("# lint.max-chars.notes: 600\n", "absent", 0),
+        ("export.auto: false\n", "absent", 0),
+    ],
+)
+def test_max_chars_requires_local_bd(sandbox, config, setup, retcode):
+    (sandbox.repo / ".beads").mkdir()
+    (sandbox.repo / ".beads/config.yaml").write_text(config)
+    beads = sandbox.repo.parent / "beads"
+    if setup != "absent":
+        beads.mkdir()
+    if setup == "built":
+        sandbox.add_executable(beads / ".build/linux/bd", "exit 0")
+    _, _, stderr = sandbox.run("run", "true", retcode=retcode)
+    if retcode:
+        assert "uses lint.max-chars" in stderr
+        assert not (sandbox.log / "args").exists()
+    else:
+        assert sandbox.logged("args")[-1] == "true"
+
+
 @pytest.mark.parametrize("present", [True, False])
 def test_claude_state_only_when_present(sandbox, present):
     state = sandbox.auth / ".claude.json"

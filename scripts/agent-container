@@ -81,7 +81,8 @@ Mount files: \${XDG_CONFIG_HOME:-~/.config}/ki-dev/agent-container/mounts/NAME.y
 Template:    docker/agent/mount.example.yaml
 
 ../beads is always mounted at /beads when present; KI_DEV_AGENT_BEADS_REPO
-selects another checkout. Details: docker/agent/README.md
+selects another checkout. If .beads/config.yaml uses lint.max-chars, its
+.build/linux/bd is required. Details: docker/agent/README.md
 EOF
 }
 
@@ -298,6 +299,20 @@ add_beads_mount() {
     export KI_DEV_AGENT_BEADS_REPO
     exclude_beads_build "$KI_DEV_AGENT_BEADS_REPO"
     compose_files+=(-f "$repo_dir/compose.beads.yaml")
+  fi
+  require_local_bd
+}
+
+# lint.max-chars exists only in the local bd build (ki-dev-ablauf-qdg); the
+# image's bd would ignore it silently. Drop this check once BD_VERSION has it.
+require_local_bd() {
+  local config="$repo_dir/.beads/config.yaml"
+  if ! grep -Eq '^[^#]*max-chars' "$config" 2>/dev/null; then return; fi
+  local bd="${KI_DEV_AGENT_BEADS_REPO:-../beads}/.build/linux/bd"
+  if [[ -z "${KI_DEV_AGENT_BEADS_REPO:-}" || ! -x "$bd" ]]; then
+    echo "Missing $bd; .beads/config.yaml uses lint.max-chars, which needs" \
+      "a local bd build. Build bd in ../beads or set KI_DEV_AGENT_BEADS_REPO." >&2
+    exit 1
   fi
 }
 

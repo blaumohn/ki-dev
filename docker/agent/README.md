@@ -84,7 +84,11 @@ Startskript trägt `.build/` in die `info/exclude` des beads-Checkouts ein
 bindet nur die Quellen ein und baut beim Start nichts. Änderungen im
 Checkout werden erst nach erneutem `go build` wirksam; das Image selbst
 enthält weiterhin die festgelegte Release-Version, keine lokalen PR-Patches.
-Ohne `.build/linux/bd` gilt wieder `/usr/local/bin/bd`. Die bd-Warnung
+Ohne `.build/linux/bd` gilt wieder `/usr/local/bin/bd`. Nutzt
+`.beads/config.yaml` dieses Repos `lint.max-chars` (nur im lokalen Build,
+ki-dev-ablauf-qdg), bricht das Startskript stattdessen mit Exit 1 ab, wenn
+der Checkout oder `.build/linux/bd` fehlt; ob der Build aktuell ist, prüft es
+nicht. Die bd-Warnung
 „multiple 'bd' binaries found in PATH“ ist dabei erwartet: Sie nennt den
 Dev-Build als verwendet.
 
