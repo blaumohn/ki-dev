@@ -67,3 +67,16 @@
 
 export.auto: false
 import.auto: false
+lint:
+    max-chars:
+        design: 4000
+        notes: 600
+        description: 4000
+        acceptance_criteria: 2000
+    max-chars-hint:
+        notes: "Temporäre Kurzmitteilung: ersetzen statt anhängen; Auftrag gehört in description/design/AC."
+        description: "Zu groß: erst Abschnitte prüfen (Entwurf→design, Prüffälle→AC), sonst in Kinder teilen; Stand ersetzen, keine Nachträge"
+        design: "Zu groß: erst Abschnitte prüfen (Kontext/Belege→description, Prüffälle→AC), sonst in Kinder teilen; Stand ersetzen, keine Nachträge"
+        acceptance_criteria: "Zu viele Kriterien: Entwurfsdetails→design; sonst Vorgang teilen"
+validation:
+    on-create: warn
