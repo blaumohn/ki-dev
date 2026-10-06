@@ -11,12 +11,14 @@ Die Maschine hält Zustand, Rollenfolge, Schrittgrenzen und Änderungsnachweise.
 Die KI schreibt Quelltext und urteilt über Ergebnisse.
 
 > **Status: aktive Entwicklung.**
-> Gebaut wird gerade der ausführbare Kern: die automatisierte
-> Controller↔Worker-Schleife (`ki-dev loop`). Alles Weitere ist Entwurf und
-> unten als **Zielbild** gekennzeichnet.
+> Heute nutzbar ist [`ki-dev step`](#ki-dev-step-der-ablauf-von-hand): derselbe
+> Ablauf von Hand, als Spielplatz für jede Funktion, die später automatisch
+> laufen soll. Als Nächstes folgt die automatisierte Schleife (`ki-dev loop`).
+> Alles Weitere ist Entwurf und unten als **Zielbild** gekennzeichnet.
 
 <!-- mdman:toc:start -->
 - [In der Praxis](#in-der-praxis)
+- [`ki-dev step`: der Ablauf von Hand](#ki-dev-step-der-ablauf-von-hand)
 - [Die Orchestrierungsparameter](#die-orchestrierungsparameter)
 - [Wofür](#wofür)
 - [Warum nicht einfach ein Agent mit Subagenten?](#warum-nicht-einfach-ein-agent-mit-subagenten)
@@ -107,8 +109,106 @@ nicht beim Worker an.
 
 Kein Mensch zwischen den beiden Sitzungen. Genau das ist der erste Nutzen.
 
-> Ausgabe- und Befehlsformat sind der Zielzustand des V0-Kerns und noch nicht
+> Ausgabe- und Befehlsformat sind der Zielzustand der Schleife und noch nicht
 > eingefroren.
+
+---
+
+## `ki-dev step`: der Ablauf von Hand
+
+Bevor die Schleife die Sitzungen selbst verbindet, macht das der Mensch:
+`ki-dev step` gibt für jeden Schritt eine kurze, geprüfte Übergabe aus, du
+fügst sie in eine Claude- oder Codex-Sitzung ein und gibst die Antwort
+weiter. Jede Regel, die später automatisch greifen soll, lässt sich so erst
+von Hand erproben. Der Befehl startet keinen Agenten.
+
+Jede Phase hat eigene Zustände. Sie stehen als Daten in
+[`src/ki_dev/step-flow.toml`](src/ki_dev/step-flow.toml), nicht im Code; ein
+Test prüft, dass jeder Zustand das Ende erreicht.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    map --> map.review: erledigt
+    map.review --> graph: PASS
+    graph --> graph.review: erledigt
+    graph.review --> materialize: PASS
+    materialize --> materialize.review: erledigt
+    materialize.review --> build: PASS
+    build --> build.review: erledigt
+    build.review --> fertig: PASS
+    build.review --> build.korrektur: fix
+    build.korrektur --> build.review: erledigt
+    graph.review --> quelle: quelle
+    quelle --> map: importiert
+```
+
+Ein Review sagt nicht nur `CHANGES`. Jeder Befund trägt eine Klasse, und die
+Klasse bestimmt den Weg:
+
+| Klasse | Urteil | Weiter |
+| --- | --- | --- |
+| `fix` | `CHANGES` | derselbe Schreibagent korrigiert |
+| `quelle` | `NEEDS_DECISION` | Planungssitzung, dann **bestehende** Karte ergänzen |
+| `entscheidung` | `NEEDS_DECISION` | der Mensch entscheidet |
+
+Ein echter Fall aus diesem Repository (6.10.2026, Commit `8f88c98`, Bead
+`ki-dev-ablauf-5we`, gekürzt). Die Review-Übergabe führt zuerst den
+deterministischen Vorlauf aus; hier ist eine Prüfung begründet ausgelassen:
+
+```bash
+ki-dev step ki-dev-ablauf-5we --step review --preflight-skip 'lint=nur Doku geändert'
+```
+
+```text
+Schritt: review
+Reviewziel: build
+Bead: ki-dev-ablauf-5we - Vor GitHub: begrenzte Reviewer-Prüfsteuerung in step anschließen
+…
+requirement_ref: AC1, AC2, AC3, AC4 (nummerierte Zeilen „N.“ in acceptance_criteria; …)
+
+Hinweis für den Menschen: Zustand build.review; Folgeschritte laut step-flow.toml (nichts läuft automatisch):
+- PASS → fertig: Schließen entscheidest du (`bd close ki-dev-ablauf-5we`)
+- fix → build.korrektur: Befunde an den Bau-Agenten (bisherige Sitzung)
+- quelle → quelle: offene Fragen in einer Planungssitzung klären
+- entscheidung → build.entscheidung: du entscheidest: annehmen, korrigieren oder quelle
+PRUEFBERICHT vorlauf-start=2026-10-06T05:46:24Z
+- tests: PASS ======== 2272 passed, 1 skipped in 62.39s ======== […]
+- lint: SKIPPED ausgelassen per --preflight-skip: nur Doku geändert [argv=./.venv/bin/ruff check .]
+TEILLAUF: … Abweichend von der Rolle ist PASS ausgeschlossen; Ausgabe: CHANGES | NEEDS_DECISION. …
+```
+
+Die Review-Sitzung endet mit einem JSON-Objekt; das gleiche Format prüft auch
+die Schleife. Mit einer Beispielantwort:
+
+```bash
+echo '{"action": "CHANGES", "detail": "Test für leere preflight_skip-Map fehlt",
+       "requirement_ref": "AC2", "preflight_args": {"tests": "-k decision"}}' \
+  | ki-dev step ki-dev-ablauf-5we --step review --next-turn --decision-file -
+```
+
+```text
+Empfänger: Bau-Agent (bisherige Sitzung)
+Bead: ki-dev-ablauf-5we - Vor GitHub: begrenzte Reviewer-Prüfsteuerung in step anschließen
+
+Review-Befund (CHANGES, AC2): Test für leere preflight_skip-Map fehlt
+…
+- fix → build.korrektur: Befunde an den Bau-Agenten (bisherige Sitzung)
+
+Prüfsteuerung des Reviewers (nicht angewendet; Teillauf ohne PASS), nach der Korrektur auszuführen:
+ki-dev step ki-dev-ablauf-5we --step review --next-turn --preflight-args 'tests=-k decision'
+```
+
+Verweist `CHANGES` auf kein bestehendes Abnahmekriterium, geht die Antwort als
+`NEEDS_DECISION` an den Menschen statt an den Bau-Agenten.
+
+Auch die Planung lief so. Ein Graph-Review vom 5.10.2026 meldete zwei
+`CHANGES` und ein `NEEDS_DECISION`: Die Karte war nicht erneut geprüft. Der
+Mensch nahm sie ausdrücklich an (`ACCEPTED_BY_DECISION`, kein PASS). Die
+Planungssitzung mit den Antworten wurde als neue Quelle eingelesen
+(`ki-dev step map --agent claude --session …`) und ergänzte den bestehenden
+Graphen um einen Vorgang, statt einen zweiten anzulegen. Einzelheiten:
+[docs/handoff.de.md](docs/handoff.de.md).
 
 ---
 
@@ -760,19 +860,27 @@ Modulgrenzen, bewertete Alternativen und technische Herausforderungen.
 
 ```mermaid
 flowchart LR
-    V0["V0<br/>begrenzte<br/>Controller↔Worker-Schleife"]
-    V1["Rollen · Protokoll ·<br/>sichere Wiederaufnahme"]
-    V2["Arbeitsgraph +<br/>automatische Auswahl"]
-    V3["Planning +<br/>Materialisierung"]
-    V4["regelgeleitete<br/>Kontextbildung"]
-    V5["Pages-PM-Integration<br/>Geltung + Beziehungen"]
+    S["step<br/>Ablauf von Hand,<br/>Spielplatz"]
+    L["loop<br/>automatische Schleife,<br/>bereichsneutral"]
+    W["deklarative<br/>Workflows"]
+    Z["Zustands-/Ereignis-<br/>Schnittstelle"]
 
-    V0 --> V1 --> V2 --> V3 --> V4 --> V5
+    S --> L --> W --> Z
 ```
 
-Keine feste Versionsliste, sondern eine Richtung. Der Grundsatz: kein
-allgemeines Agentensystem auf Vorrat bauen, sondern jeden nächsten
-deterministischen Baustein aus einem echten Arbeitsproblem ableiten.
+Keine feste Versionsliste, sondern benannte Etappen:
+
+- **step:** der heutige Stand. Jede Regel wird zuerst von Hand erprobt.
+- **loop:** verbindet die Sitzungen selbst und spart das Kopieren. Ob
+  Planung, Materialisierung oder Umsetzung läuft, entscheidet die Übergabe,
+  nicht die Schleife.
+- **Workflows:** Abläufe als Daten. `step-flow.toml` ist die erste
+  Vorstufe; die Schleife kann dieselbe Tabelle lesen.
+- **Zustand/Ereignis:** eine Schnittstelle für Laufzustand und Ereignisse.
+  Der Arbeitsgraph in Beads ist dafür kein Ersatz.
+
+Der Grundsatz: kein allgemeines Agentensystem auf Vorrat bauen, sondern jeden
+nächsten deterministischen Baustein aus einem echten Arbeitsproblem ableiten.
 
 Der lebende Arbeitsstand steht nicht hier, sondern im Beads-Arbeitsgraphen; im
 geklonten Repository etwa über `bv`, für eine teilbare statische Ansicht

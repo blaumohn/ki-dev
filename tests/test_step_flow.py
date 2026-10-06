@@ -12,6 +12,7 @@ import copy
 import re
 import tomllib
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -241,3 +242,14 @@ def test_unknown_class_or_event_is_visible():
         FLOW.verdict("erledigt")
     with pytest.raises(StepFlowError, match="unbekannter Zustand"):
         FLOW.hint_lines("nirgends", "x")
+
+
+def test_readme_state_diagram_matches_table():
+    """Jede Kante des README-Diagramms ist ein Übergang der Tabelle."""
+    readme = (Path(__file__).parent.parent / "README.md").read_text()
+    block = readme.split("stateDiagram-v2", 1)[1].split("```", 1)[0]
+    edges = re.findall(r"^\s*(\S+) --> (\S+): (\S+)$", block, re.M)
+    assert edges
+    table = {(t.source, t.event, t.target) for t in FLOW.transitions}
+    for source, target, event in edges:
+        assert (source, event, target) in table
