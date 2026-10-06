@@ -188,6 +188,43 @@ Eingabefehler liefern keine Übergabe und starten keinen Vorlauf: leere oder
 nur aus Leerraum bestehende Rückmeldung und Überlänge (keine Kürzung) sind
 Exit 2; Lese- oder UTF-8-Fehler sind Exit 1, ohne Textinhalt in der Meldung.
 
+### `--decision-file`: Antwort der Build-Review weitergeben
+
+Die Build-Review endet mit genau einem JSON-Objekt im gemeinsamen Vertrag
+von step und Loop (`src/ki_dev/review_decision.py`):
+
+```json
+{"action": "CHANGES", "detail": "Test für leere Eingabe fehlt", "requirement_ref": "AC2"}
+```
+
+`action` ist `PASS`, `CHANGES` oder `NEEDS_DECISION` (`ESCALATE` gibt es nur
+im Loop). Nicht-PASS braucht `detail`; `requirement_ref` steht nur bei
+`CHANGES`. Die Übergabe nennt die Referenzen: Zeilen `N.` in
+`acceptance_criteria` ergeben `AC1..ACn`, ohne Nummerierung ist das ganze
+Feld `AC1`. Eine Nummerierung mit Lücke oder Doppel ist ein formaler Mangel
+(Exit 2).
+
+```bash
+ki-dev step projekt-42 --step review --next-turn --decision-file antwort.json
+pbpaste | ki-dev step projekt-42 --step review --next-turn --decision-file -
+```
+
+Ohne Vorlauf prüft step die Antwort, bindet `CHANGES` an ein bestehendes
+Kriterium und gibt die Nachricht laut Zustandstabelle aus:
+
+| Antwort | Empfänger | Folgeschritte |
+| --- | --- | --- |
+| `CHANGES` mit gültigem `AC<n>` | Bau-Agent (bisherige Sitzung) | `fix → build.korrektur` |
+| `CHANGES` ohne/mit fremdem `AC` | Mensch, als `NEEDS_DECISION` | `quelle`, `entscheidung` |
+| `NEEDS_DECISION` | Mensch | `quelle`, `entscheidung` |
+| `PASS` | Mensch | `PASS → fertig` (Schließen entscheidest du) |
+
+Kein `run_id`/`round_id` in step: Es gibt keinen Laufspeicher; der Loop legt
+diese Hülle um denselben Kern. Höchstens 20000 Zeichen, nie gekürzt.
+Ungültiges JSON, fremde Felder, `ESCALATE` oder verletzte Feldregeln: Exit 2
+mit Feldpfad, ohne Rohwerte. Nur mit `--next-turn`, nur Prüfgegenstand
+`build`, nicht mit `--feedback-file` oder `--preflight-*`.
+
 ### `--preflight-args`/`--preflight-skip`: Teillauf mit begründetem Umfang
 
 Scheitert der Vorlauf an einem unabhängigen Test, hängt `--preflight-args

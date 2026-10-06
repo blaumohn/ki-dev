@@ -10,6 +10,11 @@ from typing import TYPE_CHECKING
 from jsonschema import Draft202012Validator
 
 from ki_dev.handoff_limit import check_base_length
+from ki_dev.review_decision import (
+    ReviewContractError,
+    criterion_refs,
+    split_acceptance_criteria,
+)
 from ki_dev.step_flow import load_step_flow
 
 if TYPE_CHECKING:
@@ -282,7 +287,7 @@ def _base_lines(
         effective_target = review_target or ReviewTarget.BUILD
         lines.append(f"Reviewziel: {effective_target.value}")
     lines += [
-        f"Bead: {_line(issue.id)} - {_line(issue.title)}",
+        f"Bead: {one_line(issue.id)} - {one_line(issue.title)}",
         "",
         *_COMMON,
         "",
@@ -299,16 +304,47 @@ def _base_lines(
     for epic_id, epic_context in issue.epic_context:
         lines += [
             "",
-            f"Epic-Hinweis ({_line(epic_id)}):",
-            _line(epic_context),
+            f"Epic-Hinweis ({one_line(epic_id)}):",
+            one_line(epic_context),
         ]
     if _needs_refs(step, review_target):
         lines += ["", "Quellenreferenzen (unaufgelöst):"]
-        lines += [f"- {_line(ref)}" for ref in issue.source_refs]
+        lines += [f"- {one_line(ref)}" for ref in issue.source_refs]
+    if _is_build_review(step, review_target):
+        lines += ["", _criterion_line(issue)]
     flow = load_step_flow()
     state = flow_state(step, review_target)
-    lines += ["", *flow.hint_lines(state, _line(issue.id))]
+    lines += ["", *flow.hint_lines(state, one_line(issue.id))]
     return lines
+
+
+def _is_build_review(
+    step: Step, review_target: ReviewTarget | None
+) -> bool:
+    return step is Step.REVIEW and review_target in (
+        None,
+        ReviewTarget.BUILD,
+    )
+
+
+def _criterion_line(issue: HandoffIssue) -> str:
+    """Nur die Referenzen; den Text liest der Reviewer im Bead."""
+    refs = ", ".join(ref for ref, _ in criteria_with_refs(issue))
+    return (
+        f"requirement_ref: {refs} (nummerierte Zeilen „N.“ in "
+        "acceptance_criteria; ohne Nummerierung das ganze Feld)."
+    )
+
+
+def criteria_with_refs(issue: HandoffIssue) -> list[tuple[str, str]]:
+    """Abnahmekriterien des Beads mit Referenz; ungültige Nummerierung
+    ist ein formaler Mangel (Exit 2), kein stiller Ersatz."""
+    text = str(issue.acceptance_criteria)
+    try:
+        criteria = split_acceptance_criteria(text)
+    except ReviewContractError as exc:
+        raise HandoffInvalidError((str(exc),)) from exc
+    return list(zip(criterion_refs(criteria), criteria, strict=True))
 
 
 def flow_state(step: Step, review_target: ReviewTarget | None) -> str:
@@ -338,15 +374,18 @@ def _variable_fields(
 ) -> list[tuple[str, int]]:
     """Zeichenanteile der veränderlichen Basisteile, ohne Rohwerte."""
     fields = [
-        ("id", len(_line(issue.id))),
-        ("title", len(_line(issue.title))),
+        ("id", len(one_line(issue.id))),
+        ("title", len(one_line(issue.title))),
     ]
     for index, (epic_id, context) in enumerate(issue.epic_context):
-        size = len(_line(epic_id)) + len(_line(context))
+        size = len(one_line(epic_id)) + len(one_line(context))
         fields.append((f"epic_context[{index}]", size))
     if _needs_refs(step, review_target):
         for index, ref in enumerate(issue.source_refs):
-            fields.append((f"source_refs[{index}]", len(_line(ref))))
+            fields.append((f"source_refs[{index}]", len(one_line(ref))))
+    if _is_build_review(step, review_target):
+        size = len(_criterion_line(issue))
+        fields.append(("acceptance_criteria", size))
     if reading_hint is not None:
         fields.append(("Lesehinweis", len(reading_hint)))
     return fields
@@ -364,7 +403,8 @@ def render_guideline_block(
     for section in guidelines:
         lines += [
             "",
-            f"--- {_line(section.source)}#{_line(section.id)} ---",
+            f"--- {one_line(section.source)}#"
+            f"{one_line(section.id)} ---",
             section.text,
         ]
     return "\n".join(lines) + "\n"
@@ -379,7 +419,7 @@ def _roles(
     return (*role, *load_step_flow().class_lines())
 
 
-def _line(value: object) -> str:
+def one_line(value: object) -> str:
     """Einzeilig ohne Steuerzeichen (auch ANSI-Escapes)."""
     text = "".join(
         " " if ch.isspace() else ch
@@ -540,9 +580,12 @@ _REVIEW_ROLES = {
         "Verwende notes, comments, Selbsteinschätzungen des",
         "Bau-Agenten und frühere Reviews vor diesem Urteil nicht als",
         "Bewertungsinput.",
-        "Ausgabe: PASS | CHANGES | NEEDS_DECISION; bei CHANGES je",
-        "Befund kurz mit Anforderungs- oder Codebezug. Du hast keine",
-        "automatische Autorität gegenüber dem Bau-Agenten und",
-        "schließt nichts automatisch.",
+        "Ausgabe: PASS | CHANGES | NEEDS_DECISION. Nenne zuerst je",
+        "Befund kurz Klasse und Anforderungs- oder Codebezug; zum",
+        'Schluss genau ein JSON-Objekt {"action": …, "detail": …,',
+        '"requirement_ref": "AC<n>" oder null} (requirement_ref nur',
+        "bei CHANGES); der Mensch gibt es mit --decision-file weiter.",
+        "Du hast keine automatische Autorität gegenüber dem",
+        "Bau-Agenten und schließt nichts automatisch.",
     ),
 }

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
-from enum import StrEnum
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -18,13 +16,14 @@ from ki_dev.review_context import (
     ReviewProjection,
     project_review_context,
 )
-
-
-class ReviewAction(StrEnum):
-    CHANGES = "CHANGES"
-    PASS = "PASS"
-    NEEDS_DECISION = "NEEDS_DECISION"
-    ESCALATE = "ESCALATE"
+from ki_dev.review_decision import (
+    LOOP_ACTIONS,
+    ReviewAction,
+    ReviewContractError,
+    bind_requirement,
+    load_json_object,
+    parse_verdict,
+)
 
 
 class LoopProtocolError(ValueError):
@@ -257,21 +256,30 @@ def run_review_round(
 def parse_review_decision(
     raw: str, *, run_id: str, round_id: int
 ) -> ReviewDecision:
+    """Loop-Hülle (run_id, round_id) prüfen, dann den gemeinsamen Kern
+    aus review_decision; Vertragsfehler werden LoopProtocolError."""
     try:
-        value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise LoopProtocolError(
-            "Review-Ausgabe ist kein einzelnes JSON-Objekt"
-        ) from exc
-    expected = {
-        "run_id",
-        "round_id",
-        "action",
-        "detail",
-        "requirement_ref",
-    }
-    if not isinstance(value, dict) or set(value) != expected:
-        raise LoopProtocolError(
+        value = load_json_object(raw)
+        _check_identity(value, run_id, round_id)
+        core = {k: v for k, v in value.items() if k not in _IDENTITY}
+        verdict = parse_verdict(core, LOOP_ACTIONS)
+    except ReviewContractError as exc:
+        raise LoopProtocolError(str(exc)) from exc
+    return ReviewDecision(
+        run_id,
+        round_id,
+        verdict.action,
+        verdict.detail,
+        verdict.requirement_ref,
+    )
+
+
+_IDENTITY = ("run_id", "round_id")
+
+
+def _check_identity(value: dict, run_id: str, round_id: int) -> None:
+    if any(key not in value for key in _IDENTITY):
+        raise ReviewContractError(
             "Review-Ausgabe hat nicht exakt die erwarteten Felder"
         )
     received_round = value["round_id"]
@@ -281,67 +289,17 @@ def parse_review_decision(
         or not isinstance(received_round, int)
         or received_round != round_id
     ):
-        raise LoopProtocolError(
+        raise ReviewContractError(
             "Review-Ausgabe gehoert zu fremdem Lauf oder fremder Runde"
         )
-    if not isinstance(value["detail"], str):
-        raise LoopProtocolError("detail muss Text sein")
-    ref = value["requirement_ref"]
-    ref_invalid = not isinstance(ref, str) or not ref.strip()
-    if ref is not None and ref_invalid:
-        raise LoopProtocolError(
-            "requirement_ref muss null oder nichtleerer Text sein"
-        )
-    try:
-        action = ReviewAction(value["action"])
-    except (ValueError, TypeError) as exc:
-        raise LoopProtocolError("action ist ungueltig") from exc
-    if action is not ReviewAction.PASS and not value["detail"].strip():
-        raise LoopProtocolError(
-            f"{action.value} braucht eine Begruendung"
-        )
-    if action is not ReviewAction.CHANGES and ref is not None:
-        raise LoopProtocolError(
-            f"{action.value} darf kein requirement_ref binden"
-        )
-    return ReviewDecision(
-        run_id, round_id, action, value["detail"], ref
-    )
 
 
 def bind_review_decision(
     decision: ReviewDecision, task: LoopTask
 ) -> ReviewDecision:
-    """Binde CHANGES an ein bestehendes, eindeutiges Abnahmekriterium.
-
-    Eine fehlende, unbekannte oder fremde Referenz wird nicht als
-    Reparaturauftrag uebernommen: mehrdeutige Anforderungen oder eine
-    strengere neue Interpretation brauchen eine menschliche Klaerung
-    (NEEDS_DECISION) statt einer automatisch gestarteten Baurunde. Ein
-    Quelltext-Diff allein ist dabei kein Ablehnungsgrund; geprueft wird
-    nur die technische Referenz, nicht die inhaltliche Berechtigung der
-    Beanstandung.
-    """
-    if decision.action is not ReviewAction.CHANGES:
-        return decision
-    if decision.requirement_ref in task.acceptance_criterion_refs():
-        return decision
-    reason = (
-        "keine Referenz auf ein bestehendes Abnahmekriterium"
-        if not decision.requirement_ref
-        else f"unbekanntes oder fremdes Abnahmekriterium "
-        f"{decision.requirement_ref!r}"
-    )
-    return replace(
-        decision,
-        action=ReviewAction.NEEDS_DECISION,
-        detail=(
-            f"CHANGES abgewiesen ({reason}); Klaerung noetig statt "
-            f"automatischer Baurunde. Ursprungsbegruendung: "
-            f"{decision.detail}"
-        ),
-        requirement_ref=None,
-    )
+    """CHANGES an ein Abnahmekriterium des Laufs binden (gemeinsame
+    Regel ``bind_requirement``)."""
+    return bind_requirement(decision, task.acceptance_criterion_refs())
 
 
 def _build_prompt(request: BuildRequest) -> str:

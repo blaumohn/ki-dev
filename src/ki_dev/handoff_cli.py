@@ -29,6 +29,12 @@ from ki_dev.handoff import (
     render_handoff,
     validate_handoff,
 )
+from ki_dev.handoff_decision import (
+    DecisionInputError,
+    parse_step_decision,
+    read_decision,
+    render_decision_turn,
+)
 from ki_dev.handoff_guidelines import (
     GuidelineContractError,
     GuidelineDocument,
@@ -115,6 +121,7 @@ BEISPIELE
   ki-dev step projekt-42 --step review --review-of materialize
   ki-dev step projekt-42 --step review --next-turn
   ki-dev step projekt-42 --step review --next-turn --feedback-file -
+  ki-dev step projekt-42 --step review --next-turn --decision-file -
   ki-dev step map --agent codex --session SESSION_ID
   ki-dev step local > uebergabe.txt
 
@@ -136,6 +143,10 @@ NÄCHSTE NACHRICHT (--step review --next-turn)
   (UTF-8; - liest stdin; höchstens feedback_max_chars Zeichen, Standard
   600, in pyproject.toml, Abschnitt tool.ki-dev.handoff; nie gekürzt).
   Ohne die Option wird nichts gelesen.
+  --decision-file DATEI|- liest stattdessen die JSON-Antwort der
+  Build-Review (action, detail, requirement_ref; höchstens 20000
+  Zeichen) und gibt ohne Vorlauf die Nachricht laut step-flow.toml aus:
+  CHANGES -> Bau-Agent, NEEDS_DECISION/PASS -> Mensch. Ungültig: Exit 2.
 
 BASISGRENZE
   Die gerenderte Basisübergabe (ohne Leitlinien und Prüfbericht) hat
@@ -238,6 +249,16 @@ def handoff(
             show_default=False,
         ),
     ] = None,
+    decision_file: Annotated[
+        str | None,
+        typer.Option(
+            "--decision-file",
+            metavar="DATEI|-",
+            help="JSON-Antwort der Build-Review (- liest stdin); nur "
+            "mit --next-turn, ohne Vorlauf.",
+            show_default=False,
+        ),
+    ] = None,
     agent: Annotated[
         str | None,
         typer.Option(
@@ -265,7 +286,9 @@ def handoff(
             step,
             review_of,
             options,
-            next_turn or feedback_file is not None,
+            next_turn
+            or feedback_file is not None
+            or decision_file is not None,
             agent,
             session,
         )
@@ -277,7 +300,9 @@ def handoff(
             step,
             review_of,
             options,
-            next_turn or feedback_file is not None,
+            next_turn
+            or feedback_file is not None
+            or decision_file is not None,
             agent,
             session,
         )
@@ -288,8 +313,15 @@ def handoff(
             review_of,
             options,
             next_turn,
-            feedback_file,
+            _Inputs(feedback_file, decision_file),
         )
+
+
+class _Inputs(NamedTuple):
+    """Eingaben der Folgerunde: --feedback-file, --decision-file."""
+
+    feedback: str | None
+    decision: str | None
 
 
 class _PreflightValues(NamedTuple):
@@ -318,7 +350,7 @@ def _bead_form(
     review_of: ReviewTarget | None,
     options: _PreflightValues,
     next_turn: bool,
-    feedback_file: str | None,
+    inputs: _Inputs,
 ) -> None:
     if bead_id is None or step is None:
         _fail(
@@ -327,15 +359,17 @@ def _bead_form(
             code=2,
         )
     extra = _review_options(
-        step, review_of, options, next_turn, feedback_file
+        step, review_of, options, next_turn, inputs.feedback
     )
+    _check_decision_options(review_of, options, next_turn, inputs)
     try:
         text, exit_code = _bead_output(
-            bead_id, step, review_of, extra, next_turn, feedback_file
+            bead_id, step, review_of, extra, next_turn, inputs
         )
     except (
         InvalidBeadIdError,
         NextTurnInputError,
+        DecisionInputError,
         LimitConfigInvalidError,
         HandoffBaseTooLongError,
     ) as exc:
@@ -370,15 +404,17 @@ def _bead_output(
     review_of: ReviewTarget | None,
     extra: _PreflightRequest,
     next_turn: bool,
-    feedback_file: str | None,
+    inputs: _Inputs,
 ) -> tuple[str, int]:
     """Übergabetext und Exitcode. Die Basisgrenze gilt nicht für
     ``--next-turn`` (Folgenachricht, eigener Vertrag); sonst wird sie
     vor jedem Beads-Zugriff und Vorlauf gelesen."""
     if step is Step.REVIEW and next_turn:
         issue = read_issue(bead_id, Path.cwd())
+        if inputs.decision is not None:
+            return _decision_turn(issue, inputs.decision), 0
         return _next_turn_handoff(
-            issue, review_of, extra, feedback_file
+            issue, review_of, extra, inputs.feedback
         )
     limit = load_base_max_chars(Path.cwd())
     issue = read_issue(bead_id, Path.cwd())
@@ -581,6 +617,44 @@ def _next_turn_handoff(
     return text, 0
 
 
+def _check_decision_options(
+    review_of: ReviewTarget | None,
+    options: _PreflightValues,
+    next_turn: bool,
+    inputs: _Inputs,
+) -> None:
+    """--decision-file vor jedem Lesen prüfen: nur Folgerunde der
+    Build-Review, ohne Vorlauf-Optionen und ohne Rückmeldung."""
+    if inputs.decision is None:
+        return
+    if not next_turn:
+        _fail(
+            "--decision-file ist nur zusammen mit --next-turn zulässig",
+            code=2,
+        )
+    if review_of not in (None, ReviewTarget.BUILD) or options:
+        _fail(
+            "--decision-file gilt nur für die Build-Review, ohne "
+            "--preflight-args/--preflight-skip",
+            code=2,
+        )
+    if inputs.feedback is not None:
+        _fail(
+            "--decision-file und --feedback-file schließen sich aus",
+            code=2,
+        )
+
+
+def _decision_turn(issue: HandoffIssue, source: str) -> str:
+    """Reviewer-Antwort prüfen und Nachricht laut Tabelle; der Bead
+    muss den Build-Vertrag erfüllen (Abnahmekriterien)."""
+    problems = validate_handoff(issue, Step.REVIEW, ReviewTarget.BUILD)
+    if problems:
+        raise HandoffInvalidError(problems)
+    raw = read_decision(source, _stdin_binary)
+    return render_decision_turn(issue, parse_step_decision(raw, issue))
+
+
 def _stdin_binary() -> BinaryIO:
     return sys.stdin.buffer
 
@@ -686,7 +760,8 @@ def _local_form(
         _fail(
             "local lässt sich nicht mit --step/--review-of/"
             "--preflight-args/--preflight-skip/--next-turn/"
-            "--feedback-file/--agent/--session mischen",
+            "--feedback-file/--decision-file/--agent/--session "
+            "mischen",
             code=2,
         )
     limit = _base_limit()

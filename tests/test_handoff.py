@@ -426,3 +426,20 @@ def test_productive_steps_name_the_concrete_review_call(
     step, expected
 ):
     assert expected in render_handoff(_issue(), step)
+
+
+def test_build_review_lists_criterion_refs_without_text():
+    text = render_handoff(
+        _issue(acceptance_criteria="1. Erstens GEHEIM\n2. Zweitens"),
+        Step.REVIEW,
+    )
+    assert "requirement_ref: AC1, AC2 (" in text
+    assert "GEHEIM" not in text
+    assert "--decision-file" in text
+
+
+def test_build_review_rejects_gapped_criterion_numbering():
+    with pytest.raises(HandoffInvalidError, match="fortlaufend"):
+        render_handoff(
+            _issue(acceptance_criteria="1. a\n3. b"), Step.REVIEW
+        )

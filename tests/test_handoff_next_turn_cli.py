@@ -540,3 +540,115 @@ def test_notes_and_comments_are_never_read_or_written(
     result = runner.invoke(app, BASE)
     assert "GEHEIM" not in result.stdout + result.stderr
     assert all(call[:3] == READONLY_SHOW for call in bd.calls)
+
+
+# ---------------------------------------------------------------------
+# --decision-file: Reviewer-Antwort nach Zustandstabelle weitergeben
+# ---------------------------------------------------------------------
+
+
+def _decision(tmp_path: Path, **fields) -> str:
+    value = {"action": "PASS", "detail": "", "requirement_ref": None}
+    value.update(fields)
+    path = tmp_path / "antwort.json"
+    path.write_text(json.dumps(value))
+    return str(path)
+
+
+def test_changes_bound_to_criterion_goes_to_builder(bd, tmp_path):
+    source = _decision(
+        tmp_path,
+        action="CHANGES",
+        detail="Test fehlt",
+        requirement_ref="AC1",
+    )
+    result = runner.invoke(app, [*BASE, "--decision-file", source])
+    assert result.exit_code == 0, result.stderr
+    out = result.stdout
+    assert out.startswith("Empfänger: Bau-Agent (bisherige Sitzung)")
+    assert "Review-Befund (CHANGES, AC1): Test fehlt" in out
+    assert "Zustand build.review" in out
+    assert "- fix → build.korrektur:" in out
+    assert "PASS →" not in out
+    assert "Vorlauf:" not in result.stderr
+
+
+def test_unbound_changes_becomes_decision_for_human(bd, tmp_path):
+    source = _decision(
+        tmp_path, action="CHANGES", detail="x", requirement_ref="AC7"
+    )
+    result = runner.invoke(app, [*BASE, "--decision-file", source])
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.startswith("Empfänger: Mensch")
+    assert "NEEDS_DECISION: CHANGES abgewiesen" in result.stdout
+    assert "- quelle → quelle:" in result.stdout
+    assert "- entscheidung → build.entscheidung:" in result.stdout
+
+
+def test_pass_goes_to_human_with_close_hint(bd, tmp_path):
+    result = runner.invoke(
+        app, [*BASE, "--decision-file", _decision(tmp_path)]
+    )
+    assert result.exit_code == 0, result.stderr
+    assert "Review-Urteil PASS" in result.stdout
+    assert "`bd close x-1`" in result.stdout
+
+
+def test_decision_from_stdin(bd):
+    payload = json.dumps(
+        {
+            "action": "NEEDS_DECISION",
+            "detail": "Umfang?",
+            "requirement_ref": None,
+        }
+    )
+    result = runner.invoke(
+        app, [*BASE, "--decision-file", "-"], input=payload
+    )
+    assert result.exit_code == 0, result.stderr
+    assert "Review-Urteil NEEDS_DECISION: Umfang?" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "PASS",
+        '{"action": "ESCALATE", "detail": "x", '
+        '"requirement_ref": null}',
+        '{"action": "PASS", "detail": "", "requirement_ref": null, '
+        '"x": 1}',
+        '{"action": "CHANGES", "detail": "", '
+        '"requirement_ref": "AC1"}',
+    ],
+)
+def test_invalid_decision_exits_2_without_raw_value(bd, payload):
+    result = runner.invoke(
+        app, [*BASE, "--decision-file", "-"], input=payload
+    )
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert result.stderr.startswith("Review-Antwort ungültig:")
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--decision-file", "-", "--feedback-file", "-"],
+        ["--decision-file", "-", "--review-of", "map"],
+        ["--decision-file", "-", "--preflight-args", "tests=-x"],
+    ],
+)
+def test_decision_file_conflicts_exit_2_before_bd(bd, extra):
+    result = runner.invoke(app, [*BASE, *extra])
+    assert result.exit_code == 2
+    assert bd.calls == []
+
+
+def test_decision_file_requires_next_turn(bd):
+    result = runner.invoke(
+        app,
+        ["step", "x-1", "--step", "review", "--decision-file", "-"],
+    )
+    assert result.exit_code == 2
+    assert "nur zusammen mit --next-turn" in result.stderr
+    assert bd.calls == []

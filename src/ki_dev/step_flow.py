@@ -97,13 +97,36 @@ class StepFlow:
             raise StepFlowError(f"kein Review-Ereignis: {event}")
         return self.classes[event].verdict
 
-    def hint_lines(self, state: str, bead: str) -> list[str]:
-        """Hinweisblock für den Menschen mit eingesetzter Bead-ID."""
+    def events_for_verdict(self, verdict: str) -> tuple[str, ...]:
+        """Review-Ereignisse zu einem Urteil: PASS selbst, sonst die
+        Befundklassen mit diesem Urteil (in Vorrangreihenfolge)."""
+        if verdict == PASS:
+            return (PASS,)
+        events = tuple(
+            name
+            for name in self.precedence
+            if self.classes[name].verdict == verdict
+        )
+        if not events:
+            raise StepFlowError(f"kein Urteil der Tabelle: {verdict}")
+        return events
+
+    def hint_lines(
+        self,
+        state: str,
+        bead: str,
+        events: Iterable[str] | None = None,
+    ) -> list[str]:
+        """Hinweisblock für den Menschen mit eingesetzter Bead-ID;
+        ``events`` beschränkt ihn auf die Übergänge eines Urteils."""
+        wanted = None if events is None else set(events)
         lines = [
             f"Hinweis für den Menschen: Zustand {state}; Folgeschritte "
             f"laut {FILE_NAME} (nichts läuft automatisch):"
         ]
         for transition in self.outgoing(state):
+            if wanted is not None and transition.event not in wanted:
+                continue
             command = transition.command.replace("{bead}", bead)
             lines.append(
                 f"- {transition.event} → {transition.target}: {command}"

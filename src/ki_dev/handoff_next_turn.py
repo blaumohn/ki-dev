@@ -131,25 +131,35 @@ def read_feedback(
     wird nie gekürzt. ``stdin`` ist ein Lieferant, damit ohne diese
     Angabe kein stdin angefasst wird.
     """
+    text = read_bounded_text(source, limit, stdin, "Rückmeldung")
+    _check_feedback(text, limit)
+    return text
+
+
+def read_bounded_text(
+    source: str, limit: int, stdin: Callable[[], BinaryIO], what: str
+) -> str:
+    """Höchstens ``limit + 1`` Zeichen UTF-8 aus Datei oder stdin.
+
+    Gemeinsamer Leser für Rückmeldung und Review-Antwort
+    (--decision-file); ``what`` benennt die Eingabe in Diagnosen, die
+    nie Textinhalt enthalten.
+    """
     try:
         if source == STDIN_WORD:
-            text = _read_limited(stdin(), limit)
-        else:
-            # Ungepuffert: auch die Datei wird nicht über die
-            # Zeichengrenze hinaus gelesen.
-            with open(source, "rb", buffering=0) as stream:
-                text = _read_limited(stream, limit)
+            return _read_limited(stdin(), limit)
+        # Ungepuffert: auch die Datei wird nicht über die
+        # Zeichengrenze hinaus gelesen.
+        with open(source, "rb", buffering=0) as stream:
+            return _read_limited(stream, limit)
     except UnicodeDecodeError as exc:
         raise FeedbackReadError(
-            "Rückmeldung ist kein gültiges UTF-8"
+            f"{what} ist kein gültiges UTF-8"
         ) from exc
     except OSError as exc:
         raise FeedbackReadError(
-            "Rückmeldung nicht lesbar: "
-            f"{exc.strerror or type(exc).__name__}"
+            f"{what} nicht lesbar: {exc.strerror or type(exc).__name__}"
         ) from exc
-    _check_feedback(text, limit)
-    return text
 
 
 def _read_limited(stream: BinaryIO, limit: int) -> str:
