@@ -773,3 +773,34 @@ def test_invalid_control_exits_2_without_command(
     assert result.exit_code == 2
     assert result.stdout == ""
     assert message in result.stderr
+
+
+@pytest.mark.parametrize(
+    "extra", [[], ["--decision-file", "-"]], ids=["vorlauf", "antwort"]
+)
+def test_gapped_criteria_stop_next_turn_before_any_command(
+    monkeypatch, tmp_path, tmp_path_factory, extra
+):
+    """Die AC-Zerlegung gilt vor dem Vorlauf, auch in der Folgerunde:
+    keine Korrektur, keine Prüfung, kein Artefakt."""
+    BdScript(
+        tmp_path_factory.mktemp("bd"),
+        stdout=json.dumps(
+            [{**FULL, "acceptance_criteria": "1. a\n3. b"}]
+        ),
+    ).install(monkeypatch)
+    marker = tmp_path / "korrektur-gestartet"
+    _preflight_project(
+        tmp_path,
+        corrections=(
+            f"[{_command('fmt', f'open({str(marker)!r}, chr(119))')}]"
+        ),
+        checks=f"[{_command('tests', 'pass')}]",
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, [*BASE, *extra], input="{}")
+    assert result.exit_code == 2
+    assert "fortlaufend" in result.stderr
+    assert not marker.exists()
+    assert "Vorlauf:" not in result.stderr
+    assert not (tmp_path / ".local" / "handoff" / "preflight").exists()

@@ -202,7 +202,20 @@ def validate_handoff(
         for error in validator.iter_errors(_issue_payload(issue))
     }
     ordered = sorted(paths, key=_path_sort_key)
-    return tuple(_field_path(path) for path in ordered)
+    problems = tuple(_field_path(path) for path in ordered)
+    if not problems and _is_build_review(step, review_target):
+        problems = _criterion_problems(issue)
+    return problems
+
+
+def _criterion_problems(issue: HandoffIssue) -> tuple[str, ...]:
+    """AC-Zerlegung der Build-Review vor jedem Vorlauf prüfen (Erst-
+    Review, --next-turn und --decision-file teilen diese Grenze)."""
+    try:
+        split_acceptance_criteria(str(issue.acceptance_criteria))
+    except ReviewContractError as exc:
+        return (str(exc),)
+    return ()
 
 
 def _issue_payload(issue: HandoffIssue) -> dict:
@@ -583,8 +596,9 @@ _REVIEW_ROLES = {
         "Ausgabe: PASS | CHANGES | NEEDS_DECISION. Nenne zuerst je",
         "Befund kurz Klasse und Anforderungs- oder Codebezug; zum",
         'Schluss genau ein JSON-Objekt {"action": …, "detail": …,',
-        '"requirement_ref": "AC<n>" oder null} (requirement_ref nur',
-        "bei CHANGES); der Mensch gibt es mit --decision-file weiter.",
+        '"requirement_ref": …}; requirement_ref ist immer vorhanden:',
+        'bei CHANGES "AC<n>", bei PASS und NEEDS_DECISION null. Der',
+        "Mensch gibt es mit --decision-file weiter.",
         'Optional "preflight_args"/"preflight_skip" ({NAME: ARGS bzw.',
         "Grund}) begrenzen nur den Prüfumfang der nächsten Runde; nie",
         "bei PASS, keine Programme oder Korrekturen.",

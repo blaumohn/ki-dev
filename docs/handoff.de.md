@@ -198,8 +198,9 @@ von step und Loop (`src/ki_dev/review_decision.py`):
 ```
 
 `action` ist `PASS`, `CHANGES` oder `NEEDS_DECISION` (`ESCALATE` gibt es nur
-im Loop). Nicht-PASS braucht `detail`; `requirement_ref` steht nur bei
-`CHANGES`. Die Übergabe nennt die Referenzen: Zeilen `N.` in
+im Loop). Nicht-PASS braucht `detail`. `requirement_ref` ist immer
+vorhanden: bei `CHANGES` `"AC<n>"` (`null` wird zu `NEEDS_DECISION`), bei
+`PASS` und `NEEDS_DECISION` zwingend `null`. Die Übergabe nennt die Referenzen: Zeilen `N.` in
 `acceptance_criteria` ergeben `AC1..ACn`, ohne Nummerierung ist das ganze
 Feld `AC1`. Eine Nummerierung mit Lücke oder Doppel ist ein formaler Mangel
 (Exit 2).

@@ -208,8 +208,10 @@ Verweist `CHANGES` auf kein bestehendes Abnahmekriterium, geht die Antwort als
 `NEEDS_DECISION` an den Menschen statt an den Bau-Agenten.
 
 Auch die Planung lief so. Ein Graph-Review vom 5.10.2026 meldete zwei
-`CHANGES` und ein `NEEDS_DECISION`: Die Karte war nicht erneut geprüft. Der
-Mensch nahm sie ausdrücklich an (`ACCEPTED_BY_DECISION`, kein PASS). Die
+`CHANGES` und ein `NEEDS_DECISION`: Die Karte war nicht erneut geprüft. Die
+Planungssitzung nahm sie im Auftrag des Menschen an (`ACCEPTED_BY_DECISION`,
+kein PASS; delegierte Entscheidung, Bestätigung durch den Menschen
+ausstehend). Die
 Planungssitzung mit den Antworten wurde als neue Quelle eingelesen
 (`ki-dev step map --agent claude --session …`) und ergänzte den bestehenden
 Graphen um einen Vorgang, statt einen zweiten anzulegen. Einzelheiten:

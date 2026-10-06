@@ -443,3 +443,17 @@ def test_build_review_rejects_gapped_criterion_numbering():
         render_handoff(
             _issue(acceptance_criteria="1. a\n3. b"), Step.REVIEW
         )
+
+
+def test_build_review_states_requirement_ref_is_always_present():
+    text = " ".join(render_handoff(_issue(), Step.REVIEW).split())
+    assert "requirement_ref ist immer vorhanden" in text
+    assert "bei PASS und NEEDS_DECISION null" in text
+
+
+@pytest.mark.parametrize("target", [None, ReviewTarget.BUILD])
+def test_validate_reports_gapped_criteria_for_build_review(target):
+    issue = _issue(acceptance_criteria="1. a\n3. b")
+    (problem,) = validate_handoff(issue, Step.REVIEW, target)
+    assert problem.startswith("acceptance_criteria:")
+    assert validate_handoff(issue, Step.REVIEW, ReviewTarget.MAP) == ()
