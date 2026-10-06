@@ -652,7 +652,15 @@ def _decision_turn(issue: HandoffIssue, source: str) -> str:
     if problems:
         raise HandoffInvalidError(problems)
     raw = read_decision(source, _stdin_binary)
-    return render_decision_turn(issue, parse_step_decision(raw, issue))
+    decision = parse_step_decision(
+        raw, issue, _project_preflight_config
+    )
+    return render_decision_turn(issue, decision)
+
+
+def _project_preflight_config() -> PreflightConfig:
+    """Nur bei Steuerfeldern geladen; Fehler bleiben Exit 2."""
+    return load_preflight_config(Path.cwd())
 
 
 def _stdin_binary() -> BinaryIO:

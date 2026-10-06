@@ -225,6 +225,27 @@ Ungültiges JSON, fremde Felder, `ESCALATE` oder verletzte Feldregeln: Exit 2
 mit Feldpfad, ohne Rohwerte. Nur mit `--next-turn`, nur Prüfgegenstand
 `build`, nicht mit `--feedback-file` oder `--preflight-*`.
 
+**Begrenzte Prüfsteuerung des Reviewers.** Bei `CHANGES` oder
+`NEEDS_DECISION` darf die Antwort zusätzlich den Prüfumfang der nächsten
+Runde vorschlagen:
+
+```json
+{"action": "CHANGES", "detail": "…", "requirement_ref": "AC2",
+ "preflight_args": {"tests": "-k test_review"},
+ "preflight_skip": {"lint": "nur Doku geändert"}}
+```
+
+step prüft die Werte mit denselben Regeln wie `--preflight-args` und
+`--preflight-skip` gegen die Vorlauf-Konfiguration und gibt den fertigen
+Befehl aus; ausgeführt wird er nur von dir, nach der Korrektur:
+
+```text
+ki-dev step projekt-42 --step review --next-turn --preflight-args 'tests=-k test_review' --preflight-skip 'lint=nur Doku geändert'
+```
+
+Kein eigener Einleseweg, keine Programme, keine Korrekturen, nie bei `PASS`
+(ein PASS braucht den Volllauf). Ungültige Steuerung: Exit 2 ohne Befehl.
+
 ### `--preflight-args`/`--preflight-skip`: Teillauf mit begründetem Umfang
 
 Scheitert der Vorlauf an einem unabhängigen Test, hängt `--preflight-args

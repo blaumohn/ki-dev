@@ -5,12 +5,17 @@ im Repo selbst liefe der Vorlauf rekursiv pytest.
 """
 
 import json
+import shlex
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
+from ki_dev.preflight_options import (
+    parse_preflight_args,
+    parse_preflight_skip,
+)
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
 from tests.test_handoff_cli import FULL, _command, _preflight_project
@@ -652,3 +657,119 @@ def test_decision_file_requires_next_turn(bd):
     assert result.exit_code == 2
     assert "nur zusammen mit --next-turn" in result.stderr
     assert bd.calls == []
+
+
+# ---------------------------------------------------------------------
+# Begrenzte Prüfsteuerung des Reviewers (5we)
+# ---------------------------------------------------------------------
+
+
+def _control_project(tmp_path: Path, monkeypatch) -> None:
+    _preflight_project(
+        tmp_path,
+        corrections=f"[{_command('fmt', 'pass')}]",
+        checks=(
+            f"[{_command('tests', 'pass')}, "
+            f"{_command('lint', 'pass')}]"
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+
+
+def _with_control(**fields) -> str:
+    value = {
+        "action": "CHANGES",
+        "detail": "Test fehlt",
+        "requirement_ref": "AC1",
+    }
+    value.update(fields)
+    return json.dumps(value)
+
+
+def test_control_becomes_command_for_human(bd, tmp_path, monkeypatch):
+    _control_project(tmp_path, monkeypatch)
+    payload = _with_control(
+        preflight_args={"tests": "-k 'neu or alt'"},
+        preflight_skip={"lint": "nur Doku"},
+    )
+    result = runner.invoke(
+        app, [*BASE, "--decision-file", "-"], input=payload
+    )
+    assert result.exit_code == 0, result.stderr
+    command = result.stdout.rstrip().splitlines()[-1]
+    argv = shlex.split(command)
+    assert argv[:6] == [
+        "ki-dev", "step", "x-1", "--step", "review", "--next-turn",
+    ]
+    args = _option_values(argv, "--preflight-args")
+    skip = _option_values(argv, "--preflight-skip")
+    assert parse_preflight_args(args) == {"tests": ("-k", "neu or alt")}
+    assert parse_preflight_skip(skip) == {"lint": "nur Doku"}
+    assert "nicht angewendet" in result.stdout
+    assert "Vorlauf:" not in result.stderr
+
+
+def test_printed_command_runs_as_partial_review(
+    bd, tmp_path, monkeypatch
+):
+    """Der ausgegebene Befehl ist echt: ausgeführt ergibt er einen
+    Teillauf ohne PASS."""
+    _control_project(tmp_path, monkeypatch)
+    payload = _with_control(preflight_skip={"lint": "nur Doku"})
+    routed = runner.invoke(
+        app, [*BASE, "--decision-file", "-"], input=payload
+    )
+    argv = shlex.split(routed.stdout.rstrip().splitlines()[-1])
+    result = runner.invoke(app, argv[1:])
+    assert result.exit_code == 0, result.stderr
+    assert "- lint: SKIPPED" in result.stdout
+    assert "(Teillauf, kein PASS)" in result.stdout
+
+
+def _option_values(argv: list[str], option: str) -> list[str]:
+    pairs = zip(argv[:-1], argv[1:], strict=True)
+    return [value for name, value in pairs if name == option]
+
+
+def test_without_control_no_command_is_printed(
+    bd, tmp_path, monkeypatch
+):
+    _control_project(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app, [*BASE, "--decision-file", "-"], input=_with_control()
+    )
+    assert result.exit_code == 0, result.stderr
+    assert "Prüfsteuerung" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        (
+            {
+                "action": "PASS",
+                "detail": "",
+                "requirement_ref": None,
+                "preflight_args": {"tests": "-x"},
+            },
+            "bei PASS nicht erlaubt",
+        ),
+        ({"preflight_args": {"tset": "-x"}}, "keine konfigurierte"),
+        ({"preflight_skip": {"fmt": "x"}}, "keine konfigurierte"),
+        ({"preflight_skip": {"lint": " "}}, "einzeilig, nichtleer"),
+        ({"preflight_args": {"tests": 5}}, "falscher Typ"),
+        ({"preflight_control": {}}, "unbekanntes Feld"),
+    ],
+)
+def test_invalid_control_exits_2_without_command(
+    bd, tmp_path, monkeypatch, fields, message
+):
+    _control_project(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        [*BASE, "--decision-file", "-"],
+        input=_with_control(**fields),
+    )
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert message in result.stderr
