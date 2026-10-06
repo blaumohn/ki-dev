@@ -129,17 +129,22 @@ Test prüft, dass jeder Zustand das Ende erreicht.
 ```mermaid
 stateDiagram-v2
     direction LR
-    map --> map.review: erledigt
-    map.review --> graph: PASS
-    graph --> graph.review: erledigt
-    graph.review --> materialize: PASS
-    materialize --> materialize.review: erledigt
-    materialize.review --> build: PASS
-    build --> build.review: erledigt
-    build.review --> fertig: PASS
-    build.review --> build.korrektur: fix
-    build.korrektur --> build.review: erledigt
-    graph.review --> quelle: quelle
+    state "map.review" as map_review
+    state "graph.review" as graph_review
+    state "materialize.review" as materialize_review
+    state "build.review" as build_review
+    state "build.korrektur" as build_korrektur
+    map --> map_review: erledigt
+    map_review --> graph: PASS
+    graph --> graph_review: erledigt
+    graph_review --> materialize: PASS
+    materialize --> materialize_review: erledigt
+    materialize_review --> build: PASS
+    build --> build_review: erledigt
+    build_review --> fertig: PASS
+    build_review --> build_korrektur: fix
+    build_korrektur --> build_review: erledigt
+    graph_review --> quelle: quelle
     quelle --> map: importiert
 ```
 

@@ -248,8 +248,14 @@ def test_readme_state_diagram_matches_table():
     """Jede Kante des README-Diagramms ist ein Übergang der Tabelle."""
     readme = (Path(__file__).parent.parent / "README.md").read_text()
     block = readme.split("stateDiagram-v2", 1)[1].split("```", 1)[0]
+    pattern = r'^\s*state "([^"]+)" as (\S+)$'
+    aliases = {
+        alias: name for name, alias in re.findall(pattern, block, re.M)
+    }
     edges = re.findall(r"^\s*(\S+) --> (\S+): (\S+)$", block, re.M)
     assert edges
     table = {(t.source, t.event, t.target) for t in FLOW.transitions}
     for source, target, event in edges:
+        source = aliases.get(source, source)
+        target = aliases.get(target, target)
         assert (source, event, target) in table
