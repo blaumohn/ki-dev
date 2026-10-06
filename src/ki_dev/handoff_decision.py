@@ -42,7 +42,7 @@ from ki_dev.review_decision import (
     load_json_object,
     parse_verdict,
 )
-from ki_dev.step_flow import load_step_flow
+from ki_dev.step_flow import StepFlow
 
 # Obergrenze der eingelesenen Antwort (Zeichen); nie gekürzt.
 DECISION_MAX_CHARS = 20000
@@ -132,10 +132,9 @@ def _pairs(values: dict[str, str]) -> list[str]:
 
 
 def render_decision_turn(
-    issue: HandoffIssue, decision: StepDecision
+    issue: HandoffIssue, decision: StepDecision, *, flow: StepFlow
 ) -> str:
     """Nachricht an den Empfänger laut Zustandstabelle."""
-    flow = load_step_flow()
     verdict = decision.verdict
     events = flow.events_for_verdict(verdict.action.value)
     bead = one_line(issue.id)

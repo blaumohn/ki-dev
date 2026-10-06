@@ -24,6 +24,7 @@ from ki_dev.handoff_source import (
     source_key,
     store_source,
 )
+from ki_dev.step_flow import StepFlow
 
 _READING_HINT = (
     "Quelle: normalisiertes Transkript, eine Nachricht je Zeile "
@@ -42,11 +43,12 @@ def map_handoff(
     workdir: Path,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
+    flow: StepFlow,
 ) -> str:
     """Kurzer map-Auftrag; schreibt Quellen-Datei und -Bead.
 
-    ``guidelines`` und ``base_max_chars`` sind bereits geladen und
-    geprüft, damit Quellenfehler vor jeder Schreibwirkung auffallen.
+    ``guidelines``, ``base_max_chars`` und ``flow`` sind bereits geladen
+    und geprüft, damit Quellenfehler vor jeder Schreibwirkung auffallen.
     Die Basis (mit Lesehinweis) lässt sich erst nach der Quellenanlage
     prüfen; bei Übergröße bleiben Quelle und Bead bestehen.
     """
@@ -65,6 +67,7 @@ def map_handoff(
     base = render_base_handoff(
         issue,
         Step.MAP,
+        flow=flow,
         reading_hint=_READING_HINT,
         max_chars=base_max_chars,
     )

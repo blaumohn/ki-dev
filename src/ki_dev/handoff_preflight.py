@@ -44,6 +44,7 @@ from ki_dev.handoff import (
     render_guideline_block,
 )
 from ki_dev.handoff_guidelines import GuidelineSection
+from ki_dev.step_flow import StepFlow
 
 ARTIFACT_DIR = Path(".local/handoff/preflight")
 
@@ -718,12 +719,14 @@ def render_review_handoff(
     issue: HandoffIssue,
     report: PreflightReport,
     guidelines: Sequence[GuidelineSection] = (),
+    *,
+    flow: StepFlow,
 ) -> str:
     """Reines Rendering: Basis-Review-Übergabe, kompakter
     Vorlaufbericht, danach der gesonderte Leitlinienblock."""
     lines = render_report_lines(report)
     return (
-        render_base_handoff(issue, Step.REVIEW)
+        render_base_handoff(issue, Step.REVIEW, flow=flow)
         + "\n".join(lines)
         + "\n"
         + render_guideline_block(guidelines)

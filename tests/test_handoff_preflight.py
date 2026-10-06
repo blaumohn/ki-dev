@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import sys
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -25,8 +26,10 @@ from ki_dev.handoff_preflight import (
     format_command_result,
     load_preflight_config,
     progress_line,
-    render_review_handoff,
     run_preflight,
+)
+from ki_dev.handoff_preflight import (
+    render_review_handoff as _render_review_handoff,
 )
 from ki_dev.preflight_options import (
     PreflightOptionError,
@@ -34,6 +37,10 @@ from ki_dev.preflight_options import (
     parse_preflight_args,
     parse_preflight_skip,
 )
+from ki_dev.step_flow import load_step_flow
+
+FLOW = load_step_flow()
+render_review_handoff = partial(_render_review_handoff, flow=FLOW)
 
 
 def _git(repo: Path, *args: str) -> str:

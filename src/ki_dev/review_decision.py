@@ -1,8 +1,8 @@
 """Gemeinsamer Antwortvertrag für Build-Reviews (step und Loop).
 
-Kern ist ein JSON-Objekt ``{action, detail, requirement_ref}``. Die
-Struktur prüft ein JSON Schema (Draft202012Validator); die zwei
-Regeln zwischen den Feldern prüft ``_check_action_rules``. Der Loop
+Kern ist ein JSON-Objekt ``{action, detail, requirement_ref}``. Alle
+Feldregeln stehen im JSON Schema (Draft202012Validator), auch die zwei
+Regeln zwischen den Feldern (``if``/``then``). Der Loop
 legt eine Identitätshülle (run_id, round_id) um denselben Kern; step
 hat keine (kein Laufspeicher) und bindet die Antwort über die
 Abnahmekriterien des Beads (AC1..ACn).
@@ -79,7 +79,6 @@ def parse_verdict(
     action = ReviewAction(value["action"])
     detail = cast(str, value["detail"])
     ref = cast("str | None", value["requirement_ref"])
-    _check_action_rules(action, detail, ref)
     return ReviewVerdict(action, detail, ref)
 
 
@@ -162,6 +161,32 @@ _REF_SCHEMA = {
     ]
 }
 
+# Regeln zwischen Feldern: Nicht-PASS braucht ein nichtleeres detail;
+# requirement_ref ist außer bei CHANGES null.
+_ACTION_RULES = [
+    {
+        "if": {
+            "required": ["action"],
+            "properties": {"action": {"not": {"const": "PASS"}}},
+        },
+        "then": {"properties": {"detail": {"pattern": r"\S"}}},
+    },
+    {
+        "if": {
+            "required": ["action"],
+            "properties": {"action": {"not": {"const": "CHANGES"}}},
+        },
+        "then": {"properties": {"requirement_ref": {"type": "null"}}},
+    },
+]
+
+# Diagnose je (Feld, Regel); der Text stammt aus dem Vertrag, nie aus
+# der Antwort.
+_FIELD_DIAGNOSES = {
+    ("detail", "pattern"): "Nicht-PASS braucht eine Begruendung",
+    ("requirement_ref", "type"): "ist außer bei CHANGES null",
+}
+
 _DIAGNOSES = {
     "required": "fehlt",
     "additionalProperties": "unbekanntes Feld",
@@ -184,6 +209,7 @@ def _schema(
             "requirement_ref": _REF_SCHEMA,
             **extra,
         },
+        "allOf": _ACTION_RULES,
     }
 
 
@@ -215,19 +241,8 @@ def _diagnosis(error) -> str:
         known = set(error.schema.get("properties", {}))
         unknown = sorted(set(error.instance) - known)
         return f"{', '.join(unknown)}: unbekanntes Feld"
-    message = _DIAGNOSES.get(str(error.validator), "ist ungültig")
+    message = _FIELD_DIAGNOSES.get(
+        (path, str(error.validator)),
+        _DIAGNOSES.get(str(error.validator), "ist ungültig"),
+    )
     return f"{path or '$'}: {message}"
-
-
-def _check_action_rules(
-    action: ReviewAction, detail: str, ref: str | None
-) -> None:
-    if action is not ReviewAction.PASS and not detail.strip():
-        raise ReviewContractError(
-            f"detail: {action.value} braucht eine Begruendung"
-        )
-    if action is not ReviewAction.CHANGES and ref is not None:
-        raise ReviewContractError(
-            f"requirement_ref: {action.value} darf kein "
-            "requirement_ref binden"
-        )

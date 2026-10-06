@@ -1,5 +1,6 @@
 """Basisgrenze: reiner Kern, Rendering und Konfigurationsgrenze."""
 
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,12 @@ from ki_dev.handoff import (
     HandoffIssue,
     ReviewTarget,
     Step,
-    render_handoff,
+)
+from ki_dev.handoff import (
+    render_base_handoff as _render_base_handoff,
+)
+from ki_dev.handoff import (
+    render_handoff as _render_handoff,
 )
 from ki_dev.handoff_guidelines import GuidelineSection
 from ki_dev.handoff_limit import (
@@ -23,6 +29,11 @@ from ki_dev.handoff_limit_config import (
     base_max_chars_from,
     load_base_max_chars,
 )
+from ki_dev.step_flow import load_step_flow
+
+FLOW = load_step_flow()
+render_handoff = partial(_render_handoff, flow=FLOW)
+render_base_handoff = partial(_render_base_handoff, flow=FLOW)
 
 SECRET = "GEHEIMER-ROHWERT"
 
@@ -190,8 +201,6 @@ def test_epic_context_and_source_refs_count_to_the_base():
 
 
 def test_reading_hint_counts_to_the_base():
-    from ki_dev.handoff import render_base_handoff
-
     plain = render_base_handoff(_issue(), Step.MAP)
     hint = "Hinweis " * 10
     both = render_base_handoff(_issue(), Step.MAP, reading_hint=hint)

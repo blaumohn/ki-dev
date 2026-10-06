@@ -15,7 +15,6 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from functools import cache
 from importlib.resources import files
 from typing import cast
 
@@ -152,9 +151,11 @@ class StepFlow:
             raise StepFlowError(f"unbekannter Zustand: {state}")
 
 
-@cache
 def load_step_flow() -> StepFlow:
-    """Mitgelieferte Tabelle laden und vollständig prüfen."""
+    """Mitgelieferte Tabelle laden und vollständig prüfen.
+
+    I/O-Grenze: Aufrufer (CLI) laden einmal je Aufruf und übergeben den
+    geprüften StepFlow ausdrücklich an die Renderer."""
     resource = files("ki_dev").joinpath(FILE_NAME)
     try:
         raw = tomllib.loads(resource.read_text(encoding="utf-8"))

@@ -15,7 +15,7 @@ from ki_dev.review_decision import (
     criterion_refs,
     split_acceptance_criteria,
 )
-from ki_dev.step_flow import load_step_flow
+from ki_dev.step_flow import StepFlow
 
 if TYPE_CHECKING:
     from ki_dev.handoff_guidelines import GuidelineSection
@@ -253,11 +253,14 @@ def render_handoff(
     review_target: ReviewTarget | None = None,
     guidelines: Sequence[GuidelineSection] = (),
     base_max_chars: int | None = None,
+    *,
+    flow: StepFlow,
 ) -> str:
     """Basisübergabe, danach der gesonderte Leitlinienblock; die Grenze
-    gilt nur für die Basis (``None``: ungeprüft)."""
+    gilt nur für die Basis (``None``: ungeprüft). ``flow`` ist die an
+    der I/O-Grenze geladene Zustandstabelle."""
     base = render_base_handoff(
-        issue, step, review_target, max_chars=base_max_chars
+        issue, step, review_target, flow=flow, max_chars=base_max_chars
     )
     return base + render_guideline_block(guidelines)
 
@@ -267,6 +270,7 @@ def render_base_handoff(
     step: Step,
     review_target: ReviewTarget | None = None,
     *,
+    flow: StepFlow,
     reading_hint: str | None = None,
     max_chars: int | None = None,
 ) -> str:
@@ -281,7 +285,8 @@ def render_base_handoff(
     problems = validate_handoff(issue, step, review_target)
     if problems:
         raise HandoffInvalidError(problems)
-    text = "\n".join(_base_lines(issue, step, review_target)) + "\n"
+    lines = _base_lines(issue, step, review_target, flow)
+    text = "\n".join(lines) + "\n"
     if reading_hint is not None:
         text += f"\n{reading_hint}\n"
     if max_chars is not None:
@@ -293,7 +298,10 @@ def render_base_handoff(
 
 
 def _base_lines(
-    issue: HandoffIssue, step: Step, review_target: ReviewTarget | None
+    issue: HandoffIssue,
+    step: Step,
+    review_target: ReviewTarget | None,
+    flow: StepFlow,
 ) -> list[str]:
     lines = [f"Schritt: {step.value}"]
     if step is Step.REVIEW:
@@ -304,7 +312,7 @@ def _base_lines(
         "",
         *_COMMON,
         "",
-        *_roles(step, review_target),
+        *_roles(step, review_target, flow),
     ]
     if issue.epic_context:
         lines += [
@@ -325,7 +333,6 @@ def _base_lines(
         lines += [f"- {one_line(ref)}" for ref in issue.source_refs]
     if _is_build_review(step, review_target):
         lines += ["", _criterion_line(issue)]
-    flow = load_step_flow()
     state = flow_state(step, review_target)
     lines += ["", *flow.hint_lines(state, one_line(issue.id))]
     return lines
@@ -373,10 +380,14 @@ def ensure_base_fits(
     step: Step,
     review_target: ReviewTarget | None,
     max_chars: int,
+    *,
+    flow: StepFlow,
 ) -> None:
     """Basisgrenze prüfen, ohne den Text zu verwenden (vor einem
     Vorlauf, der Dateien ändern kann)."""
-    render_base_handoff(issue, step, review_target, max_chars=max_chars)
+    render_base_handoff(
+        issue, step, review_target, flow=flow, max_chars=max_chars
+    )
 
 
 def _variable_fields(
@@ -424,12 +435,12 @@ def render_guideline_block(
 
 
 def _roles(
-    step: Step, review_target: ReviewTarget | None
+    step: Step, review_target: ReviewTarget | None, flow: StepFlow
 ) -> tuple[str, ...]:
     if step is not Step.REVIEW:
         return _ROLES[step]
     role = _REVIEW_ROLES[review_target or ReviewTarget.BUILD]
-    return (*role, *load_step_flow().class_lines())
+    return (*role, *flow.class_lines())
 
 
 def one_line(value: object) -> str:

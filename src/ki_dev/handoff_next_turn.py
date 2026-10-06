@@ -31,7 +31,7 @@ from ki_dev.handoff_preflight import (
     read_toml,
     render_report_lines,
 )
-from ki_dev.step_flow import load_step_flow
+from ki_dev.step_flow import StepFlow
 
 CONFIG_TABLE = "tool.ki-dev.handoff"
 CONFIG_KEY = "feedback_max_chars"
@@ -256,6 +256,8 @@ def render_review_turn(
     target: ReviewTarget,
     report: PreflightReport | None,
     feedback: str | None,
+    *,
+    flow: StepFlow,
 ) -> str:
     """Folgenachricht an die bisherige, vom Schreibagenten getrennte
     Review-Sitzung (keine neue Voll-Übergabe mit Rollentext).
@@ -277,7 +279,7 @@ def render_review_turn(
         lines += ["", *render_report_lines(report)]
     lines += _feedback_lines(feedback, _FEEDBACK_REVIEW_TAIL)
     lines += ["", _HUMAN_NOTE]
-    lines += _flow_hint(f"{target.value}.review", issue)
+    lines += _flow_hint(flow, f"{target.value}.review", issue)
     return "\n".join(lines) + "\n"
 
 
@@ -293,6 +295,8 @@ def render_repair_turn(
     finding: str,
     limit: int,
     feedback: str | None,
+    *,
+    flow: StepFlow,
 ) -> str:
     """Nachricht an den Bau-Agenten, wenn der Vorlauf scheitert.
 
@@ -309,13 +313,14 @@ def render_repair_turn(
         finding,
     ]
     lines += _feedback_lines(feedback)
-    lines += _flow_hint("build.korrektur", issue)
+    lines += _flow_hint(flow, "build.korrektur", issue)
     return "\n".join(lines) + "\n"
 
 
-def _flow_hint(state: str, issue: HandoffIssue) -> list[str]:
+def _flow_hint(
+    flow: StepFlow, state: str, issue: HandoffIssue
+) -> list[str]:
     """Folgeschritte aus step-flow.toml als abschließender Block."""
-    flow = load_step_flow()
     return ["", *flow.hint_lines(state, _one_line(issue.id))]
 
 

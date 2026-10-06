@@ -3,6 +3,7 @@ import copy
 import pathlib
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,12 @@ from ki_dev.handoff import (
     HandoffIssue,
     ReviewTarget,
     Step,
-    render_base_handoff,
-    render_handoff,
+)
+from ki_dev.handoff import (
+    render_base_handoff as _render_base_handoff,
+)
+from ki_dev.handoff import (
+    render_handoff as _render_handoff,
 )
 from ki_dev.handoff_guidelines import (
     GUIDELINE_SOURCES,
@@ -30,9 +35,17 @@ from ki_dev.handoff_guidelines_source import (
 )
 from ki_dev.handoff_preflight import (
     PreflightReport,
-    render_review_handoff,
 )
+from ki_dev.handoff_preflight import (
+    render_review_handoff as _render_review_handoff,
+)
+from ki_dev.step_flow import load_step_flow
 from tests.guideline_fixtures import guideline_data, write_guidelines
+
+FLOW = load_step_flow()
+render_base_handoff = partial(_render_base_handoff, flow=FLOW)
+render_handoff = partial(_render_handoff, flow=FLOW)
+render_review_handoff = partial(_render_review_handoff, flow=FLOW)
 
 REPO = Path(__file__).resolve().parents[1]
 SOURCE = GUIDELINE_SOURCES[0]

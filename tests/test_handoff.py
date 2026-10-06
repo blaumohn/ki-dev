@@ -1,3 +1,5 @@
+from functools import partial
+
 import pytest
 
 from ki_dev.handoff import (
@@ -5,9 +7,15 @@ from ki_dev.handoff import (
     HandoffIssue,
     ReviewTarget,
     Step,
-    render_handoff,
     validate_handoff,
 )
+from ki_dev.handoff import (
+    render_handoff as _render_handoff,
+)
+from ki_dev.step_flow import load_step_flow
+
+FLOW = load_step_flow()
+render_handoff = partial(_render_handoff, flow=FLOW)
 
 REFS = ["docs/design/a.md#L12-L40", "bd:karte"]
 

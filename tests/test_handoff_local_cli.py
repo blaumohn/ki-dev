@@ -1,6 +1,7 @@
 """ki-dev step local: freie lokale Übergabe ohne Bead und ohne bd."""
 
 import shutil
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -8,9 +9,14 @@ from typer.testing import CliRunner
 
 from ki_dev import beads_reader
 from ki_dev.cli import app
-from ki_dev.handoff import HandoffIssue, Step, render_base_handoff
+from ki_dev.handoff import HandoffIssue, Step
+from ki_dev.handoff import render_base_handoff as _render_base_handoff
 from ki_dev.handoff_guidelines import GUIDELINE_SOURCES
+from ki_dev.step_flow import load_step_flow
 from tests.guideline_fixtures import write_guidelines
+
+FLOW = load_step_flow()
+render_base_handoff = partial(_render_base_handoff, flow=FLOW)
 
 runner = CliRunner()
 REPO = Path(__file__).resolve().parents[1]

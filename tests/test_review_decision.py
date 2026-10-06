@@ -47,9 +47,12 @@ def test_step_rejects_escalate_but_loop_accepts_it():
         (_core(ref=1), "requirement_ref: muss null oder nichtleer"),
         (
             _core(detail="  "),
-            "detail: CHANGES braucht eine Begruendung",
+            "detail: Nicht-PASS braucht eine Begruendung",
         ),
-        (_core("PASS", "", "AC1"), "PASS darf kein requirement_ref"),
+        (
+            _core("PASS", "", "AC1"),
+            "requirement_ref: ist außer bei CHANGES null",
+        ),
     ],
 )
 def test_invalid_core_names_field_without_raw_value(value, message):

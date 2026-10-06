@@ -11,19 +11,25 @@ from __future__ import annotations
 import copy
 import re
 import tomllib
+from functools import partial
 from importlib.resources import files
 from pathlib import Path
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from typer.testing import CliRunner
 
+from ki_dev import handoff_cli
+from ki_dev.cli import app
 from ki_dev.handoff import (
     HandoffIssue,
     ReviewTarget,
     Step,
     flow_state,
-    render_handoff,
+)
+from ki_dev.handoff import (
+    render_handoff as _render_handoff,
 )
 from ki_dev.step_flow import (
     FILE_NAME,
@@ -35,6 +41,7 @@ from ki_dev.step_flow import (
 )
 
 FLOW = load_step_flow()
+render_handoff = partial(_render_handoff, flow=FLOW)
 CLASSES = list(FLOW.precedence)
 # Ereignisse, mit denen ein Lauf vorankommt: Review besteht, Schreiber
 # ist fertig, Mensch nimmt an, neue Quelle ist importiert.
@@ -259,3 +266,42 @@ def test_readme_state_diagram_matches_table():
         source = aliases.get(source, source)
         target = aliases.get(target, target)
         assert (source, event, target) in table
+
+
+def test_renderer_uses_the_flow_it_is_given():
+    """Die Tabelle ist ausdrückliche Eingabe des Renderers: eine andere
+    Tabelle ändert den Hinweis ohne globale Eingriffe."""
+    raw = copy.deepcopy(_raw())
+    for transition in raw["uebergang"]:
+        if transition["von"] == "build":
+            transition["befehl"] = "EIGENER-BEFEHL {bead}"
+    other = parse_step_flow(raw)
+    issue = HandoffIssue(
+        id="x-1",
+        title="T",
+        description="D",
+        design="De",
+        acceptance_criteria="AC",
+        source_refs=["a.md"],
+    )
+    text = _render_handoff(issue, Step.BUILD, flow=other)
+    assert "EIGENER-BEFEHL x-1" in text
+    assert "EIGENER-BEFEHL" not in render_handoff(issue, Step.BUILD)
+
+
+def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
+    def broken():
+        raise StepFlowError("step-flow.toml: $: additionalProperties")
+
+    monkeypatch.setattr(handoff_cli, "load_step_flow", broken)
+    monkeypatch.setattr(
+        handoff_cli,
+        "read_issue",
+        lambda *_: pytest.fail("Bead gelesen trotz ungültiger Tabelle"),
+    )
+    monkeypatch.setattr(
+        handoff_cli, "load_base_max_chars", lambda _: 4000
+    )
+    result = CliRunner().invoke(app, ["step", "x-1", "--step", "build"])
+    assert result.exit_code == 1
+    assert "Zustandstabelle ungültig" in result.stderr

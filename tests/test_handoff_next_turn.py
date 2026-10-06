@@ -1,6 +1,7 @@
 """Einheiten für Grenze, Leser und Vorlagen von ``--next-turn``."""
 
 import io
+from functools import partial
 
 import pytest
 
@@ -13,9 +14,18 @@ from ki_dev.handoff_next_turn import (
     NextTurnInputError,
     load_feedback_max_chars,
     read_feedback,
-    render_repair_turn,
-    render_review_turn,
 )
+from ki_dev.handoff_next_turn import (
+    render_repair_turn as _render_repair_turn,
+)
+from ki_dev.handoff_next_turn import (
+    render_review_turn as _render_review_turn,
+)
+from ki_dev.step_flow import load_step_flow
+
+FLOW = load_step_flow()
+render_repair_turn = partial(_render_repair_turn, flow=FLOW)
+render_review_turn = partial(_render_review_turn, flow=FLOW)
 
 ISSUE = HandoffIssue(
     id="x-1",

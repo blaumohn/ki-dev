@@ -83,6 +83,7 @@ from ki_dev.preflight_options import (
     parse_preflight_args,
     parse_preflight_skip,
 )
+from ki_dev.step_flow import StepFlow, StepFlowError, load_step_flow
 
 MAP_WORD = "map"
 LOCAL_WORD = "local"
@@ -409,26 +410,40 @@ def _bead_output(
     """Übergabetext und Exitcode. Die Basisgrenze gilt nicht für
     ``--next-turn`` (Folgenachricht, eigener Vertrag); sonst wird sie
     vor jedem Beads-Zugriff und Vorlauf gelesen."""
+    flow = _step_flow()
     if step is Step.REVIEW and next_turn:
         issue = read_issue(bead_id, Path.cwd())
         if inputs.decision is not None:
-            return _decision_turn(issue, inputs.decision), 0
+            return _decision_turn(issue, inputs.decision, flow), 0
         return _next_turn_handoff(
-            issue, review_of, extra, inputs.feedback
+            issue, review_of, extra, inputs.feedback, flow
         )
     limit = load_base_max_chars(Path.cwd())
     issue = read_issue(bead_id, Path.cwd())
     if step is Step.REVIEW:
         guidelines = _selected_guidelines(step, review_of)
         text = _review_handoff(
-            issue, review_of, extra, guidelines, limit
+            issue, review_of, extra, guidelines, limit, flow
         )
         return text, 0
     guidelines = _selected_guidelines(step, None)
     text = render_handoff(
-        issue, step, guidelines=guidelines, base_max_chars=limit
+        issue,
+        step,
+        guidelines=guidelines,
+        base_max_chars=limit,
+        flow=flow,
     )
     return text, 0
+
+
+def _step_flow() -> StepFlow:
+    """Zustandstabelle an der I/O-Grenze laden; eine ungültige
+    mitgelieferte Tabelle ist ein Programmfehler (Exit 1)."""
+    try:
+        return load_step_flow()
+    except StepFlowError as exc:
+        _fail(f"Zustandstabelle ungültig: {exc}", code=1)
 
 
 def _review_options(
@@ -520,6 +535,7 @@ def _review_handoff(
     extra: _PreflightRequest,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
+    flow: StepFlow,
 ) -> str:
     """Übergabe für ``--step review``.
 
@@ -541,15 +557,20 @@ def _review_handoff(
             review_of,
             guidelines,
             base_max_chars=base_max_chars,
+            flow=flow,
         )
     problems = validate_handoff(issue, Step.REVIEW, review_of)
     if problems:
         raise HandoffInvalidError(problems)
-    ensure_base_fits(issue, Step.REVIEW, review_of, base_max_chars)
+    ensure_base_fits(
+        issue, Step.REVIEW, review_of, base_max_chars, flow=flow
+    )
     outcome = _preflight_outcome(extra)
     if outcome.failure is not None:
         _fail(outcome.failure, code=1)
-    return render_review_handoff(issue, outcome.report, guidelines)
+    return render_review_handoff(
+        issue, outcome.report, guidelines, flow=flow
+    )
 
 
 class _PreflightOutcome(NamedTuple):
@@ -586,6 +607,7 @@ def _next_turn_handoff(
     review_of: ReviewTarget | None,
     extra: _PreflightRequest,
     feedback_file: str | None,
+    flow: StepFlow,
 ) -> tuple[str, int]:
     """Nächste Nachricht nach einer Korrektur und ihr Exitcode.
 
@@ -607,13 +629,18 @@ def _next_turn_handoff(
     if feedback_file is not None:
         feedback = read_feedback(feedback_file, limit, _stdin_binary)
     if target is not ReviewTarget.BUILD:
-        return render_review_turn(issue, target, None, feedback), 0
+        text = render_review_turn(
+            issue, target, None, feedback, flow=flow
+        )
+        return text, 0
     outcome = _preflight_outcome(extra)
     if outcome.failure is not None:
         return render_repair_turn(
-            issue, outcome.failure, limit, feedback
+            issue, outcome.failure, limit, feedback, flow=flow
         ), 1
-    text = render_review_turn(issue, target, outcome.report, feedback)
+    text = render_review_turn(
+        issue, target, outcome.report, feedback, flow=flow
+    )
     return text, 0
 
 
@@ -645,7 +672,9 @@ def _check_decision_options(
         )
 
 
-def _decision_turn(issue: HandoffIssue, source: str) -> str:
+def _decision_turn(
+    issue: HandoffIssue, source: str, flow: StepFlow
+) -> str:
     """Reviewer-Antwort prüfen und Nachricht laut Tabelle; der Bead
     muss den Build-Vertrag erfüllen (Abnahmekriterien)."""
     problems = validate_handoff(issue, Step.REVIEW, ReviewTarget.BUILD)
@@ -655,7 +684,7 @@ def _decision_turn(issue: HandoffIssue, source: str) -> str:
     decision = parse_step_decision(
         raw, issue, _project_preflight_config
     )
-    return render_decision_turn(issue, decision)
+    return render_decision_turn(issue, decision, flow=flow)
 
 
 def _project_preflight_config() -> PreflightConfig:
@@ -823,9 +852,10 @@ def _map_text(agent: str, session: str) -> str:
     jeder Schreibwirkung."""
     limit = _base_limit()
     guidelines = _selected_guidelines(Step.MAP, None)
+    flow = _step_flow()
     try:
         text = map_handoff(
-            agent, session, Path.cwd(), guidelines, limit
+            agent, session, Path.cwd(), guidelines, limit, flow
         )
     except HandoffBaseTooLongError as exc:
         _fail(exc.diagnosis(_MAP_KEPT_NOTE), code=2)
