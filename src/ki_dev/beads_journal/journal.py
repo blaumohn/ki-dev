@@ -98,6 +98,26 @@ zwischen Host und Container über virtiofs sauber weiterläuft, ist
 ungeprüft. Keine manuellen
 Git-Schreibzugriffe im Journal, solange Hooks laufen können. Das
 Journal wird lokal geführt; ein Push ist ein getrennter Schritt.
+
+Vor einer Veröffentlichung:
+
+```bash
+# alle Revisionen prüfen; Exit 1 bei Befunden
+python -m ki_dev.beads_journal audit
+# index.md schreiben und committen
+python -m ki_dev.beads_journal index
+```
+
+`audit` prüft Commit-Nachrichten und jede je eingefügte Zeile auf
+Verweise in lokale Ablagen (`.local`), absolute Pfade, Mailadressen
+und Zugangsdaten und nennt nur Revision, Datei und Kategorie.
+Löschen oder Ignorieren bereinigt keine Historie; ob neu begonnen,
+umgeschrieben oder veröffentlicht wird, entscheidet der Mensch.
+`index` schreibt `index.md` (eine Zeile je Vorgang, nach ID sortiert,
+mit Stand und Code-Commit), gleicht gegen `bd export` ab und
+kennzeichnet Dateien, deren Vorgang in der Datenbank fehlt, mit
+„nicht in DB“. Die Datenbank bleibt unverändert; nichts wird
+zurückimportiert.
 """
 
 

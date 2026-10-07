@@ -1,4 +1,4 @@
-"""Befehle init, hook, drain und status des Beads-Journals.
+"""Befehle des Beads-Journals: init, hook, drain, status, audit, index.
 
 argparse statt typer: der Hook startet je bd-Ereignis neu und hat 10 s
 Frist. Ort des Journals: git config ki-dev.beadsJournal im Projekt-Repo
@@ -44,6 +44,7 @@ from ki_dev.beads_journal.journal import (
     is_active,
     log_error,
 )
+from ki_dev.beads_journal.publish_cli import run_audit, run_index
 
 CONFIG_KEY = "ki-dev.beadsJournal"
 DEFAULT_LOCATION = Path(".local/beads-journal")
@@ -71,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_init(repo, arguments.path)
     if arguments.command == "drain":
         return run_drain(repo)
+    if arguments.command in ("audit", "index"):
+        return _run_publish(repo, arguments.command)
     return run_status(repo)
 
 
@@ -107,7 +110,31 @@ def _parser() -> argparse.ArgumentParser:
         help="Warteschlange abarbeiten, dann Ort, Zustand, offene und "
         "fehlgeschlagene Einträge zeigen",
     )
+    commands.add_parser(
+        "audit",
+        help="alle Revisionen auf Privatbefunde prüfen (nur "
+        "Revision/Datei/Kategorie; Exit 1 bei Befunden)",
+    )
+    commands.add_parser(
+        "index",
+        help="index.md aus issues/*.json schreiben, gegen bd export "
+        "abgleichen und committen",
+    )
     return parser
+
+
+def _run_publish(repo: Path, command: str) -> int:
+    """audit/index: öffentliche PM-Sicht prüfen bzw. erzeugen."""
+    try:
+        root = repo_root(repo)
+        journal = journal_path(root)
+        if command == "audit":
+            return run_audit(journal)
+        return run_index(root, journal, export_issues)
+    except _EXPECTED as exc:
+        return _fail(exc)
+    except OSError as exc:
+        return _fail(io_error(exc))
 
 
 def run_hook(repo: Path, issue_id: str, event: str) -> int:
