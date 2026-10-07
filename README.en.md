@@ -14,6 +14,19 @@ The AI writes code and judges results.
 > workflow driven by hand. The automated loop (`ki-dev loop`) comes next.
 > The German [README](README.md) is the full reference.
 
+## Installation
+
+Requires Python ≥ 3.12, git ≥ 2.32 and [Beads](https://github.com/steveyegge/beads)
+`bd` **1.3.0** (release build).
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
+CGO_ENABLED=1 go install -tags gms_pure_go github.com/steveyegge/beads/cmd/bd@v1.3.0
+```
+
+Or use the agent container, which ships bd, Codex and Claude Code:
+`./scripts/agent-container shell` ([docker/agent/README.md](docker/agent/README.md)).
+
 ## `ki-dev step`: the workflow by hand
 
 `ki-dev step` prints a short, validated handoff for each step. You paste it
@@ -49,12 +62,26 @@ a PASS.
 
 ## Direction
 
-Named stages instead of version numbers:
+Named stages instead of version numbers. Only the order **step → loop** is
+fixed:
 
-1. **step**: the workflow by hand (today).
-2. **loop**: sessions connected automatically, independent of the phase.
-3. **declarative workflows**: flows as data; `step-flow.toml` is the first
-   precursor.
-4. **state/event interface**: run state and events behind one interface.
+- **step**: the workflow by hand (today).
+- **loop**: sessions connected automatically, independent of the phase.
+
+Topics without a fixed order or date: **declarative workflows** (flows as
+data; `step-flow.toml` is a first approach) and a **state/event interface**
+for run state and events.
+
+## Sessions as sources
+
+```bash
+ki-dev session show SESSION_ID --agent claude --pager      # read-only, Rich output
+ki-dev session transcript SESSION_ID --agent claude --title 'Topic'
+ki-dev session export SESSION_ID --agent codex --format markdown
+```
+
+`transcript` and `ki-dev step map … --title …` write one dated JSONL snapshot
+(`.local/var/transcripts/YYMMDDTHH_title_sid8.jsonl`, not versioned); `show`
+and `export` write nothing. Search is not available yet.
 
 Details, design rationale and non-goals: [README.md](README.md) (German).

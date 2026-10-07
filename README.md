@@ -17,8 +17,10 @@ Die KI schreibt Quelltext und urteilt über Ergebnisse.
 > Alles Weitere ist Entwurf und unten als **Zielbild** gekennzeichnet.
 
 <!-- mdman:toc:start -->
+- [Installation](#installation)
 - [In der Praxis](#in-der-praxis)
 - [`ki-dev step`: der Ablauf von Hand](#ki-dev-step-der-ablauf-von-hand)
+- [Sitzungen lesen und als Quelle ablegen](#sitzungen-lesen-und-als-quelle-ablegen)
 - [Die Orchestrierungsparameter](#die-orchestrierungsparameter)
 - [Wofür](#wofür)
 - [Warum nicht einfach ein Agent mit Subagenten?](#warum-nicht-einfach-ein-agent-mit-subagenten)
@@ -35,6 +37,24 @@ Die KI schreibt Quelltext und urteilt über Ergebnisse.
 - [Richtung danach](#richtung-danach)
 - [Einordnung und Nicht-Ziele](#einordnung-und-nicht-ziele)
 <!-- mdman:toc:end -->
+
+---
+
+## Installation
+
+Voraussetzungen: Python ≥ 3.12, git ≥ 2.32 und
+[Beads](https://github.com/steveyegge/beads) `bd` **1.3.0** (Release). Ein
+eigener bd-Entwicklungsstand ist nicht nötig.
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
+CGO_ENABLED=1 go install -tags gms_pure_go github.com/steveyegge/beads/cmd/bd@v1.3.0
+.venv/bin/ki-dev step --help
+```
+
+Alternativ bringt der Agent-Container alles mit, auch bd 1.3.0, Codex und
+Claude Code: `./scripts/agent-container shell`, siehe
+[docker/agent/README.md](docker/agent/README.md).
 
 ---
 
@@ -213,9 +233,33 @@ Planungssitzung nahm sie im Auftrag des Menschen an (`ACCEPTED_BY_DECISION`,
 kein PASS; delegierte Entscheidung, Bestätigung durch den Menschen
 ausstehend). Die
 Planungssitzung mit den Antworten wurde als neue Quelle eingelesen
-(`ki-dev step map --agent claude --session …`) und ergänzte den bestehenden
+(`ki-dev step map --agent claude --session … --title …`) und ergänzte den bestehenden
 Graphen um einen Vorgang, statt einen zweiten anzulegen. Einzelheiten:
 [docs/handoff.de.md](docs/handoff.de.md).
+
+### Sitzungen lesen und als Quelle ablegen
+
+Eine Claude- oder Codex-Sitzung wird per expliziter ID gelesen. Rohsitzung,
+Snapshot und `step map` gehen durch denselben geprüften Transkriptvertrag:
+
+```bash
+ki-dev session show 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --pager
+ki-dev session transcript 0de11ef0-… --agent claude --title 'Zustandstabelle'
+ki-dev session export --snapshot .local/var/transcripts/261005T22_zustandstabelle_0de11ef0.jsonl --format markdown
+```
+
+```text
+claude-Sitzung 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab
+claude · 0de11ef0-… · Beginn 2026-10-05T22:24:18.979Z · zuletzt … · 14 Beiträge
+
+1 Mensch · 2026-10-05T22:34:05.631Z ─────────────────────────────
+…
+```
+
+Nur `transcript` und `step map` schreiben, und zwar einen datierten Snapshot
+unter `.local/var/transcripts/` (nicht versioniert). `show` und `export`
+schreiben nichts ins Archiv. Suche und Listen zuletzt angesehener Sitzungen
+gibt es noch nicht. Einzelheiten: [docs/session.de.md](docs/session.de.md).
 
 ---
 
@@ -869,29 +913,34 @@ Modulgrenzen, bewertete Alternativen und technische Herausforderungen.
 flowchart LR
     S["step<br/>Ablauf von Hand,<br/>Spielplatz"]
     L["loop<br/>automatische Schleife,<br/>bereichsneutral"]
-    W["deklarative<br/>Workflows"]
-    Z["Zustands-/Ereignis-<br/>Schnittstelle"]
-
-    S --> L --> W --> Z
+    S --> L
+    subgraph T["Themen ohne festgelegte Reihenfolge"]
+        W["deklarative<br/>Workflows"]
+        Z["Zustands-/Ereignis-<br/>Schnittstelle"]
+    end
 ```
 
-Keine feste Versionsliste, sondern benannte Etappen:
+Grundlage: Etappenentscheidung vom 5.10.2026 mit Korrektur vom 6.10.2026.
+Fest ist nur die Reihenfolge step → loop. Workflows und Zustand/Ereignis
+sind Architekturthemen ohne festgelegte Reihenfolge oder festen Zeitpunkt.
 
 - **step:** der heutige Stand. Jede Regel wird zuerst von Hand erprobt.
 - **loop:** verbindet die Sitzungen selbst und spart das Kopieren. Ob
   Planung, Materialisierung oder Umsetzung läuft, entscheidet die Übergabe,
   nicht die Schleife.
-- **Workflows:** Abläufe als Daten. `step-flow.toml` ist die erste
-  Vorstufe; die Schleife kann dieselbe Tabelle lesen.
-- **Zustand/Ereignis:** eine Schnittstelle für Laufzustand und Ereignisse.
-  Der Arbeitsgraph in Beads ist dafür kein Ersatz.
+- Thema **Workflows:** Abläufe als Daten. `step-flow.toml` ist ein erster
+  Ansatz, den die Schleife ebenfalls lesen kann.
+- Thema **Zustand/Ereignis:** eine Schnittstelle für Laufzustand und
+  Ereignisse. Der Arbeitsgraph in Beads ist dafür kein Ersatz.
 
 Der Grundsatz: kein allgemeines Agentensystem auf Vorrat bauen, sondern jeden
 nächsten deterministischen Baustein aus einem echten Arbeitsproblem ableiten.
 
-Der lebende Arbeitsstand steht nicht hier, sondern im Beads-Arbeitsgraphen; im
-geklonten Repository etwa über `bv`, für eine teilbare statische Ansicht
-`bv --pages`.
+Der lebende Arbeitsstand steht nicht hier, sondern im Beads-Arbeitsgraphen.
+Dessen Datenbank ist nicht Teil dieses Repositorys. Als öffentliche Sicht ist
+ein getrenntes Beads-Journal vorbereitet (ein Commit je Änderung, `index.md`
+als Übersicht, `python -m ki_dev.beads_journal audit|index`); veröffentlicht
+ist es noch nicht.
 
 ---
 

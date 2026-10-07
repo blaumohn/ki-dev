@@ -20,3 +20,4 @@ dist/
 .beads/interactions.jsonl
 # Workspace-Sperre, von bd neben .beads/ angelegt
 .beads.gate.lock
+.DS_Store
