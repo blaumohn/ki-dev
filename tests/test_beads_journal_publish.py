@@ -39,6 +39,7 @@ def test_scan_names_the_category(text, category):
     "text",
     [
         "x@users.noreply.github.com",
+        "Co-Authored-By: Claude <noreply@anthropic.com>",
         "journal@test.invalid",
         "a@example.com",
         "docs/handoff.de.md und src/ki_dev/cli.py",

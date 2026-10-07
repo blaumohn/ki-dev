@@ -31,10 +31,11 @@ PRIVACY_PATTERNS: Mapping[str, re.Pattern[str]] = {
         r"\s*[:=]\s*\S{6,})"
     ),
 }
-# Keine Privatbefunde: No-Reply-Adressen von GitHub und reservierte
-# Beispieldomänen (RFC 2606), wie sie in Testbeschreibungen stehen.
+# Keine Privatbefunde: No-Reply-Adressen (GitHub, Co-Authored-By) und
+# reservierte Beispieldomänen (RFC 2606) aus Testbeschreibungen.
 _PUBLIC_MAIL = re.compile(
-    r"[A-Za-z0-9._%+-]+@(?:users\.noreply\.github\.com"
+    r"(?<![\w.%+-])noreply@anthropic\.com\b"
+    r"|[A-Za-z0-9._%+-]+@(?:users\.noreply\.github\.com"
     r"|(?:[A-Za-z0-9-]+\.)*(?:example|invalid|test|localhost)"
     r"|(?:[A-Za-z0-9-]+\.)*example\.(?:com|org|net))\b"
 )
