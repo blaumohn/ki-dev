@@ -64,8 +64,11 @@ Bestehende Ausnahme:
 
 - **Pager von `ki-dev session show --pager`** (`session_output.py`):
   Rich `Console.pager()` über `pydoc.pager`, das `$MANPAGER` bzw.
-  `$PAGER` über die Shell startet. Begründung: Entscheidung des
-  Menschen (2026-10-07) für den eingebauten Rich-Pager statt eines
-  eigenen Plumbum-Pagerprozesses; `PAGER` ist Konfiguration des
-  eigenen Terminals. Folge: Start- und Exitfehler des Pagers meldet
+  `$PAGER` über die Shell startet. Technische Begründung: `pydoc`
+  bringt die Pagerauswahl (`$MANPAGER`/`$PAGER`, sonst `less` oder
+  `more`), die Rückfallebene ohne Terminal und die Behandlung von
+  Strg-C ohne verbleibenden Rohmodus des Terminals bereits mit; ein
+  eigener Plumbum-Pager würde das nachbauen. `PAGER` ist Konfiguration
+  des eigenen Terminals, keine fremde Eingabe. Entscheidung des
+  Menschen vom 2026-10-07. Folge: Start- und Exitfehler des Pagers meldet
   die Shell, nicht `ki-dev`; umgeleitete Ausgabe startet keinen Pager.

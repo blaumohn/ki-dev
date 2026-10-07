@@ -44,7 +44,8 @@ Die KI schreibt Quelltext und urteilt über Ergebnisse.
 
 Voraussetzungen: Python ≥ 3.12, git ≥ 2.32 und
 [Beads](https://github.com/steveyegge/beads) `bd` **1.3.0** (Release). Ein
-eigener bd-Entwicklungsstand ist nicht nötig.
+eigener bd-Entwicklungsstand ist nicht nötig. Für `go install` braucht es Go
+und einen C-Compiler (CGO für Embedded Dolt).
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
@@ -244,15 +245,19 @@ Snapshot und `step map` gehen durch denselben geprüften Transkriptvertrag:
 
 ```bash
 ki-dev session show 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --pager
-ki-dev session transcript 0de11ef0-… --agent claude --title 'Zustandstabelle'
-ki-dev session export --snapshot .local/var/transcripts/261005T22_zustandstabelle_0de11ef0.jsonl --format markdown
+ki-dev session transcript 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --title 'Zustandstabelle'
+# .local/var/transcripts/261005T22_zustandstabelle_0de11ef0.jsonl
+ki-dev session show --snapshot .local/var/transcripts/261005T22_zustandstabelle_0de11ef0.jsonl
 ```
 
-```text
-claude-Sitzung 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab
-claude · 0de11ef0-… · Beginn 2026-10-05T22:24:18.979Z · zuletzt … · 14 Beiträge
+Gelaufen am 7.10.2026, gekürzt:
 
-1 Mensch · 2026-10-05T22:34:05.631Z ─────────────────────────────
+```text
+Zustandstabelle
+claude · 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab · Beginn 2026-10-05T22:24:18.979Z
+· zuletzt 2026-10-07T10:30:53.709Z · 14 Beiträge
+
+1 Mensch · 2026-10-05T22:34:05.631Z ──────────────────────────────────
 …
 ```
 

@@ -6,8 +6,8 @@ Die Suche nach Sitzungen und Listen zuletzt angesehener Sitzungen sind noch
 nicht enthalten.
 
 ```bash
-ki-dev session transcript SESSION_ID --agent claude --title 'Docker-Schicht'
-# .local/var/transcripts/261002T14_docker-schicht_0de11ef0.jsonl
+ki-dev session transcript 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --title 'Zustandstabelle'
+# .local/var/transcripts/261005T22_zustandstabelle_0de11ef0.jsonl
 ```
 
 Die Sitzungsordner und die Dialogprüfung sind dieselben wie bei
@@ -20,8 +20,8 @@ verwenden denselben Serializer und denselben Speicher.
 
 | Teil | Herkunft | Beispiel |
 |---|---|---|
-| `YYMMDDTHH` | Sitzungsbeginn (`started_at`) in UTC; nur 2000–2099 | `261002T14` |
-| `titel` | Slug aus `--title`: klein, `ä→ae`, `ß→ss`, sonst `-`; höchstens 40 Zeichen | `docker-schicht` |
+| `YYMMDDTHH` | Sitzungsbeginn (`started_at`) in UTC; nur 2000–2099 | `261005T22` |
+| `titel` | Slug aus `--title`: klein, `ä→ae`, `ß→ss`, sonst `-`; höchstens 40 Zeichen | `zustandstabelle` |
 | `sid8` | erste 8 Zeichen der Sitzungs-ID | `0de11ef0` |
 
 Der genaue Zeitpunkt steht im Kopf. Fehlt der belegte Sitzungsbeginn, endet
@@ -33,7 +33,7 @@ abgeleitet.
 **Inhalt:** Zeile 1 ist genau ein Kopf, danach folgt eine Nachricht je Zeile.
 
 ```json
-{"type": "transcript_meta", "version": 1, "agent": "claude", "session_id": "0de11ef0-…", "started_at": "2026-10-02T14:05:00Z", "last_activity_at": "…", "title": "Docker-Schicht", "source_digest": "…64 hex…", "parser_version": "claude-dialog-1", "diagnostics": {}}
+{"type": "transcript_meta", "version": 1, "agent": "claude", "session_id": "0de11ef0-…", "started_at": "2026-10-05T22:24:18.979Z", "last_activity_at": "…", "title": "Zustandstabelle", "source_digest": "…64 hex…", "parser_version": "claude-dialog-1", "diagnostics": {}}
 {"type": "message", "position": 1, "ordinal": null, "role": "user", "text": "…", "source_line": 3, "timestamp": "…"}
 ```
 
@@ -88,7 +88,7 @@ gültig, solange die Datei vorhanden ist.
 
 ```bash
 ki-dev session show 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --pager
-ki-dev session export --snapshot .local/var/transcripts/261005T22_ryk_0de11ef0.jsonl --format markdown > ryk.md
+ki-dev session export --snapshot .local/var/transcripts/261005T22_zustandstabelle_0de11ef0.jsonl --format markdown > zustandstabelle.md
 ```
 
 **Anzeige:** `show` gibt Titel, Anbieter, Sitzung und Zeiten einmal aus

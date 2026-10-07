@@ -17,7 +17,8 @@ The AI writes code and judges results.
 ## Installation
 
 Requires Python ≥ 3.12, git ≥ 2.32 and [Beads](https://github.com/steveyegge/beads)
-`bd` **1.3.0** (release build).
+`bd` **1.3.0** (release build). `go install` needs Go and a C compiler
+(CGO for embedded Dolt).
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
