@@ -22,6 +22,7 @@ from ki_dev.loop_cli import (
 from ki_dev.loop_runtime import LoopResumeError, LoopRunResult
 from ki_dev.planning_cli import app as planning_app
 from ki_dev.run_store import RunStoreError
+from ki_dev.session_cli import app as session_app
 
 console = Console()
 
@@ -35,6 +36,7 @@ loop_app = typer.Typer(
 )
 app.add_typer(loop_app, name="loop")
 app.add_typer(planning_app, name="planning")
+app.add_typer(session_app, name="session")
 app.command("step")(handoff)
 app.command("config")(config)
 

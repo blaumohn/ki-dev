@@ -11,15 +11,25 @@ from tests.codex_session_fixtures import (
     assistant,
     dialog,
     noise,
+    session_meta,
     user,
-    write_session,
+)
+from tests.codex_session_fixtures import (
+    write_session as write_raw_session,
 )
 from tests.fake_bd import FakeBd
 from tests.guideline_fixtures import write_guidelines
 
 runner = CliRunner()
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
-MAP = ["step", "map", "--agent", "codex", "--session", SID]
+TITLE = ["--title", "Test-Import"]
+MAP = ["step", "map", "--agent", "codex", "--session", SID, *TITLE]
+
+
+def write_session(root, session_id, rows, day="2026/09/17"):
+    """Codex-Sitzung mit belegtem Beginn (Snapshot-Name braucht ihn)."""
+    rows = [session_meta(session_id), *rows]
+    return write_raw_session(root, session_id, rows, day=day)
 
 
 @pytest.fixture
@@ -42,6 +52,13 @@ def artifacts(work):
     return sorted((work / ".local").rglob("*.jsonl"))
 
 
+def messages(artifact):
+    """Nachrichtenzeilen eines Snapshots (ohne Kopfzeile)."""
+    lines = artifact.read_text().splitlines()
+    assert json.loads(lines[0])["type"] == "transcript_meta"
+    return [json.loads(line) for line in lines[1:]]
+
+
 def leaked(result) -> bool:
     return SECRET in result.stdout + result.stderr
 
@@ -51,7 +68,8 @@ def test_map_call_writes_source_bead_and_prints_short_task(env):
     result = runner.invoke(app, MAP)
     assert result.exit_code == 0, result.stderr
     [artifact] = artifacts(env.work)
-    assert len(artifact.read_text().splitlines()) == 4
+    assert artifact.name == "260917T09_test-import_0199aaaa.jsonl"
+    assert len(messages(artifact)) == 4
     [bead] = env.bd.rows
     rel = artifact.relative_to(env.work).as_posix()
     assert bead["metadata"]["handoff"]["source_refs"] == [rel]
@@ -191,9 +209,7 @@ def test_advisory_dialog_variants_pass_completely(env, rows, counter):
     assert result.exit_code == 0, result.stderr
     assert not leaked(result)
     [artifact] = artifacts(env.work)
-    stored = [
-        json.loads(line) for line in artifact.read_text().splitlines()
-    ]
+    stored = messages(artifact)
     assert [row["ordinal"] for row in stored] == [
         r["ordinal"] for r in rows
     ]
@@ -212,15 +228,15 @@ def test_claude_session_is_mapped_through_the_same_path(
     )
     claude.write_session(claude_root, claude.SESSION, rows)
     args = ["step", "map", "--agent", "claude", "--session"]
-    result = runner.invoke(app, [*args, claude.SESSION])
+    result = runner.invoke(app, [*args, claude.SESSION, *TITLE])
     assert result.exit_code == 0, result.stderr
     assert not leaked(result)
     assert SECRET not in json.dumps(env.bd.rows)
     [artifact] = artifacts(env.work)
-    assert f"/claude/{claude.SESSION}/" in artifact.as_posix()
-    stored = [
-        json.loads(line) for line in artifact.read_text().splitlines()
-    ]
+    assert artifact.name.endswith(f"_{claude.SESSION[:8]}.jsonl")
+    header = json.loads(artifact.read_text().splitlines()[0])
+    assert header["agent"] == "claude"
+    stored = messages(artifact)
     assert [row["ordinal"] for row in stored] == [None, None, None]
     assert [row["role"] for row in stored] == [
         "user",
@@ -234,7 +250,7 @@ def test_claude_empty_sessions_dir_variable_is_a_clean_error(
 ):
     monkeypatch.setenv("KI_DEV_CLAUDE_SESSIONS_DIR", "")
     args = ["step", "map", "--agent", "claude", "--session"]
-    result = runner.invoke(app, [*args, claude.SESSION])
+    result = runner.invoke(app, [*args, claude.SESSION, *TITLE])
     _assert_clean_failure(
         result, env, "KI_DEV_CLAUDE_SESSIONS_DIR ist gesetzt, aber leer"
     )
@@ -252,37 +268,64 @@ def test_truncated_json_fails_visibly(env):
 @pytest.mark.parametrize(
     "args",
     [
-        ["step", "map", "--agent", "codex"],
-        ["step", "map", "--session", SID],
-        ["step", "map", "--agent", "gemini", "--session", SID],
-        ["step", "map", "--agent", "", "--session", SID],
-        ["step", "map", "--agent", "codex", "--session", "../x"],
-        ["step", "map", "--agent", "codex", "--session", "a*"],
-        ["step", "map", "--agent", "codex", "--session", ""],
-        ["step", "--agent", "codex", "--session", SID],
-        ["step", "x-1", "--agent", "codex", "--session", SID],
-        ["step", "map", "x-1", "--agent", "codex", "--session", SID],
-        ["step", "--agent", "codex"],
-        ["step", "--session", SID],
-        [
-            "step",
-            "--step",
-            "map",
-            "--agent",
-            "codex",
-            "--session",
-            SID,
-        ],
-        [
-            "step",
-            "map",
-            "--step",
-            "map",
-            "--agent",
-            "codex",
-            "--session",
-            SID,
-        ],
+        *(
+            [*args, *TITLE]
+            for args in (
+                ["step", "map", "--agent", "codex"],
+                ["step", "map", "--session", SID],
+                ["step", "map", "--agent", "gemini", "--session", SID],
+                ["step", "map", "--agent", "", "--session", SID],
+                [
+                    "step",
+                    "map",
+                    "--agent",
+                    "codex",
+                    "--session",
+                    "../x",
+                ],
+                ["step", "map", "--agent", "codex", "--session", "a*"],
+                ["step", "map", "--agent", "codex", "--session", ""],
+                ["step", "--agent", "codex", "--session", SID],
+                ["step", "x-1", "--agent", "codex", "--session", SID],
+                [
+                    "step",
+                    "map",
+                    "x-1",
+                    "--agent",
+                    "codex",
+                    "--session",
+                    SID,
+                ],
+                ["step", "--agent", "codex"],
+                ["step", "--session", SID],
+                [
+                    "step",
+                    "--step",
+                    "map",
+                    "--agent",
+                    "codex",
+                    "--session",
+                    SID,
+                ],
+                [
+                    "step",
+                    "map",
+                    "--step",
+                    "map",
+                    "--agent",
+                    "codex",
+                    "--session",
+                    SID,
+                ],
+            )
+        ),
+        ["step", "map", "--agent", "codex", "--session", SID],
+        [*MAP[:-1], ""],
+        [*MAP[:-1], " "],
+        [*MAP[:-1], "!!!"],
+        [*MAP[:-1], "x" * 121],
+        ["step", "x-1", "--step", "map", *TITLE],
+        ["step", "local", *TITLE],
     ],
 )
 def test_bad_calls_exit_2_before_any_effect(env, args):
@@ -298,7 +341,7 @@ def test_exact_contract_call_without_extra_words_works(env):
     write_session(env.sessions, SID, dialog(1))
     result = runner.invoke(
         app,
-        ["step", "map", "--agent", "codex", "--session", SID],
+        ["step", "map", "--agent", "codex", "--session", SID, *TITLE],
     )
     assert result.exit_code == 0, result.stderr
 
@@ -402,8 +445,9 @@ def test_help_documents_both_forms_and_their_effects(env):
         "--agent codex --session",
         "--step STEP",
         "Korrekturen können Dateien ändern",
-        "Schreibt ein Transkript",
-        ".local/handoff",
+        "Schreibt einen datierten Snapshot",
+        ".local/var/transcripts/",
+        "--title ist Pflicht",
         "Quellen-Bead",
         "bei gleichem Stand wiederverwendet",
         "Statt einer Beads-ID; nicht mit --step kombinieren",
@@ -431,3 +475,45 @@ def test_map_guideline_error_precedes_any_write(env):
     assert "Leitlinienquelle nicht lesbar" in result.stderr
     assert artifacts(env.work) == []
     assert "create" not in env.bd.commands()
+
+
+def test_reused_bead_with_legacy_reference_stays_valid(env):
+    write_session(env.sessions, SID, dialog(1))
+    runner.invoke(app, MAP)
+    [artifact] = artifacts(env.work)
+    header = json.loads(artifact.read_text().splitlines()[0])
+    legacy = (
+        f".local/handoff/codex/{SID}/"
+        f"{header['source_digest']}-{header['parser_version']}.jsonl"
+    )
+    rows = env.bd.rows
+    rows[0]["metadata"]["handoff"]["source_refs"] = [legacy]
+    env.bd.set(rows=rows)
+    missing = runner.invoke(app, MAP)
+    assert missing.exit_code == 1
+    assert "verweist nicht" in missing.stderr
+    (env.work / legacy).parent.mkdir(parents=True)
+    (env.work / legacy).write_text("{}\n")
+    result = runner.invoke(app, MAP)
+    assert result.exit_code == 0, result.stderr
+    assert legacy in result.stdout
+    assert env.bd.commands().count("create") == 1
+
+
+def test_new_title_reuses_the_existing_snapshot(env):
+    write_session(env.sessions, SID, dialog(1))
+    first = runner.invoke(app, MAP)
+    second = runner.invoke(app, [*MAP[:-1], "Anderer Titel"])
+    assert second.exit_code == 0, second.stderr
+    assert first.stdout == second.stdout
+    [artifact] = artifacts(env.work)
+    assert "test-import" in artifact.name
+
+
+def test_session_without_start_fails_before_any_bead(env):
+    write_raw_session(env.sessions, SID, dialog(1))
+    result = runner.invoke(app, MAP)
+    assert result.exit_code == 1
+    assert "started_at fehlt" in result.stderr
+    assert artifacts(env.work) == []
+    assert env.bd.get()["calls"] == []

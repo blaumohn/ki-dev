@@ -17,6 +17,7 @@ from ki_dev.handoff_limit import MAX_DIAGNOSIS_CHARS
 from tests.codex_session_fixtures import (
     SECRET,
     dialog,
+    session_meta,
     write_session,
 )
 from tests.fake_bd import FakeBd
@@ -317,14 +318,23 @@ def test_help_and_doc_explain_the_limit():
 # --- Sitzungsform ---------------------------------------------------
 
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
-MAP = ["step", "map", "--agent", "codex", "--session", SID]
+MAP = [
+    "step",
+    "map",
+    "--agent",
+    "codex",
+    "--session",
+    SID,
+    "--title",
+    "Limit",
+]
 
 
 @pytest.fixture
 def session(tmp_path, monkeypatch):
     sessions = tmp_path / "sessions"
     sessions.mkdir()
-    write_session(sessions, SID, dialog(2))
+    write_session(sessions, SID, [session_meta(SID), *dialog(2)])
     fake = FakeBd(tmp_path, SECRET)
     fake.install(monkeypatch)
     monkeypatch.setenv("KI_DEV_CODEX_SESSIONS_DIR", str(sessions))

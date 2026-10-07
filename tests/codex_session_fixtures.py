@@ -38,6 +38,14 @@ def assistant(ordinal, turn="t1", text="Antwort", phase="final_answer"):
     }
 
 
+def session_meta(session_id, timestamp="2026-09-17T09:10:35Z"):
+    """Belegter Sitzungsbeginn (fuer datierte Snapshots)."""
+    return {
+        "type": "session_meta",
+        "payload": {"id": session_id, "timestamp": timestamp},
+    }
+
+
 def noise():
     """Bekannte irrelevante Ereignisse."""
     return [

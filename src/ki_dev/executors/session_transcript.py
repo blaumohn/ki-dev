@@ -66,9 +66,9 @@ _TIMESTAMP_PATTERN = (
     r"(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
 )
 _TIMESTAMP_RE = re.compile(_TIMESTAMP_PATTERN)
-_TIMESTAMP = {"type": "string", "pattern": _TIMESTAMP_PATTERN}
-_OPTIONAL_TIMESTAMP = {"oneOf": [{"type": "null"}, _TIMESTAMP]}
-_TEXT = {"type": "string", "pattern": r"\S"}
+TIMESTAMP_SCHEMA = {"type": "string", "pattern": _TIMESTAMP_PATTERN}
+_OPTIONAL_TIMESTAMP = {"oneOf": [{"type": "null"}, TIMESTAMP_SCHEMA]}
+TEXT_SCHEMA = {"type": "string", "pattern": r"\S"}
 _COMPONENT = {
     "type": "string",
     "pattern": r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
@@ -114,7 +114,7 @@ _SCHEMA = {
                 "properties": {
                     "ordinal": {"type": ["integer", "number", "null"]},
                     "role": {"enum": ["user", "assistant"]},
-                    "text": _TEXT,
+                    "text": TEXT_SCHEMA,
                     "source_line": {"type": "integer", "minimum": 1},
                     "position": {"type": "integer", "minimum": 1},
                     "timestamp": _OPTIONAL_TIMESTAMP,
@@ -147,7 +147,7 @@ def validate_transcript(transcript: SessionTranscript) -> None:
         raise TranscriptError(("Vertrag: kein SessionTranscript",))
     document = _as_document(transcript)
     problems = [
-        _schema_problem(error)
+        schema_problem(error)
         for error in sorted(
             _VALIDATOR.iter_errors(document),
             key=lambda e: [str(p) for p in e.absolute_path],
@@ -270,7 +270,7 @@ def _message_document(message: object) -> object:
     }
 
 
-def _schema_problem(error) -> str:
+def schema_problem(error) -> str:
     # Nur Pfad und Regel; error.message/instance enthalten Rohwerte.
     path = "".join(
         f"[{part}]" if isinstance(part, int) else f".{part}"

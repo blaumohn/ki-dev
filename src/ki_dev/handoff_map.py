@@ -21,14 +21,18 @@ from ki_dev.handoff import (
 from ki_dev.handoff_guidelines import GuidelineSection
 from ki_dev.handoff_source import (
     HandoffSourceError,
+    accepted_refs,
     source_key,
     store_source,
 )
 from ki_dev.step_flow import StepFlow
 
 _READING_HINT = (
-    "Quelle: normalisiertes Transkript, eine Nachricht je Zeile "
-    "(position, ordinal, role, text, source_line, timestamp). "
+    "Quelle: normalisiertes Transkript; Zeile 1 ist der Kopf "
+    "(transcript_meta mit Titel und Sitzungsbeginn), danach eine "
+    "Nachricht je Zeile (position, ordinal, role, text, source_line, "
+    "timestamp); ältere Quellen unter .local/handoff haben keinen "
+    "Kopf. "
     "Abschnittsweise lesen und Fundstellen über source_line angeben; "
     "ordinal ist die Herkunftsnummer und kann fehlen (null). "
     "Wiederholte Rollen und offene Eingaben sind gültig. "
@@ -40,12 +44,13 @@ _READING_HINT = (
 def map_handoff(
     agent: str,
     session_id: str,
+    title: str,
     workdir: Path,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
     flow: StepFlow,
 ) -> str:
-    """Kurzer map-Auftrag; schreibt Quellen-Datei und -Bead.
+    """Kurzer map-Auftrag; schreibt Snapshot und Quellen-Bead.
 
     ``guidelines``, ``base_max_chars`` und ``flow`` sind bereits geladen
     und geprüft, damit Quellenfehler vor jeder Schreibwirkung auffallen.
@@ -53,14 +58,15 @@ def map_handoff(
     prüfen; bei Übergröße bleiben Quelle und Bead bestehen.
     """
     transcript = read_session_transcript(agent, session_id)
-    relative = store_source(transcript, workdir).as_posix()
+    stored = store_source(transcript, title, workdir)
     bead_id = ensure_source_bead(
-        _source_bead(transcript, relative), workdir
+        _source_bead(transcript, stored.as_posix()), workdir
     )
     issue = read_issue(bead_id, workdir)
-    if not isinstance(issue.source_refs, list) or (
-        relative not in issue.source_refs
-    ):
+    refs = issue.source_refs
+    if not isinstance(refs, list):
+        refs = []
+    if not set(refs) & set(accepted_refs(transcript, stored, workdir)):
         raise HandoffSourceError(
             "Quellen-Bead verweist nicht auf das lokale Artefakt"
         )
@@ -86,7 +92,8 @@ def _source_bead(
             f"(Stand {transcript.source_digest}, "
             f"Parser {transcript.parser_version}, "
             f"{len(transcript.messages)} Nachrichten) unter "
-            f"{relative}. Eine Nachricht je Zeile; keine "
+            f"{relative}. Kopfzeile, danach eine Nachricht je Zeile; "
+            "keine "
             "Gesprächsinhalte in Beads. Quelle für den Schritt "
             "map; ersetzt keine Karte."
         ),

@@ -83,6 +83,7 @@ from ki_dev.preflight_options import (
     parse_preflight_args,
     parse_preflight_skip,
 )
+from ki_dev.session_snapshot import SnapshotTitleError, validate_title
 from ki_dev.step_flow import StepFlow, StepFlowError, load_step_flow
 
 MAP_WORD = "map"
@@ -98,7 +99,7 @@ Eine Arbeitsübergabe für eine neue Agentensitzung ausgeben.
 AUFRUFE
   ki-dev step BEAD_ID --step STEP
     Übergabe aus einem vorhandenen Bead erstellen.
-  ki-dev step map --agent codex --session SESSION_ID
+  ki-dev step map --agent codex --session SESSION_ID --title TITEL
     Codex- oder Claude-Sitzung als Quelle importieren und Kartierung
     vorbereiten.
   ki-dev step local
@@ -123,7 +124,7 @@ BEISPIELE
   ki-dev step projekt-42 --step review --next-turn
   ki-dev step projekt-42 --step review --next-turn --feedback-file -
   ki-dev step projekt-42 --step review --next-turn --decision-file -
-  ki-dev step map --agent codex --session SESSION_ID
+  ki-dev step map --agent claude --session SESSION_ID --title 'Docker'
   ki-dev step local > uebergabe.txt
 
 REVIEW
@@ -170,10 +171,11 @@ LOKALE ÜBERGABE (local)
   Rollenrechte, Python/pytest, Messregeln und allgemeine Leitlinien.
   Die Basisgrenze gilt wie sonst nur für die Basis.
 
-SITZUNGSIMPORT (map --agent codex --session SESSION_ID)
-  Schreibt ein Transkript unter .local/handoff/ und legt einen
-  Quellen-Bead an (bei gleichem Stand wiederverwendet).
-  SESSION_ID durch die ID ersetzen.
+SITZUNGSIMPORT (map --agent codex --session SESSION_ID --title TITEL)
+  Schreibt einen datierten Snapshot unter .local/var/transcripts/
+  (YYMMDDTHH_titel_sid8.jsonl) und legt einen Quellen-Bead an (bei
+  gleichem Stand wiederverwendet). --title ist Pflicht und ergibt den
+  Dateinamen. SESSION_ID durch die ID ersetzen.
   Statt einer Beads-ID; nicht mit --step kombinieren.
 
 Ausgabe kopieren und in einer neuen Agentensitzung einfügen.
@@ -278,6 +280,15 @@ def handoff(
             show_default=False,
         ),
     ] = None,
+    title: Annotated[
+        str | None,
+        typer.Option(
+            "--title",
+            metavar="TITEL",
+            help="Titel des Snapshots (nur mit map --agent/--session).",
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
     options = _PreflightValues(
         preflight_args or [], preflight_skip or []
@@ -292,6 +303,7 @@ def handoff(
             or decision_file is not None,
             agent,
             session,
+            title,
         )
     elif (
         agent is not None or session is not None or bead_id == MAP_WORD
@@ -306,8 +318,11 @@ def handoff(
             or decision_file is not None,
             agent,
             session,
+            title,
         )
     else:
+        if title is not None:
+            _fail("--title gilt nur für map --agent/--session", code=2)
         _bead_form(
             bead_id,
             step,
@@ -783,6 +798,7 @@ def _local_form(
     next_turn_option: bool,
     agent: str | None,
     session: str | None,
+    title: str | None,
 ) -> None:
     """``local``: weder Bead noch ``bd``; Konfiguration und Quellen
     werden gelesen, sonst nichts (keine Schreibwirkung)."""
@@ -793,12 +809,13 @@ def _local_form(
         or next_turn_option
         or agent is not None
         or session is not None
+        or title is not None
     ):
         _fail(
             "local lässt sich nicht mit --step/--review-of/"
             "--preflight-args/--preflight-skip/--next-turn/"
-            "--feedback-file/--decision-file/--agent/--session "
-            "mischen",
+            "--feedback-file/--decision-file/--agent/--session/"
+            "--title mischen",
             code=2,
         )
     limit = _base_limit()
@@ -818,11 +835,12 @@ def _map_form(
     next_turn_option: bool,
     agent: str | None,
     session: str | None,
+    title: str | None,
 ) -> None:
     if bead_id != MAP_WORD:
         _fail(
             "Sitzungsform: ki-dev step map --agent codex --session "
-            "SESSION_ID (nicht mit BEAD_ID oder anderen "
+            "SESSION_ID --title TITEL (nicht mit BEAD_ID oder anderen "
             "Positionsargumenten mischen)",
             code=2,
         )
@@ -840,14 +858,21 @@ def _map_form(
         )
     if agent is None or session is None:
         _fail("--agent und --session sind beide erforderlich", code=2)
+    if title is None:
+        _fail(
+            "--title ist für den Sitzungsimport erforderlich "
+            "(Snapshot-Name)",
+            code=2,
+        )
     try:
         validate_session_request(agent, session)
-    except TranscriptRequestError as exc:
+        validate_title(title)
+    except (TranscriptRequestError, SnapshotTitleError) as exc:
         _fail(str(exc), code=2)
-    typer.echo(_map_text(agent, session), nl=False)
+    typer.echo(_map_text(agent, session, title), nl=False)
 
 
-def _map_text(agent: str, session: str) -> str:
+def _map_text(agent: str, session: str, title: str) -> str:
     """Sitzungsimport mit Konfigurations- und Leitlinienprüfung vor
     jeder Schreibwirkung."""
     limit = _base_limit()
@@ -855,7 +880,7 @@ def _map_text(agent: str, session: str) -> str:
     flow = _step_flow()
     try:
         text = map_handoff(
-            agent, session, Path.cwd(), guidelines, limit, flow
+            agent, session, title, Path.cwd(), guidelines, limit, flow
         )
     except HandoffBaseTooLongError as exc:
         _fail(exc.diagnosis(_MAP_KEPT_NOTE), code=2)

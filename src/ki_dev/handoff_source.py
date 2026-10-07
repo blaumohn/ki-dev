@@ -1,20 +1,18 @@
-"""Lokale Quellenablage fuer normalisierte Sitzungstranskripte."""
+"""Quellenablage fuer step map: Schluessel, Snapshot und Altpfad."""
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import tempfile
 from pathlib import Path
 
-from ki_dev.executors.session_transcript import (
-    SessionTranscript,
-    TranscriptError,
-    validate_transcript,
+from ki_dev.executors.session_transcript import SessionTranscript
+from ki_dev.session_snapshot import (
+    SNAPSHOT_DIR,
+    SnapshotError,
+    store_snapshot,
 )
 
-SOURCE_ROOT = Path(".local/handoff")
+LEGACY_SOURCE_ROOT = Path(".local/handoff")
 _COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
@@ -35,10 +33,14 @@ def source_key(transcript: SessionTranscript) -> str:
     )
 
 
-def source_path(transcript: SessionTranscript) -> Path:
-    """Relativer Ablagepfad; Wiederholung ergibt denselben Pfad."""
+def legacy_source_path(transcript: SessionTranscript) -> Path:
+    """Pfad der frueheren Ablage (Altformat ``handoff-v0``).
+
+    Bestehende Quellen-Beads verweisen weiter darauf; neu geschrieben
+    wird dort nichts mehr.
+    """
     return (
-        SOURCE_ROOT
+        LEGACY_SOURCE_ROOT
         / _safe(transcript.agent)
         / _safe(transcript.session_id)
         / (
@@ -48,74 +50,34 @@ def source_path(transcript: SessionTranscript) -> Path:
     )
 
 
-def serialize_messages(transcript: SessionTranscript) -> bytes:
-    """Genau eine Nachricht je Zeile, deterministisch."""
-    lines = (
-        json.dumps(
-            {
-                "position": message.position,
-                "ordinal": message.ordinal,
-                "role": message.role,
-                "text": message.text,
-                "source_line": message.source_line,
-                "timestamp": message.timestamp,
-            },
-            ensure_ascii=False,
-            allow_nan=False,
-        )
-        for message in transcript.messages
-    )
-    return "".join(f"{line}\n" for line in lines).encode("utf-8")
+def store_source(
+    transcript: SessionTranscript, title: str, workdir: Path
+) -> Path:
+    """Snapshot im gemeinsamen Speicher ablegen; relativer Pfad.
 
-
-def store_source(transcript: SessionTranscript, workdir: Path) -> Path:
-    """Artefakt atomar ablegen; identisches wiederverwenden.
-
-    Rueckgabe ist der relative Pfad. Abweichender Inhalt am selben
-    Schluessel ist ein Fehler, nie ein stilles Ueberschreiben; ein
-    Transkript ausserhalb des gemeinsamen Vertrags wird nie abgelegt.
+    Identischer Stand wird wiederverwendet; ein Transkript ausserhalb
+    des gemeinsamen Vertrags wird nie abgelegt.
     """
     try:
-        validate_transcript(transcript)
-    except TranscriptError as exc:
-        raise HandoffSourceError(
-            "Transkript verletzt den Vertrag: "
-            + "; ".join(exc.problems)
-        ) from None
-    relative = source_path(transcript)
-    target = workdir / relative
-    content = serialize_messages(transcript)
-    try:
-        if target.exists():
-            _require_identical(target, content)
-        else:
-            _publish_atomically(target, content)
-    except OSError as exc:
-        raise HandoffSourceError(
-            f"Quellen-Datei nicht ablegbar ({type(exc).__name__})"
-        ) from None
-    return relative
+        path = store_snapshot(transcript, title, workdir / SNAPSHOT_DIR)
+    except SnapshotError as exc:
+        raise HandoffSourceError(str(exc)) from None
+    return path.relative_to(workdir)
 
 
-def _require_identical(target: Path, content: bytes) -> None:
-    if target.read_bytes() != content:
-        raise HandoffSourceError(
-            "Quellen-Datei existiert mit abweichendem Inhalt: "
-            f"{target.name}"
-        )
+def accepted_refs(
+    transcript: SessionTranscript, stored: Path, workdir: Path
+) -> tuple[str, ...]:
+    """Verweise, die ein Quellen-Bead fuer diesen Stand tragen darf.
 
-
-def _publish_atomically(target: Path, content: bytes) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=".tmp-")
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_name, target)
-    finally:
-        Path(tmp_name).unlink(missing_ok=True)
+    Neben dem neuen Snapshot gilt eine vorhandene Altablage desselben
+    Schluessels, damit fruehere Quellen-Beads weiter verwendbar sind.
+    """
+    legacy = legacy_source_path(transcript)
+    refs = [stored.as_posix()]
+    if (workdir / legacy).is_file():
+        refs.append(legacy.as_posix())
+    return tuple(refs)
 
 
 def _safe(part: str) -> str:

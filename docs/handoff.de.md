@@ -401,7 +401,7 @@ Beispiel: Ein Graph-Review findet eine offene Frage.
 
 ```text
 graph.review --quelle--> quelle          Planungssitzung mit dem Menschen
-quelle --importiert--> map               ki-dev step map --agent claude --session S2
+quelle --importiert--> map               ki-dev step map --agent claude --session S2 --title T
                                          Agent ergänzt die bestehende Karte K
 map --erledigt--> map.review             ki-dev step K --step review --review-of map
 map.review --PASS--> graph               ki-dev step K --step graph
@@ -417,19 +417,22 @@ dieser Etappe noch nicht.
 ## Sitzung als Quelle (`step map`)
 
 ```bash
-ki-dev step map --agent codex --session SESSION_ID
-ki-dev step map --agent claude --session SESSION_ID
+ki-dev step map --agent codex --session SESSION_ID --title 'Docker-Schicht'
+ki-dev step map --agent claude --session SESSION_ID --title 'bd-Hook'
 ```
 
 Erschließt eine lokale Codex- oder Claude-Sitzung als Quelle für den Schritt
 `map`. Beide Anbieter liefern denselben geprüften Transkripttyp. Das
 Positionswort `map` ist Teil des Aufrufs und das einzige erlaubte
-Positionsargument. `--agent` und `--session` sind beide erforderlich; `--agent` bezeichnet den
+Positionsargument. `--agent`, `--session` und `--title` sind erforderlich; `--agent` bezeichnet den
 Anbieter der **Quellsitzung** (`codex` oder `claude`), nicht den späteren
 Kartierungsagenten. Es gibt kein Dateipfadargument und keine automatische Wahl
 der letzten Sitzung. Die Form lässt sich nicht mit einer `BEAD_ID`, einem
 anderen Positionsargument oder `--step` mischen; auch `--agent`/`--session`
 ohne `map` wird abgelehnt (Exit 2, vor jeder Schreibwirkung).
+`--title` ist nichtleerer Text bis 120 Zeichen und muss Buchstaben oder
+Ziffern enthalten; daraus entsteht der Dateislug. Der Titel wird nie aus
+Gesprächsinhalten abgeleitet; fehlt er, endet der Aufruf mit Exit 2.
 
 **Sitzungsordner:** Codex: `KI_DEV_CODEX_SESSIONS_DIR` (ausdrücklicher
 Ordner), sonst `CODEX_HOME/sessions`, sonst `~/.codex/sessions`. Claude:
@@ -460,18 +463,22 @@ seine Ausgabe gehört nicht ungefiltert in einen Agentenkontext.
 
 **Schreibwirkungen (lokal):**
 
-1. Das normalisierte Transkript (eine Nachricht je Zeile mit `position`
-   (normalisierte Reihenfolge), `ordinal` (Herkunftsnummer, bei Claude
-   `null`), `role`, `text`, `source_line`, optionalem `timestamp`) wird
-   atomar unter
-   `.local/handoff/AGENT/SESSION_ID/DIGEST-PARSERVERSION.jsonl` abgelegt. Der
-   Ordner ist nicht versioniert. Ein identisches Artefakt wird wiederverwendet,
-   abweichender Inhalt am selben Schlüssel ist ein Fehler.
+1. Das normalisierte Transkript wird als datierter
+   [Snapshot](session.de.md#datierte-jsonl-snapshots) unter
+   `.local/var/transcripts/YYMMDDTHH_titel_sid8.jsonl` abgelegt (derselbe
+   Speicher wie `ki-dev session transcript`). Ein identischer Stand wird
+   wiederverwendet, auch unter anderem Titel; abweichender Inhalt am selben
+   Schlüssel ist ein Fehler. Eine Sitzung ohne belegten Beginn
+   (`started_at`) endet mit Exit 1 vor jedem Bead.
 2. Ein Quellen-Bead wird über `bd list` gesucht (Schlüssel
    `metadata.handoff.source_key` aus Anbieter, Sitzung, Byte-Hash und
    Parserversion) und sonst per `bd create` angelegt. `metadata.handoff.source_refs`
-   verweist auf das Artefakt; die Beschreibung nennt Quelle und Stand, aber
-   keinen Gesprächsinhalt. Mehrere Treffer brechen ab.
+   verweist auf den Snapshot; die Beschreibung nennt Quelle und Stand, aber
+   keinen Gesprächsinhalt. Mehrere Treffer brechen ab. Ein früher angelegter
+   Quellen-Bead, der noch auf die alte Ablage
+   `.local/handoff/AGENT/SESSION_ID/DIGEST-PARSERVERSION.jsonl` verweist,
+   bleibt gültig, solange diese Datei vorhanden ist; sie wird weder
+   verschoben noch umgeschrieben.
 3. Erst danach gibt der Befehl die bestehende `map`-Übergabe mit
    Quellenreferenz und Hinweis zum abschnittsweisen Lesen aus. Das Transkript
    erscheint weder auf stdout noch in Beads.
