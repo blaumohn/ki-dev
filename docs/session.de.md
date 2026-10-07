@@ -81,7 +81,40 @@ gültig, solange die Datei vorhanden ist.
 | Aufruf | Wirkung |
 |---|---|
 | `session transcript ID --agent A --title T [--dir D]` | schreibt einen Snapshot und gibt seinen Pfad aus |
+| `session show ID --agent A [--pager]` | zeigt die Rohsitzung an und schreibt nichts |
+| `session show --snapshot DATEI [--pager]` | zeigt einen gespeicherten Snapshot an (auch `handoff-v0`) |
+| `session export ID --agent A --format markdown\|jsonl [--title T] [--output DATEI]` | Ausgabe auf stdout oder in eine **neue** Datei; kein Archiv |
+| `session export --snapshot DATEI --format …` | dasselbe aus einem Snapshot |
+
+```bash
+ki-dev session show 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --pager
+ki-dev session export --snapshot .local/var/transcripts/261005T22_ryk_0de11ef0.jsonl --format markdown > ryk.md
+```
+
+**Anzeige:** `show` gibt Titel, Anbieter, Sitzung und Zeiten einmal aus
+(fehlende Zeiten als `—`). Danach folgt je Beitrag eine Linie mit Position,
+Rolle (`Mensch`/`Agent`) und Zeit, darunter der Text als Markdown. Die
+Kopfzeile eines Snapshots erscheint nie als Beitrag. Ohne gespeicherten Titel
+steht `AGENT-Sitzung ID` an seiner Stelle.
+
+**Pager:** `--pager` verwendet den eingebauten Pager von Rich
+(`Console.pager`, intern `pydoc.pager`). Er startet `$MANPAGER`, `$PAGER` oder
+`less`. Für `less` ergänzt `ki-dev` für die Dauer der Anzeige `LESS=-R`, damit
+Farben ankommen; ein vorhandenes `-R`/`-r` bleibt unverändert. Ist die Ausgabe
+umgeleitet (`| head`, Datei), startet kein Pager: Die Ausgabe ist ungekürzt
+und ohne Farbcodes. Schließt der Leser früh (`q` im Pager, `| head`), endet
+der Aufruf ohne Fehlermeldung. Start- und Exitfehler des Pagers meldet die
+Shell. Das ist eine dokumentierte Ausnahme zur
+[Technikleitlinie](technikleitlinie.de.md#ausnahmen).
+
+**Export:** `jsonl` folgt dem Snapshot-Vertrag. Der Titel kommt aus
+`--title` oder aus dem gespeicherten Snapshot; fehlen beide, endet der Aufruf
+mit Exit 2. `markdown` enthält denselben Transkriptinhalt (`# Titel`, dann
+`## Position Rolle · Zeit` je Beitrag). stdout enthält nur die Daten,
+Diagnosen gehen nach stderr. `--output` legt nur eine neue Datei an; eine
+vorhandene Datei bleibt unverändert (Exit 1).
 
 Exitcodes: `0` Erfolg; `1` Sitzung oder Snapshot nicht verwendbar (die
 Meldung nennt nur Prüfcode, Zeile und Feldpfad); `2` falscher Aufruf
-(Anbieter, ID oder Titel), vor jedem Dateizugriff.
+(Anbieter, ID, Titel, Format oder gemischte Auswahl), vor jedem
+Dateizugriff.

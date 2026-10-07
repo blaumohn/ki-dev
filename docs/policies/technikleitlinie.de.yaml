@@ -77,3 +77,13 @@ sections:
       Abweichende Werkzeuge benötigen eine konkrete technische Begründung an der
       betroffenen Grenze und einen Verweis aus dieser Leitlinie. Bequemlichkeit
       oder ein bestehender abweichender Aufruf begründen keine neue Ausnahme.
+
+      Bestehende Ausnahme:
+
+      - **Pager von `ki-dev session show --pager`** (`session_output.py`):
+        Rich `Console.pager()` über `pydoc.pager`, das `$MANPAGER` bzw.
+        `$PAGER` über die Shell startet. Begründung: Entscheidung des
+        Menschen (2026-10-07) für den eingebauten Rich-Pager statt eines
+        eigenen Plumbum-Pagerprozesses; `PAGER` ist Konfiguration des
+        eigenen Terminals. Folge: Start- und Exitfehler des Pagers meldet
+        die Shell, nicht `ki-dev`; umgeleitete Ausgabe startet keinen Pager.
