@@ -920,9 +920,10 @@ flowchart LR
     end
 ```
 
-Grundlage: Etappenentscheidung vom 5.10.2026 mit Korrektur vom 6.10.2026.
-Fest ist nur die Reihenfolge step → loop. Workflows und Zustand/Ereignis
-sind Architekturthemen ohne festgelegte Reihenfolge oder festen Zeitpunkt.
+Grundlage: Planungsentscheidung zu den Etappen (Quellenkarte 2ig, Punkt
+2ig.1). Fest ist nur die Reihenfolge step → loop. Workflows und
+Zustand/Ereignis sind Architekturthemen ohne festgelegte Reihenfolge oder
+festen Zeitpunkt.
 
 - **step:** der heutige Stand. Jede Regel wird zuerst von Hand erprobt.
 - **loop:** verbindet die Sitzungen selbst und spart das Kopieren. Ob
@@ -932,6 +933,20 @@ sind Architekturthemen ohne festgelegte Reihenfolge oder festen Zeitpunkt.
   Ansatz, den die Schleife ebenfalls lesen kann.
 - Thema **Zustand/Ereignis:** eine Schnittstelle für Laufzustand und
   Ereignisse. Der Arbeitsgraph in Beads ist dafür kein Ersatz.
+
+**Ebenensicht (Konzept, nicht umgesetzt).** Grundlage: Nutzerkonzept aus der
+Quellenkarte 1ep (Punkt 1ep.3). Welche Module welcher Ebene entsprechen, ist
+offen und hier bewusst nicht zugeordnet.
+
+```text
+Workflow           welche Schritte in welcher Folge (Abläufe als Daten)
+Loop-Mechanik      wie eine Runde läuft, unabhängig von der Phase
+Agentadapter       wie Claude oder Codex angesprochen wird
+Zustand/Ereignis   vielleicht: Laufzustand und Ereignisse hinter einer Schnittstelle
+```
+
+Einzelheiten und offene Fragen:
+Quellen-Bead ki-dev-ablauf-mman.
 
 Der Grundsatz: kein allgemeines Agentensystem auf Vorrat bauen, sondern jeden
 nächsten deterministischen Baustein aus einem echten Arbeitsproblem ableiten.
