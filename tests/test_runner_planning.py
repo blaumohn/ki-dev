@@ -104,3 +104,9 @@ def test_run_and_step_share_the_graph_translation():
 
     assert runtime.compile_flow is graph.compile_flow
     assert planning.compile_flow is graph.compile_flow
+
+
+def test_step_graph_nodes_are_exactly_the_planning_states(tmp_path):
+    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+        nodes = set(runtime._graph.get_graph().nodes)
+    assert nodes - {"__start__", "__end__"} == set(FLOW.states)
