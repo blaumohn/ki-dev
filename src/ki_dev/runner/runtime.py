@@ -38,7 +38,13 @@ from ki_dev.deltas import (
     StepDeltaAssessment,
     assess_step_delta,
 )
-from ki_dev.flow.model import FlowError, Transition, Verdict
+from ki_dev.flow.model import (
+    WAIT_KIND,
+    FlowError,
+    Transition,
+    Verdict,
+    targets,
+)
 from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
     DEFAULT_PROJECTION_LIMITS,
@@ -129,6 +135,28 @@ if set(
     raise FlowError(
         "delivery.toml: Operationen passen nicht zur Laufzeit"
     )
+
+
+# Halt des Ausführers (kein Ablaufzustand): der Aufruf endet hier.
+_HALT_STATUSES = frozenset(
+    {
+        "ready_to_finalize",
+        "awaiting_input",
+        "uncertain",
+        "error",
+        "passed",
+    }
+)
+_END = "end"
+
+
+def successors(state: str) -> set[str]:
+    """Mögliche Folgezustände laut ``delivery.toml``."""
+    return {
+        target
+        for transition in DELIVERY.outgoing(state)
+        for target in targets(DELIVERY, transition)
+    }
 
 
 # Agentenoperationen des Lieferablaufs und die Rolle, die sie ausführt
@@ -323,7 +351,7 @@ class RunRuntime:
         self._graph.update_state(
             self._config(),
             {"status": "running", "last_error": None},
-            as_node="tick",
+            as_node=self._current_node(),
         )
         self._invoke(None)
         return self.result()
@@ -349,7 +377,7 @@ class RunRuntime:
         self._graph.update_state(
             self._config(),
             {"status": "running", "last_error": None},
-            as_node="tick",
+            as_node=self._current_node(),
         )
         self._invoke(None)
         return self.result()
@@ -392,34 +420,54 @@ class RunRuntime:
         return _thread_config(self.store.run_id)
 
     def _compile_graph(self):
+        """Ein Graphmodell: jeder Zustand von ``delivery.toml`` ist ein
+        Knoten, jede Kante ein möglicher Übergang (``@history``
+        aufgelöst). Welche Kante gilt, wählt weiterhin der Ablauf
+        (``advance``); der Graph führt sie aus und hält an."""
         graph = StateGraph(RunGraphState)
-        graph.add_node("tick", self._tick)
-        graph.add_node("wait", self._wait)
-        graph.add_edge(START, "tick")
-        graph.add_conditional_edges(
-            "tick",
-            self._route,
-            {"tick": "tick", "wait": "wait", "end": END},
-        )
-        graph.add_edge("wait", "tick")
+        for state_id, flow_state in DELIVERY.states.items():
+            node = (
+                self._wait_node
+                if flow_state.kind == WAIT_KIND
+                else self._tick
+            )
+            graph.add_node(state_id, node)
+        graph.add_edge(START, DELIVERY.start)
+        for state_id in DELIVERY.states:
+            graph.add_conditional_edges(
+                state_id,
+                self._route,
+                {
+                    **{
+                        target: target
+                        for target in successors(state_id)
+                    },
+                    state_id: state_id,
+                    _END: END,
+                },
+            )
         return graph.compile(checkpointer=self._checkpointer)
 
     @staticmethod
     def _route(state: RunGraphState) -> str:
-        if state["status"] in {
-            "waiting_decision",
-            "paused_interactive",
-        }:
-            return "wait"
-        if state["status"] in {
-            "ready_to_finalize",
-            "awaiting_input",
-            "uncertain",
-            "error",
-            "passed",
-        }:
-            return "end"
-        return "tick"
+        """Halt des Ausführers beendet den Aufruf; sonst weiter im
+        Knoten der aktuellen Phase (auch derselbe Zustand, solange eine
+        Operation läuft oder ein wartender Zustand anhält)."""
+        if state["status"] in _HALT_STATUSES:
+            return _END
+        return decode_run_state(state["run_state"]).state.phase.value
+
+    def _current_node(self) -> str:
+        state = cast(RunGraphState, self._snapshot().values)
+        return decode_run_state(state["run_state"]).state.phase.value
+
+    def _wait_node(self, state: RunGraphState) -> dict[str, object]:
+        """Wartender Zustand: erst den Status setzen (Checkpoint), beim
+        nächsten Besuch auf die Antwort von außen warten."""
+        phase = decode_run_state(state["run_state"]).state.phase.value
+        if state["status"] != phase:
+            return {"status": phase}
+        return self._wait(state)
 
     def _tick(self, state: RunGraphState) -> dict[str, object]:
         """Einen Schritt fahren: was zu tun ist, sagt der Ablauf.

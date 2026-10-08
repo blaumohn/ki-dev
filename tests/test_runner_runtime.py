@@ -670,3 +670,18 @@ def test_evidence_of_a_foreign_task_is_a_protocol_error():
             _task("run-x"),
             1,
         )
+
+
+def test_graph_nodes_are_exactly_the_flow_states(tmp_path):
+    """Ein Graphmodell: der StateGraph wird aus delivery.toml
+    übersetzt."""
+    with _runtime(
+        tmp_path, "run-graph", FakeWorker(), FakeReviewer([]), []
+    ) as runtime:
+        graph = runtime._graph.get_graph()
+    nodes = set(graph.nodes) - {"__start__", "__end__"}
+    assert nodes == set(DELIVERY.states)
+    edges = {(e.source, e.target) for e in graph.edges}
+    for transition in DELIVERY.transitions:
+        if transition.target != "@history":
+            assert (transition.source, transition.target) in edges

@@ -367,10 +367,11 @@ erschöpft, führt die nächste Kante zu `paused_interactive`.
 **Entscheidung: die Ablauf-Laufzeit ist LangGraph.** `ki-dev` baut dafür keine
 eigene persistente Agentenlaufzeit.
 
-Heute hat der LangGraph-Graph nur zwei generische Knoten: `tick` fährt die
-Operation, die `delivery.toml` für den aktuellen Zustand nennt, `wait` hält bis
-zur Antwort von außen (`interrupt`). Die Topologie steht nicht im Graphen,
-sondern im Ablauf.
+Es gibt genau ein Graphmodell: Der LangGraph-Graph wird aus `delivery.toml`
+übersetzt. Jeder Zustand ist ein Knoten, jede Kante eine mögliche Verbindung
+(`@history` aufgelöst). Ein Knoten fährt die Operation, die der Ablauf für
+seinen Zustand nennt; wartende Zustände halten mit `interrupt`. Welche Kante
+gilt, wählt weiterhin der Ablauf (Wächter in Dateireihenfolge).
 
 Gebraucht wird nicht nur „welche Zustände gibt es“, sondern Persistenz,
 Checkpoints, Unterbrechung und Wiederaufnahme über Prozessenden hinweg — genau
