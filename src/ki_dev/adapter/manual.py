@@ -58,7 +58,10 @@ class ManualRelay:
     def _relay(self, request: WorkRequest | ReviewRequest) -> str:
         prompt = request.prompt
         digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
-        key = f"r{request.round_id:04d}-{self.role}-{digest}"
+        # Je Versuch eine eigene Datei: nach einem Protokollfehler
+        # wartet der neue Versuch auf eine neue Antwort, statt die
+        # abgewiesene erneut zu lesen.
+        key = f"{request.attempt_id}-{self.role}-{digest}"
         ask = self.inbox / f"{key}.input.md"
         answer = self.inbox / f"{key}.answer.md"
         if answer.is_file():

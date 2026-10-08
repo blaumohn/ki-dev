@@ -110,6 +110,9 @@ class WorkRequest:
     task: RunTask
     round_id: int
     prompt: str
+    attempt_id: str
+    """Eindeutig je Versuch (auch je Protokollwiederholung); bindet
+    eine Antwort des Boten an genau diesen Versuch."""
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,7 @@ class ReviewRequest:
     round_id: int
     prompt: str
     vocabulary: ReviewVocabulary
+    attempt_id: str
 
 
 class Worker(Protocol):

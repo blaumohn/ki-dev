@@ -685,3 +685,32 @@ def test_graph_nodes_are_exactly_the_flow_states(tmp_path):
     for transition in DELIVERY.transitions:
         if transition.target != "@history":
             assert (transition.source, transition.target) in edges
+
+
+def test_manual_review_waits_for_a_new_answer_after_protocol_error(
+    tmp_path,
+):
+    """Eine ungültige Antwort des Boten verbraucht genau einen
+    Protokollversuch; der nächste Versuch wartet auf eine neue Datei,
+    statt die abgewiesene erneut zu lesen."""
+    inbox = tmp_path / "inbox"
+    with _runtime(
+        tmp_path,
+        "run-relay-review",
+        FakeWorker(),
+        ManualRelay(inbox, "review"),
+        [_context(1)],
+    ) as runtime:
+        halted = runtime.start(_task("run-relay-review"), Limits())
+        assert halted.status == "awaiting_input"
+        (first,) = inbox.glob("*.input.md")
+        first.with_name(
+            first.name.replace(".input.md", ".answer.md")
+        ).write_text("kein JSON")
+        again = runtime.resume()
+
+    assert again.status == "awaiting_input"
+    assert again.phase is Phase.CONTROLLER_STEP
+    asks = sorted(inbox.glob("*.input.md"))
+    assert len(asks) == 2
+    assert first in asks

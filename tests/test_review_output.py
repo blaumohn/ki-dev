@@ -119,7 +119,7 @@ def test_formal_review_output_becomes_typed_decision(action):
         project_review_context(_context()),
         REVIEW_VOCABULARY,
     )
-    request = ReviewRequest(task, 1, prompt, REVIEW_VOCABULARY)
+    request = ReviewRequest(task, 1, prompt, REVIEW_VOCABULARY, "a-1")
     raw = reviewer.review(request)
     decision = parse_review_decision(raw, run_id="run-1", round_id=1)
     assert bind_review_decision(decision, task).event == action
@@ -310,7 +310,7 @@ def test_build_prompt_includes_acceptance_criteria():
             "Kein Netzwerkzugriff",
         ),
     )
-    build.work(WorkRequest(task, 1, work_prompt(task, 1, None)))
+    build.work(WorkRequest(task, 1, work_prompt(task, 1, None), "a-1"))
     message = executor.requests[0].message
     assert "AC1: Ausgabe ist deterministisch" in message
     assert "AC2: Kein Netzwerkzugriff" in message

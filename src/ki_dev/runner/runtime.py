@@ -991,6 +991,7 @@ class RunRuntime:
                     work_prompt(
                         task, round_id, state["open_objection"]
                     ),
+                    cast(str, pending["id"]),
                 )
             )
             return {"summary": report.summary}
@@ -1048,6 +1049,7 @@ class RunRuntime:
                         REVIEW_VOCABULARY,
                     ),
                     REVIEW_VOCABULARY,
+                    _review_attempt(state, pending),
                 )
             )
             decision = parse_review_decision(
@@ -1414,6 +1416,15 @@ class RunRuntime:
             "interrupt_payload": None,
             "last_error": None,
         }
+
+
+def _review_attempt(
+    state: RunGraphState, pending: dict[str, object]
+) -> str:
+    """Review-Operation plus Protokollversuch: eine Wiederholung nach
+    ungültiger Antwort ist ein neuer Versuch."""
+    counters = decode_run_state(state["run_state"]).state.counters
+    return f"{pending['id']}-t{counters.protocol_attempt:04d}"
 
 
 def _adapter_name(actor: object) -> str:
