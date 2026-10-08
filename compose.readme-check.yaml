@@ -1,0 +1,30 @@
+# Wegwerf-Container für make readme-check (tests/readme/user-flow.sh).
+# Nur lesbares Dateisystem, Repo nur lesend, alles Schreibbare im tmpfs /tmp;
+# keine Volumes, keine Host-Caches, kein Docker-Socket. Netz für pip/go.
+services:
+  check:
+    image: ki-dev-readme-check:local
+    build:
+      context: docker/readme-check
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:?}
+        GO_VERSION: ${GO_VERSION:?}
+        GO_SHA256_AMD64: ${GO_SHA256_AMD64:?}
+        GO_SHA256_ARM64: ${GO_SHA256_ARM64:?}
+    # Host-UID: Repo-Dateien dürfen nur für den Eigentümer lesbar sein.
+    user: ${READMECHECK_USER:?}
+    read_only: true
+    tmpfs:
+      - /tmp:exec,mode=1777
+    volumes:
+      - .:/repo:ro
+    environment:
+      HOME: /tmp/home
+      XDG_CACHE_HOME: /tmp/cache
+      GOPATH: /tmp/go
+      READMECHECK_WORK_BASE: /tmp/work
+      # /repo gehört dem Host-Nutzer, nicht dem Container-Nutzer.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: "*"
+    command: ["bash", "/repo/tests/readme/user-flow.sh"]

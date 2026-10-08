@@ -57,10 +57,19 @@ Ausführer kennt nur das Vokabular, nicht die Topologie.
 
 ## In einer Minute ausprobieren
 
-Ohne Anbieterzugang, mit Mock-Adaptern (braucht `git` und `bd`):
+<!-- readme-script: readme-scripts/1-setup.sh -->
+Ohne Anbieterzugang, mit Mock-Adaptern. Voraussetzungen: Python ≥ 3.12
+(mit `venv`), git ≥ 2.32, make, Go und ein C-Compiler. `make setup` legt
+venv, ki-dev und [Beads](https://github.com/steveyegge/beads) `bd` (Version
+aus `src/ki_dev/tool-versions.json`) im Projekt an, außerhalb ändert es
+nichts. `$REPLACE_WITH_REPOSITORY_URL` steht für die Klon-Adresse dieses
+Repositorys; sie steht nach der Veröffentlichung fest.
 
 ```bash
-scripts/demo-mock-lauf.sh
+git clone "$REPLACE_WITH_REPOSITORY_URL" ki-dev
+cd ki-dev
+make setup
+make demo
 ```
 
 ```text
@@ -77,10 +86,11 @@ scripts/demo-mock-lauf.sh
 5c02782 start
 ```
 
-Der Mock-Reviewer antwortet erst `fix` (Urteil `CHANGES`), dann `PASS`. Der Lauf nimmt also
-die Rückkante einmal (`round_id: 2`), friert das geprüfte Ergebnis ein und
-integriert es per Fast-forward. Die Konfiguration schreibt das Skript nach
-`lauf.json`.
+Der Mock-Reviewer antwortet erst `fix` (Urteil `CHANGES`), dann `PASS`.
+Der Lauf nimmt also die Rückkante einmal (`round_id: 2`), friert das
+geprüfte Ergebnis ein und integriert es per Fast-forward. Die
+Konfiguration schreibt das Demo-Skript nach `lauf.json`.
+<!-- /readme-script -->
 
 ---
 
@@ -114,7 +124,7 @@ Der Mensch hat damit zwei getrennte Rollen: **Bote** (Adapter `manual`) und
 ### `ki-dev step`: ein Übergang des Planungsablaufs von Hand
 
 ```bash
-ki-dev step BEAD --step map | graph | materialize | build | review
+ki-dev step BEAD --step map | graph | materialize | implement | review
 ki-dev step BEAD --step review --next-turn --decision-file antwort.json
 ```
 
@@ -272,12 +282,12 @@ Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
 
 ## Installation
 
-Python ≥ 3.12, git ≥ 2.32, [Beads](https://github.com/steveyegge/beads) `bd`
-**1.3.0** (Go und C-Compiler für `go install`):
+Voraussetzungen und Einrichtung: siehe [oben](#in-einer-minute-ausprobieren);
+das `Makefile` ist kurz und lesbar.
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
-CGO_ENABLED=1 go install -tags gms_pure_go github.com/steveyegge/beads/cmd/bd@v1.3.0
+make test           # pytest und ruff
+make readme-check   # README-Einrichtung im Wegwerf-Container (braucht Docker)
 ```
 
 Oder der Agent-Container mit bd, Codex und Claude Code:

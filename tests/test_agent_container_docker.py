@@ -47,10 +47,23 @@ def shared_tmp():
     shutil.rmtree(path)
 
 
+def docker_requested(config):
+    """Mit ``-m`` ausgewählt und trotzdem ausgeführt: fehlende
+    Voraussetzung ist ein Fehler; ohne Markerausdruck ein Skip."""
+    return bool(config.getoption("markexpr"))
+
+
 @pytest.fixture
-def checkout(shared_tmp):
+def checkout(shared_tmp, request):
     if not docker_ready():
-        pytest.skip(f"Docker, Image {IMAGE} oder CLI-Anmeldung fehlt")
+        # Geprüft wird ein vorhandenes Image, nicht dessen Bau.
+        reason = (
+            f"Docker, Image {IMAGE} oder CLI-Anmeldung fehlt"
+            " (Image vorher mit ./scripts/agent-container build bauen)"
+        )
+        if docker_requested(request.config):
+            pytest.fail(reason)
+        pytest.skip(reason)
     tmp_path = shared_tmp
     repo = tmp_path / "ki-dev"
     repo.mkdir()

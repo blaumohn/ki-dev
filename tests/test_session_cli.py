@@ -251,6 +251,9 @@ def test_pager_at_terminal_gets_colors_and_less_r(
     env, pager_calls, monkeypatch
 ):
     monkeypatch.setenv("TTY_COMPATIBLE", "1")
+    # Farben hängen sonst vom Terminal des Testlaufs ab.
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
     codex_session(env)
     result = runner.invoke(app, [*SHOW, "--pager"])
     assert result.exit_code == 0, result.stderr

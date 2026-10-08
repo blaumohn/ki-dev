@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 from plumbum import local
 
+from tests.test_agent_container_docker import docker_requested
+
 ROOT = Path(__file__).resolve().parents[1]
 
 FAKE_DOCKER = """#!/bin/sh
@@ -636,3 +638,26 @@ def test_fresh_shell_is_default(sandbox, args):
         logged
     )
     assert logged[logged.index("agent") + 1] == "bash"
+
+
+class _MarkConfig:
+    def __init__(self, markexpr):
+        self.markexpr = markexpr
+
+    def getoption(self, name):
+        assert name == "markexpr"
+        return self.markexpr
+
+
+@pytest.mark.parametrize(
+    "markexpr, requested",
+    [
+        ("docker", True),
+        ("docker or not docker", True),
+        ("slow", True),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_docker_fails_only_when_requested(markexpr, requested):
+    assert docker_requested(_MarkConfig(markexpr)) is requested

@@ -19,6 +19,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
+from ki_dev.step import preflight
 from tests import codex_session_fixtures as codex
 from tests.fake_bd import FakeBd
 from tests.fake_bd_command import BdScript
@@ -91,6 +92,11 @@ def test_step_output_matches_golden(
     name, check, args, bd, tmp_path, monkeypatch
 ):
     if check is not None:
+        # Die argv-Kürzung hinge sonst vom Pfad des venv ab;
+        # geprüft ist sie in test_step_preflight.py.
+        monkeypatch.setattr(
+            preflight, "_MAX_ARGV_DISPLAY_CHARS", 10_000
+        )
         _preflight_project(
             tmp_path, checks=f"[{_command('tests', check)}]"
         )
