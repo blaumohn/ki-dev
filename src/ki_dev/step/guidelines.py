@@ -95,7 +95,11 @@ _STAGE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["task", "review"],
-    "properties": {"task": _ID_LIST_SCHEMA, "review": _ID_LIST_SCHEMA},
+    "properties": {
+        "common": _ID_LIST_SCHEMA,
+        "task": _ID_LIST_SCHEMA,
+        "review": _ID_LIST_SCHEMA,
+    },
 }
 _SECTION_SCHEMA = {
     "type": "object",
@@ -221,14 +225,18 @@ def select_guidelines(
 ) -> tuple[GuidelineSection, ...]:
     """Feste Auswahl: common + task des Ziels, bei Review + review.
 
-    ``Step.REVIEW`` ohne ``review_target`` bleibt die Umsetzungs-Review.
-    Reihenfolge aus ``sections``, je Quelle jede ID einmal.
+    Ein optionales ``common`` des Schritts ersetzt das gemeinsame
+    ``common`` der Quelle (z. B. ``map``: bereichsneutral, nur
+    Arbeitsregeln). ``Step.REVIEW`` ohne ``review_target`` bleibt die
+    Umsetzungs-Review. Reihenfolge aus ``sections``, je Quelle jede ID
+    einmal.
     """
     target, is_review = _target(step, review_target)
     selected = []
     for document in documents:
         stage = document.stages[target.value]
-        wanted = set(document.common) | set(stage["task"])
+        common = stage.get("common", document.common)
+        wanted = set(common) | set(stage["task"])
         if is_review:
             wanted |= set(stage["review"])
         selected += _sections_of(document, wanted)

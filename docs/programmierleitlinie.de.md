@@ -14,6 +14,9 @@ Architektur und Programmierung teilen dieselben Regeln; die folgenden
 Schwerpunkte helfen beim Einstieg und beschränken deren Geltung nicht.
 Die [Technikleitlinie](technikleitlinie.de.md) konkretisiert für ki-dev die
 Werkzeugwahl und ist in allen vier Phasen zu berücksichtigen.
+Die vorgelagerte Kartierung (`map`) ist bereichsneutral: Sie erfasst
+Quellen mit Fundstellen und bewertet sie nicht an diesen Regeln; die
+Prüfung beginnt mit der Planung (`graph`).
 
 ### Architektur in Planung und Materialisierung
 

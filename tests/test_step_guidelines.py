@@ -99,6 +99,57 @@ def test_review_selects_common_task_and_review_of_target(target):
         ]
 
 
+def _with_map_common(ids):
+    data = guideline_data("Q0")
+    data["stages"]["map"]["common"] = ids
+    return parse_guideline_document(SOURCE, data)
+
+
+def test_stage_common_replaces_source_common():
+    documents = (_with_map_common(["shared"]),)
+    assert _ids(select_guidelines(documents, Step.MAP)) == [
+        "shared",
+        "map-task",
+    ]
+    assert _ids(
+        select_guidelines(documents, Step.REVIEW, ReviewTarget.MAP)
+    ) == ["shared", "map-task", "map-review"]
+
+
+def test_stage_common_leaves_other_steps_and_local_unchanged():
+    documents = (_with_map_common([]),)
+    assert _ids(select_guidelines(documents, Step.GRAPH)) == [
+        "common",
+        "shared",
+        "graph-task",
+    ]
+    assert _ids(select_common_guidelines(documents)) == [
+        "common",
+        "shared",
+    ]
+
+
+def test_stage_common_with_unknown_id_is_reference_problem():
+    data = guideline_data("Q0")
+    data["stages"]["map"]["common"] = ["geheim-id"]
+    with pytest.raises(GuidelineContractError) as caught:
+        parse_guideline_document(SOURCE, data)
+    assert caught.value.problems == (
+        "stages.map.common[0]: unbekannte Abschnitts-ID",
+    )
+
+
+def test_repository_map_gets_only_neutral_work_rules():
+    """Kartierung ist bereichsneutral: keine Architektur-,
+    Programmier- oder Technikregeln, nur Arbeitsregeln."""
+    selected = select_guidelines(load_guidelines(REPO), Step.MAP)
+    assert [(Path(s.source).name, s.id) for s in selected] == [
+        ("arbeitsregeln.de.yaml", "beads-lesen"),
+        ("arbeitsregeln.de.yaml", "rollenrechte"),
+        ("arbeitsregeln.de.yaml", "sitzungsende"),
+    ]
+
+
 def test_review_without_target_stays_build_review():
     documents = _documents()
     assert select_guidelines(
@@ -145,14 +196,19 @@ def test_sources_keep_fixed_order_and_markdown():
 
 
 # Phasenschwerpunkte (Geltungsbereich): nur dort zugeordnet; alle
-# übrigen Abschnitte gelten in jedem Schritt und Reviewziel.
+# übrigen Abschnitte gelten in jedem Schritt und Reviewziel außer der
+# bereichsneutralen Kartierung (test_repository_map_gets_only_…).
 _FOCUS = {
     "architektur-planung": {Step.GRAPH, Step.MATERIALIZE},
     "programmierung-umsetzung": {Step.IMPLEMENT},
     "docstrings": {Step.IMPLEMENT},
 }
-_TARGETS = [(step, None) for step in NON_REVIEW] + [
-    (Step.REVIEW, target) for target in [None, *ReviewTarget]
+_TARGETS = [
+    (step, None) for step in NON_REVIEW if step is not Step.MAP
+] + [
+    (Step.REVIEW, target)
+    for target in [None, *ReviewTarget]
+    if target is not ReviewTarget.MAP
 ]
 
 

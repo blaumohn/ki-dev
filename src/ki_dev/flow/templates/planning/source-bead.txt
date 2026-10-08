@@ -1,0 +1,1 @@
+Normalisiertes Transkript der ${agent}-Sitzung ${session_id} (Stand ${digest}, Parser ${parser}, ${count} Nachrichten) unter ${path}. Kopfzeile, danach eine Nachricht je Zeile; keine Gesprächsinhalte in Beads. Quelle für den Schritt map; ersetzt keine Karte.

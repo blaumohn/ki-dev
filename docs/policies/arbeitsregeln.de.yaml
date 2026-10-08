@@ -6,7 +6,9 @@ permalink: /de/policies/arbeitsregeln/
 # Gilt für jede Sitzung, mit und ohne Bead; daher vollständig gemeinsam.
 common: [leitlinien-pflege, beads-lesen, rollenrechte, sitzungsende, python-pytest, verbrauchsmessung]
 stages:
+  # Kartierung ist bereichsneutral: stages.map.common ersetzt common.
   map:
+    common: [beads-lesen, rollenrechte, sitzungsende]
     task: []
     review: []
   graph:

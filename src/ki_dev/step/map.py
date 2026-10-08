@@ -14,7 +14,7 @@ from ki_dev.adapter.executors.session_transcript import (
 )
 from ki_dev.adapter.executors.transcript import read_session_transcript
 from ki_dev.flow.planning import NAME, PlanningFlow
-from ki_dev.flow.templates import text
+from ki_dev.flow.templates import render, text
 from ki_dev.step.beads_reader import read_issue
 from ki_dev.step.beads_source import SourceBead, ensure_source_bead
 from ki_dev.step.contract import Step
@@ -73,19 +73,21 @@ def map_handoff(
 def _source_bead(
     transcript: SessionTranscript, relative: str
 ) -> SourceBead:
-    agent, sid = transcript.agent, transcript.session_id
+    values = {
+        "agent": transcript.agent,
+        "session_id": transcript.session_id,
+    }
     return SourceBead(
         key=source_key(transcript),
-        title=f"Quelle: {agent}-Sitzung {sid}",
-        description=(
-            f"Normalisiertes Transkript der {agent}-Sitzung {sid} "
-            f"(Stand {transcript.source_digest}, "
-            f"Parser {transcript.parser_version}, "
-            f"{len(transcript.messages)} Nachrichten) unter "
-            f"{relative}. Kopfzeile, danach eine Nachricht je Zeile; "
-            "keine "
-            "Gesprächsinhalte in Beads. Quelle für den Schritt "
-            "map; ersetzt keine Karte."
+        title=render(NAME, "source-bead-title", **values),
+        description=render(
+            NAME,
+            "source-bead",
+            **values,
+            digest=transcript.source_digest,
+            parser=transcript.parser_version,
+            count=len(transcript.messages),
+            path=relative,
         ),
         source_ref=relative,
     )

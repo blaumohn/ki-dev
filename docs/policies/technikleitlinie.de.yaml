@@ -5,7 +5,9 @@ permalink: /de/policies/technikleitlinie/
 # Gilt laut einleitung in allen Phasen; daher vollständig gemeinsam.
 common: [einleitung, sprache, validierung, prozesse, ablaeufe, ausnahmen]
 stages:
+  # Kartierung ist bereichsneutral: stages.map.common ersetzt common.
   map:
+    common: []
     task: []
     review: []
   graph:
