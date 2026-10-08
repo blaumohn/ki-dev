@@ -1,0 +1,10 @@
+exit: 0
+--- stdout ---
+Empfänger: Mensch
+Bead: x-1 - Titel [red]rot[/red]
+
+Review-Urteil NEEDS_DECISION (decision): Umfang?
+
+Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- decision → implement.decision: du entscheidest: accept, correct oder source
+--- stderr ---

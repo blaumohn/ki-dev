@@ -1,0 +1,10 @@
+exit: 0
+--- stdout ---
+Empfänger: Mensch
+Bead: x-1 - Titel [red]rot[/red]
+
+Review-Urteil PASS (PASS): ohne Begründung
+
+Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- PASS → finished: Schließen entscheidest du (`bd close x-1`)
+--- stderr ---

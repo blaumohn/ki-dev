@@ -1,0 +1,75 @@
+exit: 0
+--- stdout ---
+Schritt: implement
+Bead: x-1 - Titel [red]rot[/red]
+
+Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies
+den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und
+den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende
+Voraussetzungen, statt zu raten.
+
+Rolle: Umsetzer.
+Setze genau diesen materialisierten Bead um (description,
+design, acceptance_criteria), führe gezielte
+Entwicklungstests aus, schreibe Tests und untersuche Fehler.
+Kein pauschales Test-, Typprüfer- oder Werkzeugverbot: Ein
+deterministischer Vorlauf übernimmt nach dieser Sitzung
+lediglich mechanisches Linting/Formatieren und die
+abschließenden Prüfungen; das entlastet dich nur davon.
+Melde kurz Ergebnis, Prüfungen und Blocker. Durchsuche
+keine allgemeinen ADR-Sammlungen, um den Auftrag zu
+rekonstruieren; melde konkrete Vertragslücken zurück.
+
+Hinweis für den Menschen: Zustand implement; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- done → implement.review: `ki-dev step x-1 --step review` (mit Vorlauf)
+
+LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
+Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
+an; lies ihre Quelldokumente dafür nicht erneut vollständig.
+Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
+
+--- docs/policies/programmierleitlinie.de.yaml#common ---
+## Q0 common
+
+- Q0:common
+
+--- docs/policies/programmierleitlinie.de.yaml#shared ---
+## Q0 shared
+
+- Q0:shared
+
+--- docs/policies/programmierleitlinie.de.yaml#implement-task ---
+## Q0 implement-task
+
+- Q0:implement-task
+
+--- docs/policies/technikleitlinie.de.yaml#common ---
+## Q1 common
+
+- Q1:common
+
+--- docs/policies/technikleitlinie.de.yaml#shared ---
+## Q1 shared
+
+- Q1:shared
+
+--- docs/policies/technikleitlinie.de.yaml#implement-task ---
+## Q1 implement-task
+
+- Q1:implement-task
+
+--- docs/policies/arbeitsregeln.de.yaml#common ---
+## Q2 common
+
+- Q2:common
+
+--- docs/policies/arbeitsregeln.de.yaml#shared ---
+## Q2 shared
+
+- Q2:shared
+
+--- docs/policies/arbeitsregeln.de.yaml#implement-task ---
+## Q2 implement-task
+
+- Q2:implement-task
+--- stderr ---

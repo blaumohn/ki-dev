@@ -1,0 +1,76 @@
+exit: 0
+--- stdout ---
+Schritt: graph
+Bead: x-1 - Titel [red]rot[/red]
+
+Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies
+den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und
+den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende
+Voraussetzungen, statt zu raten.
+
+Rolle: Auflösungsagent.
+Nutze die Karte und lies gezielt Originalstellen nach.
+Materialisiere dünne Vorgänge mit Ergebnis, Schnittstellen,
+Quellenbezügen und echten Abhängigkeiten; noch keine
+vollständigen Executor-Aufträge. Du verantwortest den
+fachlichen Zuschnitt und meldest unentscheidbare Konflikte.
+Bestehen aus dieser Karte schon Vorgänge, ergänze oder
+ersetze deren Inhalt, statt Doppel anzulegen.
+
+Quellenreferenzen (unaufgelöst):
+- a.md#L1-L2
+- bd:k
+
+Hinweis für den Menschen: Zustand graph; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- done → graph.review: je dünnem Vorgang `ki-dev step VORGANG --step review --review-of graph`
+
+LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
+Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
+an; lies ihre Quelldokumente dafür nicht erneut vollständig.
+Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
+
+--- docs/policies/programmierleitlinie.de.yaml#common ---
+## Q0 common
+
+- Q0:common
+
+--- docs/policies/programmierleitlinie.de.yaml#shared ---
+## Q0 shared
+
+- Q0:shared
+
+--- docs/policies/programmierleitlinie.de.yaml#graph-task ---
+## Q0 graph-task
+
+- Q0:graph-task
+
+--- docs/policies/technikleitlinie.de.yaml#common ---
+## Q1 common
+
+- Q1:common
+
+--- docs/policies/technikleitlinie.de.yaml#shared ---
+## Q1 shared
+
+- Q1:shared
+
+--- docs/policies/technikleitlinie.de.yaml#graph-task ---
+## Q1 graph-task
+
+- Q1:graph-task
+
+--- docs/policies/arbeitsregeln.de.yaml#common ---
+## Q2 common
+
+- Q2:common
+
+--- docs/policies/arbeitsregeln.de.yaml#shared ---
+## Q2 shared
+
+- Q2:shared
+
+--- docs/policies/arbeitsregeln.de.yaml#graph-task ---
+## Q2 graph-task
+
+- Q2:graph-task
+--- stderr ---

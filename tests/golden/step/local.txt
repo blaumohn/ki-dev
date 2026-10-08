@@ -1,0 +1,51 @@
+exit: 0
+--- stdout ---
+Schritt: local
+
+Freie lokale Sitzung ohne Bead: Es gibt keine Beads-ID und keinen
+Auftrag aus Beads, und die Übergabe braucht weder Bead noch
+Datenbankverbindung. Arbeite nach der Anweisung des Menschen und
+dem tatsächlichen Arbeitsstand; lies gezielt. Melde konkrete
+fehlende Voraussetzungen, statt zu raten.
+
+Es ist keine Rolle eines Handoff-Schritts gewählt: Beads-Status
+nur lesen. Lesebefehle und Rollenrechte stehen im Block unten.
+
+Hinweis für den Menschen: Für einen Beads-Auftrag stattdessen
+`ki-dev step BEAD_ID --step STEP` verwenden.
+
+LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
+Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
+an; lies ihre Quelldokumente dafür nicht erneut vollständig.
+Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
+
+--- docs/policies/programmierleitlinie.de.yaml#common ---
+## Q0 common
+
+- Q0:common
+
+--- docs/policies/programmierleitlinie.de.yaml#shared ---
+## Q0 shared
+
+- Q0:shared
+
+--- docs/policies/technikleitlinie.de.yaml#common ---
+## Q1 common
+
+- Q1:common
+
+--- docs/policies/technikleitlinie.de.yaml#shared ---
+## Q1 shared
+
+- Q1:shared
+
+--- docs/policies/arbeitsregeln.de.yaml#common ---
+## Q2 common
+
+- Q2:common
+
+--- docs/policies/arbeitsregeln.de.yaml#shared ---
+## Q2 shared
+
+- Q2:shared
+--- stderr ---

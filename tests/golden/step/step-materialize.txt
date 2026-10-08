@@ -1,0 +1,77 @@
+exit: 0
+--- stdout ---
+Schritt: materialize
+Bead: x-1 - Titel [red]rot[/red]
+
+Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies
+den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und
+den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende
+Voraussetzungen, statt zu raten.
+
+Rolle: Materialisierungsagent.
+Löse genau diesen dünnen Vorgang ausführungsreif auf. Finde
+den Kontext selbst über Karten-/Graphreferenzen und
+Code-Einstiege. Schreibe den aktuellen Auftrag mit Ziel und
+Umfang, Schnittstellen, Prüfanweisungen und Abnahmekriterien;
+übernimm relevante ADR-Festlegungen in den Auftrag. Gib zu
+große Vorgänge als begründeten Teilungsvorschlag zurück.
+Schreibe keine Historie als Nachtragsstapel in die
+Beschreibung.
+
+Quellenreferenzen (unaufgelöst):
+- a.md#L1-L2
+- bd:k
+
+Hinweis für den Menschen: Zustand materialize; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- done → materialize.review: `ki-dev step x-1 --step review --review-of materialize`
+
+LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
+Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
+an; lies ihre Quelldokumente dafür nicht erneut vollständig.
+Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
+
+--- docs/policies/programmierleitlinie.de.yaml#common ---
+## Q0 common
+
+- Q0:common
+
+--- docs/policies/programmierleitlinie.de.yaml#shared ---
+## Q0 shared
+
+- Q0:shared
+
+--- docs/policies/programmierleitlinie.de.yaml#materialize-task ---
+## Q0 materialize-task
+
+- Q0:materialize-task
+
+--- docs/policies/technikleitlinie.de.yaml#common ---
+## Q1 common
+
+- Q1:common
+
+--- docs/policies/technikleitlinie.de.yaml#shared ---
+## Q1 shared
+
+- Q1:shared
+
+--- docs/policies/technikleitlinie.de.yaml#materialize-task ---
+## Q1 materialize-task
+
+- Q1:materialize-task
+
+--- docs/policies/arbeitsregeln.de.yaml#common ---
+## Q2 common
+
+- Q2:common
+
+--- docs/policies/arbeitsregeln.de.yaml#shared ---
+## Q2 shared
+
+- Q2:shared
+
+--- docs/policies/arbeitsregeln.de.yaml#materialize-task ---
+## Q2 materialize-task
+
+- Q2:materialize-task
+--- stderr ---

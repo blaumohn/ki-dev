@@ -1,0 +1,110 @@
+exit: 0
+--- stdout ---
+Schritt: review
+Reviewziel: materialize
+Bead: x-1 - Titel [red]rot[/red]
+
+Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies
+den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und
+den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende
+Voraussetzungen, statt zu raten.
+
+Rolle: Review-Agent in frischer, getrennter Sitzung
+(Materialisierungsprüfung).
+Bilde zuerst dein eigenes Urteil gegen die ursprünglichen,
+bestätigten Nutzeranforderungen und Quellen, nicht nur
+gegen einen möglicherweise fehlerhaften Bead; nicht aus
+notes, comments oder früheren Reviews. Gleiche Rollen,
+Modalität (darf/muss/darf nicht), Geltungsbereich,
+Nicht-Ziele, Schnittstellen, konkrete Prüfaufträge und
+messbare Abnahmekriterien ab. Unterscheide bestätigte
+Entscheidungen von Umsetzungsvorschlägen und offenen
+Produktfragen. Eine fehlende Quelle ist Klasse source;
+formal gefüllte Felder allein rechtfertigen kein PASS.
+Benenne Übergröße, widersprüchliche Nachträge und nötige
+Teilung mit betroffenem Abschnitt. Starte selbst keine
+Prüfwerkzeuge oder Folgemodelle.
+Ausgabe: PASS oder die stärkste Befundklasse; je Befund
+Klasse, Quellenbezug, konkrete Abweichung und betroffener
+Abschnitt. Du hast keine
+automatische Autorität gegenüber dem Materialisierungsagenten
+und schließt nichts automatisch; unentscheidbare Konflikte
+gehen an den Menschen.
+Befundklassen: decision = nur der Mensch kann entscheiden (NEEDS_DECISION); source = offene Frage, braucht eine neue Quelle (NEEDS_DECISION); fix = aus vorhandenen Quellen korrigierbar (CHANGES).
+Nenne je Befund seine Klasse; das Urteil folgt der stärksten Klasse (decision > source > fix), ohne Befund PASS.
+
+Quellenreferenzen (unaufgelöst):
+- a.md#L1-L2
+- bd:k
+
+Hinweis für den Menschen: Zustand materialize.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- PASS → implement: `ki-dev step x-1 --step implement`
+- fix → materialize.correction: Befunde an den Materialisierungsagenten (bisherige Sitzung)
+- source → source: offene Fragen in einer Planungssitzung klären
+- decision → materialize.decision: du entscheidest: accept, correct oder source
+
+LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
+Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
+an; lies ihre Quelldokumente dafür nicht erneut vollständig.
+Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
+
+--- docs/policies/programmierleitlinie.de.yaml#common ---
+## Q0 common
+
+- Q0:common
+
+--- docs/policies/programmierleitlinie.de.yaml#shared ---
+## Q0 shared
+
+- Q0:shared
+
+--- docs/policies/programmierleitlinie.de.yaml#materialize-task ---
+## Q0 materialize-task
+
+- Q0:materialize-task
+
+--- docs/policies/programmierleitlinie.de.yaml#materialize-review ---
+## Q0 materialize-review
+
+- Q0:materialize-review
+
+--- docs/policies/technikleitlinie.de.yaml#common ---
+## Q1 common
+
+- Q1:common
+
+--- docs/policies/technikleitlinie.de.yaml#shared ---
+## Q1 shared
+
+- Q1:shared
+
+--- docs/policies/technikleitlinie.de.yaml#materialize-task ---
+## Q1 materialize-task
+
+- Q1:materialize-task
+
+--- docs/policies/technikleitlinie.de.yaml#materialize-review ---
+## Q1 materialize-review
+
+- Q1:materialize-review
+
+--- docs/policies/arbeitsregeln.de.yaml#common ---
+## Q2 common
+
+- Q2:common
+
+--- docs/policies/arbeitsregeln.de.yaml#shared ---
+## Q2 shared
+
+- Q2:shared
+
+--- docs/policies/arbeitsregeln.de.yaml#materialize-task ---
+## Q2 materialize-task
+
+- Q2:materialize-task
+
+--- docs/policies/arbeitsregeln.de.yaml#materialize-review ---
+## Q2 materialize-review
+
+- Q2:materialize-review
+--- stderr ---

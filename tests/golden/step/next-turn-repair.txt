@@ -1,0 +1,19 @@
+exit: 1
+--- stdout ---
+Empfänger: Umsetzer (Vorlauf fehlgeschlagen)
+Bead: x-1 - Titel [red]rot[/red]
+
+Bitte die gemeldeten Fehler beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse. Die Rückmeldung darf höchstens 600 Zeichen lang sein.
+
+Vorlauf ohne Review-Übergabe; bereits ausgeführte Befehle (PASS wie FAIL) wurden nicht automatisch zurückgesetzt:
+- tests: FAIL exit=1
+ [argv=<PY> -c 'import sys; sys.exit(1)']
+Vollständig: .local/handoff/preflight/<STEMPEL>.json
+Konfiguration: pyproject.toml [tool.ki-dev.handoff.preflight]
+Einmalig ergänzen: --preflight-args tests=ARGS (ARGS werden an argv der Prüfung angehängt; Teillauf ohne PASS)
+
+Hinweis für den Menschen: Zustand implement.correction; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- done → implement.review: `ki-dev step x-1 --step review --next-turn` (Vorlauf, optional `--feedback-file DATEI|-`)
+- preflight_failed → implement.correction: Exit 1 von --next-turn: Nachricht an den Umsetzer (implementer)
+--- stderr ---
+Vorlauf: tests läuft (Timeout 5 s) …

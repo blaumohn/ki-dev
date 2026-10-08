@@ -1,0 +1,82 @@
+exit: 0
+--- stdout ---
+Schritt: map
+Bead: x-1 - Titel [red]rot[/red]
+
+Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies
+den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und
+den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende
+Voraussetzungen, statt zu raten.
+
+Rolle: Kartierungsagent.
+Lies die referenzierten Rohnotizen abschnittsweise und
+erstelle Quellenkarten-Beads mit Themen und genauen
+Fundstellen. Führe die Abschnittsabdeckung (kartiert /
+begründet irrelevant /
+offen). Bewahre Einschränkungen, Widersprüche und offene
+Fragen. Die Karte ersetzt die Originalquellen nicht.
+Ist der Bead schon eine Karte oder nennt der Mensch eine
+bestehende Karte, ergänze diese: neue Quellen in ihre
+source_refs, Abdeckung fortschreiben, geklärte offene Fragen
+mit Fundstelle schließen; lege keine zweite Karte an.
+Hinterlasse bei Kontextende den aktuellen Stand und den
+nächsten unbearbeiteten Abschnitt in Beads. Erstelle noch
+keine Executor-Aufträge.
+
+Quellenreferenzen (unaufgelöst):
+- a.md#L1-L2
+- bd:k
+
+Hinweis für den Menschen: Zustand map; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- done → map.review: `ki-dev step KARTE --step review --review-of map` (KARTE = erstellte oder ergänzte Karte)
+
+LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
+Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
+an; lies ihre Quelldokumente dafür nicht erneut vollständig.
+Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
+
+--- docs/policies/programmierleitlinie.de.yaml#common ---
+## Q0 common
+
+- Q0:common
+
+--- docs/policies/programmierleitlinie.de.yaml#shared ---
+## Q0 shared
+
+- Q0:shared
+
+--- docs/policies/programmierleitlinie.de.yaml#map-task ---
+## Q0 map-task
+
+- Q0:map-task
+
+--- docs/policies/technikleitlinie.de.yaml#common ---
+## Q1 common
+
+- Q1:common
+
+--- docs/policies/technikleitlinie.de.yaml#shared ---
+## Q1 shared
+
+- Q1:shared
+
+--- docs/policies/technikleitlinie.de.yaml#map-task ---
+## Q1 map-task
+
+- Q1:map-task
+
+--- docs/policies/arbeitsregeln.de.yaml#common ---
+## Q2 common
+
+- Q2:common
+
+--- docs/policies/arbeitsregeln.de.yaml#shared ---
+## Q2 shared
+
+- Q2:shared
+
+--- docs/policies/arbeitsregeln.de.yaml#map-task ---
+## Q2 map-task
+
+- Q2:map-task
+--- stderr ---

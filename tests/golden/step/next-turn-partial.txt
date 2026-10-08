@@ -1,0 +1,22 @@
+exit: 0
+--- stdout ---
+Empfänger: Review-Agent (bisherige, vom Schreibagenten getrennte Sitzung)
+Reviewziel: implement
+Bead: x-1 - Titel [red]rot[/red]
+
+Erneute Prüfung nach Korrekturen: Prüfe die Korrekturen und die davon betroffenen Kriterien samt Regressionen fachlich anhand von Diff und Prüfbericht. Grüne Tests sind kein Review-PASS. Starte selbst keine Prüfwerkzeuge oder Folgemodelle; du hast keine automatische Autorität gegenüber dem Schreibagenten und schließt nichts automatisch. Ausgabe: die stärkste Befundklasse (Teillauf, kein PASS).
+
+PRUEFBERICHT vorlauf-start=<ZEIT>
+- tests: SKIPPED ausgelassen per --preflight-skip: nur Doku [argv=<PY> -c 'print(1)']
+Vollständig: .local/handoff/preflight/<STEMPEL>.json
+TEILLAUF: Zusatzargumente oder ausgelassene Prüfungen (siehe Bericht). Abweichend von der Rolle ist PASS ausgeschlossen; Ausgabe: die stärkste Befundklasse. PASS erst nach einem vollständigen Vorlauf ohne --preflight-args/--preflight-skip.
+Hinweis: Der Zeitpunkt dient der manuellen Zuordnung, nicht als Beweis eines unveränderten Quellstands; nach weiteren Änderungen den Vorlauf erneut starten.
+
+Empfänger, Befundkontext und Quellstand verantwortest du; Schließen und weitere Schritte entscheidest du selbst.
+
+Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- PASS → finished: Schließen entscheidest du (`bd close x-1`)
+- fix → implement.correction: Befunde an den Umsetzer (implementer) (bisherige Sitzung)
+- source → source: offene Fragen in einer Planungssitzung klären
+- decision → implement.decision: du entscheidest: accept, correct oder source
+--- stderr ---

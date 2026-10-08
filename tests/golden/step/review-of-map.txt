@@ -1,0 +1,104 @@
+exit: 0
+--- stdout ---
+Schritt: review
+Reviewziel: map
+Bead: x-1 - Titel [red]rot[/red]
+
+Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies
+den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und
+den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende
+Voraussetzungen, statt zu raten.
+
+Rolle: Review-Agent in frischer, getrennter Sitzung
+(Kartenprüfung).
+Bilde zuerst dein eigenes Urteil aus den referenzierten
+Rohquellen und der erstellten Karte; nicht aus notes,
+comments oder früheren Reviews. Prüfe Quellenabdeckung,
+genaue Fundstellen sowie bewahrte Einschränkungen,
+Widersprüche und offene Fragen; werte eine erfundene
+Entscheidung der Karte als Befund. Starte selbst keine
+Prüfwerkzeuge oder Folgemodelle.
+Ausgabe: PASS oder die stärkste Befundklasse; je Befund
+Klasse, Quellenbezug, konkrete Abweichung und betroffener
+Abschnitt. Du hast keine
+automatische Autorität gegenüber dem Kartierungsagenten und
+schließt nichts automatisch; unentscheidbare Konflikte gehen
+an den Menschen.
+Befundklassen: decision = nur der Mensch kann entscheiden (NEEDS_DECISION); source = offene Frage, braucht eine neue Quelle (NEEDS_DECISION); fix = aus vorhandenen Quellen korrigierbar (CHANGES).
+Nenne je Befund seine Klasse; das Urteil folgt der stärksten Klasse (decision > source > fix), ohne Befund PASS.
+
+Quellenreferenzen (unaufgelöst):
+- a.md#L1-L2
+- bd:k
+
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+- PASS → graph: `ki-dev step x-1 --step graph`
+- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
+- source → source: offene Fragen in einer Planungssitzung klären
+- decision → map.decision: du entscheidest: accept, correct oder source
+
+LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
+Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
+an; lies ihre Quelldokumente dafür nicht erneut vollständig.
+Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
+
+--- docs/policies/programmierleitlinie.de.yaml#common ---
+## Q0 common
+
+- Q0:common
+
+--- docs/policies/programmierleitlinie.de.yaml#shared ---
+## Q0 shared
+
+- Q0:shared
+
+--- docs/policies/programmierleitlinie.de.yaml#map-task ---
+## Q0 map-task
+
+- Q0:map-task
+
+--- docs/policies/programmierleitlinie.de.yaml#map-review ---
+## Q0 map-review
+
+- Q0:map-review
+
+--- docs/policies/technikleitlinie.de.yaml#common ---
+## Q1 common
+
+- Q1:common
+
+--- docs/policies/technikleitlinie.de.yaml#shared ---
+## Q1 shared
+
+- Q1:shared
+
+--- docs/policies/technikleitlinie.de.yaml#map-task ---
+## Q1 map-task
+
+- Q1:map-task
+
+--- docs/policies/technikleitlinie.de.yaml#map-review ---
+## Q1 map-review
+
+- Q1:map-review
+
+--- docs/policies/arbeitsregeln.de.yaml#common ---
+## Q2 common
+
+- Q2:common
+
+--- docs/policies/arbeitsregeln.de.yaml#shared ---
+## Q2 shared
+
+- Q2:shared
+
+--- docs/policies/arbeitsregeln.de.yaml#map-task ---
+## Q2 map-task
+
+- Q2:map-task
+
+--- docs/policies/arbeitsregeln.de.yaml#map-review ---
+## Q2 map-review
+
+- Q2:map-review
+--- stderr ---
