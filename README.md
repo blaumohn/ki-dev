@@ -141,57 +141,112 @@ Kante:
 
 ## Die zwei Abläufe
 
-**Lieferablauf** ([`delivery.toml`](src/ki_dev/flow/delivery.toml), Hauptweg; Fehler-,
-Grenz- und Schutzkanten stehen nur in der Datei):
+Jeder Ablauf lässt sich als Diagramm ausgeben:
+`ki-dev flow show delivery --without-escalations` (Mermaid).
 
-<!-- diagramm:delivery -->
+**Lieferablauf** ([`delivery.toml`](src/ki_dev/flow/delivery.toml), ohne
+Grenz- und Schutzhalte, also ohne Kanten mit `escalation`):
+
+<!-- ki-dev flow show delivery --without-escalations -->
 ```mermaid
 stateDiagram-v2
+    direction LR
+    state "@history" as paused_interactive_history
     [*] --> start
-    start --> controller_step: run_started
-    controller_step --> worker_step_prepare: controller_task
+    start --> controller_step: run_started / drop_result
+    controller_step --> worker_step_prepare: controller_task / begin_task, drop_result
+    controller_step --> worker_step_prepare: fix [checked_result] / begin_correction, drop_result
+    controller_step --> waiting_decision: decision
+    controller_step --> freeze_reviewed_result: PASS [checked_result]
+    controller_step --> controller_step: protocol_error / retry_protocol
     worker_step_prepare --> worker_step: worker_inputs_prepared
     worker_step --> capture_step_result: worker_completed
-    capture_step_result --> checkpoint: step_result_captured
-    checkpoint --> controller_step: checkpoint_recorded
-    controller_step --> worker_step_prepare: fix
-    controller_step --> waiting_decision: decision
-    waiting_decision --> controller_step: resume_requested
-    controller_step --> freeze_reviewed_result: PASS
+    worker_step --> waiting_decision: worker_needs_decision
+    worker_step --> worker_step_prepare: worker_process_error / retry_process
+    worker_step --> worker_step: protocol_error / retry_protocol
+    capture_step_result --> checkpoint: step_result_captured [delta_effective]
+    capture_step_result --> worker_step_prepare: step_result_captured / begin_correction, drop_result
+    checkpoint --> controller_step: checkpoint_recorded / keep_result
     freeze_reviewed_result --> finalize_history: reviewed_result_frozen
+    freeze_reviewed_result --> error: finalization_error
     finalize_history --> verify_final_result: history_finalized
-    verify_final_result --> fast_forward_integrate: final_result_verified
-    fast_forward_integrate --> passed: integration_completed
+    finalize_history --> error: finalization_error
+    verify_final_result --> fast_forward_integrate: final_result_verified [result_ok]
+    verify_final_result --> error: finalization_error
+    fast_forward_integrate --> passed: integration_completed [result_ok]
+    fast_forward_integrate --> error: finalization_error
+    controller_step --> controller_step: process_error / retry_process
+    worker_step_prepare --> worker_step_prepare: process_error / retry_process
+    capture_step_result --> capture_step_result: process_error / retry_process
+    waiting_decision --> controller_step: resume_requested
+    paused_interactive --> paused_interactive_history: resume_requested
     passed --> [*]
+    error --> [*]
 ```
 
 **Planungsablauf** ([`planning.toml`](src/ki_dev/flow/planning.toml),
-Auszug):
+vollständig):
 
-<!-- diagramm:planning -->
+<!-- ki-dev flow show planning -->
 ```mermaid
 stateDiagram-v2
     direction LR
     state "map.review" as map_review
+    state "map.correction" as map_correction
+    state "map.decision" as map_decision
     state "graph.review" as graph_review
+    state "graph.correction" as graph_correction
+    state "graph.decision" as graph_decision
     state "materialize.review" as materialize_review
+    state "materialize.correction" as materialize_correction
+    state "materialize.decision" as materialize_decision
     state "implement.review" as implement_review
     state "implement.correction" as implement_correction
+    state "implement.decision" as implement_decision
+    [*] --> map
     map --> map_review: done
     map_review --> graph: PASS
+    map_review --> map_correction: fix
+    map_review --> source: source
+    map_review --> map_decision: decision
+    map_correction --> map_review: done
+    map_decision --> graph: accept
+    map_decision --> map_correction: correct
+    map_decision --> source: source
     graph --> graph_review: done
     graph_review --> materialize: PASS
+    graph_review --> graph_correction: fix
+    graph_review --> source: source
+    graph_review --> graph_decision: decision
+    graph_correction --> graph_review: done
+    graph_decision --> materialize: accept
+    graph_decision --> graph_correction: correct
+    graph_decision --> source: source
     materialize --> materialize_review: done
     materialize_review --> implement: PASS
+    materialize_review --> materialize_correction: fix
+    materialize_review --> source: source
+    materialize_review --> materialize_decision: decision
+    materialize_correction --> materialize_review: done
+    materialize_decision --> implement: accept
+    materialize_decision --> materialize_correction: correct
+    materialize_decision --> source: source
     implement --> implement_review: done
     implement_review --> finished: PASS
     implement_review --> implement_correction: fix
+    implement_review --> source: source
+    implement_review --> implement_decision: decision
     implement_correction --> implement_review: done
-    graph_review --> source: source
+    implement_correction --> implement_correction: preflight_failed
+    implement_decision --> finished: accept
+    implement_decision --> implement_correction: correct
+    implement_decision --> source: source
     source --> map: imported
+    finished --> [*]
 ```
 
-Beide Diagramme sind getestet: Jede gezeichnete Kante muss im Ablauf stehen.
+Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
+`scripts/render-flow-diagrams.py`); ein Test vergleicht sie mit der Ausgabe.
 
 ---
 

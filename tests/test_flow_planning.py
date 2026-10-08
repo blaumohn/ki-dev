@@ -35,7 +35,6 @@ from ki_dev.step.handoff import HandoffIssue, flow_state
 from ki_dev.step.handoff import (
     render_handoff as _render_handoff,
 )
-from tests.readme_diagramme import diagram_edges
 
 FLOW = load_planning_flow()
 A = FLOW.flow
@@ -273,11 +272,6 @@ def test_unknown_class_or_event_is_visible():
     with pytest.raises(FlowError, match="unbekannter Zustand"):
         FLOW.hint_lines("nirgends", "x")
 
-
-def test_readme_state_diagram_matches_table():
-    """Jede Kante des README-Diagramms ist ein Übergang des Ablaufs."""
-    table = {(t.source, t.event, t.target) for t in A.transitions}
-    assert diagram_edges("planning") <= table
 
 
 def test_renderer_uses_the_flow_it_is_given():

@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 
 from ki_dev.config_cli import config
+from ki_dev.flow_cli import app as flow_app
 from ki_dev.planning_cli import app as planning_app
 from ki_dev.run_store import RunStoreError
 from ki_dev.runner.cli import (
@@ -36,11 +37,12 @@ app = typer.Typer(
 )
 run_app = typer.Typer(
     help=(
-        "Den Bauablauf automatisch bis zum nächsten Halt fahren "
+        "Den Lieferablauf automatisch bis zum nächsten Halt fahren "
         "(start, resume, status)."
     ),
 )
 app.add_typer(run_app, name="run")
+app.add_typer(flow_app, name="flow")
 app.add_typer(planning_app, name="planning")
 app.add_typer(session_app, name="session")
 app.command("step")(handoff)

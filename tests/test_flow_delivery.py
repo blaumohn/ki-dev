@@ -23,7 +23,6 @@ from ki_dev.flow.model import (
 )
 from ki_dev.runner.interpreter import bind
 from ki_dev.runner.machine import DELIVERY_BOUND, Phase
-from tests.readme_diagramme import diagram_edges
 
 DELIVERY = load_flow("delivery")
 COUNTING = {
@@ -106,11 +105,3 @@ def test_unguarded_candidate_must_come_last():
     with pytest.raises(FlowError, match="doppelter Übergang"):
         parse_flow(raw)
 
-
-def test_readme_diagram_draws_only_edges_of_the_flow():
-    """Die README zeigt den Hauptweg; jede Kante steht in
-    delivery.toml."""
-    table = {
-        (t.source, t.event, t.target) for t in DELIVERY.transitions
-    }
-    assert diagram_edges("delivery") <= table
