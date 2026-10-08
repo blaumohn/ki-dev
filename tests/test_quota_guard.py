@@ -59,7 +59,7 @@ def test_delta_budget_blocks_once_role_baseline_growth_exceeds_it(
     build_executor = ControlledExecutor("codex-cli", "Bau erledigt")
     build_executor.quota = _quota(10.0)
     review_executor = ControlledExecutor(
-        "codex-cli", _review_json(run_id, 1, "NEEDS_DECISION")
+        "codex-cli", _review_json(run_id, 1, "decision")
     )
     review_executor.quota = _quota(10.0)
     build, review = _agents(build_executor, review_executor)
@@ -138,7 +138,7 @@ def test_both_blockers_are_reported_together(tmp_path):
     build_executor = ControlledExecutor("codex-cli", "Bau erledigt")
     build_executor.quota = _quota(50.0)
     review_executor = ControlledExecutor(
-        "codex-cli", _review_json(run_id, 1, "NEEDS_DECISION")
+        "codex-cli", _review_json(run_id, 1, "decision")
     )
     review_executor.quota = _quota(50.0)
     build, review = _agents(build_executor, review_executor)
@@ -171,7 +171,7 @@ def test_resets_at_regression_is_reported_not_crashed(tmp_path):
     build_executor = ControlledExecutor("codex-cli", "Bau erledigt")
     build_executor.quota = _quota(50.0, resets_at=2000)
     review_executor = ControlledExecutor(
-        "codex-cli", _review_json(run_id, 1, "NEEDS_DECISION")
+        "codex-cli", _review_json(run_id, 1, "decision")
     )
     review_executor.quota = _quota(50.0, resets_at=2000)
     build, review = _agents(build_executor, review_executor)

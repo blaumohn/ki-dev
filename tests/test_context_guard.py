@@ -95,7 +95,7 @@ def _review_json(run_id: str, round_id: int, action: str) -> str:
         {
             "run_id": run_id,
             "round_id": round_id,
-            "action": action,
+            "event": action,
             "detail": "" if action == "PASS" else "Begruendung",
             "requirement_ref": None,
         }
@@ -205,7 +205,7 @@ def test_small_context_with_needs_decision_still_writes_handoff(
         ContextStatus.MEASURED, tokens=100
     )
     review_executor = ControlledExecutor(
-        "claude-cli", _review_json(run_id, 1, "NEEDS_DECISION")
+        "claude-cli", _review_json(run_id, 1, "decision")
     )
     review_executor.measurement = ContextMeasurement(
         ContextStatus.MEASURED, tokens=100
@@ -283,7 +283,7 @@ def test_resume_rechecks_context_instead_of_reusing_old_measurement(
         ContextStatus.MEASURED, tokens=100
     )
     review_executor = ControlledExecutor(
-        "claude-cli", _review_json(run_id, 1, "NEEDS_DECISION")
+        "claude-cli", _review_json(run_id, 1, "decision")
     )
     review_executor.measurement = ContextMeasurement(
         ContextStatus.MEASURED, tokens=100

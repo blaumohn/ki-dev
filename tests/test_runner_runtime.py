@@ -23,12 +23,9 @@ from ki_dev.deltas import (
     VcsRef,
 )
 from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.review_decision import (
-    ReviewAction,
-)
 from ki_dev.run_store import RunStore
 from ki_dev.runner import runtime
-from ki_dev.runner.machine import Limits, Phase
+from ki_dev.runner.machine import DELIVERY, Limits, Phase
 from ki_dev.runner.review_output import AgentProtocolError
 from ki_dev.runner.runtime import (
     RunResumeError,
@@ -66,24 +63,26 @@ class FakeReviewer:
         self.calls += 1
         if isinstance(item, Exception):
             raise item
-        if type(item) is str:
-            return item
+        if item not in DELIVERY.review_events() and isinstance(
+            item, str
+        ):
+            return item  # Rohtext, z. B. Protokollfehler
         action, ref = (
             item if isinstance(item, tuple) else (item, "AC1")
         )
         detail = (
             ""
-            if action is ReviewAction.PASS
-            else f"{action.value} detail"
+            if action == "PASS"
+            else f"{action} detail"
         )
         return json.dumps(
             {
                 "run_id": request.task.run_id,
                 "round_id": request.round_id,
-                "action": action.value,
+                "event": action,
                 "detail": detail,
                 "requirement_ref": ref
-                if action is ReviewAction.CHANGES
+                if action == "fix"
                 else None,
             }
         )
@@ -157,7 +156,7 @@ def test_fake_e2e_changes_then_pass_reaches_passed(
     tmp_path,
 ):
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.CHANGES, ReviewAction.PASS])
+    reviewer = FakeReviewer(["fix", "PASS"])
     with _runtime(
         tmp_path,
         "run-e2e",
@@ -188,7 +187,7 @@ def test_fake_e2e_changes_then_pass_reaches_passed(
 def test_needs_decision_is_bound_and_resumes_same_run(tmp_path):
     worker = FakeWorker()
     reviewer = FakeReviewer(
-        [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
+        ["decision", "PASS"]
     )
     with _runtime(
         tmp_path, "run-decision", worker, reviewer, [_context(1)]
@@ -203,7 +202,7 @@ def test_needs_decision_is_bound_and_resumes_same_run(tmp_path):
     assert len(handoffs) == 1
     assert (
         json.loads(handoffs[0].read_text())["needed_decision"]
-        == "NEEDS_DECISION detail"
+        == "decision detail"
     )
 
     with _runtime(
@@ -222,7 +221,7 @@ def test_escalation_resume_rechecks_and_never_passes_by_itself(
 ):
     worker = FakeWorker()
     reviewer = FakeReviewer(
-        [ReviewAction.ESCALATE, ReviewAction.CHANGES]
+        ["escalate", "fix"]
     )
     with _runtime(
         tmp_path,
@@ -241,7 +240,7 @@ def test_escalation_resume_rechecks_and_never_passes_by_itself(
     assert len(handoffs) == 1
     assert (
         json.loads(handoffs[0].read_text())["needed_decision"]
-        == "ESCALATE detail"
+        == "escalate detail"
     )
 
     with _runtime(
@@ -284,7 +283,7 @@ def test_process_retries_are_bounded(tmp_path):
         tmp_path,
         "run-process",
         worker,
-        FakeReviewer([ReviewAction.PASS]),
+        FakeReviewer(["PASS"]),
         [_context(1)],
     ) as runtime:
         result = runtime.start(
@@ -340,7 +339,7 @@ def test_empty_result_feedback_reruns_build_instead_of_reusing_artifact(
         RoundStatus(1, 5),
     )
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
     with _runtime(
         tmp_path, "run-empty-result", worker, reviewer, [empty_context]
     ) as runtime:
@@ -355,7 +354,7 @@ def test_empty_result_feedback_reruns_build_instead_of_reusing_artifact(
 
 def test_changes_rounds_are_bounded(tmp_path):
     reviewer = FakeReviewer(
-        [ReviewAction.CHANGES, ReviewAction.CHANGES]
+        ["fix", "fix"]
     )
     worker = FakeWorker()
     with _runtime(
@@ -376,7 +375,7 @@ def test_changes_rounds_are_bounded(tmp_path):
 
 def test_crash_after_effect_without_artifact_is_not_repeated(tmp_path):
     worker = FakeWorker(crash=True)
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
     with (
         _runtime(
             tmp_path, "run-uncertain", worker, reviewer, [_context(1)]
@@ -399,7 +398,7 @@ def test_crash_after_effect_without_artifact_is_not_repeated(tmp_path):
 
 def test_uncertain_effect_can_be_reconciled_explicitly(tmp_path):
     worker = FakeWorker(crash=True)
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
     with (
         _runtime(
             tmp_path, "run-reconcile", worker, reviewer, [_context(1)]
@@ -425,7 +424,7 @@ def test_saved_result_survives_crash_before_graph_checkpoint(
     tmp_path, monkeypatch
 ):
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
     original = RunStore.write_artifact
     crashed = False
 
@@ -459,7 +458,7 @@ def test_saved_review_is_not_delivered_again_after_restart(
     tmp_path, monkeypatch
 ):
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
     original = RunStore.write_artifact
     crashed = False
 
@@ -495,7 +494,7 @@ def test_saved_integration_is_not_repeated_after_restart(
     tmp_path, monkeypatch
 ):
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
     finalizer = CountingFinalizer()
     original = RunStore.write_artifact
 
@@ -539,7 +538,7 @@ def test_failed_final_verification_never_passes_and_can_resume(
     with RunRuntime(
         RunStore(tmp_path, "run-final-drift"),
         FakeWorker(),
-        FakeReviewer([ReviewAction.PASS]),
+        FakeReviewer(["PASS"]),
         StaticEvidenceCollector((_context(1),)),
         finalizer,
     ) as runtime:
@@ -577,7 +576,7 @@ def test_resume_rechecks_integration_after_crash_without_artifact(
         RunRuntime(
             RunStore(tmp_path, "run-effect-resume"),
             FakeWorker(),
-            FakeReviewer([ReviewAction.PASS]),
+            FakeReviewer(["PASS"]),
             StaticEvidenceCollector((_context(1),)),
             finalizer,
         ) as runtime,
@@ -607,7 +606,7 @@ def test_failed_integration_pauses_and_writes_handoff(tmp_path):
     with RunRuntime(
         RunStore(tmp_path, "run-integrate-fail"),
         FakeWorker(),
-        FakeReviewer([ReviewAction.PASS]),
+        FakeReviewer(["PASS"]),
         StaticEvidenceCollector((_context(1),)),
         finalizer,
     ) as runtime:
@@ -630,7 +629,7 @@ def test_manual_relay_halts_executor_not_flow_and_continues(tmp_path):
     im selben Ablaufzustand an; nach abgelegter Antwort fährt dieselbe
     Operation weiter. Der Bote verbraucht kein Agentenbudget."""
     inbox = tmp_path / "inbox"
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
     with _runtime(
         tmp_path,
         "run-relay",

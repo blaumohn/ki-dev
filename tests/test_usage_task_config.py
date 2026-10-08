@@ -20,9 +20,6 @@ from ki_dev.adapter.agent import (
 from ki_dev.adapter.executors import Effort
 from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
 from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.review_decision import (
-    ReviewAction,
-)
 from ki_dev.run_store import RunStore
 from ki_dev.runner.cli import (
     RunConfigError,
@@ -72,7 +69,7 @@ def _patch_runtime(monkeypatch, worker, reviewer=None):
             (
                 reviewer(store.run_id)
                 if reviewer
-                else FakeReviewer([ReviewAction.PASS])
+                else FakeReviewer(["PASS"])
             ),
             StaticEvidenceCollector(
                 tuple(_context(i) for i in range(1, 6))
@@ -101,7 +98,7 @@ def _agent_reviewer(session_id):
         answer = json.dumps({
             "run_id": run_id,
             "round_id": 1,
-            "action": ReviewAction.PASS.value,
+            "event": "PASS",
             "detail": "",
             "requirement_ref": None,
         })
@@ -277,7 +274,7 @@ def test_parent_bead_id_is_optional(monkeypatch, tmp_path):
 
 def test_resume_keeps_revisions_from_manifest(monkeypatch, tmp_path):
     reviewer = FakeReviewer(
-        [ReviewAction.ESCALATE, ReviewAction.CHANGES]
+        ["escalate", "fix"]
     )
 
     def build_runtime(_config, store, _projection):

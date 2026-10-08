@@ -529,7 +529,7 @@ class QuotaBaseline:
 def stagnation_reason(
     store: RunStore,
     *,
-    action: str,
+    verdict: str,
     requirement_ref: str | None,
     limit: int,
 ) -> str | None:
@@ -537,7 +537,7 @@ def stagnation_reason(
     Abnahmekriteriums-Referenz.
 
     Der Aufrufer persistiert die aktuelle Entscheidung immer VOR
-    diesem Aufruf (siehe ``RunRuntime._accept_artifact``); ``action``
+    diesem Aufruf (siehe ``RunRuntime._accept_artifact``); ``verdict``
     und ``requirement_ref`` beschreiben also dieselbe Entscheidung, die
     bereits als juengste Nachricht in ``store.load_messages()`` steht.
     ``limit`` zaehlt deshalb inklusive dieser aktuellen Entscheidung:
@@ -546,16 +546,16 @@ def stagnation_reason(
 
     Fortschritt bedeutet eine geloeste oder gewechselte Referenz, nicht
     dieselbe geaenderte Datei oder ein groesserer Diff: jede andere
-    Aktion oder ein anderes ``requirement_ref`` unterbricht die Serie.
+    Urteil oder ein anderes ``requirement_ref`` unterbricht die Serie.
     Persistierte Nachrichten ueberleben Resume und Sitzungswechsel,
     daher wird die Serie nicht durch einen Neustart zurueckgesetzt.
     """
-    if action != "CHANGES" or not requirement_ref:
+    if verdict != "CHANGES" or not requirement_ref:
         return None
     streak = 0
     for message in reversed(store.load_messages()):
         if (
-            message.get("action") != "CHANGES"
+            message.get("verdict") != "CHANGES"
             or message.get("requirement_ref") != requirement_ref
         ):
             break

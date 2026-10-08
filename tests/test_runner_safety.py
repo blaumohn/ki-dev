@@ -24,9 +24,6 @@ from ki_dev.adapter.executors.contract import (
     TurnStatus,
 )
 from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.review_decision import (
-    ReviewAction,
-)
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.cli import (
     RunConfigError,
@@ -130,7 +127,7 @@ def test_agent_failure_pauses_immediately_and_keeps_usage(
     reviewer = (
         AgentReviewer(executor, "review", "model", Effort.LOW)
         if role == "review"
-        else FakeReviewer([ReviewAction.PASS])
+        else FakeReviewer(["PASS"])
     )
     with runtime(tmp_path, worker, reviewer) as run:
         result = run.start(_task("guard"), Limits(process_retries=3))
@@ -201,7 +198,7 @@ def test_agent_failure_still_records_normalized_usage_event(
     reviewer = (
         AgentReviewer(executor, "review", "model", Effort.LOW)
         if role == "review"
-        else FakeReviewer([ReviewAction.PASS])
+        else FakeReviewer(["PASS"])
     )
     with runtime(tmp_path, worker, reviewer) as run:
         run.start(_task("guard"), Limits(process_retries=3))
@@ -235,7 +232,7 @@ def test_successful_review_turn_records_usage_event(tmp_path):
         {
             "run_id": "guard",
             "round_id": 1,
-            "action": ReviewAction.PASS.value,
+            "event": "PASS",
             "detail": "",
             "requirement_ref": None,
         }
@@ -325,7 +322,7 @@ def test_reservation_stays_locked_between_record_usage_and_finish(
     )
     executor = Executor(result)
     worker = AgentWorker(executor, "worker", "model", Effort.LOW)
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
 
     # Fuer jeden ``finish()``-Aufruf festhalten, ob der Verbrauchs-
     # beleg fuer denselben ``call_id`` in diesem Moment bereits auf
@@ -365,7 +362,7 @@ def test_reservation_stays_locked_between_record_usage_and_finish(
 
 def test_two_failed_corrections_stop_before_fourth_build(tmp_path):
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.CHANGES] * 4)
+    reviewer = FakeReviewer(["fix"] * 4)
     with runtime(tmp_path, worker, reviewer) as run:
         result = run.start(_task("guard"), Limits(changes_rounds=5))
     assert result.status == "paused_interactive"
@@ -375,7 +372,7 @@ def test_two_failed_corrections_stop_before_fourth_build(tmp_path):
 
 def test_stagnant_same_reference_stops_before_next_build(tmp_path):
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.CHANGES] * 5)
+    reviewer = FakeReviewer(["fix"] * 5)
     with runtime(
         tmp_path,
         worker,
@@ -411,10 +408,10 @@ def test_changing_reference_is_not_treated_as_stagnation(tmp_path):
     worker = FakeWorker()
     reviewer = FakeReviewer(
         [
-            (ReviewAction.CHANGES, "AC1"),
-            (ReviewAction.CHANGES, "AC2"),
-            (ReviewAction.CHANGES, "AC1"),
-            ReviewAction.PASS,
+            ("fix", "AC1"),
+            ("fix", "AC2"),
+            ("fix", "AC1"),
+            "PASS",
         ]
     )
     with runtime(
@@ -451,7 +448,8 @@ def test_stagnation_reason_persists_across_fresh_store_instances(
             {
                 "run_id": "run-x",
                 "round_id": round_id,
-                "action": "CHANGES",
+                "event": "fix",
+                "verdict": "CHANGES",
                 "detail": "x",
                 "requirement_ref": "AC1",
             },
@@ -459,14 +457,14 @@ def test_stagnation_reason_persists_across_fresh_store_instances(
 
     fresh_store = RunStore(tmp_path, "run-x")
     reason = stagnation_reason(
-        fresh_store, action="CHANGES", requirement_ref="AC1", limit=3
+        fresh_store, verdict="CHANGES", requirement_ref="AC1", limit=3
     )
     assert reason is not None
     assert "AC1" in reason
     assert "seit 3 Korrekturrunden in Folge verletzt" in reason
 
     below_limit = stagnation_reason(
-        fresh_store, action="CHANGES", requirement_ref="AC1", limit=4
+        fresh_store, verdict="CHANGES", requirement_ref="AC1", limit=4
     )
     assert below_limit is None
 
@@ -478,7 +476,8 @@ def test_stagnation_reason_ignores_non_matching_history(tmp_path):
         {
             "run_id": "run-y",
             "round_id": 1,
-            "action": "CHANGES",
+            "event": "fix",
+            "verdict": "CHANGES",
             "detail": "x",
             "requirement_ref": "AC2",
         },
@@ -488,20 +487,21 @@ def test_stagnation_reason_ignores_non_matching_history(tmp_path):
         {
             "run_id": "run-y",
             "round_id": 2,
-            "action": "CHANGES",
+            "event": "fix",
+            "verdict": "CHANGES",
             "detail": "x",
             "requirement_ref": "AC1",
         },
     )
     assert (
         stagnation_reason(
-            store, action="CHANGES", requirement_ref="AC1", limit=2
+            store, verdict="CHANGES", requirement_ref="AC1", limit=2
         )
         is None
     )
     assert (
         stagnation_reason(
-            store, action="PASS", requirement_ref=None, limit=1
+            store, verdict="PASS", requirement_ref=None, limit=1
         )
         is None
     )
@@ -514,7 +514,8 @@ def test_stagnation_reason_reports_recorded_consumption(tmp_path):
         {
             "run_id": "run-z",
             "round_id": 1,
-            "action": "CHANGES",
+            "event": "fix",
+            "verdict": "CHANGES",
             "detail": "x",
             "requirement_ref": "AC1",
         },
@@ -529,14 +530,15 @@ def test_stagnation_reason_reports_recorded_consumption(tmp_path):
         {
             "run_id": "run-z",
             "round_id": 2,
-            "action": "CHANGES",
+            "event": "fix",
+            "verdict": "CHANGES",
             "detail": "x",
             "requirement_ref": "AC1",
         },
     )
 
     reason = stagnation_reason(
-        store, action="CHANGES", requirement_ref="AC1", limit=2
+        store, verdict="CHANGES", requirement_ref="AC1", limit=2
     )
 
     assert reason is not None
@@ -546,7 +548,7 @@ def test_stagnation_reason_reports_recorded_consumption(tmp_path):
 
 def test_call_limit_survives_restart_and_answer(tmp_path):
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.CHANGES])
+    reviewer = FakeReviewer(["fix"])
     with runtime(
         tmp_path,
         worker,
@@ -575,7 +577,7 @@ def test_budget_blocks_next_paid_call(tmp_path, limits, usage, match):
         TurnResult(TurnStatus.OK, 0, "Bau", "", (), 1.0, usage=usage)
     )
     worker = AgentWorker(executor, "worker", "model", Effort.LOW)
-    reviewer = FakeReviewer([ReviewAction.PASS])
+    reviewer = FakeReviewer(["PASS"])
     with runtime(
         tmp_path, worker, reviewer, safety_limits=limits
     ) as run:

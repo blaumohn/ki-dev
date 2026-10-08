@@ -19,13 +19,13 @@ from typer.testing import CliRunner
 
 from ki_dev.cli import app
 from ki_dev.flow.model import (
+    PASS,
     FlowError,
     parse_flow,
     reaching_final,
     read_raw,
 )
 from ki_dev.flow.planning import (
-    PASS,
     PlanningFlow,
     load_planning_flow,
 )
@@ -223,24 +223,24 @@ def _escaped(text: str) -> str:
 
 @given(st.lists(st.sampled_from(CLASSES)))
 def test_review_event_and_verdict_follow_precedence(findings):
-    event = FLOW.review_event(findings)
+    event = A.strongest(findings)
     if not findings:
         assert event == PASS
-        assert FLOW.verdict(event) == PASS
+        assert A.verdict(event) == PASS
         return
     assert event == next(c for c in A.priority if c in findings)
     needs_human = any(
         A.finding_classes[c].verdict == "NEEDS_DECISION"
         for c in findings
     )
-    assert (FLOW.verdict(event) == "NEEDS_DECISION") is needs_human
+    assert (A.verdict(event) == "NEEDS_DECISION") is needs_human
 
 
 @given(st.lists(st.integers(min_value=0, max_value=50), max_size=60))
 def test_random_walk_ends_once_agents_make_progress(choices):
-    """Beliebige Ereignisse (auch quelle, fix, vorlauf_rot), danach nur
-    noch Fortschritt: Jeder Lauf erreicht fertig, und jeder Weg über
-    quelle führt zurück zur bestehenden Karte (map)."""
+    """Beliebige Ereignisse (auch source, fix, preflight_failed), danach
+    nur noch Fortschritt: Jeder Lauf erreicht finished, und jeder Weg
+    über source führt zurück zur bestehenden Karte (map)."""
     state = A.start
     for choice in choices:
         if state == END:
@@ -267,9 +267,9 @@ def _progress(state: str) -> str:
 
 def test_unknown_class_or_event_is_visible():
     with pytest.raises(FlowError, match="unbekannte Befundklasse"):
-        FLOW.review_event(["vielleicht"])
+        A.strongest(["vielleicht"])
     with pytest.raises(FlowError, match="kein Review-Ereignis"):
-        FLOW.verdict("done")
+        A.verdict("done")
     with pytest.raises(FlowError, match="unbekannter Zustand"):
         FLOW.hint_lines("nirgends", "x")
 

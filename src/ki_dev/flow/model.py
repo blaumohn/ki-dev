@@ -38,14 +38,30 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from importlib.resources import files
 from typing import cast
 
 from jsonschema import Draft202012Validator
 
 HISTORY = "@history"
+PASS = "PASS"
+"""Review-Ereignis ohne Befund; jede andere Antwort ist eine
+Befundklasse des Ablaufs."""
 FINAL_KIND = "final"
 WAIT_KIND = "wait"
+
+
+class Verdict(StrEnum):
+    """Urteil, das eine Befundklasse auslöst; die einzige feste Liste.
+
+    Welche Ereignisse ein Reviewer liefern darf, nennt der Ablauf
+    (``finding_class``); das Urteil folgt daraus."""
+
+    PASS = "PASS"
+    CHANGES = "CHANGES"
+    NEEDS_DECISION = "NEEDS_DECISION"
+    ESCALATE = "ESCALATE"
 
 
 class FlowError(ValueError):
@@ -126,6 +142,54 @@ class Flow:
             raise FlowError(
                 f"unbekannter Zustand: {state}"
             ) from None
+
+    # --- Review-Vokabular: PASS und die Befundklassen ---------------
+
+    def review_events(self) -> tuple[str, ...]:
+        """Erlaubte Review-Antworten: PASS, dann die Befundklassen in
+        Vorrangreihenfolge."""
+        return (PASS, *self.priority)
+
+    def verdict(self, event: str) -> Verdict:
+        """Urteil zu einem Review-Ereignis."""
+        if event == PASS:
+            return Verdict.PASS
+        if event not in self.finding_classes:
+            raise FlowError(f"kein Review-Ereignis: {event}")
+        return Verdict(self.finding_classes[event].verdict)
+
+    def events_with(self, verdict: Verdict) -> tuple[str, ...]:
+        """Review-Ereignisse mit diesem Urteil, in
+        Vorrangreihenfolge."""
+        return tuple(
+            event
+            for event in self.review_events()
+            if self.verdict(event) is verdict
+        )
+
+    def strongest(self, classes: Iterable[str]) -> str:
+        """PASS ohne Befunde, sonst die stärkste Klasse nach
+        priority."""
+        found = set(classes)
+        unknown = found - set(self.priority)
+        if unknown:
+            raise FlowError(
+                f"unbekannte Befundklasse: {', '.join(sorted(unknown))}"
+            )
+        for name in self.priority:
+            if name in found:
+                return name
+        return PASS
+
+    def unbound_changes_event(self) -> str:
+        """Ereignis für CHANGES ohne gültige Kriteriumsbindung: die
+        stärkste Klasse mit NEEDS_DECISION (der Mensch klärt)."""
+        events = self.events_with(Verdict.NEEDS_DECISION)
+        if not events:
+            raise FlowError(
+                f"{self.name}: keine Befundklasse mit NEEDS_DECISION"
+            )
+        return events[0]
 
 
 def load_flow(name: str) -> Flow:
@@ -294,7 +358,13 @@ _SCHEMA = {
                 "required": ["verdict", "text"],
                 "additionalProperties": False,
                 "properties": {
-                    "verdict": {"enum": ["CHANGES", "NEEDS_DECISION"]},
+                    "verdict": {
+                        "enum": [
+                            Verdict.CHANGES,
+                            Verdict.NEEDS_DECISION,
+                            Verdict.ESCALATE,
+                        ]
+                    },
                     "text": _TEXT,
                 },
             },

@@ -36,15 +36,12 @@ from ki_dev.deltas import (
     StepDeltaAssessment,
     assess_step_delta,
 )
-from ki_dev.flow.model import FlowError
+from ki_dev.flow.model import FlowError, Verdict
 from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
     DEFAULT_PROJECTION_LIMITS,
     ProjectionLimits,
     project_review_context,
-)
-from ki_dev.review_decision import (
-    ReviewAction,
 )
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.machine import (
@@ -87,6 +84,7 @@ from ki_dev.runner.machine import (
     operation,
 )
 from ki_dev.runner.review_output import (
+    REVIEW_VOCABULARY,
     AgentProtocolError,
     ReviewDecision,
     bind_review_decision,
@@ -985,6 +983,7 @@ class RunRuntime:
                     round_id,
                     WorkReport(summary),
                     projection,
+                    REVIEW_VOCABULARY,
                 )
             )
             decision = parse_review_decision(
@@ -1116,7 +1115,8 @@ class RunRuntime:
         run: RunState,
         decision: ReviewDecision,
     ) -> dict[str, object]:
-        if decision.action is ReviewAction.CHANGES:
+        verdict = DELIVERY.verdict(decision.event)
+        if verdict is Verdict.CHANGES:
             facts, guard_detail = self._changes_facts(
                 run, decision
             )
@@ -1143,9 +1143,9 @@ class RunRuntime:
                 "evidence": None,
                 "decision_answer": None,
             }
-        if decision.action is ReviewAction.PASS:
+        if verdict is Verdict.PASS:
             return self._transition(run, ControllerPass())
-        if decision.action is ReviewAction.NEEDS_DECISION:
+        if verdict is Verdict.NEEDS_DECISION:
             return self._write_handoff_if_stopped(
                 state,
                 {
@@ -1198,7 +1198,7 @@ class RunRuntime:
             )
         reason = stagnation_reason(
             self.store,
-            action=decision.action.value,
+            verdict=DELIVERY.verdict(decision.event),
             requirement_ref=decision.requirement_ref,
             limit=limits.max_stagnant_changes,
         )
@@ -1537,7 +1537,8 @@ def _decision_document(decision: ReviewDecision) -> dict[str, object]:
     return {
         "run_id": decision.run_id,
         "round_id": decision.round_id,
-        "action": decision.action.value,
+        "event": decision.event,
+        "verdict": DELIVERY.verdict(decision.event).value,
         "detail": decision.detail,
         "requirement_ref": decision.requirement_ref,
     }
@@ -1547,7 +1548,7 @@ def _decode_decision(value: dict[str, object]) -> ReviewDecision:
     return ReviewDecision(
         cast(str, value["run_id"]),
         cast(int, value["round_id"]),
-        ReviewAction(cast(str, value["action"])),
+        cast(str, value["event"]),
         cast(str, value["detail"]),
         cast("str | None", value["requirement_ref"]),
     )

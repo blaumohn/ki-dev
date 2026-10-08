@@ -79,7 +79,7 @@ Werte. Unbekannte Felder werden abgewiesen.
 | --- | --- | --- |
 | `claude`, `codex` | `session_id`, `model`, `effort`, optional `timeout_s`, `budget` | Schutzhalt (`execution_stopped`) bei Kontext-/Kontingentgrenze |
 | `manual` | keine | `awaiting_input`: Eingabe in `<runs>/<RUN_ID>/inbox/*.input.md`, Antwort als `*.answer.md` daneben, dann `ki-dev run resume RUN_ID` |
-| `mock` | Worker: optional `file`; Review: `answers` (`PASS`, `CHANGES`, `NEEDS_DECISION`) | erschöpfte Antwortliste ist ein Prozessfehler |
+| `mock` | Worker: optional `file`; Review: `answers` (Review-Ereignisse: `PASS`, `fix`, `decision`, `escalate`) | erschöpfte Antwortliste ist ein Prozessfehler |
 
 `awaiting_input` ist ein Halt des Ausführers, kein Zustand des Ablaufs:
 Der Lauf bleibt im aktuellen Zustand (`worker_step` bzw.
@@ -145,20 +145,23 @@ Ohne diesen expliziten Abgleich bleibt der Lauf angehalten.
 `acceptance_criteria` ist eine nichtleere, eindeutige Liste bestehender
 Anforderungen; sie ist Teil des unveraenderlichen Auftrags und bleibt
 ueber Korrekturen und Resume stabil. Der Reviewer erhaelt sie durchnummeriert
-als `AC1`, `AC2`, ... und muss ein `CHANGES` an genau eine davon binden:
+als `AC1`, `AC2`, ... und muss ein `fix` (Urteil `CHANGES`) an genau eine
+davon binden. `event` ist ein Review-Ereignis von `delivery.toml`: `PASS`
+oder eine Befundklasse (`fix`, `decision`, `escalate`); das Urteil folgt
+aus `finding_class`:
 
 ```json
-{"run_id":"run-42","round_id":2,"action":"CHANGES","detail":"...","requirement_ref":"AC1"}
+{"run_id":"run-42","round_id":2,"event":"fix","detail":"...","requirement_ref":"AC1"}
 ```
 
-Ein `CHANGES` ohne bekannte Referenz (fehlend, leer oder unbekannt) wird
+Ein `fix` ohne bekannte Referenz (fehlend, leer oder unbekannt) wird
 nicht als Reparaturauftrag uebernommen, sondern automatisch zu
-`NEEDS_DECISION` umgewandelt: mehrdeutige Anforderungen oder eine
+`decision` (`NEEDS_DECISION`) umgewandelt: mehrdeutige Anforderungen oder eine
 strengere neue Interpretation brauchen eine menschliche Klaerung statt
 einer automatisch gestarteten weiteren Baurunde. Ein Quelltext-Diff
 allein ist dabei kein Ablehnungsgrund; geprueft wird nur die technische
 Referenz, nicht die inhaltliche Berechtigung der Beanstandung. Alle
-anderen Aktionen (`PASS`, `NEEDS_DECISION`, `ESCALATE`) duerfen kein
+anderen Ereignisse (`PASS`, `decision`, `escalate`) duerfen kein
 `requirement_ref` setzen. Eine freigegebene echte Auftragserweiterung
 braucht einen neuen, gesondert gestarteten Lauf mit erweiterten
 `acceptance_criteria` statt einer stillen Erweiterung des laufenden

@@ -37,25 +37,25 @@ class MockWorker:
 
 @dataclass
 class MockReviewer:
-    """Spielt Urteile ``PASS``, ``CHANGES``, ``NEEDS_DECISION`` ab."""
+    """Spielt vorgegebene Review-Ereignisse ab (``PASS`` oder eine
+    Befundklasse des Ablaufs, z. B. ``fix``)."""
 
-    actions: list[str] = field(default_factory=lambda: ["PASS"])
+    events: list[str] = field(default_factory=lambda: ["PASS"])
     calls: int = 0
 
     def review(self, request: ReviewRequest) -> str:
-        if self.calls >= len(self.actions):
+        if self.calls >= len(self.events):
             raise RuntimeError("mock: keine Antwort mehr vorgegeben")
-        action = self.actions[self.calls]
+        event = self.events[self.calls]
         self.calls += 1
         refs = request.task.acceptance_criterion_refs()
+        changes = event == request.vocabulary.changes
         return json.dumps(
             {
                 "run_id": request.task.run_id,
                 "round_id": request.round_id,
-                "action": action,
-                "detail": "" if action == "PASS" else f"mock {action}",
-                "requirement_ref": (
-                    refs[0] if action == "CHANGES" else None
-                ),
+                "event": event,
+                "detail": "" if event == "PASS" else f"mock {event}",
+                "requirement_ref": refs[0] if changes else None,
             }
         )

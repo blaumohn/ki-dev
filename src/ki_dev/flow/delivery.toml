@@ -2,7 +2,7 @@
 # geprüften Integration.
 #
 # Die frühere „loop“ ist hier keine eigene Ebene, sondern eine
-# Rückkante: controller_step --controller_changes--> worker_step_prepare
+# Rückkante: controller_step --fix--> worker_step_prepare
 # → … → checkpoint --> controller_step. Wann sie endet, entscheiden
 # allein die Wächter dieses Ablaufs (Runden- und Versuchsgrenzen), nicht
 # der Ausführer.
@@ -18,6 +18,21 @@
 name = "delivery"
 start = "start"
 final = ["passed", "error"]
+# Review-Antworten des Controllers: PASS oder eine Befundklasse; das
+# Urteil folgt aus der Klasse (ein Vokabular für step und run).
+priority = ["escalate", "decision", "fix"]
+
+[finding_class.fix]
+verdict = "CHANGES"
+text = "an ein Abnahmekriterium gebunden, korrigierbar"
+
+[finding_class.decision]
+verdict = "NEEDS_DECISION"
+text = "nur der Mensch kann entscheiden"
+
+[finding_class.escalate]
+verdict = "ESCALATE"
+text = "nicht zuverlässig automatisch fortsetzbar"
 
 [vocabulary]
 # machine: ki-dev erzeugt das Ereignis selbst; agent: ein Adapter
@@ -26,8 +41,7 @@ final = ["passed", "error"]
 kinds = ["machine", "agent", "finalization", "wait", "final"]
 events = [
   "run_started",
-  "controller_task", "controller_changes", "controller_needs_decision",
-  "controller_escalate", "controller_pass",
+  "controller_task", "PASS", "fix", "decision", "escalate",
   "protocol_error",
   "worker_inputs_prepared", "worker_completed", "worker_needs_decision",
   "worker_escalate", "worker_process_error",
@@ -173,35 +187,35 @@ target = "worker_step_prepare"
 
 [[transition]]
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result", "changes_refused"]
 escalation = "execution_guard"
 target = "paused_interactive"
 
 [[transition]]
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result", "stagnation"]
 escalation = "execution_guard"
 target = "paused_interactive"
 
 [[transition]]
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result", "!changes_rounds_left"]
 escalation = "changes_rounds_exhausted"
 target = "paused_interactive"
 
 [[transition]]
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result", "!worker_attempts_left"]
 escalation = "worker_attempts_exhausted"
 target = "paused_interactive"
 
 [[transition]]
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result"]
 actions = ["begin_correction", "drop_result"]
 target = "worker_step_prepare"
@@ -210,18 +224,18 @@ target = "worker_step_prepare"
 
 [[transition]]
 source = "controller_step"
-event = "controller_needs_decision"
+event = "decision"
 target = "waiting_decision"
 
 [[transition]]
 source = "controller_step"
-event = "controller_escalate"
+event = "escalate"
 escalation = "agent"
 target = "paused_interactive"
 
 [[transition]]
 source = "controller_step"
-event = "controller_pass"
+event = "PASS"
 cond = ["checked_result"]
 target = "freeze_reviewed_result"
 

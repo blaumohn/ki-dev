@@ -38,7 +38,7 @@ cat >"$DEMO/lauf.json" <<EOF
     "data_mode": "file_proposal"
   },
   "worker": {"executor": "mock"},
-  "review": {"executor": "mock", "answers": ["CHANGES", "PASS"]},
+  "review": {"executor": "mock", "answers": ["fix", "PASS"]},
   "tests": []
 }
 EOF

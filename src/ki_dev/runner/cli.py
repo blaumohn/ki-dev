@@ -32,7 +32,7 @@ from ki_dev.repository_evidence import (
 from ki_dev.repository_finalization import RepositoryFinalizer
 from ki_dev.review_context import ProjectionLimits
 from ki_dev.run_store import RunStore
-from ki_dev.runner.machine import Limits
+from ki_dev.runner.machine import DELIVERY, Limits
 from ki_dev.runner.runtime import (
     RunResult,
     RunRuntime,
@@ -288,7 +288,6 @@ def _usage_task(config: dict[str, object]) -> dict[str, str] | None:
 
 
 _LOCAL_ADAPTERS = (manual.NAME, mock.NAME)
-_MOCK_ACTIONS = ("PASS", "CHANGES", "NEEDS_DECISION")
 
 
 def _adapter(
@@ -315,10 +314,11 @@ def _mock(value: dict[str, object], role: str) -> object:
         return mock.MockWorker()
     answers = value.get("answers", ["PASS"])
     if not isinstance(answers, list) or not all(
-        item in _MOCK_ACTIONS for item in answers
+        item in DELIVERY.review_events() for item in answers
     ):
         raise RunConfigError(
-            "answers: Liste aus PASS, CHANGES, NEEDS_DECISION"
+            "answers: Liste aus "
+            + ", ".join(DELIVERY.review_events())
         )
     return mock.MockReviewer(list(answers))
 

@@ -27,18 +27,18 @@ the workflow. Guards decide when it ends; every back edge consumes a counter.
 From [`src/ki_dev/flow/delivery.toml`](src/ki_dev/flow/delivery.toml):
 
 ```toml
-# controller_step --controller_changes [cond] / actions--> target   (UML edge)
+# controller_step --fix [cond] / actions--> target   (UML edge)
 
 [[transition]]                     # correction budget spent → human
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result", "!changes_rounds_left"]
 escalation = "changes_rounds_exhausted"
 target = "paused_interactive"
 
 [[transition]]                     # otherwise: next round, counter +1
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result"]
 actions = ["begin_correction", "drop_result"]
 target = "worker_step_prepare"
@@ -63,7 +63,7 @@ scripts/demo-mock-lauf.sh
 5c02782 start
 ```
 
-The mock reviewer answers `CHANGES`, then `PASS`: the run takes the back
+The mock reviewer answers `fix` (verdict `CHANGES`), then `PASS`: the run takes the back
 edge once, freezes the reviewed result and fast-forwards it into `main`.
 
 ## Two commands
@@ -78,7 +78,7 @@ ki-dev step BEAD --step review     # one planning transition by hand
 | --- | --- | --- |
 | `claude`, `codex` | `{"executor": "codex", "session_id": "…", "model": "…", "effort": "high"}` | prepared agent session |
 | `manual` | `{"executor": "manual"}` | you carry the input into a session |
-| `mock` | `{"executor": "mock", "answers": ["CHANGES", "PASS"]}` | scripted answers |
+| `mock` | `{"executor": "mock", "answers": ["fix", "PASS"]}` | scripted answers |
 
 With `manual` the **executor** halts (`awaiting_input`), not the workflow:
 the run stays in its state and continues after the answer file appears.

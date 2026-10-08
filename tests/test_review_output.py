@@ -34,10 +34,8 @@ from ki_dev.deltas import (
     VcsRef,
 )
 from ki_dev.review_context import project_review_context
-from ki_dev.review_decision import (
-    ReviewAction,
-)
 from ki_dev.runner.review_output import (
+    REVIEW_VOCABULARY,
     AgentProtocolError,
     bind_review_decision,
     parse_review_decision,
@@ -55,9 +53,9 @@ class FakeWorker:
 
 class FakeReviewer:
     def __init__(
-        self, action: ReviewAction, requirement_ref="AC1"
+        self, action: str, requirement_ref="AC1"
     ) -> None:
-        self.action = action
+        self.event = action
         self.requirement_ref = requirement_ref
         self.requests = []
 
@@ -67,12 +65,12 @@ class FakeReviewer:
             {
                 "run_id": request.task.run_id,
                 "round_id": request.round_id,
-                "action": self.action.value,
+                "event": self.event,
                 "detail": "Test fehlt"
-                if self.action is ReviewAction.CHANGES
+                if self.event == "fix"
                 else "",
                 "requirement_ref": self.requirement_ref
-                if self.action is ReviewAction.CHANGES
+                if self.event == "fix"
                 else None,
             }
         )
@@ -99,7 +97,7 @@ def _context() -> ControllerContext:
 
 
 @pytest.mark.parametrize(
-    "action", [ReviewAction.CHANGES, ReviewAction.PASS]
+    "action", ["fix", "PASS"]
 )
 def test_formal_review_output_becomes_typed_decision(action):
     """Ein Adapter liefert Rohtext; erst der Ausführer macht daraus ein
@@ -118,10 +116,11 @@ def test_formal_review_output_becomes_typed_decision(action):
         1,
         WorkReport("Implementiert"),
         project_review_context(_context()),
+        REVIEW_VOCABULARY,
     )
     raw = reviewer.review(request)
     decision = parse_review_decision(raw, run_id="run-1", round_id=1)
-    assert bind_review_decision(decision, task).action is action
+    assert bind_review_decision(decision, task).event == action
     assert "result = 1" in reviewer.requests[0].evidence.text
 
 
@@ -129,20 +128,20 @@ def test_formal_review_output_becomes_typed_decision(action):
     "payload",
     [
         "PASS",
-        '{"run_id":"other","round_id":1,"action":"PASS","detail":"",'
+        '{"run_id":"other","round_id":1,"event":"PASS","detail":"",'
         '"requirement_ref":null}',
-        '{"run_id":"run-1","round_id":2,"action":"PASS","detail":"",'
+        '{"run_id":"run-1","round_id":2,"event":"PASS","detail":"",'
         '"requirement_ref":null}',
-        '{"run_id":"run-1","round_id":true,"action":"PASS","detail":"",'
+        '{"run_id":"run-1","round_id":true,"event":"PASS","detail":"",'
         '"requirement_ref":null}',
-        '{"run_id":"run-1","round_id":1,"action":"MAYBE","detail":"",'
+        '{"run_id":"run-1","round_id":1,"event":"MAYBE","detail":"",'
         '"requirement_ref":null}',
-        '{"run_id":"run-1","round_id":1,"action":"PASS"}',
-        '{"run_id":"run-1","round_id":1,"action":"PASS","detail":"",'
+        '{"run_id":"run-1","round_id":1,"event":"PASS"}',
+        '{"run_id":"run-1","round_id":1,"event":"PASS","detail":"",'
         '"requirement_ref":"AC1"}',
-        '{"run_id":"run-1","round_id":1,"action":"CHANGES",'
+        '{"run_id":"run-1","round_id":1,"event":"fix",'
         '"detail":"x","requirement_ref":""}',
-        '{"run_id":"run-1","round_id":1,"action":"CHANGES",'
+        '{"run_id":"run-1","round_id":1,"event":"fix",'
         '"detail":"x","requirement_ref":1}',
     ],
 )
@@ -154,30 +153,30 @@ def test_invalid_or_foreign_review_decisions_are_rejected(payload):
 @pytest.mark.parametrize(
     "action",
     [
-        ReviewAction.CHANGES,
-        ReviewAction.PASS,
-        ReviewAction.NEEDS_DECISION,
-        ReviewAction.ESCALATE,
+        "fix",
+        "PASS",
+        "decision",
+        "escalate",
     ],
 )
 def test_every_review_action_is_typed(action):
-    detail = "" if action is ReviewAction.PASS else "Begruendung"
+    detail = "" if action == "PASS" else "Begruendung"
     payload = json.dumps(
         {
             "run_id": "run-1",
             "round_id": 1,
-            "action": action.value,
+            "event": action,
             "detail": detail,
             "requirement_ref": "AC1"
-            if action is ReviewAction.CHANGES
+            if action == "fix"
             else None,
         }
     )
     assert (
         parse_review_decision(
             payload, run_id="run-1", round_id=1
-        ).action
-        is action
+        ).event
+        == action
     )
 
 
@@ -201,7 +200,7 @@ def test_changes_with_known_reference_stays_changes():
             {
                 "run_id": "run-1",
                 "round_id": 1,
-                "action": "CHANGES",
+                "event": "fix",
                 "detail": "Gueltiger Lauf wird faelschlich als "
                 "fehlend gemeldet",
                 "requirement_ref": "AC1",
@@ -211,7 +210,7 @@ def test_changes_with_known_reference_stays_changes():
         round_id=1,
     )
     bound = bind_review_decision(decision, task)
-    assert bound.action is ReviewAction.CHANGES
+    assert bound.event == "fix"
     assert bound.requirement_ref == "AC1"
 
 
@@ -224,7 +223,7 @@ def test_changes_without_bound_reference_becomes_needs_decision(ref):
             {
                 "run_id": "run-1",
                 "round_id": 1,
-                "action": "CHANGES",
+                "event": "fix",
                 "detail": detail,
                 "requirement_ref": ref,
             }
@@ -233,7 +232,7 @@ def test_changes_without_bound_reference_becomes_needs_decision(ref):
         round_id=1,
     )
     bound = bind_review_decision(decision, task)
-    assert bound.action is ReviewAction.NEEDS_DECISION
+    assert bound.event == "decision"
     assert bound.requirement_ref is None
     assert detail in bound.detail
 
@@ -245,7 +244,7 @@ def test_non_changes_decisions_pass_through_binding_unchanged():
             {
                 "run_id": "run-1",
                 "round_id": 1,
-                "action": "PASS",
+                "event": "PASS",
                 "detail": "",
                 "requirement_ref": None,
             }

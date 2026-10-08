@@ -84,8 +84,8 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
   kennen keinen Ablauf (`tests/test_schichten.py`).
 
 **Beispiel:** „Nach fünf CHANGES hält der Lauf an“ ist der Wächter
-`!changes_rounds_left` an der Kante `controller_changes` in `delivery.toml`,
-nicht ein `if` in der Laufzeit.
+`!changes_rounds_left` an der Kante `controller_step --fix-->` in
+`delivery.toml`, nicht ein `if` in der Laufzeit.
 
 ## Ausnahmen
 

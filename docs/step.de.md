@@ -197,13 +197,15 @@ Die Build-Review endet mit genau einem JSON-Objekt im gemeinsamen Vertrag
 von step und `ki-dev run` (`src/ki_dev/review_decision.py`):
 
 ```json
-{"action": "CHANGES", "detail": "Test für leere Eingabe fehlt", "requirement_ref": "AC2"}
+{"event": "fix", "detail": "Test für leere Eingabe fehlt", "requirement_ref": "AC2"}
 ```
 
-`action` ist `PASS`, `CHANGES` oder `NEEDS_DECISION` (`ESCALATE` gibt es nur
-in `ki-dev run`). Nicht-PASS braucht `detail`. `requirement_ref` ist immer
-vorhanden: bei `CHANGES` `"AC<n>"` (`null` wird zu `NEEDS_DECISION`), bei
-`PASS` und `NEEDS_DECISION` zwingend `null`. Die Übergabe nennt die Referenzen: Zeilen `N.` in
+`event` ist ein Review-Ereignis von `planning.toml`: `PASS` oder eine
+Befundklasse (`fix`, `source`, `decision`); das Urteil (`CHANGES`,
+`NEEDS_DECISION`) folgt aus der Klasse (`escalate` gibt es nur in
+`delivery.toml`). Nicht-PASS braucht `detail`. `requirement_ref` ist immer
+vorhanden: bei `fix` `"AC<n>"` (ohne gültige Referenz wird daraus
+`decision`), sonst zwingend `null`. Die Übergabe nennt die Referenzen: Zeilen `N.` in
 `acceptance_criteria` ergeben `AC1..ACn`, ohne Nummerierung ist das ganze
 Feld `AC1`. Eine Nummerierung mit Lücke oder Doppel ist ein formaler Mangel
 (Exit 2).
@@ -213,28 +215,29 @@ ki-dev step projekt-42 --step review --next-turn --decision-file antwort.json
 pbpaste | ki-dev step projekt-42 --step review --next-turn --decision-file -
 ```
 
-Ohne Vorlauf prüft step die Antwort, bindet `CHANGES` an ein bestehendes
-Kriterium und gibt die Nachricht laut Zustandstabelle aus:
+Ohne Vorlauf prüft step die Antwort, bindet `fix` an ein bestehendes
+Kriterium und gibt die Nachricht für genau die Kante dieses Ereignisses aus:
 
-| Antwort | Empfänger | Folgeschritte |
+| Antwort | Empfänger | Folgeschritt |
 | --- | --- | --- |
-| `CHANGES` mit gültigem `AC<n>` | Umsetzer (bisherige Sitzung) | `fix → implement.correction` |
-| `CHANGES` ohne/mit fremdem `AC` | Mensch, als `NEEDS_DECISION` | `source`, `decision` |
-| `NEEDS_DECISION` | Mensch | `source`, `decision` |
-| `PASS` | Mensch | `PASS → fertig` (Schließen entscheidest du) |
+| `fix` mit gültigem `AC<n>` | Umsetzer (bisherige Sitzung) | `fix → implement.correction` |
+| `fix` ohne/mit fremdem `AC` | Mensch, als `decision` | `decision → implement.decision` |
+| `source` | Mensch | `source → source` |
+| `decision` | Mensch | `decision → implement.decision` |
+| `PASS` | Mensch | `PASS → finished` (Schließen entscheidest du) |
 
 Kein `run_id`/`round_id` in step: Es gibt keinen Laufspeicher; `ki-dev run` legt
 diese Hülle um denselben Kern. Höchstens 20000 Zeichen, nie gekürzt.
-Ungültiges JSON, fremde Felder, `ESCALATE` oder verletzte Feldregeln: Exit 2
+Ungültiges JSON, fremde Felder, `escalate` oder verletzte Feldregeln: Exit 2
 mit Feldpfad, ohne Rohwerte. Nur mit `--next-turn`, nur Prüfgegenstand
 `implement`, nicht mit `--feedback-file` oder `--preflight-*`.
 
-**Begrenzte Prüfsteuerung des Reviewers.** Bei `CHANGES` oder
-`NEEDS_DECISION` darf die Antwort zusätzlich den Prüfumfang der nächsten
+**Begrenzte Prüfsteuerung des Reviewers.** Bei jedem Ereignis außer
+`PASS` darf die Antwort zusätzlich den Prüfumfang der nächsten
 Runde vorschlagen:
 
 ```json
-{"action": "CHANGES", "detail": "…", "requirement_ref": "AC2",
+{"event": "fix", "detail": "…", "requirement_ref": "AC2",
  "preflight_args": {"tests": "-k test_review"},
  "preflight_skip": {"lint": "nur Doku geändert"}}
 ```
@@ -317,7 +320,7 @@ Ende den passenden Review-Aufruf, z. B. nach `materialize`:
 ki-dev step BEAD_ID --step review --review-of materialize
 ```
 
-Alle vier Prüfgegenstände geben `PASS | CHANGES | NEEDS_DECISION` aus, nennen
+Alle vier Prüfgegenstände geben `PASS` oder die stärkste Befundklasse aus, nennen
 Befunde mit Quellen-/Anforderungsbezug, konkreter Abweichung und betroffenem
 Abschnitt und starten selbst weder Prüfwerkzeuge noch Folgemodelle. Ein
 Review hat keine automatische Autorität gegenüber dem vorangegangenen Agenten

@@ -116,7 +116,7 @@ def test_render_roles_are_distinct():
     assert "ausführungsreif" in roles[Step.MATERIALIZE]
     assert "Umsetzer" in roles[Step.IMPLEMENT]
     assert "Review-Agent" in roles[Step.REVIEW]
-    assert "PASS | CHANGES | NEEDS_DECISION" in roles[Step.REVIEW]
+    assert "PASS oder die stärkste Befundklasse" in roles[Step.REVIEW]
 
 
 def test_source_refs_only_in_reference_steps():
@@ -325,7 +325,7 @@ def test_materialize_review_transports_ac3_criteria():
     assert "Nicht-Ziele" in text
     # "unbeauftragte Umfangserweiterung" ist ein Graph-Kriterium.
     assert "unbeauftragte Umfangserweiterung" not in text
-    assert "fehlende Quelle ist NEEDS_DECISION" in text
+    assert "fehlende Quelle ist Klasse source" in text
     assert "Übergröße" in text
 
 
@@ -411,7 +411,7 @@ def test_every_review_target_outputs_pass_changes_needs_decision(
     target,
 ):
     text = render_handoff(_issue(), Step.REVIEW, target)
-    assert "PASS | CHANGES | NEEDS_DECISION" in text
+    assert "PASS oder die stärkste Befundklasse" in text
 
 
 def test_review_line_names_effective_target():
@@ -458,7 +458,7 @@ def test_build_review_rejects_gapped_criterion_numbering():
 def test_build_review_states_requirement_ref_is_always_present():
     text = " ".join(render_handoff(_issue(), Step.REVIEW).split())
     assert "requirement_ref ist immer vorhanden" in text
-    assert "bei PASS und NEEDS_DECISION null" in text
+    assert "bei fix \"AC<n>\", sonst null" in text
 
 
 @pytest.mark.parametrize("target", [None, ReviewTarget.IMPLEMENT])

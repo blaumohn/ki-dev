@@ -31,18 +31,18 @@ jede Rückkante verbraucht einen Zähler. Auszug aus
 [`src/ki_dev/flow/delivery.toml`](src/ki_dev/flow/delivery.toml):
 
 ```toml
-# controller_step --controller_changes [cond] / actions--> target   (UML-Kante)
+# controller_step --fix [cond] / actions--> target   (UML-Kante)
 
 [[transition]]                     # Korrekturbudget erschöpft → Mensch
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result", "!changes_rounds_left"]
 escalation = "changes_rounds_exhausted"
 target = "paused_interactive"
 
 [[transition]]                     # sonst: neue Runde, Zähler +1
 source = "controller_step"
-event = "controller_changes"
+event = "fix"
 cond = ["checked_result"]
 actions = ["begin_correction", "drop_result"]
 target = "worker_step_prepare"
@@ -77,7 +77,7 @@ scripts/demo-mock-lauf.sh
 5c02782 start
 ```
 
-Der Mock-Reviewer antwortet erst `CHANGES`, dann `PASS`. Der Lauf nimmt also
+Der Mock-Reviewer antwortet erst `fix` (Urteil `CHANGES`), dann `PASS`. Der Lauf nimmt also
 die Rückkante einmal (`round_id: 2`), friert das geprüfte Ergebnis ein und
 integriert es per Fast-forward. Die Konfiguration schreibt das Skript nach
 `lauf.json`.
@@ -100,7 +100,7 @@ Je Rolle wählt die Konfiguration einen Adapter:
 | --- | --- | --- |
 | `claude`, `codex` | `{"executor": "codex", "session_id": "…", "model": "…", "effort": "high"}` | vorbereitete Agentensitzung |
 | `manual` | `{"executor": "manual"}` | du trägst die Eingabe in eine Sitzung deiner Wahl |
-| `mock` | `{"executor": "mock", "answers": ["CHANGES", "PASS"]}` | vorgegebene Antworten |
+| `mock` | `{"executor": "mock", "answers": ["fix", "PASS"]}` | vorgegebene Antworten |
 
 Beim Adapter `manual` hält der **Ausführer**, nicht der Ablauf. Der Lauf
 bleibt in `worker_step` und meldet `awaiting_input`. Die Eingabe liegt in
@@ -154,10 +154,10 @@ stateDiagram-v2
     worker_step --> capture_step_result: worker_completed
     capture_step_result --> checkpoint: step_result_captured
     checkpoint --> controller_step: checkpoint_recorded
-    controller_step --> worker_step_prepare: controller_changes
-    controller_step --> waiting_decision: controller_needs_decision
+    controller_step --> worker_step_prepare: fix
+    controller_step --> waiting_decision: decision
     waiting_decision --> controller_step: resume_requested
-    controller_step --> freeze_reviewed_result: controller_pass
+    controller_step --> freeze_reviewed_result: PASS
     freeze_reviewed_result --> finalize_history: reviewed_result_frozen
     finalize_history --> verify_final_result: history_finalized
     verify_final_result --> fast_forward_integrate: final_result_verified

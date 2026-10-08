@@ -9,6 +9,7 @@ er nicht.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -119,11 +120,27 @@ class WorkReport:
 
 
 @dataclass(frozen=True)
+class ReviewVocabulary:
+    """Erlaubte Review-Antworten, vom Ausführer aus dem Ablauf gebildet
+    (Adapter kennen keinen Ablauf).
+
+    ``events`` beginnt mit PASS; ``changes`` verlangt eine
+    Kriteriumsbindung, ``unbound`` ersetzt es ohne Bindung; ``texts``
+    erklärt jede Befundklasse."""
+
+    events: tuple[str, ...]
+    changes: str
+    unbound: str
+    texts: Mapping[str, str]
+
+
+@dataclass(frozen=True)
 class ReviewRequest:
     task: RunTask
     round_id: int
     work_report: WorkReport
     evidence: ReviewProjection
+    vocabulary: ReviewVocabulary
 
 
 class Worker(Protocol):

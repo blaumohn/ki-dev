@@ -744,7 +744,7 @@ def test_full_review_run_keeps_pass_without_partial_note(
     result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 0, result.stderr
     assert "TEILLAUF:" not in result.stdout
-    assert "PASS | CHANGES | NEEDS_DECISION" in result.stdout
+    assert "PASS oder die stärkste Befundklasse" in result.stdout
 
 
 @pytest.mark.parametrize(

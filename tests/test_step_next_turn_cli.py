@@ -108,7 +108,7 @@ def test_passing_check_routes_to_reviewer_with_report(
     assert "- tests: PASS" in result.stdout
     assert "Erneute Prüfung nach Korrekturen:" in result.stdout
     assert "Grüne Tests sind kein Review-PASS" in result.stdout
-    assert "PASS | CHANGES | NEEDS_DECISION" in result.stdout
+    assert "PASS oder die stärkste Befundklasse" in result.stdout
     assert "Rückmeldung des Schreibagenten" not in result.stdout
     assert result.stderr == "Vorlauf: tests läuft (Timeout 5 s) …\n"
     assert "GEHEIME" not in result.stdout
@@ -204,7 +204,7 @@ def test_preflight_args_still_apply_with_next_turn(
     assert result.exit_code == 0, result.stderr
     assert "[ergänzt per --preflight-args]" in result.stdout
     assert "(Teillauf, kein PASS)" in result.stdout
-    assert "PASS | CHANGES" not in result.stdout
+    assert "PASS oder die stärkste" not in result.stdout
 
 
 @pytest.mark.parametrize("target", ["map", "graph", "materialize"])
@@ -553,7 +553,7 @@ def test_notes_and_comments_are_never_read_or_written(
 
 
 def _decision(tmp_path: Path, **fields) -> str:
-    value = {"action": "PASS", "detail": "", "requirement_ref": None}
+    value = {"event": "PASS", "detail": "", "requirement_ref": None}
     value.update(fields)
     path = tmp_path / "antwort.json"
     path.write_text(json.dumps(value))
@@ -563,7 +563,7 @@ def _decision(tmp_path: Path, **fields) -> str:
 def test_changes_bound_to_criterion_goes_to_builder(bd, tmp_path):
     source = _decision(
         tmp_path,
-        action="CHANGES",
+        event="fix",
         detail="Test fehlt",
         requirement_ref="AC1",
     )
@@ -571,7 +571,7 @@ def test_changes_bound_to_criterion_goes_to_builder(bd, tmp_path):
     assert result.exit_code == 0, result.stderr
     out = result.stdout
     assert out.startswith("Empfänger: Umsetzer (bisherige Sitzung)")
-    assert "Review-Befund (CHANGES, AC1): Test fehlt" in out
+    assert "Review-Befund (fix, CHANGES, AC1): Test fehlt" in out
     assert "Zustand implement.review" in out
     assert "- fix → implement.correction:" in out
     assert "PASS →" not in out
@@ -580,14 +580,18 @@ def test_changes_bound_to_criterion_goes_to_builder(bd, tmp_path):
 
 def test_unbound_changes_becomes_decision_for_human(bd, tmp_path):
     source = _decision(
-        tmp_path, action="CHANGES", detail="x", requirement_ref="AC7"
+        tmp_path, event="fix", detail="x", requirement_ref="AC7"
     )
     result = runner.invoke(app, [*BASE, "--decision-file", source])
     assert result.exit_code == 0, result.stderr
     assert result.stdout.startswith("Empfänger: Mensch")
-    assert "NEEDS_DECISION: CHANGES abgewiesen" in result.stdout
-    assert "- source → source:" in result.stdout
+    assert (
+        "NEEDS_DECISION (decision): CHANGES abgewiesen" in result.stdout
+    )
+    # Ein Vokabular: nur die Kante des gelieferten Ereignisses, nicht
+    # alle Kanten mit demselben Urteil.
     assert "- decision → implement.decision:" in result.stdout
+    assert "- source → source:" not in result.stdout
 
 
 def test_pass_goes_to_human_with_close_hint(bd, tmp_path):
@@ -602,7 +606,7 @@ def test_pass_goes_to_human_with_close_hint(bd, tmp_path):
 def test_decision_from_stdin(bd):
     payload = json.dumps(
         {
-            "action": "NEEDS_DECISION",
+            "event": "decision",
             "detail": "Umfang?",
             "requirement_ref": None,
         }
@@ -611,18 +615,21 @@ def test_decision_from_stdin(bd):
         app, [*BASE, "--decision-file", "-"], input=payload
     )
     assert result.exit_code == 0, result.stderr
-    assert "Review-Urteil NEEDS_DECISION: Umfang?" in result.stdout
+    assert (
+        "Review-Urteil NEEDS_DECISION (decision): Umfang?"
+        in result.stdout
+    )
 
 
 @pytest.mark.parametrize(
     "payload",
     [
         "PASS",
-        '{"action": "ESCALATE", "detail": "x", '
+        '{"event": "escalate", "detail": "x", '
         '"requirement_ref": null}',
-        '{"action": "PASS", "detail": "", "requirement_ref": null, '
+        '{"event": "PASS", "detail": "", "requirement_ref": null, '
         '"x": 1}',
-        '{"action": "CHANGES", "detail": "", '
+        '{"event": "fix", "detail": "", '
         '"requirement_ref": "AC1"}',
     ],
 )
@@ -678,7 +685,7 @@ def _control_project(tmp_path: Path, monkeypatch) -> None:
 
 def _with_control(**fields) -> str:
     value = {
-        "action": "CHANGES",
+        "event": "fix",
         "detail": "Test fehlt",
         "requirement_ref": "AC1",
     }
@@ -747,7 +754,7 @@ def test_without_control_no_command_is_printed(
     [
         (
             {
-                "action": "PASS",
+                "event": "PASS",
                 "detail": "",
                 "requirement_ref": None,
                 "preflight_args": {"tests": "-x"},

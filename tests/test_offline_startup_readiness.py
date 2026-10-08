@@ -149,7 +149,7 @@ def _review_json(run_id: str, round_id: int, action: str, **extra):
     payload = {
         "run_id": run_id,
         "round_id": round_id,
-        "action": action,
+        "event": action,
         "detail": "",
         "requirement_ref": None,
     }
@@ -182,7 +182,7 @@ def test_offline_run_connects_reader_contract_progress_env_projection(
         return _review_json(
             run_id,
             1,
-            "CHANGES",
+            "fix",
             detail="'helo' ist kein korrektes 'hello'",
             requirement_ref="AC1",
         )
@@ -247,7 +247,7 @@ def test_offline_run_pauses_on_stagnation_and_stays_readable(tmp_path):
             return _review_json(
                 run_id,
                 round_id,
-                "CHANGES",
+                "fix",
                 detail="weiterhin 'helo' statt 'hello'",
                 requirement_ref="AC1",
             )

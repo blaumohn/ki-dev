@@ -1,12 +1,13 @@
 """--decision-file: Reviewer-Antwort lesen, nächste Nachricht wählen.
 
 Datenfluss: Die Umsetzungs-Review endet mit genau einem JSON-Objekt im
-gemeinsamen Vertrag (review_decision). Der Mensch gibt es mit
+gemeinsamen Vertrag (review_decision): ``event`` ist ein
+Review-Ereignis des Planungsablaufs. Der Mensch gibt es mit
 ``ki-dev step BEAD_ID --step review --next-turn --decision-file
-DATEI|-`` weiter. step prüft es, bindet CHANGES an ein Abnahmekriterium
-des Beads (sonst NEEDS_DECISION wie im Bauablauf) und gibt die
-Nachricht für den Empfänger aus, den der Planungsablauf für
-``implement.review`` und dieses Urteil nennt. Kein Vorlauf, keine
+DATEI|-`` weiter. step prüft es, bindet ``fix`` an ein
+Abnahmekriterium des Beads (sonst ``decision`` wie im Lieferablauf)
+und gibt die Nachricht für den Empfänger aus, den der Planungsablauf
+für ``implement.review`` und dieses Ereignis nennt. Kein Vorlauf, keine
 Schreibwirkung, kein Agentenstart.
 
 Begrenzte Prüfsteuerung (5we): Die Antwort darf optional
@@ -23,10 +24,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import BinaryIO
 
+from ki_dev.flow.model import PASS, Verdict
 from ki_dev.flow.planning import PlanningFlow
 from ki_dev.review_decision import (
-    STEP_ACTIONS,
-    ReviewAction,
     ReviewContractError,
     ReviewVerdict,
     bind_requirement,
@@ -91,6 +91,8 @@ def parse_step_decision(
     raw: str,
     issue: HandoffIssue,
     load_config: Callable[[], PreflightConfig],
+    *,
+    flow: PlanningFlow,
 ) -> StepDecision:
     """Vertrag prüfen, an die Abnahmekriterien binden, Steuerung prüfen.
 
@@ -99,14 +101,16 @@ def parse_step_decision(
     """
     try:
         value = load_json_object(raw)
-        verdict = parse_verdict(value, STEP_ACTIONS, _CONTROL_SCHEMA)
+        verdict = parse_verdict(value, flow.flow, _CONTROL_SCHEMA)
         args = dict(value.get("preflight_args", {}))
         skip = dict(value.get("preflight_skip", {}))
         _check_control(verdict, args, skip, load_config)
     except (ReviewContractError, PreflightOptionError) as exc:
         raise DecisionInputError(f"{_WHAT} ungültig: {exc}") from exc
     refs = [ref for ref, _ in criteria_with_refs(issue)]
-    return StepDecision(bind_requirement(verdict, refs), args, skip)
+    return StepDecision(
+        bind_requirement(verdict, refs, flow.flow), args, skip
+    )
 
 
 def _check_control(
@@ -118,7 +122,7 @@ def _check_control(
     """PASS braucht Volllauf; Werte wie die CLI-Optionen prüfen."""
     if not (args or skip):
         return
-    if verdict.action is ReviewAction.PASS:
+    if verdict.event == PASS:
         raise ReviewContractError(
             "preflight_args/preflight_skip: bei PASS nicht erlaubt"
         )
@@ -138,15 +142,15 @@ def render_decision_turn(
 ) -> str:
     """Nachricht an den Empfänger laut Zustandstabelle."""
     verdict = decision.verdict
-    events = flow.events_for_verdict(verdict.action.value)
+    judgement = flow.flow.verdict(verdict.event)
     bead = one_line(issue.id)
     lines = [
-        f"Empfänger: {_recipient(verdict.action)}",
+        f"Empfänger: {_recipient(judgement)}",
         f"Bead: {bead} - {one_line(issue.title)}",
         "",
-        *_body(verdict),
+        *_body(verdict, judgement),
         "",
-        *flow.hint_lines(_REVIEW_STATE, bead, events),
+        *flow.hint_lines(_REVIEW_STATE, bead, (verdict.event,)),
         *_control_lines(decision, bead),
     ]
     return "\n".join(lines) + "\n"
@@ -171,21 +175,24 @@ def _control_lines(decision: StepDecision, bead: str) -> list[str]:
     ]
 
 
-def _recipient(action: ReviewAction) -> str:
-    if action is ReviewAction.CHANGES:
+def _recipient(judgement: Verdict) -> str:
+    if judgement is Verdict.CHANGES:
         return "Umsetzer (bisherige Sitzung)"
     return "Mensch"
 
 
-def _body(verdict: ReviewVerdict) -> list[str]:
-    if verdict.action is ReviewAction.CHANGES:
+def _body(verdict: ReviewVerdict, judgement: Verdict) -> list[str]:
+    if judgement is Verdict.CHANGES:
         return [
-            f"Review-Befund (CHANGES, {verdict.requirement_ref}): "
+            f"Review-Befund ({verdict.event}, {judgement.value}, "
+            f"{verdict.requirement_ref}): "
             f"{one_line(verdict.detail)}",
             "Bitte beheben. Melde anschließend nur zurück, was aus "
             "Diff und Prüfergebnissen nicht hervorgeht, etwa offene "
             "Entscheidungen oder Hindernisse.",
         ]
     detail = one_line(verdict.detail) or "ohne Begründung"
-    return [f"Review-Urteil {verdict.action.value}: {detail}"]
+    return [
+        f"Review-Urteil {judgement.value} ({verdict.event}): {detail}"
+    ]
 

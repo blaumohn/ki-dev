@@ -27,9 +27,6 @@ from ki_dev.adapter.executors.contract import (
     QuotaMeasurement,
     QuotaStatus,
 )
-from ki_dev.review_decision import (
-    ReviewAction,
-)
 from ki_dev.run_store import RunStore
 from ki_dev.runner.machine import Limits
 from ki_dev.runner.safety import CallLedger
@@ -64,7 +61,7 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
         else json.dumps({
             "run_id": "guard",
             "round_id": 1,
-            "action": "PASS",
+            "event": "PASS",
             "detail": "",
             "requirement_ref": None,
         })
@@ -133,7 +130,7 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
     reviewer = (
         AgentReviewer(adapter, "review", "model", Effort.LOW)
         if role == "review"
-        else FakeReviewer([ReviewAction.PASS])
+        else FakeReviewer(["PASS"])
     )
     task = replace(_task("guard"), workdir=tmp_path)
     with runtime(tmp_path, worker, reviewer) as run:

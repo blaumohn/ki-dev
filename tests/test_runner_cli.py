@@ -10,9 +10,6 @@ from ki_dev.adapter.contract import (
     RunTask,
 )
 from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.review_decision import (
-    ReviewAction,
-)
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.cli import RunConfigError, status_run
 from ki_dev.runner.machine import Limits, Phase
@@ -63,7 +60,7 @@ def _add_configuration(tmp_path: Path, run_id: str) -> None:
 def test_status_reads_persisted_state_without_advancing(tmp_path):
     worker = FakeWorker()
     reviewer = FakeReviewer(
-        [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
+        ["decision", "PASS"]
     )
     with RunRuntime(
         RunStore(tmp_path, "run-status"),
@@ -92,7 +89,7 @@ def test_status_works_with_relative_runs_dir(tmp_path, monkeypatch):
     """0we: der CLI-Standard ``--runs-dir .ki-dev/runs`` ist relativ;
     ``as_uri()`` braucht aber einen absoluten Pfad."""
     worker = FakeWorker()
-    reviewer = FakeReviewer([ReviewAction.NEEDS_DECISION])
+    reviewer = FakeReviewer(["decision"])
     monkeypatch.chdir(tmp_path)
     relative_runs_dir = Path(".ki-dev/runs")
     with RunRuntime(
@@ -120,7 +117,7 @@ def test_status_reports_manifest_without_configuration(tmp_path):
     with RunRuntime(
         RunStore(tmp_path, "run-no-config"),
         FakeWorker(),
-        FakeReviewer([ReviewAction.PASS]),
+        FakeReviewer(["PASS"]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
     ) as runtime:
@@ -135,7 +132,7 @@ def test_status_reads_live_run_while_writer_holds_wal_open(
 ):
     worker = FakeWorker()
     reviewer = FakeReviewer(
-        [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
+        ["decision", "PASS"]
     )
     runtime = RunRuntime(
         RunStore(tmp_path, "run-live"),
@@ -164,7 +161,7 @@ def test_status_reads_live_run_while_writer_holds_wal_open(
 def test_status_reads_crash_state_with_wal_but_no_shm(tmp_path):
     worker = FakeWorker()
     reviewer = FakeReviewer(
-        [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
+        ["decision", "PASS"]
     )
     runtime = RunRuntime(
         RunStore(tmp_path, "run-crash"),
@@ -215,7 +212,7 @@ def test_status_read_is_consistent_despite_concurrent_checkpoint(
 
     worker = FakeWorker()
     reviewer = FakeReviewer(
-        [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
+        ["decision", "PASS"]
     )
     runtime = RunRuntime(
         RunStore(tmp_path, "run-race"),
@@ -291,7 +288,7 @@ def test_status_reports_checkpoint_missing_required_field(tmp_path):
     runtime = RunRuntime(
         RunStore(tmp_path, "run-missing-status"),
         FakeWorker(),
-        FakeReviewer([ReviewAction.NEEDS_DECISION]),
+        FakeReviewer(["decision"]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
     )
@@ -312,7 +309,7 @@ def test_status_reports_checkpoint_with_invalid_run_state(tmp_path):
     runtime = RunRuntime(
         RunStore(tmp_path, "run-bad-run-state"),
         FakeWorker(),
-        FakeReviewer([ReviewAction.NEEDS_DECISION]),
+        FakeReviewer(["decision"]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
     )
@@ -349,7 +346,7 @@ def test_status_rejects_semantically_invalid_required_fields(
     runtime = RunRuntime(
         RunStore(tmp_path, "run-invalid-status"),
         FakeWorker(),
-        FakeReviewer([ReviewAction.NEEDS_DECISION]),
+        FakeReviewer(["decision"]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
     )
@@ -372,7 +369,7 @@ def test_status_cli_exits_with_code_2_for_incomplete_checkpoint(
     runtime = RunRuntime(
         RunStore(tmp_path, "run-cli-corrupt"),
         FakeWorker(),
-        FakeReviewer([ReviewAction.NEEDS_DECISION]),
+        FakeReviewer(["decision"]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
     )
@@ -452,7 +449,7 @@ def test_status_leaves_complete_run_checkpoint_byte_identical(
 ):
     worker = FakeWorker()
     reviewer = FakeReviewer(
-        [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
+        ["decision", "PASS"]
     )
     with RunRuntime(
         RunStore(tmp_path, "run-complete"),

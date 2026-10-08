@@ -57,7 +57,8 @@ def test_handoff_separates_resolved_from_open_reference(tmp_path):
             {
                 "run_id": "run-2",
                 "round_id": round_id,
-                "action": "CHANGES",
+                "event": "fix",
+                "verdict": "CHANGES",
                 "detail": detail,
                 "requirement_ref": ref,
             },
@@ -96,7 +97,8 @@ def test_handoff_contains_no_raw_transcripts(tmp_path):
         {
             "run_id": "run-3",
             "round_id": 1,
-            "action": "CHANGES",
+            "event": "fix",
+            "verdict": "CHANGES",
             "detail": "Begruendung ohne Transkript",
             "requirement_ref": "AC1",
         },

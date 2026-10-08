@@ -1,7 +1,7 @@
 """Planungsablauf (``planning.toml``): Review-Semantik, Übergaben.
 
 Fachliche Sicht auf den allgemeinen
-:class:`~ki_dev.flow.model.Ablauf` für die Phasen map, graph,
+:class:`~ki_dev.flow.model.Flow` für die Phasen map, graph,
 materialize und implement: welche Befundklasse ein Review-Ereignis ist,
 welches Urteil daraus folgt und welche Folgeschritte der Mensch als
 Bote (Adapter ``manual``, ``ki-dev step``) erhält.
@@ -21,7 +21,6 @@ from ki_dev.flow.model import (
 
 NAME = "planning"
 FILE_NAME = f"{NAME}.toml"
-PASS = "PASS"
 
 
 @dataclass(frozen=True)
@@ -30,41 +29,6 @@ class PlanningFlow:
 
     def outgoing(self, state: str) -> tuple[Transition, ...]:
         return self.flow.outgoing(state)
-
-    def review_event(self, classes: Iterable[str]) -> str:
-        """PASS ohne Befunde, sonst die stärkste Klasse nach vorrang."""
-        found = set(classes)
-        unknown = found - set(self.flow.priority)
-        if unknown:
-            raise FlowError(
-                f"unbekannte Befundklasse: {', '.join(sorted(unknown))}"
-            )
-        for name in self.flow.priority:
-            if name in found:
-                return name
-        return PASS
-
-    def verdict(self, event: str) -> str:
-        """Review-Urteil zu PASS oder einer Befundklasse."""
-        if event == PASS:
-            return PASS
-        if event not in self.flow.finding_classes:
-            raise FlowError(f"kein Review-Ereignis: {event}")
-        return self.flow.finding_classes[event].verdict
-
-    def events_for_verdict(self, verdict: str) -> tuple[str, ...]:
-        """Review-Ereignisse zu einem Urteil: PASS selbst, sonst die
-        Befundklassen mit diesem Urteil (in Vorrangreihenfolge)."""
-        if verdict == PASS:
-            return (PASS,)
-        events = tuple(
-            name
-            for name in self.flow.priority
-            if self.flow.finding_classes[name].verdict == verdict
-        )
-        if not events:
-            raise FlowError(f"kein Urteil des Ablaufs: {verdict}")
-        return events
 
     def hint_lines(
         self,

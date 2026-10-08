@@ -148,7 +148,7 @@ NÄCHSTE NACHRICHT (--step review --next-turn)
   --decision-file DATEI|- liest stattdessen die JSON-Antwort der
   Umsetzungs-Review (action, detail, requirement_ref; höchstens 20000
   Zeichen) und gibt ohne Vorlauf die Nachricht laut Planungsablauf aus:
-  CHANGES -> Umsetzer, NEEDS_DECISION/PASS -> Mensch. Ungültig: Exit 2.
+  fix (CHANGES) -> Umsetzer, sonst -> Mensch. Ungültig: Exit 2.
 
 BASISGRENZE
   Die gerenderte Basisübergabe (ohne Leitlinien und Prüfbericht) hat
@@ -699,7 +699,7 @@ def _decision_turn(
         raise HandoffInvalidError(problems)
     raw = read_decision(source, _stdin_binary)
     decision = parse_step_decision(
-        raw, issue, _project_preflight_config
+        raw, issue, _project_preflight_config, flow=flow
     )
     return render_decision_turn(issue, decision, flow=flow)
 

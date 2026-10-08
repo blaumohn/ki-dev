@@ -10,14 +10,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ki_dev.adapter.contract import RunTask
+from ki_dev.adapter.contract import ReviewVocabulary, RunTask
+from ki_dev.flow.model import Verdict
 from ki_dev.review_decision import (
-    RUN_ACTIONS,
-    ReviewAction,
     ReviewContractError,
     bind_requirement,
     load_json_object,
     parse_verdict,
+)
+from ki_dev.runner.machine import DELIVERY
+
+# Review-Antworten des Lieferablaufs, einmal aus dem Ablauf gebildet
+# und dem Adapter mitgegeben (Adapter kennen keinen Ablauf).
+REVIEW_VOCABULARY = ReviewVocabulary(
+    events=DELIVERY.review_events(),
+    changes=DELIVERY.events_with(Verdict.CHANGES)[0],
+    unbound=DELIVERY.unbound_changes_event(),
+    texts={
+        name: item.text
+        for name, item in DELIVERY.finding_classes.items()
+    },
 )
 
 
@@ -29,7 +41,7 @@ class AgentProtocolError(ValueError):
 class ReviewDecision:
     run_id: str
     round_id: int
-    action: ReviewAction
+    event: str
     detail: str = ""
     requirement_ref: str | None = None
 
@@ -43,13 +55,13 @@ def parse_review_decision(
         value = load_json_object(raw)
         _check_identity(value, run_id, round_id)
         core = {k: v for k, v in value.items() if k not in _IDENTITY}
-        verdict = parse_verdict(core, RUN_ACTIONS)
+        verdict = parse_verdict(core, DELIVERY)
     except ReviewContractError as exc:
         raise AgentProtocolError(str(exc)) from exc
     return ReviewDecision(
         run_id,
         round_id,
-        verdict.action,
+        verdict.event,
         verdict.detail,
         verdict.requirement_ref,
     )
@@ -80,4 +92,6 @@ def bind_review_decision(
 ) -> ReviewDecision:
     """CHANGES an ein Abnahmekriterium des Laufs binden (gemeinsame
     Regel ``bind_requirement``)."""
-    return bind_requirement(decision, task.acceptance_criterion_refs())
+    return bind_requirement(
+        decision, task.acceptance_criterion_refs(), DELIVERY
+    )

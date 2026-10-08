@@ -317,16 +317,21 @@ class RunState:
 class Event:
     """Basis aller typisierten Ereignisse der V0-Maschine.
 
-    ``ereignis`` ist der Name im Ablauf (``delivery.toml``), abgeleitet
-    aus dem Klassennamen: ``ControllerTask`` → ``controller_task``.
+    ``flow_event`` ist der Name im Ablauf (``delivery.toml``),
+    abgeleitet aus dem Klassennamen: ``ControllerTask`` →
+    ``controller_task``. Review-Urteile des Controllers tragen
+    stattdessen das Review-Ereignis des Ablaufs (``PASS`` oder eine
+    Befundklasse), damit Antwort und Kante dasselbe Wort benutzen.
     """
 
     flow_event: ClassVar[str] = ""
 
-    def __init_subclass__(cls, **kwargs: object) -> None:
+    def __init_subclass__(
+        cls, flow_event: str | None = None, **kwargs: object
+    ) -> None:
         super().__init_subclass__(**kwargs)
         snake = re.sub(r"(?<!^)(?=[A-Z])", "_", cls.__name__)
-        cls.flow_event = snake.lower()
+        cls.flow_event = flow_event or snake.lower()
 
 
 @dataclass(frozen=True)
@@ -345,7 +350,7 @@ class ControllerTask(Event):
 
 
 @dataclass(frozen=True)
-class ControllerChanges(Event):
+class ControllerChanges(Event, flow_event="fix"):
     """Controller beanstandet und fordert eine Korrekturrunde."""
 
     objection: str
@@ -355,7 +360,7 @@ class ControllerChanges(Event):
 
 
 @dataclass(frozen=True)
-class ControllerNeedsDecision(Event):
+class ControllerNeedsDecision(Event, flow_event="decision"):
     """Controller fehlt eine fachliche Entscheidung."""
 
     question: str
@@ -365,7 +370,7 @@ class ControllerNeedsDecision(Event):
 
 
 @dataclass(frozen=True)
-class ControllerEscalate(Event):
+class ControllerEscalate(Event, flow_event="escalate"):
     """Controller kann nicht zuverlaessig automatisch fortfahren."""
 
     cause: str
@@ -375,7 +380,7 @@ class ControllerEscalate(Event):
 
 
 @dataclass(frozen=True)
-class ControllerPass(Event):
+class ControllerPass(Event, flow_event="PASS"):
     """Controller nimmt das gepruefte Ergebnis fachlich an.
 
     ``PASS`` ist ein Qualitaetsurteil, aber kein Laufabschluss.

@@ -1,4 +1,4 @@
-"""Gemeinsamer Build-Review-Vertrag: Kern, Aktionen, AC-Zerlegung."""
+"""Gemeinsamer Review-Vertrag: Kern, Ereignisse, AC-Zerlegung."""
 
 from __future__ import annotations
 
@@ -8,40 +8,49 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from ki_dev.flow.model import load_flow
 from ki_dev.review_decision import (
-    RUN_ACTIONS,
-    STEP_ACTIONS,
-    ReviewAction,
     ReviewContractError,
     ReviewVerdict,
     bind_requirement,
     criterion_refs,
     load_json_object,
     parse_verdict,
+    review_schema,
     split_acceptance_criteria,
 )
 
+PLANNING = load_flow("planning")
+DELIVERY = load_flow("delivery")
 
-def _core(action="CHANGES", detail="x", ref="AC1") -> dict:
-    return {"action": action, "detail": detail, "requirement_ref": ref}
+
+def _core(event="fix", detail="x", ref="AC1") -> dict:
+    return {"event": event, "detail": detail, "requirement_ref": ref}
 
 
-def test_step_rejects_escalate_but_loop_accepts_it():
-    value = _core("ESCALATE", "Grenze", None)
-    assert (
-        parse_verdict(value, RUN_ACTIONS).action
-        is ReviewAction.ESCALATE
-    )
-    with pytest.raises(ReviewContractError, match="action: ungültiger"):
-        parse_verdict(value, STEP_ACTIONS)
+def test_allowed_events_come_from_the_flow():
+    """Ein Vokabular: das event-enum ist PASS plus die Befundklassen
+    des jeweiligen Ablaufs, keine Code-Konstante."""
+    for flow in (PLANNING, DELIVERY):
+        enum = review_schema(flow)["properties"]["event"]["enum"]
+        assert enum == ["PASS", *flow.priority]
+
+
+def test_planning_rejects_escalate_but_delivery_accepts_it():
+    value = _core("escalate", "Grenze", None)
+    verdict = parse_verdict(value, DELIVERY)
+    assert verdict.event == "escalate"
+    assert DELIVERY.verdict(verdict.event) == "ESCALATE"
+    with pytest.raises(ReviewContractError, match="event: ungültiger"):
+        parse_verdict(value, PLANNING)
 
 
 @pytest.mark.parametrize(
     ("value", "message"),
     [
-        ({"action": "PASS", "detail": ""}, "requirement_ref: fehlt"),
+        ({"event": "PASS", "detail": ""}, "requirement_ref: fehlt"),
         ({**_core(), "extra": 1}, "extra: unbekanntes Feld"),
-        (_core(action="MAYBE"), "action: ungültiger Wert"),
+        (_core(event="MAYBE"), "event: ungültiger Wert"),
         (_core(detail=5), "detail: falscher Typ"),
         (_core(ref=""), "requirement_ref: muss null oder nichtleer"),
         (_core(ref=1), "requirement_ref: muss null oder nichtleer"),
@@ -51,13 +60,13 @@ def test_step_rejects_escalate_but_loop_accepts_it():
         ),
         (
             _core("PASS", "", "AC1"),
-            "requirement_ref: ist außer bei CHANGES null",
+            "requirement_ref: ist außer bei CHANGES-Ereignissen null",
         ),
     ],
 )
 def test_invalid_core_names_field_without_raw_value(value, message):
     with pytest.raises(ReviewContractError, match=message) as excinfo:
-        parse_verdict(value, STEP_ACTIONS)
+        parse_verdict(value, PLANNING)
     assert "MAYBE" not in str(excinfo.value)
 
 
@@ -68,30 +77,26 @@ def test_only_a_single_json_object_is_accepted(raw):
 
 
 @given(
-    action=st.sampled_from(STEP_ACTIONS),
+    event=st.sampled_from(PLANNING.review_events()),
     detail=st.text(max_size=40),
     ref=st.one_of(st.none(), st.sampled_from(["AC1", "AC2", "AC9"])),
 )
-def test_valid_answers_parse_and_bind_like_the_loop(
-    action, detail, ref
-):
+def test_valid_answers_parse_and_bind_like_the_loop(event, detail, ref):
     """Simulierte Reviewer-Antworten: Gültige Kerne werden angenommen;
-    CHANGES ohne passende AC-Referenz wird NEEDS_DECISION, nie ein
-    automatischer Bauauftrag."""
-    value = _core(action.value, detail, ref)
+    fix ohne passende AC-Referenz wird decision (NEEDS_DECISION), nie
+    ein automatischer Auftrag."""
+    value = _core(event, detail, ref)
     try:
-        verdict = parse_verdict(
-            json.loads(json.dumps(value)), STEP_ACTIONS
-        )
+        verdict = parse_verdict(json.loads(json.dumps(value)), PLANNING)
     except ReviewContractError:
-        needs_detail = action is not ReviewAction.PASS
+        needs_detail = event != "PASS"
         assert (needs_detail and not detail.strip()) or (
-            action is not ReviewAction.CHANGES and ref is not None
+            event != "fix" and ref is not None
         )
         return
-    bound = bind_requirement(verdict, ("AC1", "AC2"))
-    if action is ReviewAction.CHANGES and ref not in ("AC1", "AC2"):
-        assert bound.action is ReviewAction.NEEDS_DECISION
+    bound = bind_requirement(verdict, ("AC1", "AC2"), PLANNING)
+    if event == "fix" and ref not in ("AC1", "AC2"):
+        assert bound.event == "decision"
         assert bound.requirement_ref is None
     else:
         assert bound == verdict
@@ -119,5 +124,6 @@ def test_gaps_or_duplicates_are_visible_errors(text):
 
 
 def test_bind_keeps_bound_changes():
-    verdict = ReviewVerdict(ReviewAction.CHANGES, "x", "AC2")
-    assert bind_requirement(verdict, ("AC1", "AC2")) is verdict
+    verdict = ReviewVerdict("fix", "x", "AC2")
+    bound = bind_requirement(verdict, ("AC1", "AC2"), PLANNING)
+    assert bound is verdict

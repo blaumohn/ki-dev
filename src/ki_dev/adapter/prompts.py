@@ -64,6 +64,12 @@ def review_prompt(request: ReviewRequest) -> str:
             strict=True,
         )
     )
+    vocabulary = request.vocabulary
+    classes = "\n".join(
+        f"- {name}: {text}" for name, text in vocabulary.texts.items()
+    )
+    events = "|".join(vocabulary.events)
+    changes, unbound = vocabulary.changes, vocabulary.unbound
     heading = (
         f"Unabhaengiger Review fuer Lauf {task.run_id}, "
         f"Runde {request.round_id}."
@@ -80,7 +86,7 @@ behaupte bei fehlendem Nachweis keinen Vollreview.
 MASSGEBLICHE QUELLEN
 {sources}
 
-BESTEHENDE ABNAHMEKRITERIEN (nur diese sind fuer CHANGES bindbar)
+BESTEHENDE ABNAHMEKRITERIEN (nur diese sind fuer {changes} bindbar)
 {criteria}
 
 BAUBERICHT
@@ -89,14 +95,17 @@ BAUBERICHT
 BEGRENZTE NACHWEISPROJEKTION
 {request.evidence.text}
 
-CHANGES braucht eine konkrete Bindung: welches der obigen Kriterien
+ANTWORTEN (event): PASS ohne Befund, sonst eine Befundklasse
+{classes}
+
+{changes} braucht eine konkrete Bindung: welches der obigen Kriterien
 ist verletzt, welches Verhalten wurde beobachtet, welcher Nachweis
 belegt das. Ein Quelltext-Diff allein ist kein Ablehnungsgrund. Passt
 die Beanstandung zu keinem bestehenden Kriterium oder verlangt sie
-eine strengere neue Interpretation, antworte mit NEEDS_DECISION statt
-CHANGES.
+eine strengere neue Interpretation, antworte mit {unbound} statt
+{changes}.
 
-requirement_ref ist nur bei CHANGES gesetzt (sonst null).
+requirement_ref ist nur bei {changes} gesetzt (sonst null).
 Antworte ausschliesslich als JSON-Objekt mit exakt diesen Feldern:
-{{"run_id":"{task.run_id}","round_id":{request.round_id},"action":"PASS|CHANGES|NEEDS_DECISION|ESCALATE","detail":"...","requirement_ref":"AC<n>|null"}}
+{{"run_id":"{task.run_id}","round_id":{request.round_id},"event":"{events}","detail":"...","requirement_ref":"AC<n>|null"}}
 """

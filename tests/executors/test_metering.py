@@ -690,7 +690,7 @@ def _codex():
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
-                    "text": '{"action":"PASS"}',
+                    "text": '{"event":"PASS"}',
                 },
             },
             {
@@ -712,7 +712,7 @@ def test_codex_usage_does_not_double_count_cached_input():
     knapp unter statt exakt 180."""
     runner = FakeRunner(_result(_codex()))
     result = CodexCliAdapter(runner=runner).send_turn(_request())
-    assert result.stdout == '{"action":"PASS"}'
+    assert result.stdout == '{"event":"PASS"}'
     assert result.usage["input_tokens"] == 100
     assert result.usage["cache_read_input_tokens"] == 900
     assert "--json" in runner.argv

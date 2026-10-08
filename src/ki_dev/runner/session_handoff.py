@@ -31,7 +31,7 @@ def build_handoff(
     changes = [
         message
         for message in store.load_messages()
-        if message.get("action") == "CHANGES"
+        if message.get("verdict") == "CHANGES"
     ]
     open_ref = changes[-1].get("requirement_ref") if changes else None
     superseded = changes[:-1]

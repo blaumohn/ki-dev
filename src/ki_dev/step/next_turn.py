@@ -225,9 +225,9 @@ _REVIEW_RULES = (
     "schließt nichts automatisch."
 )
 
-_VERDICT = "Ausgabe: PASS | CHANGES | NEEDS_DECISION."
+_VERDICT = "Ausgabe: PASS oder die stärkste Befundklasse."
 _PARTIAL_VERDICT = (
-    "Ausgabe: CHANGES | NEEDS_DECISION (Teillauf, kein PASS)."
+    "Ausgabe: die stärkste Befundklasse (Teillauf, kein PASS)."
 )
 
 _HUMAN_NOTE = (

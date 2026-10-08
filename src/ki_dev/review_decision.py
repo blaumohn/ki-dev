@@ -1,14 +1,17 @@
-"""Gemeinsamer Antwortvertrag für Build-Reviews (step und run).
+"""Gemeinsamer Antwortvertrag für Reviews (step und run).
 
-Kern ist ein JSON-Objekt ``{action, detail, requirement_ref}``. Alle
-Feldregeln stehen im JSON Schema (Draft202012Validator), auch die zwei
-Regeln zwischen den Feldern (``if``/``then``). ``ki-dev run``
-legt eine Identitätshülle (run_id, round_id) um denselben Kern; step
-hat keine (kein Laufspeicher) und bindet die Antwort über die
-Abnahmekriterien des Beads (AC1..ACn).
+Kern ist ein JSON-Objekt ``{event, detail, requirement_ref}``. ``event``
+ist ein Review-Ereignis des Ablaufs: ``PASS`` oder eine seiner
+Befundklassen (``finding_class``); das Urteil (CHANGES,
+NEEDS_DECISION, ESCALATE) folgt aus der Klasse und steht nie selbst in
+der Antwort. So gibt es genau ein Vokabular: das des Ablaufs.
 
-Erlaubte Aktionen sind ein Parameter: step kennt PASS, CHANGES und
-NEEDS_DECISION; ``ki-dev run`` zusätzlich ESCALATE.
+Alle Feldregeln stehen im JSON Schema (Draft202012Validator), auch die
+zwei Regeln zwischen den Feldern (``if``/``then``); das erlaubte
+``event``-enum entsteht aus dem Ablauf. ``ki-dev run`` legt eine
+Identitätshülle (run_id, round_id) um denselben Kern; step hat keine
+(kein Laufspeicher) und bindet die Antwort über die Abnahmekriterien
+des Beads (AC1..ACn).
 """
 
 from __future__ import annotations
@@ -17,26 +20,13 @@ import json
 import re
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
-from enum import StrEnum
 from typing import Protocol, cast
 
 from jsonschema import Draft202012Validator
 
+from ki_dev.flow.model import PASS, Flow, Verdict
 
-class ReviewAction(StrEnum):
-    CHANGES = "CHANGES"
-    PASS = "PASS"
-    NEEDS_DECISION = "NEEDS_DECISION"
-    ESCALATE = "ESCALATE"
-
-
-STEP_ACTIONS = (
-    ReviewAction.PASS,
-    ReviewAction.CHANGES,
-    ReviewAction.NEEDS_DECISION,
-)
-RUN_ACTIONS = (*STEP_ACTIONS, ReviewAction.ESCALATE)
-CORE_FIELDS = ("action", "detail", "requirement_ref")
+CORE_FIELDS = ("event", "detail", "requirement_ref")
 
 
 class ReviewContractError(ValueError):
@@ -48,7 +38,7 @@ class ReviewContractError(ValueError):
 class ReviewVerdict:
     """Geprüfter Kern einer Review-Antwort."""
 
-    action: ReviewAction
+    event: str
     detail: str
     requirement_ref: str | None
 
@@ -70,36 +60,39 @@ def load_json_object(raw: str) -> dict:
 
 def parse_verdict(
     value: Mapping[str, object],
-    actions: Collection[ReviewAction],
+    flow: Flow,
     extra_properties: Mapping[str, dict] | None = None,
 ) -> ReviewVerdict:
-    """Kern prüfen. ``extra_properties`` erlaubt einem Aufrufer
-    zusätzliche, optionale Felder mit eigenem Schema (step: 5we)."""
-    _check_schema(value, actions, extra_properties or {})
-    action = ReviewAction(value["action"])
+    """Kern gegen das Review-Vokabular von ``flow`` prüfen.
+    ``extra_properties`` erlaubt einem Aufrufer zusätzliche, optionale
+    Felder mit eigenem Schema (step: 5we)."""
+    _check_schema(value, flow, extra_properties or {})
+    event = cast(str, value["event"])
     detail = cast(str, value["detail"])
     ref = cast("str | None", value["requirement_ref"])
-    return ReviewVerdict(action, detail, ref)
+    return ReviewVerdict(event, detail, ref)
 
 
 class _Bindable(Protocol):
-    action: ReviewAction
+    event: str
     detail: str
     requirement_ref: str | None
 
 
 def bind_requirement[D: _Bindable](
-    decision: D, refs: Collection[str]
+    decision: D, refs: Collection[str], flow: Flow
 ) -> D:
-    """Binde CHANGES an ein bestehendes, eindeutiges Abnahmekriterium.
+    """Binde ein CHANGES-Ereignis an ein bestehendes, eindeutiges
+    Abnahmekriterium.
 
     Eine fehlende, unbekannte oder fremde Referenz wird nicht als
     Reparaturauftrag übernommen: mehrdeutige Anforderungen oder eine
     strengere neue Interpretation brauchen eine menschliche Klärung
-    (NEEDS_DECISION) statt einer automatischen Baurunde. Geprüft wird
-    nur die technische Referenz, nicht die inhaltliche Berechtigung.
+    (``flow.unbound_changes_event()``, NEEDS_DECISION) statt einer
+    automatischen Runde. Geprüft wird nur die technische Referenz,
+    nicht die inhaltliche Berechtigung.
     """
-    if decision.action is not ReviewAction.CHANGES:
+    if flow.verdict(decision.event) is not Verdict.CHANGES:
         return decision
     if decision.requirement_ref in refs:
         return decision
@@ -111,7 +104,7 @@ def bind_requirement[D: _Bindable](
     )
     return replace(
         decision,
-        action=ReviewAction.NEEDS_DECISION,
+        event=flow.unbound_changes_event(),
         detail=(
             f"CHANGES abgewiesen ({reason}); Klaerung noetig statt "
             f"automatischer Baurunde. Ursprungsbegruendung: "
@@ -161,30 +154,39 @@ _REF_SCHEMA = {
     ]
 }
 
-# Regeln zwischen Feldern: Nicht-PASS braucht ein nichtleeres detail;
-# requirement_ref ist außer bei CHANGES null.
-_ACTION_RULES = [
-    {
-        "if": {
-            "required": ["action"],
-            "properties": {"action": {"not": {"const": "PASS"}}},
+
+def _event_rules(flow: Flow) -> list[dict]:
+    """Regeln zwischen Feldern: Nicht-PASS braucht ein nichtleeres
+    detail; requirement_ref ist außer bei CHANGES-Ereignissen null."""
+    changes = list(flow.events_with(Verdict.CHANGES))
+    return [
+        {
+            "if": {
+                "required": ["event"],
+                "properties": {"event": {"not": {"const": PASS}}},
+            },
+            "then": {"properties": {"detail": {"pattern": r"\S"}}},
         },
-        "then": {"properties": {"detail": {"pattern": r"\S"}}},
-    },
-    {
-        "if": {
-            "required": ["action"],
-            "properties": {"action": {"not": {"const": "CHANGES"}}},
+        {
+            "if": {
+                "required": ["event"],
+                "properties": {"event": {"not": {"enum": changes}}},
+            },
+            "then": {
+                "properties": {"requirement_ref": {"type": "null"}}
+            },
         },
-        "then": {"properties": {"requirement_ref": {"type": "null"}}},
-    },
-]
+    ]
+
 
 # Diagnose je (Feld, Regel); der Text stammt aus dem Vertrag, nie aus
 # der Antwort.
 _FIELD_DIAGNOSES = {
     ("detail", "pattern"): "Nicht-PASS braucht eine Begruendung",
-    ("requirement_ref", "type"): "ist außer bei CHANGES null",
+    (
+        "requirement_ref",
+        "type",
+    ): "ist außer bei CHANGES-Ereignissen null",
 }
 
 _DIAGNOSES = {
@@ -196,29 +198,30 @@ _DIAGNOSES = {
 }
 
 
-def _schema(
-    actions: Collection[ReviewAction], extra: Mapping[str, dict]
+def review_schema(
+    flow: Flow, extra: Mapping[str, dict] | None = None
 ) -> dict:
+    """JSON Schema des Kerns; das ``event``-enum kommt aus ``flow``."""
     return {
         "type": "object",
         "required": list(CORE_FIELDS),
         "additionalProperties": False,
         "properties": {
-            "action": {"enum": [action.value for action in actions]},
+            "event": {"enum": list(flow.review_events())},
             "detail": {"type": "string"},
             "requirement_ref": _REF_SCHEMA,
-            **extra,
+            **(extra or {}),
         },
-        "allOf": _ACTION_RULES,
+        "allOf": _event_rules(flow),
     }
 
 
 def _check_schema(
     value: Mapping[str, object],
-    actions: Collection[ReviewAction],
+    flow: Flow,
     extra: Mapping[str, dict],
 ) -> None:
-    validator = Draft202012Validator(_schema(actions, extra))
+    validator = Draft202012Validator(review_schema(flow, extra))
     errors = sorted(
         validator.iter_errors(value),
         key=lambda error: list(map(str, error.absolute_path)),
