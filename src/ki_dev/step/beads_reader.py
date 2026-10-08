@@ -72,7 +72,7 @@ def read_issue(bead_id: str, workdir: Path) -> HandoffIssue:
 
 
 def _read_raw(bead_id: str, workdir: Path) -> dict:
-    _check_bead_id(bead_id)
+    check_bead_id(bead_id)
     stdout = _run_bd(
         ["--readonly", "show", bead_id, "--json"], workdir, bead_id
     )
@@ -140,7 +140,7 @@ def _parent(raw: dict) -> str | None:
     return next(iter(parents), None)
 
 
-def _check_bead_id(bead_id: str) -> None:
+def check_bead_id(bead_id: str) -> None:
     if not bead_id.strip() or bead_id.startswith("-"):
         raise InvalidBeadIdError(
             "BEAD_ID darf nicht leer sein und nicht mit '-' beginnen"

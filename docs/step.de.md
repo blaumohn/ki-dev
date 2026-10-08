@@ -17,6 +17,16 @@ Mensch. `step` garantiert keine Bindung an den Quellstand. Halte den
 Arbeitsstand während Vorlauf und Review passend; nach weiteren Änderungen
 starte den Vorlauf erneut.
 
+**Laufzustand je Bead.** Jeder Aufruf endet in einem Halt des Ablaufs; step
+speichert ihn unter `.local/handoff/steps/<BEAD_ID>/state.json` (Zustand und
+Tatsachen für Wächter, etwa „kein PASS nach Teillauf“) und protokolliert jede
+genommene Kante in `events.jsonl` (wie `ki-dev run`). `ki-dev step BEAD_ID`
+ohne `--step` setzt fort: nach dem Schreiben folgt das Review, nach der
+Korrektur die Folgerunde; in Review, Entscheidung und Quelle nennt step die
+Folgeschritte. Ein ausdrückliches `--step` beginnt dort; weicht das vom
+letzten Halt ab, steht ein Hinweis auf stderr und der Sprung im Protokoll.
+Der Zustand ist lokaler Arbeitsstand, nicht Teil von bd/Dolt.
+
 `ki-dev step BEAD_ID --step STEP` prüft einen Bead formal und gibt eine
 kurze, kopierbare Arbeitsübergabe aus. Du startest die passende Agentensitzung
 selbst und fügst den Text dort ein. Diese Form liest den Bead nur

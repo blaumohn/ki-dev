@@ -32,10 +32,11 @@ from ki_dev.session_snapshot import SnapshotTitleError, validate_title
 from ki_dev.step.beads_reader import (
     BeadsReadError,
     InvalidBeadIdError,
+    check_bead_id,
     read_issue,
 )
 from ki_dev.step.beads_source import BeadsSourceError
-from ki_dev.step.contract import ReviewTarget, Step
+from ki_dev.step.contract import ReviewTarget, Step, one_line
 from ki_dev.step.decision import (
     DecisionInputError,
     parse_step_decision,
@@ -97,6 +98,12 @@ from ki_dev.step.preflight_options import (
     parse_preflight_skip,
 )
 from ki_dev.step.source import HandoffSourceError
+from ki_dev.step.state import (
+    SavedState,
+    StepStateError,
+    load_state,
+    remember,
+)
 
 IMPLEMENT = "implement"
 IMPLEMENT_REVIEW = "implement.review"
@@ -113,7 +120,11 @@ Eine Arbeitsübergabe für eine neue Agentensitzung ausgeben.
 
 AUFRUFE
   ki-dev step BEAD_ID --step STEP
-    Übergabe aus einem vorhandenen Bead erstellen.
+    Übergabe aus einem vorhandenen Bead erstellen (beginnt dort).
+  ki-dev step BEAD_ID
+    Gespeicherten Zustand fortsetzen (.local/handoff/steps/BEAD_ID):
+    nach dem Schreiben folgt das Review, nach der Korrektur die
+    Folgerunde, sonst die Folgeschritte für den Menschen.
   ki-dev step map --agent codex --session SESSION_ID --title TITEL
     Codex- oder Claude-Sitzung als Quelle importieren und Kartierung
     vorbereiten.
@@ -124,7 +135,7 @@ SCHRITTE (--step)
   map          Anforderungen aus Rohnotizen kartieren.
   graph        Aus der Karte einzelne Vorgänge ableiten.
   materialize  Einen Vorgang ausführungsreif beschreiben.
-  implement        Den beschriebenen Auftrag umsetzen.
+  implement    Den beschriebenen Auftrag umsetzen.
   review       Ein Ergebnis in einer getrennten Sitzung prüfen.
 
 BEISPIELE
@@ -139,6 +150,7 @@ BEISPIELE
   ki-dev step projekt-42 --step review --next-turn
   ki-dev step projekt-42 --step review --next-turn --feedback-file -
   ki-dev step projekt-42 --step review --next-turn --decision-file -
+  ki-dev step projekt-42
   ki-dev step map --agent claude --session SESSION_ID --title 'Docker'
   ki-dev step local > uebergabe.txt
 
@@ -161,9 +173,10 @@ NÄCHSTE NACHRICHT (--step review --next-turn)
   600, in pyproject.toml, Abschnitt tool.ki-dev.handoff; nie gekürzt).
   Ohne die Option wird nichts gelesen.
   --decision-file DATEI|- liest stattdessen die JSON-Antwort der
-  Umsetzungs-Review (action, detail, requirement_ref; höchstens 20000
+  Umsetzungs-Review (event, detail, requirement_ref; höchstens 20000
   Zeichen) und gibt ohne Vorlauf die Nachricht laut Planungsablauf aus:
-  fix (CHANGES) -> Umsetzer, sonst -> Mensch. Ungültig: Exit 2.
+  fix (CHANGES) -> Umsetzer, sonst -> Mensch. PASS nach einem Teillauf
+  weist der Ablauf ab. Ungültig: Exit 2.
 
 BASISGRENZE
   Die gerenderte Basisübergabe (ohne Leitlinien und Prüfbericht) hat
@@ -214,7 +227,8 @@ def handoff(
         typer.Option(
             "--step",
             metavar="STEP",
-            help="Schritt der Übergabe (für BEAD_ID erforderlich).",
+            help="Schritt der Übergabe; ohne --step setzt step den "
+            "gespeicherten Zustand fort.",
             show_default=False,
         ),
     ] = None,
@@ -348,6 +362,15 @@ def handoff(
         )
 
 
+class _Output(NamedTuple):
+    """Ausgabe eines Bead-Aufrufs: Text, Exitcode, Halt des Ablaufs."""
+
+    text: str
+    exit_code: int
+    halt: Halt
+    flow: PlanningFlow
+
+
 class _Inputs(NamedTuple):
     """Eingaben der Folgerunde: --feedback-file, --decision-file."""
 
@@ -383,19 +406,23 @@ def _bead_form(
     next_turn: bool,
     inputs: _Inputs,
 ) -> None:
-    if bead_id is None or step is None:
+    if bead_id is None:
         _fail(
-            "Aufruf: BEAD_ID --step STEP oder map --agent codex "
+            "Aufruf: BEAD_ID [--step STEP] oder map --agent codex "
             "--session SESSION_ID",
             code=2,
         )
+    saved = _saved_state(bead_id)
+    if step is None:
+        _continue(bead_id, saved, review_of, options, next_turn, inputs)
+        return
     extra = _review_options(
         step, review_of, options, next_turn, inputs.feedback
     )
     _check_decision_options(review_of, options, next_turn, inputs)
     try:
-        text, exit_code = _bead_output(
-            bead_id, step, review_of, extra, next_turn, inputs
+        output = _bead_output(
+            bead_id, step, review_of, extra, next_turn, inputs, saved
         )
     except (
         InvalidBeadIdError,
@@ -413,9 +440,74 @@ def _bead_form(
         _fail(f"Vorlauf-Konfiguration ungültig: {exc}", code=2)
     except (FeedbackReadError, LimitConfigReadError) as exc:
         _fail(str(exc), code=1)
-    typer.echo(text, nl=False)
-    if exit_code:
-        raise typer.Exit(code=exit_code)
+    _note_jump(saved, output.halt)
+    remember(bead_id, output.halt, output.flow.flow)
+    typer.echo(output.text, nl=False)
+    if output.exit_code:
+        raise typer.Exit(code=output.exit_code)
+
+
+def _saved_state(bead_id: str) -> SavedState | None:
+    try:
+        check_bead_id(bead_id)
+        return load_state(bead_id)
+    except InvalidBeadIdError as exc:
+        _fail(str(exc), code=2)
+    except StepStateError as exc:
+        _fail(f"Laufzustand ungültig: {exc}", code=2)
+
+
+def _continue(
+    bead_id: str,
+    saved: SavedState | None,
+    review_of: ReviewTarget | None,
+    options: _PreflightValues,
+    next_turn: bool,
+    inputs: _Inputs,
+) -> None:
+    """Ohne --step: den gespeicherten Zustand fortsetzen. Nach dem
+    Schreiben folgt das Review, nach der Korrektur die Folgerunde; wo
+    eine Antwort oder Entscheidung fehlt, nennt step die
+    Folgeschritte."""
+    if review_of or options or next_turn or any(inputs):
+        _fail(
+            "ohne --step setzt step den gespeicherten Zustand fort; "
+            "weitere Optionen nur mit --step",
+            code=2,
+        )
+    if saved is None:
+        _fail(
+            f"Bead {bead_id}: kein gespeicherter Zustand; beginne mit "
+            "--step STEP",
+            code=2,
+        )
+    flow = _planning_flow()
+    kind = flow.flow.state(saved.state).kind
+    phase = saved.state.partition(".")[0]
+    if kind in ("write", "correction"):
+        _bead_form(
+            bead_id,
+            Step.REVIEW,
+            ReviewTarget(phase),
+            _PreflightValues([], []),
+            kind == "correction",
+            _Inputs(None, None),
+        )
+        return
+    lines = flow.hint_lines(saved.state, one_line(bead_id))
+    typer.echo("\n".join(lines) + "\n", nl=False)
+
+
+def _note_jump(saved: SavedState | None, halt: Halt) -> None:
+    """Beginnt ein Aufruf woanders, als der letzte endete, steht das im
+    Protokoll (check_conformance) und hier als Hinweis auf stderr."""
+    start = halt.entry.source if halt.entry is not None else halt.state
+    if saved is not None and saved.state != start:
+        typer.echo(
+            f"Hinweis: letzter Halt {saved.state}, dieser Aufruf "
+            f"beginnt in {start} (im Protokoll als Sprung sichtbar).",
+            err=True,
+        )
 
 
 def _fail_incomplete(
@@ -436,8 +528,9 @@ def _bead_output(
     extra: _PreflightRequest,
     next_turn: bool,
     inputs: _Inputs,
-) -> tuple[str, int]:
-    """Übergabetext und Exitcode. Die Basisgrenze gilt nicht für
+    saved: SavedState | None,
+) -> _Output:
+    """Übergabetext, Exitcode und Halt. Die Basisgrenze gilt nicht für
     ``--next-turn`` (Folgenachricht, eigener Vertrag); sonst wird sie
     vor jedem Beads-Zugriff und Vorlauf gelesen."""
     flow = _planning_flow()
@@ -445,21 +538,24 @@ def _bead_output(
     if step is Step.REVIEW and next_turn:
         issue = read_issue(bead_id, Path.cwd())
         if inputs.decision is not None:
-            return _decision_turn(
-                issue, inputs.decision, flow, bound
-            ), 0
-        return _next_turn_handoff(
+            text, halt = _decision_turn(
+                issue, inputs.decision, flow, bound, saved
+            )
+            return _Output(text, 0, halt, flow)
+        text, code, halt = _next_turn_handoff(
             issue, review_of, extra, inputs.feedback, flow, bound
         )
+        return _Output(text, code, halt, flow)
     limit = load_base_max_chars(Path.cwd())
     issue = read_issue(bead_id, Path.cwd())
     if step is Step.REVIEW:
         guidelines = _selected_guidelines(step, review_of)
-        return _review_handoff(
+        text, code, halt = _review_handoff(
             issue, review_of, extra, guidelines, limit, flow, bound
         )
+        return _Output(text, code, halt, flow)
     # Projektion: Der Ablauf hält im Zustand der Phase bei ihrem turn.
-    _expect_turn(drive(bound, step.value, None, {}), step.value)
+    halt = _expect_turn(drive(bound, step.value, None, {}), step.value)
     guidelines = _selected_guidelines(step, None)
     text = render_handoff(
         issue,
@@ -468,7 +564,7 @@ def _bead_output(
         base_max_chars=limit,
         flow=flow,
     )
-    return text, 0
+    return _Output(text, 0, halt, flow)
 
 
 def _planning_flow() -> PlanningFlow:
@@ -571,8 +667,8 @@ def _review_handoff(
     base_max_chars: int,
     flow: PlanningFlow,
     bound: BoundFlow[PlanningContext],
-) -> tuple[str, int]:
-    """Übergabe für ``--step review`` und ihr Exitcode.
+) -> tuple[str, int, Halt]:
+    """Übergabe für ``--step review``, Exitcode und Halt.
 
     Nur für den (Standard- oder ausdrücklichen) Prüfgegenstand implement
     läuft der deterministische Vorlauf (Zustand implement.preflight):
@@ -588,7 +684,7 @@ def _review_handoff(
     """
     if review_of not in (None, ReviewTarget.IMPLEMENT):
         target = cast(ReviewTarget, review_of)
-        _expect_turn(
+        halt = _expect_turn(
             drive(bound, target.value, DONE, {}),
             f"{target.value}.review",
         )
@@ -599,7 +695,7 @@ def _review_handoff(
             guidelines,
             base_max_chars=base_max_chars,
             flow=flow,
-        ), 0
+        ), 0, halt
     problems = validate_handoff(issue, Step.REVIEW, review_of)
     if problems:
         raise HandoffInvalidError(problems)
@@ -612,13 +708,13 @@ def _review_handoff(
         limit = load_feedback_max_chars(Path.cwd())
         return render_repair_turn(
             issue, cast(str, outcome.failure), limit, None, flow=flow
-        ), 1
+        ), 1, halt
     return render_review_handoff(
         issue,
         cast(PreflightReport, outcome.report),
         guidelines,
         flow=flow,
-    ), 0
+    ), 0, halt
 
 
 class _PreflightOutcome(NamedTuple):
@@ -698,8 +794,8 @@ def _next_turn_handoff(
     feedback_file: str | None,
     flow: PlanningFlow,
     bound: BoundFlow[PlanningContext],
-) -> tuple[str, int]:
-    """Nächste Nachricht nach einer Korrektur und ihr Exitcode.
+) -> tuple[str, int, Halt]:
+    """Nächste Nachricht nach einer Korrektur, Exitcode und Halt.
 
     Alle Eingaben (Bead, Grenze, Rückmeldung) sind geprüft, bevor der
     Vorlauf startet. Nur der Prüfgegenstand implement läuft durch den
@@ -731,7 +827,7 @@ def _next_turn_handoff(
             flow=flow,
             pass_allowed=_pass_allowed(bound, halt),
         )
-        return text, 0
+        return text, 0, halt
     outcome = cast(_PreflightOutcome, outcome)
     if _is_correction(flow, halt):
         return render_repair_turn(
@@ -740,7 +836,7 @@ def _next_turn_handoff(
             limit,
             feedback,
             flow=flow,
-        ), 1
+        ), 1, halt
     text = render_review_turn(
         issue,
         target,
@@ -749,7 +845,7 @@ def _next_turn_handoff(
         flow=flow,
         pass_allowed=_pass_allowed(bound, halt),
     )
-    return text, 0
+    return text, 0, halt
 
 
 def _pass_allowed(
@@ -792,9 +888,12 @@ def _decision_turn(
     source: str,
     flow: PlanningFlow,
     bound: BoundFlow[PlanningContext],
-) -> str:
+    saved: SavedState | None,
+) -> tuple[str, Halt]:
     """Reviewer-Antwort prüfen und Nachricht laut Tabelle; der Bead
-    muss den Umsetzungsvertrag erfüllen (Abnahmekriterien)."""
+    muss den Umsetzungsvertrag erfüllen (Abnahmekriterien). Die
+    Wächter sehen den gespeicherten Laufzustand: nach einem Teillauf
+    weist der Ablauf PASS ab."""
     problems = validate_handoff(
         issue, Step.REVIEW, ReviewTarget.IMPLEMENT
     )
@@ -805,8 +904,16 @@ def _decision_turn(
         raw, issue, _project_preflight_config, flow=flow
     )
     # Das gebundene Ereignis nimmt die Kante aus implement.review.
-    drive(bound, IMPLEMENT_REVIEW, decision.verdict.event, {})
-    return render_decision_turn(issue, decision, flow=flow)
+    context = None if saved is None else saved.context()
+    try:
+        halt = drive(
+            bound, IMPLEMENT_REVIEW, decision.verdict.event, {}, context
+        )
+    except FlowError as exc:
+        raise DecisionInputError(
+            f"Review-Antwort ungültig: {exc} (Teillauf: kein PASS)"
+        ) from exc
+    return render_decision_turn(issue, decision, flow=flow), halt
 
 
 def _project_preflight_config() -> PreflightConfig:
