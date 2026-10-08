@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import copy
 import re
+import tomllib
 from functools import partial
+from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -23,7 +25,6 @@ from ki_dev.flow.model import (
     FlowError,
     parse_flow,
     reaching_final,
-    read_raw,
 )
 from ki_dev.flow.planning import (
     PlanningFlow,
@@ -36,6 +37,7 @@ from ki_dev.step.handoff import (
     render_handoff as _render_handoff,
 )
 
+FLAT = Path(__file__).parent / "fixtures" / "planning_flat.toml"
 FLOW = load_planning_flow()
 A = FLOW.flow
 END = A.final[0]
@@ -47,7 +49,9 @@ PROGRESS = ("PASS", "done", "accept", "imported")
 
 
 def _raw() -> dict:
-    return read_raw("planning")
+    """Flach ausgeschriebener Planungsablauf (gleich dem expandierten,
+    tests/test_flow_pattern.py): die Mutationen prüfen das Format."""
+    return tomllib.loads(FLAT.read_text(encoding="utf-8"))
 
 
 def test_shipped_table_is_valid_and_complete():

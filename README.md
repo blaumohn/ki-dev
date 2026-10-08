@@ -237,10 +237,10 @@ stateDiagram-v2
     implement_review --> source: source
     implement_review --> implement_decision: decision
     implement_correction --> implement_review: done
-    implement_correction --> implement_correction: preflight_failed
     implement_decision --> finished: accept
     implement_decision --> implement_correction: correct
     implement_decision --> source: source
+    implement_correction --> implement_correction: preflight_failed
     source --> map: imported
     finished --> [*]
 ```

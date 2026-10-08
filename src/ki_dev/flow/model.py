@@ -44,6 +44,8 @@ from typing import cast
 
 from jsonschema import Draft202012Validator
 
+from ki_dev.flow.pattern import PatternError, expand
+
 HISTORY = "@history"
 PASS = "PASS"
 """Review-Ereignis ohne Befund; jede andere Antwort ist eine
@@ -214,10 +216,15 @@ def read_raw(name: str) -> dict:
 
 
 def parse_flow(raw: object) -> Flow:
-    """Erst Schema, dann Beziehungen prüfen; danach Objekte bauen."""
-    _check_schema(raw)
-    table = cast(dict, raw)
-    where = f"{table['name']}.toml"
+    """Muster expandieren, dann Schema, dann Beziehungen prüfen;
+    danach Objekte bauen."""
+    _check_schema(raw, _PATTERN_VALIDATOR)
+    where = f"{cast(dict, raw).get('name')}.toml"
+    try:
+        table = expand(cast(dict, raw), where)
+    except PatternError as exc:
+        raise FlowError(str(exc)) from exc
+    _check_schema(table)
     flow = Flow(
         name=table["name"],
         start=table["start"],
@@ -436,10 +443,86 @@ _SCHEMA = {
 }
 _VALIDATOR = Draft202012Validator(_SCHEMA)
 
+# Muster und Phasen (vor der Expansion geprüft). Ein Musterzustand
+# trägt ``local`` statt ``id``; Kanten nennen lokale Namen, ``@next``
+# oder globale Zustände.
+_STATE_ITEM = _SCHEMA["properties"]["state"]["items"]
+_TRANSITION_ITEM = _SCHEMA["properties"]["transition"]["items"]
+_PATTERN_STATE = {
+    **_STATE_ITEM,
+    "required": ["local", "kind"],
+    "properties": {
+        **{
+            k: v
+            for k, v in _STATE_ITEM["properties"].items()
+            if k != "id"
+        },
+        "local": _NAME,
+    },
+}
+_PATTERN_TRANSITION = {
+    **_TRANSITION_ITEM,
+    "properties": {
+        **_TRANSITION_ITEM["properties"],
+        "source": _NAME,
+        "target": {"type": "string", "pattern": r"^@?[a-z_]+$"},
+    },
+}
+_PATTERN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "pattern": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "extends": _NAME,
+                    "globals": _NAMES,
+                    "state": {"type": "array", "items": _PATTERN_STATE},
+                    "transition": {
+                        "type": "array",
+                        "items": _PATTERN_TRANSITION,
+                    },
+                },
+            },
+        },
+        "phase": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["id", "use"],
+                "additionalProperties": False,
+                "properties": {
+                    "id": _NAME,
+                    "use": _NAME,
+                    "next": _ID,
+                    "actor": {
+                        "type": "object",
+                        "additionalProperties": _TEXT,
+                    },
+                    "hint": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "object",
+                            "additionalProperties": _TEXT,
+                        },
+                    },
+                },
+            },
+        },
+    },
+    "dependentRequired": {"phase": ["pattern"]},
+}
+_PATTERN_VALIDATOR = Draft202012Validator(_PATTERN_SCHEMA)
 
-def _check_schema(raw: object) -> None:
+
+def _check_schema(
+    raw: object, validator: Draft202012Validator = _VALIDATOR
+) -> None:
     errors = sorted(
-        _VALIDATOR.iter_errors(raw), key=lambda e: list(e.absolute_path)
+        validator.iter_errors(raw), key=lambda e: list(e.absolute_path)
     )
     if errors:
         error = errors[0]

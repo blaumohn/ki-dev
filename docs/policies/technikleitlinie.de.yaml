@@ -101,6 +101,13 @@ sections:
         (Prozess abgestürzt, Kontextgrenze) in den Ausführer.
       - Schichtrichtung: Ablauf kennt weder Ausführer noch Adapter, Adapter
         kennen keinen Ablauf (`tests/test_schichten.py`).
+      - Wiederkehrende Topologie steht einmal als Muster (`pattern`), jede
+        Phase liefert nur Parameter (`flow/pattern.py`). Ablaufdaten
+        enthalten Namen und Struktur, keine Ausdrücke in Strings
+        (`"new@first"`, `"a|b"`); dafür gibt es Tabellen und Namen. Ein
+        neuer Schalter in einem Muster wird ein neues Muster (z. B.
+        `write_review_preflight extends write_review`), kein
+        Bedingungsfeld.
 
       **Beispiel:** „Nach fünf CHANGES hält der Lauf an“ ist der Wächter
       `!changes_rounds_left` an der Kante `controller_step --fix-->` in

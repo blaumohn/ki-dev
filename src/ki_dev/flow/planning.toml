@@ -13,6 +13,8 @@
 # nach `priority`; das Urteil (CHANGES/NEEDS_DECISION) folgt aus der
 # Klasse. `hint` ist die Übergabe an den Menschen als Boten
 # (Adapter manual, `ki-dev step`); {bead} setzt ki-dev ein.
+# Die vier Phasen teilen ein Muster (`pattern`, flow/pattern.py); jede
+# Phase liefert nur ihre Parameter: nächste Phase, Akteure, Hinweise.
 # Format und Prüfung: src/ki_dev/flow/model.py.
 
 name = "planning"
@@ -48,87 +50,187 @@ text = "offene Frage, braucht eine neue Quelle"
 verdict = "NEEDS_DECISION"
 text = "nur der Mensch kann entscheiden"
 
-# --- Zustände ---------------------------------------------------------
+# --- Muster: Schreiben, getrenntes Review, Korrektur, Entscheidung ----
+# Lokale Zustände: write heißt wie die Phase, die übrigen PHASE.LOKAL.
+# Kantenziele: lokaler Zustand, @next (nächste Phase) oder globals.
 
-[[state]]
+[pattern.write_review]
+globals = ["source"]
+
+[[pattern.write_review.state]]
+local = "write"
+kind = "write"
+
+[[pattern.write_review.state]]
+local = "review"
+kind = "review"
+
+[[pattern.write_review.state]]
+local = "correction"
+kind = "correction"
+
+[[pattern.write_review.state]]
+local = "decision"
+kind = "decision"
+actor = "Mensch"
+
+[[pattern.write_review.transition]]
+source = "write"
+event = "done"
+target = "review"
+
+[[pattern.write_review.transition]]
+source = "review"
+event = "PASS"
+target = "@next"
+
+[[pattern.write_review.transition]]
+source = "review"
+event = "fix"
+target = "correction"
+
+[[pattern.write_review.transition]]
+source = "review"
+event = "source"
+target = "source"
+hint = "offene Fragen in einer Planungssitzung klären"
+
+[[pattern.write_review.transition]]
+source = "review"
+event = "decision"
+target = "decision"
+hint = "du entscheidest: accept, correct oder source"
+
+[[pattern.write_review.transition]]
+source = "correction"
+event = "done"
+target = "review"
+
+[[pattern.write_review.transition]]
+source = "decision"
+event = "accept"
+target = "@next"
+
+[[pattern.write_review.transition]]
+source = "decision"
+event = "correct"
+target = "correction"
+
+[[pattern.write_review.transition]]
+source = "decision"
+event = "source"
+target = "source"
+hint = "Entscheidung in einer Planungssitzung festhalten"
+
+# Umsetzung: zusätzlich der deterministische Vorlauf vor dem Review.
+[pattern.write_review_preflight]
+extends = "write_review"
+
+[[pattern.write_review_preflight.transition]]
+source = "correction"
+event = "preflight_failed"
+target = "correction"
+
+# --- Phasen -----------------------------------------------------------
+
+[[phase]]
 id = "map"
-kind = "write"
-actor = "Kartierungsagent"
+use = "write_review"
+next = "graph"
 
-[[state]]
-id = "map.review"
-kind = "review"
-actor = "Review-Agent (Kartenprüfung)"
+[phase.actor]
+write = "Kartierungsagent"
+review = "Review-Agent (Kartenprüfung)"
+correction = "Kartierungsagent (bisherige Sitzung)"
 
-[[state]]
-id = "map.correction"
-kind = "correction"
-actor = "Kartierungsagent (bisherige Sitzung)"
+[phase.hint.write]
+done = "`ki-dev step KARTE --step review --review-of map` (KARTE = erstellte oder ergänzte Karte)"
 
-[[state]]
-id = "map.decision"
-kind = "decision"
-actor = "Mensch"
+[phase.hint.review]
+PASS = "`ki-dev step {bead} --step graph`"
+fix = "Befunde an den Kartierungsagenten (bisherige Sitzung)"
 
-[[state]]
+[phase.hint.correction]
+done = "`ki-dev step {bead} --step review --review-of map --next-turn`"
+
+[phase.hint.decision]
+accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step graph`"
+correct = "Entscheidung an den Kartierungsagenten (bisherige Sitzung)"
+
+[[phase]]
 id = "graph"
-kind = "write"
-actor = "Auflösungsagent"
+use = "write_review"
+next = "materialize"
 
-[[state]]
-id = "graph.review"
-kind = "review"
-actor = "Review-Agent (Graphprüfung)"
+[phase.actor]
+write = "Auflösungsagent"
+review = "Review-Agent (Graphprüfung)"
+correction = "Auflösungsagent (bisherige Sitzung)"
 
-[[state]]
-id = "graph.correction"
-kind = "correction"
-actor = "Auflösungsagent (bisherige Sitzung)"
+[phase.hint.write]
+done = "je dünnem Vorgang `ki-dev step VORGANG --step review --review-of graph`"
 
-[[state]]
-id = "graph.decision"
-kind = "decision"
-actor = "Mensch"
+[phase.hint.review]
+PASS = "`ki-dev step {bead} --step materialize`"
+fix = "Befunde an den Auflösungsagenten (bisherige Sitzung)"
 
-[[state]]
+[phase.hint.correction]
+done = "`ki-dev step {bead} --step review --review-of graph --next-turn`"
+
+[phase.hint.decision]
+accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step materialize`"
+correct = "Entscheidung an den Auflösungsagenten (bisherige Sitzung)"
+
+[[phase]]
 id = "materialize"
-kind = "write"
-actor = "Materialisierungsagent"
+use = "write_review"
+next = "implement"
 
-[[state]]
-id = "materialize.review"
-kind = "review"
-actor = "Review-Agent (Materialisierungsprüfung)"
+[phase.actor]
+write = "Materialisierungsagent"
+review = "Review-Agent (Materialisierungsprüfung)"
+correction = "Materialisierungsagent (bisherige Sitzung)"
 
-[[state]]
-id = "materialize.correction"
-kind = "correction"
-actor = "Materialisierungsagent (bisherige Sitzung)"
+[phase.hint.write]
+done = "`ki-dev step {bead} --step review --review-of materialize`"
 
-[[state]]
-id = "materialize.decision"
-kind = "decision"
-actor = "Mensch"
+[phase.hint.review]
+PASS = "`ki-dev step {bead} --step implement`"
+fix = "Befunde an den Materialisierungsagenten (bisherige Sitzung)"
 
-[[state]]
+[phase.hint.correction]
+done = "`ki-dev step {bead} --step review --review-of materialize --next-turn`"
+
+[phase.hint.decision]
+accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step implement`"
+correct = "Entscheidung an den Materialisierungsagenten (bisherige Sitzung)"
+
+[[phase]]
 id = "implement"
-kind = "write"
-actor = "Umsetzer (implementer)"
+use = "write_review_preflight"
+next = "finished"
 
-[[state]]
-id = "implement.review"
-kind = "review"
-actor = "Review-Agent (nach deterministischem Vorlauf)"
+[phase.actor]
+write = "Umsetzer (implementer)"
+review = "Review-Agent (nach deterministischem Vorlauf)"
+correction = "Umsetzer (implementer, bisherige Sitzung)"
 
-[[state]]
-id = "implement.correction"
-kind = "correction"
-actor = "Umsetzer (implementer, bisherige Sitzung)"
+[phase.hint.write]
+done = "`ki-dev step {bead} --step review` (mit Vorlauf)"
 
-[[state]]
-id = "implement.decision"
-kind = "decision"
-actor = "Mensch"
+[phase.hint.review]
+PASS = "Schließen entscheidest du (`bd close {bead}`)"
+fix = "Befunde an den Umsetzer (implementer) (bisherige Sitzung)"
+
+[phase.hint.correction]
+done = "`ki-dev step {bead} --step review --next-turn` (Vorlauf, optional `--feedback-file DATEI|-`)"
+preflight_failed = "Exit 1 von --next-turn: Nachricht an den Umsetzer (implementer)"
+
+[phase.hint.decision]
+accept = "Entscheidung im Bead festhalten (kein PASS); Schließen entscheidest du"
+correct = "Entscheidung an den Umsetzer (implementer) (bisherige Sitzung)"
+
+# --- gemeinsame Zustände ----------------------------------------------
 
 [[state]]
 id = "source"
@@ -139,236 +241,6 @@ actor = "Mensch (Planungssitzung)"
 id = "finished"
 kind = "final"
 actor = "Mensch"
-
-# --- map --------------------------------------------------------------
-
-[[transition]]
-source = "map"
-event = "done"
-target = "map.review"
-hint = "`ki-dev step KARTE --step review --review-of map` (KARTE = erstellte oder ergänzte Karte)"
-
-[[transition]]
-source = "map.review"
-event = "PASS"
-target = "graph"
-hint = "`ki-dev step {bead} --step graph`"
-
-[[transition]]
-source = "map.review"
-event = "fix"
-target = "map.correction"
-hint = "Befunde an den Kartierungsagenten (bisherige Sitzung)"
-
-[[transition]]
-source = "map.review"
-event = "source"
-target = "source"
-hint = "offene Fragen in einer Planungssitzung klären"
-
-[[transition]]
-source = "map.review"
-event = "decision"
-target = "map.decision"
-hint = "du entscheidest: accept, correct oder source"
-
-[[transition]]
-source = "map.correction"
-event = "done"
-target = "map.review"
-hint = "`ki-dev step {bead} --step review --review-of map --next-turn`"
-
-[[transition]]
-source = "map.decision"
-event = "accept"
-target = "graph"
-hint = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step graph`"
-
-[[transition]]
-source = "map.decision"
-event = "correct"
-target = "map.correction"
-hint = "Entscheidung an den Kartierungsagenten (bisherige Sitzung)"
-
-[[transition]]
-source = "map.decision"
-event = "source"
-target = "source"
-hint = "Entscheidung in einer Planungssitzung festhalten"
-
-# --- graph ------------------------------------------------------------
-
-[[transition]]
-source = "graph"
-event = "done"
-target = "graph.review"
-hint = "je dünnem Vorgang `ki-dev step VORGANG --step review --review-of graph`"
-
-[[transition]]
-source = "graph.review"
-event = "PASS"
-target = "materialize"
-hint = "`ki-dev step {bead} --step materialize`"
-
-[[transition]]
-source = "graph.review"
-event = "fix"
-target = "graph.correction"
-hint = "Befunde an den Auflösungsagenten (bisherige Sitzung)"
-
-[[transition]]
-source = "graph.review"
-event = "source"
-target = "source"
-hint = "offene Fragen in einer Planungssitzung klären"
-
-[[transition]]
-source = "graph.review"
-event = "decision"
-target = "graph.decision"
-hint = "du entscheidest: accept, correct oder source"
-
-[[transition]]
-source = "graph.correction"
-event = "done"
-target = "graph.review"
-hint = "`ki-dev step {bead} --step review --review-of graph --next-turn`"
-
-[[transition]]
-source = "graph.decision"
-event = "accept"
-target = "materialize"
-hint = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step materialize`"
-
-[[transition]]
-source = "graph.decision"
-event = "correct"
-target = "graph.correction"
-hint = "Entscheidung an den Auflösungsagenten (bisherige Sitzung)"
-
-[[transition]]
-source = "graph.decision"
-event = "source"
-target = "source"
-hint = "Entscheidung in einer Planungssitzung festhalten"
-
-# --- materialize ------------------------------------------------------
-
-[[transition]]
-source = "materialize"
-event = "done"
-target = "materialize.review"
-hint = "`ki-dev step {bead} --step review --review-of materialize`"
-
-[[transition]]
-source = "materialize.review"
-event = "PASS"
-target = "implement"
-hint = "`ki-dev step {bead} --step implement`"
-
-[[transition]]
-source = "materialize.review"
-event = "fix"
-target = "materialize.correction"
-hint = "Befunde an den Materialisierungsagenten (bisherige Sitzung)"
-
-[[transition]]
-source = "materialize.review"
-event = "source"
-target = "source"
-hint = "offene Fragen in einer Planungssitzung klären"
-
-[[transition]]
-source = "materialize.review"
-event = "decision"
-target = "materialize.decision"
-hint = "du entscheidest: accept, correct oder source"
-
-[[transition]]
-source = "materialize.correction"
-event = "done"
-target = "materialize.review"
-hint = "`ki-dev step {bead} --step review --review-of materialize --next-turn`"
-
-[[transition]]
-source = "materialize.decision"
-event = "accept"
-target = "implement"
-hint = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step implement`"
-
-[[transition]]
-source = "materialize.decision"
-event = "correct"
-target = "materialize.correction"
-hint = "Entscheidung an den Materialisierungsagenten (bisherige Sitzung)"
-
-[[transition]]
-source = "materialize.decision"
-event = "source"
-target = "source"
-hint = "Entscheidung in einer Planungssitzung festhalten"
-
-# --- implement --------------------------------------------------------
-
-[[transition]]
-source = "implement"
-event = "done"
-target = "implement.review"
-hint = "`ki-dev step {bead} --step review` (mit Vorlauf)"
-
-[[transition]]
-source = "implement.review"
-event = "PASS"
-target = "finished"
-hint = "Schließen entscheidest du (`bd close {bead}`)"
-
-[[transition]]
-source = "implement.review"
-event = "fix"
-target = "implement.correction"
-hint = "Befunde an den Umsetzer (implementer) (bisherige Sitzung)"
-
-[[transition]]
-source = "implement.review"
-event = "source"
-target = "source"
-hint = "offene Fragen in einer Planungssitzung klären"
-
-[[transition]]
-source = "implement.review"
-event = "decision"
-target = "implement.decision"
-hint = "du entscheidest: accept, correct oder source"
-
-[[transition]]
-source = "implement.correction"
-event = "done"
-target = "implement.review"
-hint = "`ki-dev step {bead} --step review --next-turn` (Vorlauf, optional `--feedback-file DATEI|-`)"
-
-[[transition]]
-source = "implement.correction"
-event = "preflight_failed"
-target = "implement.correction"
-hint = "Exit 1 von --next-turn: Nachricht an den Umsetzer (implementer)"
-
-[[transition]]
-source = "implement.decision"
-event = "accept"
-target = "finished"
-hint = "Entscheidung im Bead festhalten (kein PASS); Schließen entscheidest du"
-
-[[transition]]
-source = "implement.decision"
-event = "correct"
-target = "implement.correction"
-hint = "Entscheidung an den Umsetzer (implementer) (bisherige Sitzung)"
-
-[[transition]]
-source = "implement.decision"
-event = "source"
-target = "source"
-hint = "Entscheidung in einer Planungssitzung festhalten"
 
 # --- neue Quelle: immer über die bestehende Karte ---------------------
 
