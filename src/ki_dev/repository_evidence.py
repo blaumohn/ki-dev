@@ -1,4 +1,4 @@
-"""Reale, konfigurierbare Nachweiserfassung fuer eine Loop-Runde."""
+"""Reale, konfigurierbare Nachweiserfassung fuer eine Bau-Runde."""
 
 from __future__ import annotations
 
@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from ki_dev.adapter.contract import (
+    BuildReport,
+    RunTask,
+)
 from ki_dev.deltas import (
     ChangeMedium,
     CheckOutcome,
@@ -20,7 +24,6 @@ from ki_dev.deltas import (
     capture_media_refs,
     checkpoint_step_result,
 )
-from ki_dev.loop import BuildReport, LoopTask
 
 
 @dataclass(frozen=True)
@@ -45,14 +48,14 @@ class RepositoryEvidenceCollector:
     checks: tuple[CheckCommand, ...] = ()
     round_limit: int = 6
 
-    def prepare(self, task: LoopTask, round_id: int) -> object:
+    def prepare(self, task: RunTask, round_id: int) -> object:
         del round_id
         _require_clean_worktree(task.workdir)
         return _encode_refs(capture_media_refs(task.workdir))
 
     def collect(
         self,
-        task: LoopTask,
+        task: RunTask,
         round_id: int,
         base: object,
         run_base: object,
@@ -78,7 +81,7 @@ class RepositoryEvidenceCollector:
         )
 
 
-def _run_check(task: LoopTask, check: CheckCommand) -> CheckOutcome:
+def _run_check(task: RunTask, check: CheckCommand) -> CheckOutcome:
     """Fuehre einen Pruefauftrag im gebundenen Worktree aus.
 
     ``task.env`` ueberschreibt gezielt geerbte Umgebungsvariablen

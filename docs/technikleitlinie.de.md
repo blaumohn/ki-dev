@@ -9,7 +9,7 @@ Diese projektweite Leitlinie konkretisiert die
 [Architektur- und Programmierleitlinien](programmierleitlinie.de.md).
 Sie ist bei Planung, Materialisierung, Umsetzung und Review zu berücksichtigen
 und gilt für neue und
-fachlich geänderte Validierungs- und Prozessgrenzen. Bestehende Abweichungen
+fachlich geänderte Validierungs- und Prozessgrenzen sowie Abläufe. Bestehende Abweichungen
 sind keine Vorbilder; ihre Migration erfolgt im passenden Auftrag, ohne
 unbeteiligten Code nebenbei umzubauen.
 
@@ -53,6 +53,26 @@ Feldregeln nochmals zu implementieren.
 **Beispiel:** `bd --readonly show BEAD_ID --json` wird am Beads-Adapter über
 Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
 10 Sekunden Frist gestartet. Der Kern erhält den normalisierten Bead.
+
+## Abläufe als Daten
+
+- Zustände, Übergänge, Wiederholungsgrenzen und Halt stehen in einem
+  Ablauf unter `src/ki_dev/ablauf/*.toml`, nicht in Verzweigungen des
+  Ausführers. Eine Schleife ist eine Rückkante mit Wächter und zählender
+  Aktion, keine eigene Komponente oder Schicht.
+- Der Ausführer implementiert nur benannte Wächter, Aktionen und
+  Operationen; `binde` prüft beim Laden, dass Ablauf und Code dasselbe
+  Vokabular kennen. Agenten liefern Ereignisse und Laufdaten, wählen aber
+  nie selbst eine Kante.
+- Inhaltliche Entscheidungen (CHANGES → neue Runde, Rundenlimit,
+  Entscheidung des Menschen) gehören in den Ablauf, technische
+  (Prozess abgestürzt, Kontextgrenze) in den Ausführer.
+- Schichtrichtung: Ablauf kennt weder Ausführer noch Adapter, Adapter
+  kennen keinen Ablauf (`tests/test_schichten.py`).
+
+**Beispiel:** „Nach fünf CHANGES hält der Lauf an“ ist der Wächter
+`!korrekturrunden_frei` an der Kante `controller_changes` in `bau.toml`,
+nicht ein `if` in der Laufzeit.
 
 ## Ausnahmen
 

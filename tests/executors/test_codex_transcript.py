@@ -7,16 +7,16 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from ki_dev.executors import codex_transcript
-from ki_dev.executors.codex_sessions import (
+from ki_dev.adapter.executors import codex_transcript
+from ki_dev.adapter.executors.codex_sessions import (
     find_session_rollout,
     resolve_codex_sessions_dir,
 )
-from ki_dev.executors.session_transcript import (
+from ki_dev.adapter.executors.session_transcript import (
     TranscriptError,
     TranscriptRequestError,
 )
-from ki_dev.executors.transcript import (
+from ki_dev.adapter.executors.transcript import (
     read_session_transcript,
     transcript_agents,
     validate_session_request,

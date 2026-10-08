@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.executors import (
+from ki_dev.adapter.executors import (
     Effort,
     TurnResult,
     TurnStatus,
@@ -12,8 +12,8 @@ from ki_dev.executors import (
     build_executor,
     send_turn,
 )
-from ki_dev.executors.claude_cli import ClaudeCliAdapter
-from ki_dev.executors.codex_cli import CodexCliAdapter
+from ki_dev.adapter.executors.claude_cli import ClaudeCliAdapter
+from ki_dev.adapter.executors.codex_cli import CodexCliAdapter
 
 from .conftest import FakeRunner
 

@@ -8,8 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.executors import ClaudeCliAdapter, CodexCliAdapter, Effort
-from ki_dev.executors.contract import (
+from ki_dev.adapter.executors import (
+    ClaudeCliAdapter,
+    CodexCliAdapter,
+    Effort,
+)
+from ki_dev.adapter.executors.contract import (
     ContextStatus,
     QuotaStatus,
     TurnBudget,
@@ -17,7 +21,7 @@ from ki_dev.executors.contract import (
     TurnResult,
     TurnStatus,
 )
-from ki_dev.executors.metering import (
+from ki_dev.adapter.executors.metering import (
     claude_context_tokens,
     claude_result,
     codex_quota,
@@ -168,7 +172,7 @@ def test_claude_measure_context_reports_real_value(monkeypatch):
     (ki-dev-ablauf-agu): ``measure_context`` liefert nur den
     Messwert, ohne den naechsten Aufruf selbst zu verhindern."""
     monkeypatch.setattr(
-        "ki_dev.executors.claude_cli.claude_context_tokens",
+        "ki_dev.adapter.executors.claude_cli.claude_context_tokens",
         lambda *_: 90_000,
     )
     measurement = ClaudeCliAdapter().measure_context("session")
@@ -183,7 +187,8 @@ def test_claude_measure_context_reports_unavailable_explicitly(
         raise ValueError("Claude-Sitzung hat keinen Verbrauchsnachweis")
 
     monkeypatch.setattr(
-        "ki_dev.executors.claude_cli.claude_context_tokens", _raise
+        "ki_dev.adapter.executors.claude_cli.claude_context_tokens",
+        _raise,
     )
     measurement = ClaudeCliAdapter().measure_context("session")
     assert measurement.status is ContextStatus.UNAVAILABLE
@@ -624,7 +629,7 @@ def test_codex_quota_rejects_stale_event_despite_unexpired_window(
 
 def test_codex_measure_quota_reports_real_value(monkeypatch):
     monkeypatch.setattr(
-        "ki_dev.executors.codex_cli.codex_quota",
+        "ki_dev.adapter.executors.codex_cli.codex_quota",
         lambda *_: (42.0, 9_999_999_999),
     )
     measurement = CodexCliAdapter().measure_quota("session")
@@ -640,7 +645,7 @@ def test_codex_measure_quota_reports_unavailable_explicitly(
         raise ValueError("Codex-Rollout hat keine 5h-Kontingentmessung")
 
     monkeypatch.setattr(
-        "ki_dev.executors.codex_cli.codex_quota", _raise
+        "ki_dev.adapter.executors.codex_cli.codex_quota", _raise
     )
     measurement = CodexCliAdapter().measure_quota("session")
     assert measurement.status is QuotaStatus.UNAVAILABLE
@@ -742,7 +747,7 @@ def test_slow_version_probe_shrinks_turn_timeout_not_doubles_it(
     docs/cli-adapters.md dokumentiert."""
     runner = FakeRunner(_result(turn_output))
     monkeypatch.setattr(
-        "ki_dev.executors.base.time.monotonic",
+        "ki_dev.adapter.executors.base.time.monotonic",
         _MonotonicSequence([0.0, 150.0]),
     )
     adapter_type(runner=runner).send_turn(_request())
@@ -769,7 +774,7 @@ def test_version_probe_exhausting_deadline_skips_the_turn(
     TurnStatus-Werte sind laut Vertrag bewusst disjunkt."""
     runner = FakeRunner(_result(turn_output))
     monkeypatch.setattr(
-        "ki_dev.executors.base.time.monotonic",
+        "ki_dev.adapter.executors.base.time.monotonic",
         _MonotonicSequence([0.0, 200.0]),
     )
     result = adapter_type(runner=runner).send_turn(_request())

@@ -5,9 +5,9 @@ from hypothesis import strategies as st
 from typer.testing import CliRunner
 
 import ki_dev.cli
+from ki_dev.ausfuehrer.machine import Phase
+from ki_dev.ausfuehrer.run_runtime import RunResult
 from ki_dev.cli import app
-from ki_dev.loop_runtime import LoopRunResult
-from ki_dev.machine import Phase
 
 runner = CliRunner()
 
@@ -18,43 +18,44 @@ _lowercase = st.text(
 )
 
 
-def test_root_help_lists_loop():
+def test_root_help_lists_run():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "loop" in result.output
+    assert "│ run " in result.output
+    assert "loop" not in result.output
 
 
-def test_loop_help_lists_resume():
-    result = runner.invoke(app, ["loop", "--help"])
+def test_run_help_lists_resume():
+    result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     assert "resume" in result.output
 
 
-def test_loop_resume_help_runs():
-    result = runner.invoke(app, ["loop", "resume", "--help"])
+def test_run_resume_help_runs():
+    result = runner.invoke(app, ["run", "resume", "--help"])
     assert result.exit_code == 0
 
 
-def test_loop_without_config_fails_visibly():
-    result = runner.invoke(app, ["loop"])
+def test_run_without_config_fails_visibly():
+    result = runner.invoke(app, ["run"])
     assert result.exit_code == 2
     assert "--config" in result.output
 
 
 def test_resume_requires_run_id():
-    result = runner.invoke(app, ["loop", "resume"])
+    result = runner.invoke(app, ["run", "resume"])
     assert result.exit_code != 0
     assert "run_id" in result.output
 
 
-def test_loop_cli_starts_configured_run(monkeypatch, tmp_path):
-    config = tmp_path / "loop.json"
+def test_run_cli_starts_configured_run(monkeypatch, tmp_path):
+    config = tmp_path / "run.json"
     config.write_text("{}")
     seen = {}
 
     def fake_start(path, *, run_id, runs_dir):
         seen.update(path=path, run_id=run_id, runs_dir=runs_dir)
-        return LoopRunResult(
+        return RunResult(
             "run-1",
             "ready_to_finalize",
             2,
@@ -65,7 +66,7 @@ def test_loop_cli_starts_configured_run(monkeypatch, tmp_path):
     result = runner.invoke(
         app,
         [
-            "loop",
+            "run",
             "--config",
             str(config),
             "--run-id",
@@ -94,7 +95,7 @@ def test_resume_cli_passes_bound_answer(monkeypatch, tmp_path):
             answer=answer,
             reconcile_result=reconcile_result,
         )
-        return LoopRunResult(
+        return RunResult(
             run_id, "waiting_decision", 1, Phase.WAITING_DECISION
         )
 
@@ -102,7 +103,7 @@ def test_resume_cli_passes_bound_answer(monkeypatch, tmp_path):
     result = runner.invoke(
         app,
         [
-            "loop",
+            "run",
             "resume",
             "run-1",
             "--answer",
@@ -118,7 +119,7 @@ def test_resume_cli_passes_bound_answer(monkeypatch, tmp_path):
 
 
 @given(name=_lowercase)
-def test_unknown_loop_subcommand_always_fails(name):
+def test_unknown_run_subcommand_always_fails(name):
     assume(name != "resume")
-    result = runner.invoke(app, ["loop", name])
+    result = runner.invoke(app, ["run", name])
     assert result.exit_code != 0

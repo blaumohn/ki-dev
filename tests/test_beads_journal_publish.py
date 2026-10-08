@@ -42,7 +42,7 @@ def test_scan_names_the_category(text, category):
         "Co-Authored-By: Claude <noreply@anthropic.com>",
         "journal@test.invalid",
         "a@example.com",
-        "docs/handoff.de.md und src/ki_dev/cli.py",
+        "docs/step.de.md und src/ki_dev/cli.py",
         "Bereich ~/.claude/projects",
         "bd-local/x und ../mdman",
     ],

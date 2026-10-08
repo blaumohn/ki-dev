@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ki_dev.deltas import StepDeltaAssessment
-from ki_dev.machine import (
+from ki_dev.ausfuehrer.machine import (
     AgentEscalation,
     ControllerChanges,
     ControllerEscalate,
@@ -25,6 +24,7 @@ from ki_dev.machine import (
     WorkerNeedsDecision,
     WorkerProcessError,
 )
+from ki_dev.deltas import StepDeltaAssessment
 
 
 @pytest.mark.parametrize(

@@ -28,9 +28,9 @@ Typen und keinerlei Claude-/Codex-spezifische Argumente.
 Ein Adapter liefert mit `measure_context`/`measure_quota` nur den
 Messwert. Freigabe, Halt und Persistenz einer erreichten Kontext- oder
 Kontingentgrenze entscheidet ausschliesslich die Orchestrierung
-(`loop_runtime._context_guard`/`_quota_guard`, siehe
-[loop-runtime.de.md](loop-runtime.de.md#kontextvorpruefung) und
-[loop-runtime.de.md](loop-runtime.de.md#fuenfstundenkontingent-vorpruefung)),
+(`run_runtime._context_guard`/`_quota_guard`, siehe
+[ausfuehrer.de.md](ausfuehrer.de.md#kontextvorpruefung) und
+[ausfuehrer.de.md](ausfuehrer.de.md#fuenfstundenkontingent-vorpruefung)),
 nie der Adapter selbst und nie eine Selbsteinschaetzung des Agenten.
 
 `TurnStatus` ist disjunkt: Erfolg, Nicht-null-Exit, Timeout und
@@ -80,7 +80,7 @@ Modul: `ki_dev.executors.process` (`run_cli_turn`)
 
 Der Standard-Timeout ist `DEFAULT_TIMEOUT_S = 900` Sekunden und pro
 Adapterinstanz ueberschreibbar.
-`ki-dev loop` uebergibt immer ein `TurnBudget`; dessen Standardtimeout
+`ki-dev run` uebergibt immer ein `TurnBudget`; dessen Standardtimeout
 betraegt 180 Sekunden und begrenzt den Adaptertimeout zusaetzlich.
 Alle Zeit- und Kostengrenzen muessen positiv und endlich sein.
 
@@ -131,7 +131,7 @@ claude --print --output-format text \
   (gueltige Werte in 2.1.272: `low`, `medium`, `high`, `xhigh`,
   `max`). Die drei Vertragsstufen werden unveraendert durchgereicht.
 
-Mit `TurnBudget` (immer im Loop) verwendet der Adapter stattdessen
+Mit `TurnBudget` (immer in `ki-dev run`) verwendet der Adapter stattdessen
 `--output-format json --max-turns 12 --max-budget-usd 1.0`, mit den
 jeweils konfigurierten Grenzwerten.
 
@@ -156,7 +156,7 @@ verifizierten, verbrauchsfreien, nicht-interaktiven Messweg bleibt
 dieser Adapter bei `UNSUPPORTED`, statt eine ungeprüfte Messquelle zu
 erfinden. Anders als bei `measure_context` blockiert das hier jeden
 weiteren Aufruf (siehe
-[loop-runtime.de.md](loop-runtime.de.md#fuenfstundenkontingent-vorpruefung)).
+[ausfuehrer.de.md](ausfuehrer.de.md#fuenfstundenkontingent-vorpruefung)).
 
 Das JSON-Resultat liefert Antworttext und `usage` getrennt. Auch bei
 Exitcode 0 gelten `is_error`, ein Fehler-`subtype` oder
@@ -205,7 +205,7 @@ Sitzungsprotokoll vergleichbare lokale Ablage, aus der sich ein
 Kontextmesswert unabhaengig belegen liesse. `UNSUPPORTED` ist ein
 bekannter, dokumentierter Adaptergrenzfall und blockiert deshalb
 keinen Aufruf (siehe
-[loop-runtime.de.md](loop-runtime.de.md#kontextvorpruefung)) --
+[ausfuehrer.de.md](ausfuehrer.de.md#kontextvorpruefung)) --
 anders als `UNAVAILABLE`, das eine vorgesehene, aber fehlgeschlagene
 Messung waere.
 
@@ -249,7 +249,7 @@ pruefbare Betriebsvoraussetzung; weder `session_meta` noch
 Risiko zusaetzlich. Anders als bei `measure_context` blockiert ein
 fehlender, veralteter oder zu alter Nachweis hier den naechsten Aufruf
 (siehe
-[loop-runtime.de.md](loop-runtime.de.md#fuenfstundenkontingent-vorpruefung)).
+[ausfuehrer.de.md](ausfuehrer.de.md#fuenfstundenkontingent-vorpruefung)).
 
 ## Sitzungstranskripte (Adaptergrenze)
 

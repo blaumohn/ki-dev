@@ -1,14 +1,14 @@
-"""Gemeinsamer Antwortvertrag für Build-Reviews (step und Loop).
+"""Gemeinsamer Antwortvertrag für Build-Reviews (step und run).
 
 Kern ist ein JSON-Objekt ``{action, detail, requirement_ref}``. Alle
 Feldregeln stehen im JSON Schema (Draft202012Validator), auch die zwei
-Regeln zwischen den Feldern (``if``/``then``). Der Loop
+Regeln zwischen den Feldern (``if``/``then``). ``ki-dev run``
 legt eine Identitätshülle (run_id, round_id) um denselben Kern; step
 hat keine (kein Laufspeicher) und bindet die Antwort über die
 Abnahmekriterien des Beads (AC1..ACn).
 
 Erlaubte Aktionen sind ein Parameter: step kennt PASS, CHANGES und
-NEEDS_DECISION; der Loop zusätzlich ESCALATE.
+NEEDS_DECISION; ``ki-dev run`` zusätzlich ESCALATE.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ STEP_ACTIONS = (
     ReviewAction.CHANGES,
     ReviewAction.NEEDS_DECISION,
 )
-LOOP_ACTIONS = (*STEP_ACTIONS, ReviewAction.ESCALATE)
+RUN_ACTIONS = (*STEP_ACTIONS, ReviewAction.ESCALATE)
 CORE_FIELDS = ("action", "detail", "requirement_ref")
 
 

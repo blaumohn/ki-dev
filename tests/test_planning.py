@@ -408,7 +408,7 @@ def test_pb4_langgraph_fall_l_haelt_drei_modalitaeten_nebeneinander(
                 data={
                     "text": (
                         "LangGraph ist der Orchestrator-Unterbau fuer "
-                        "ki-dev loop"
+                        "ki-dev run"
                     )
                 },
                 sources=[ref_entscheidung],

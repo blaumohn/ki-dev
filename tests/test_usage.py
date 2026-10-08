@@ -18,10 +18,10 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ki_dev.executors.claude_cli import (
+from ki_dev.adapter.executors.claude_cli import (
     CLI_VERSION as CLAUDE_CLI_VERSION,
 )
-from ki_dev.executors.codex_cli import (
+from ki_dev.adapter.executors.codex_cli import (
     CLI_VERSION as CODEX_CLI_VERSION,
 )
 from ki_dev.usage import (

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ki_dev.executors import TurnResult, TurnStatus
+from ki_dev.adapter.executors import TurnResult, TurnStatus
 
 
 class FakeRunner:

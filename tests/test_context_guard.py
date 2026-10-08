@@ -9,8 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.executors import Effort
-from ki_dev.executors.contract import (
+from ki_dev.adapter.agent import (
+    AgentBuildMode,
+    AgentReviewer,
+)
+from ki_dev.adapter.contract import (
+    RunTask,
+)
+from ki_dev.adapter.executors import Effort
+from ki_dev.adapter.executors.contract import (
     ContextMeasurement,
     ContextStatus,
     QuotaMeasurement,
@@ -19,16 +26,14 @@ from ki_dev.executors.contract import (
     TurnResult,
     TurnStatus,
 )
-from ki_dev.loop import (
-    AgentBuildMode,
-    AgentReviewer,
-    LoopTask,
+from ki_dev.ausfuehrer.machine import Limits
+from ki_dev.ausfuehrer.run_runtime import (
+    RunRuntime,
+    StaticEvidenceCollector,
 )
-from ki_dev.loop_runtime import LoopRuntime, StaticEvidenceCollector
-from ki_dev.machine import Limits
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
-from tests.test_loop_runtime import _context
+from tests.test_run_runtime import _context
 
 
 class ControlledExecutor:
@@ -74,8 +79,8 @@ class ControlledExecutor:
         return self.quota
 
 
-def _task(run_id: str) -> LoopTask:
-    return LoopTask(
+def _task(run_id: str) -> RunTask:
+    return RunTask(
         run_id,
         "Auftrag",
         (),
@@ -117,7 +122,7 @@ def _agents(build_executor, review_executor):
 
 def _runtime(tmp_path, run_id, build, review, **kwargs):
     contexts = tuple(_context(i) for i in range(1, 4))
-    return LoopRuntime(
+    return RunRuntime(
         RunStore(tmp_path, run_id),
         build,
         review,

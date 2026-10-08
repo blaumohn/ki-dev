@@ -1,4 +1,4 @@
-"""Abbruchsichere, laufgebundene Nachweise fuer den Bau--Review-Loop."""
+"""Abbruchsichere, laufgebundene Nachweise eines Bauablaufs."""
 
 from __future__ import annotations
 

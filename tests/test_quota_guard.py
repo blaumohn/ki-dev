@@ -27,9 +27,12 @@ from dataclasses import replace
 
 import pytest
 
-from ki_dev.executors.contract import QuotaMeasurement, QuotaStatus
-from ki_dev.loop_safety import SafetyLimits
-from ki_dev.machine import Limits
+from ki_dev.adapter.executors.contract import (
+    QuotaMeasurement,
+    QuotaStatus,
+)
+from ki_dev.ausfuehrer.machine import Limits
+from ki_dev.ausfuehrer.run_safety import SafetyLimits
 from tests.test_context_guard import (
     ControlledExecutor,
     _agents,

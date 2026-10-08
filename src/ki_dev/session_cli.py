@@ -14,12 +14,12 @@ from typing import Annotated, NoReturn
 
 import typer
 
-from ki_dev.executors.session_transcript import (
+from ki_dev.adapter.executors.session_transcript import (
     SessionTranscript,
     TranscriptError,
     TranscriptRequestError,
 )
-from ki_dev.executors.transcript import (
+from ki_dev.adapter.executors.transcript import (
     read_session_transcript,
     validate_session_request,
 )

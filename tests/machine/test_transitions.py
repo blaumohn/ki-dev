@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from ki_dev.deltas import StepDeltaAssessment
-from ki_dev.machine import (
+from ki_dev.ausfuehrer.machine import (
+    STOPPED_PHASES,
     AgentEscalation,
     CheckpointRecorded,
     ControllerChanges,
@@ -13,6 +13,7 @@ from ki_dev.machine import (
     ControllerTask,
     Counters,
     Event,
+    ExecutionStopped,
     FinalizationError,
     FinalResultVerified,
     HistoryFinalized,
@@ -23,7 +24,9 @@ from ki_dev.machine import (
     MachineEscalationCause,
     MachineState,
     Phase,
+    ProcessError,
     ProtocolError,
+    ResumeRequested,
     ReviewedResultFrozen,
     RunStarted,
     StepResultCaptured,
@@ -34,7 +37,8 @@ from ki_dev.machine import (
     WorkerProcessError,
     advance,
 )
-from ki_dev.machine.transitions import _TRANSITIONS
+from ki_dev.ausfuehrer.machine.transitions import _TRANSITIONS
+from ki_dev.deltas import StepDeltaAssessment
 
 _EFFECTIVE = StepResultCaptured(StepDeltaAssessment.EFFECTIVE)
 _EMPTY = StepResultCaptured(StepDeltaAssessment.EMPTY_UNEXPLAINED)
@@ -242,7 +246,68 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
         Phase.ERROR,
         None,
     ),
+    # Fortsetzung durch den Menschen: Entscheidung zurück zum
+    # Controller, Pause zurück zum Fortsetzungspunkt (<history>).
+    (
+        _at(Phase.WAITING_DECISION),
+        ResumeRequested(),
+        Phase.CONTROLLER_STEP,
+        None,
+    ),
+    (
+        _at(Phase.PAUSED_INTERACTIVE),
+        ResumeRequested(Phase.WORKER_STEP),
+        Phase.WORKER_STEP,
+        None,
+    ),
+    # Technischer Fehler einer Maschinenoperation: begrenzt am selben
+    # Ort wiederholen.
+    *(
+        (_at(phase), ProcessError("bd nicht erreichbar"), phase, None)
+        for phase in (
+            Phase.CONTROLLER_STEP,
+            Phase.WORKER_STEP_PREPARE,
+            Phase.CAPTURE_STEP_RESULT,
+        )
+    ),
+    (
+        _at(Phase.CAPTURE_STEP_RESULT, process_retry=3),
+        ProcessError("bd nicht erreichbar"),
+        Phase.PAUSED_INTERACTIVE,
+        MachineEscalation,
+    ),
+    # Schutzhalt des Ausführers aus jedem aktiven Zustand.
+    *(
+        (
+            _at(phase),
+            ExecutionStopped("Kontextgrenze erreicht"),
+            Phase.PAUSED_INTERACTIVE,
+            MachineEscalation,
+        )
+        for phase in Phase
+        if phase not in STOPPED_PHASES
+    ),
 ]
+
+
+def test_pause_without_resume_point_is_rejected():
+    with pytest.raises(InvalidTransition):
+        advance(_at(Phase.PAUSED_INTERACTIVE), ResumeRequested())
+
+
+def test_executor_facts_stop_changes_before_round_budget():
+    """Fakten des Ausführers (Korrekturbudget, Stagnation) haben
+    Vorrang vor den Rundengrenzen des Ablaufs."""
+    for fact in ("korrekturen_abgelehnt", "stagnation"):
+        result = advance(
+            _reviewed(worker_attempt=1),
+            ControllerChanges("Test fehlt"),
+            fakten=frozenset({fact}),
+        )
+        assert result.phase is Phase.PAUSED_INTERACTIVE
+        assert result.escalation.cause is (
+            MachineEscalationCause.EXECUTION_GUARD
+        )
 
 
 @pytest.mark.parametrize(

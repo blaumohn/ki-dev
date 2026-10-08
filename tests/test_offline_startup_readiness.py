@@ -19,7 +19,14 @@ from pathlib import Path
 import pytest
 from plumbum import CommandNotFound, local
 
-from ki_dev.executors.contract import (
+from ki_dev.adapter.agent import (
+    AgentBuildMode,
+    AgentReviewer,
+)
+from ki_dev.adapter.contract import (
+    RunTask,
+)
+from ki_dev.adapter.executors.contract import (
     ContextMeasurement,
     ContextStatus,
     Effort,
@@ -29,15 +36,10 @@ from ki_dev.executors.contract import (
     TurnResult,
     TurnStatus,
 )
-from ki_dev.loop import (
-    AgentBuildMode,
-    AgentReviewer,
-    LoopTask,
-)
-from ki_dev.loop_cli import status_run
-from ki_dev.loop_runtime import LoopRuntime
-from ki_dev.loop_safety import SafetyLimits
-from ki_dev.machine import Limits, Phase
+from ki_dev.ausfuehrer.machine import Limits, Phase
+from ki_dev.ausfuehrer.run_cli import status_run
+from ki_dev.ausfuehrer.run_runtime import RunRuntime
+from ki_dev.ausfuehrer.run_safety import SafetyLimits
 from ki_dev.repository_evidence import RepositoryEvidenceCollector
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
@@ -126,8 +128,8 @@ def _init_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def _task(repo: Path) -> LoopTask:
-    return LoopTask(
+def _task(repo: Path) -> RunTask:
+    return RunTask(
         run_id="offline-readiness",
         task="greeting.txt mit korrektem Gruss und Zeilenumbruch "
         "anlegen",
@@ -202,7 +204,7 @@ def test_offline_run_connects_reader_contract_progress_env_projection(
         Effort.LOW,
     )
     runs_dir = tmp_path / "runs"
-    with LoopRuntime(
+    with RunRuntime(
         RunStore(runs_dir, run_id),
         build,
         review,
@@ -222,7 +224,7 @@ def test_offline_run_connects_reader_contract_progress_env_projection(
     assert (repo / "greeting.txt").read_text() == "hello\n"
 
     # p0h.2: der lesende Statuspfad liest denselben Endzustand, ohne
-    # einen eigenen LoopRuntime aufzubauen.
+    # einen eigenen RunRuntime aufzubauen.
     read_only = status_run(run_id, runs_dir=runs_dir)
     assert read_only.status == "passed"
     assert read_only.phase is Phase.PASSED
@@ -262,7 +264,7 @@ def test_offline_run_pauses_on_stagnation_and_stays_readable(tmp_path):
         Effort.LOW,
     )
     runs_dir = tmp_path / "runs"
-    with LoopRuntime(
+    with RunRuntime(
         RunStore(runs_dir, run_id),
         build,
         review,

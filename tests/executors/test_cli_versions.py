@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from plumbum import CommandNotFound, local
 
-from ki_dev.executors.claude_cli import ClaudeCliAdapter
-from ki_dev.executors.codex_cli import CodexCliAdapter
+from ki_dev.adapter.executors.claude_cli import ClaudeCliAdapter
+from ki_dev.adapter.executors.codex_cli import CodexCliAdapter
 
 
 @pytest.mark.parametrize(

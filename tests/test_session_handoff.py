@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ki_dev.loop import LoopTask
+from ki_dev.adapter.contract import (
+    RunTask,
+)
 from ki_dev.run_store import RunStore
 from ki_dev.session_handoff import build_handoff
 
 
-def _task() -> LoopTask:
-    return LoopTask(
+def _task() -> RunTask:
+    return RunTask(
         "run-1",
         "Auftrag",
         ("docs/vertrag.md",),

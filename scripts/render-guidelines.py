@@ -11,8 +11,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from ki_dev.handoff_guidelines import GuidelineContractError
-from ki_dev.handoff_guidelines_source import (
+from ki_dev.step.guidelines import GuidelineContractError
+from ki_dev.step.guidelines_source import (
     GuidelineSourceError,
     sync_guideline_documents,
 )

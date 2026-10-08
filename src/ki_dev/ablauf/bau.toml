@@ -1,0 +1,430 @@
+# Bauablauf: ein begrenzter Auftrag von der ersten Beauftragung bis zur
+# geprüften Integration.
+#
+# Die frühere „loop“ ist hier keine eigene Ebene, sondern eine
+# Rückkante: controller_step --controller_changes--> worker_step_prepare
+# → … → checkpoint --> controller_step. Wann sie endet, entscheiden
+# allein die Wächter dieses Ablaufs (Runden- und Versuchsgrenzen), nicht
+# der Ausführer.
+#
+# Lesart einer Kante (UML-Schreibweise):  von --bei [wenn] / aktion--> nach
+# Gleiche (von, bei) werden in Dateireihenfolge geprüft; der erste
+# passende Wächter gewinnt. Passt keiner, ist das Ereignis dort nicht
+# erlaubt. `eskalation` hält mit dieser Ursache an; Fortsetzungspunkt
+# ist der Quellzustand. `operation` sagt dem Ausführer, was er beim
+# Betreten tut. Format: src/ki_dev/ablauf/format.py.
+
+name = "bau"
+start = "start"
+ende = ["passed", "error"]
+
+[vokabular]
+# maschine: ki-dev erzeugt das Ereignis selbst; agent: ein Adapter
+# liefert die formale Antwort; abschluss: Git-Abschlussweg;
+# warten: Halt bis zu einer Antwort von außen.
+arten = ["maschine", "agent", "abschluss", "warten", "ende"]
+ereignisse = [
+  "run_started",
+  "controller_task", "controller_changes", "controller_needs_decision",
+  "controller_escalate", "controller_pass",
+  "protocol_error",
+  "worker_inputs_prepared", "worker_completed", "worker_needs_decision",
+  "worker_escalate", "worker_process_error",
+  "step_result_captured", "checkpoint_recorded",
+  "reviewed_result_frozen", "history_finalized", "final_result_verified",
+  "integration_completed", "finalization_error",
+  "process_error", "execution_stopped",
+  "resume_requested",
+]
+waechter = [
+  "geprueftes_ergebnis",     # ein Worker-Ergebnis ist gecheckpointet
+  "korrekturrunden_frei",    # changes_round < changes_rounds
+  "bauversuche_frei",        # worker_attempt < worker_attempts
+  "protokollversuche_frei",  # protocol_attempt < protocol_attempts
+  "prozessversuche_frei",    # process_retry < process_retries
+  "delta_wirksam",           # Schrittdelta hat beobachtete Wirkung
+  "ergebnis_ok",             # Abschlussprüfung bzw. Integration gelungen
+  "korrekturen_abgelehnt",   # Fakt des Ausführers: Korrekturbudget des Laufs erschöpft
+  "stagnation",              # Fakt des Ausführers: gleiches Kriterium wiederholt beanstandet
+]
+aktionen = [
+  "task_beginnen",           # worker_attempt + 1, changes_round = 0
+  "korrektur_beginnen",      # worker_attempt + 1, changes_round + 1
+  "protokoll_wiederholen",   # protocol_attempt + 1
+  "prozess_wiederholen",     # process_retry + 1
+  "ergebnis_festhalten",     # gecheckpointetes Ergebnis liegt vor
+  "ergebnis_verwerfen",      # kein prüfbares Ergebnis mehr
+]
+eskalationen = [
+  "agent",
+  "protocol_attempts_exhausted", "worker_attempts_exhausted",
+  "changes_rounds_exhausted", "process_retries_exhausted",
+  "empty_result_unresolved", "final_verification_failed",
+  "integration_failed", "execution_guard",
+]
+# Was der Ausführer beim Betreten tut. start, task, prepare und
+# checkpoint erzeugt ki-dev selbst; build und review rufen einen
+# Adapter; evidence und die Abschlussoperationen sind Git-/bd-Arbeit.
+operationen = [
+  "start", "task", "review", "prepare", "build", "evidence",
+  "checkpoint", "freeze", "finalize_history", "verify_final", "integrate",
+]
+
+# --- Zustände ---------------------------------------------------------
+
+[[zustand]]
+id = "start"
+art = "maschine"
+operation = [{ tue = "start" }]
+
+[[zustand]]
+id = "controller_step"
+art = "agent"
+wer = "Controller (Review-Sitzung)"
+# Ohne geprüftes Ergebnis gibt es nichts zu beurteilen: der erste
+# Auftrag kommt aus der Laufkonfiguration, nicht von einem Agenten.
+operation = [
+  { tue = "review", wenn = ["geprueftes_ergebnis"] },
+  { tue = "task" },
+]
+
+[[zustand]]
+id = "worker_step_prepare"
+art = "maschine"
+operation = [{ tue = "prepare" }]
+
+[[zustand]]
+id = "worker_step"
+art = "agent"
+wer = "Worker (Bau-Sitzung)"
+operation = [{ tue = "build" }]
+
+[[zustand]]
+id = "capture_step_result"
+art = "maschine"
+operation = [{ tue = "evidence" }]
+
+[[zustand]]
+id = "checkpoint"
+art = "maschine"
+operation = [{ tue = "checkpoint" }]
+
+[[zustand]]
+id = "freeze_reviewed_result"
+art = "abschluss"
+operation = [{ tue = "freeze" }]
+
+[[zustand]]
+id = "finalize_history"
+art = "abschluss"
+operation = [{ tue = "finalize_history" }]
+
+[[zustand]]
+id = "verify_final_result"
+art = "abschluss"
+operation = [{ tue = "verify_final" }]
+
+[[zustand]]
+id = "fast_forward_integrate"
+art = "abschluss"
+operation = [{ tue = "integrate" }]
+
+[[zustand]]
+id = "waiting_decision"
+art = "warten"
+wer = "Mensch (Entscheider)"
+
+[[zustand]]
+id = "paused_interactive"
+art = "warten"
+wer = "Mensch (Entscheider)"
+
+[[zustand]]
+id = "passed"
+art = "ende"
+
+[[zustand]]
+id = "error"
+art = "ende"
+
+# --- Beauftragung -----------------------------------------------------
+
+[[uebergang]]
+von = "start"
+bei = "run_started"
+aktion = ["ergebnis_verwerfen"]
+nach = "controller_step"
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_task"
+wenn = ["!bauversuche_frei"]
+eskalation = "worker_attempts_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_task"
+aktion = ["task_beginnen", "ergebnis_verwerfen"]
+nach = "worker_step_prepare"
+
+# --- Rückkante: CHANGES öffnet eine Korrekturrunde --------------------
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_changes"
+wenn = ["geprueftes_ergebnis", "korrekturen_abgelehnt"]
+eskalation = "execution_guard"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_changes"
+wenn = ["geprueftes_ergebnis", "stagnation"]
+eskalation = "execution_guard"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_changes"
+wenn = ["geprueftes_ergebnis", "!korrekturrunden_frei"]
+eskalation = "changes_rounds_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_changes"
+wenn = ["geprueftes_ergebnis", "!bauversuche_frei"]
+eskalation = "worker_attempts_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_changes"
+wenn = ["geprueftes_ergebnis"]
+aktion = ["korrektur_beginnen", "ergebnis_verwerfen"]
+nach = "worker_step_prepare"
+
+# --- weitere Controller-Urteile ---------------------------------------
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_needs_decision"
+nach = "waiting_decision"
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_escalate"
+eskalation = "agent"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "controller_step"
+bei = "controller_pass"
+wenn = ["geprueftes_ergebnis"]
+nach = "freeze_reviewed_result"
+
+[[uebergang]]
+von = "controller_step"
+bei = "protocol_error"
+wenn = ["!protokollversuche_frei"]
+eskalation = "protocol_attempts_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "controller_step"
+bei = "protocol_error"
+aktion = ["protokoll_wiederholen"]
+nach = "controller_step"
+
+# --- Worker-Turn ------------------------------------------------------
+
+[[uebergang]]
+von = "worker_step_prepare"
+bei = "worker_inputs_prepared"
+nach = "worker_step"
+
+[[uebergang]]
+von = "worker_step"
+bei = "worker_completed"
+nach = "capture_step_result"
+
+[[uebergang]]
+von = "worker_step"
+bei = "worker_needs_decision"
+nach = "waiting_decision"
+
+[[uebergang]]
+von = "worker_step"
+bei = "worker_escalate"
+eskalation = "agent"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "worker_step"
+bei = "worker_process_error"
+wenn = ["!prozessversuche_frei"]
+eskalation = "process_retries_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "worker_step"
+bei = "worker_process_error"
+aktion = ["prozess_wiederholen"]
+nach = "worker_step_prepare"
+
+[[uebergang]]
+von = "worker_step"
+bei = "protocol_error"
+wenn = ["!protokollversuche_frei"]
+eskalation = "protocol_attempts_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "worker_step"
+bei = "protocol_error"
+aktion = ["protokoll_wiederholen"]
+nach = "worker_step"
+
+# --- Nachweis: nur wirksamer Delta wird geprüft -----------------------
+
+[[uebergang]]
+von = "capture_step_result"
+bei = "step_result_captured"
+wenn = ["delta_wirksam"]
+nach = "checkpoint"
+
+[[uebergang]]
+von = "capture_step_result"
+bei = "step_result_captured"
+wenn = ["!korrekturrunden_frei"]
+eskalation = "empty_result_unresolved"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "capture_step_result"
+bei = "step_result_captured"
+wenn = ["!bauversuche_frei"]
+eskalation = "worker_attempts_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "capture_step_result"
+bei = "step_result_captured"
+aktion = ["korrektur_beginnen", "ergebnis_verwerfen"]
+nach = "worker_step_prepare"
+
+[[uebergang]]
+von = "checkpoint"
+bei = "checkpoint_recorded"
+aktion = ["ergebnis_festhalten"]
+nach = "controller_step"
+
+# --- Abschluss: PASS ist ein Urteil, PASSED erst nach Integration -----
+
+[[uebergang]]
+von = "freeze_reviewed_result"
+bei = "reviewed_result_frozen"
+nach = "finalize_history"
+
+[[uebergang]]
+von = "freeze_reviewed_result"
+bei = "finalization_error"
+nach = "error"
+
+[[uebergang]]
+von = "finalize_history"
+bei = "history_finalized"
+nach = "verify_final_result"
+
+[[uebergang]]
+von = "finalize_history"
+bei = "finalization_error"
+nach = "error"
+
+[[uebergang]]
+von = "verify_final_result"
+bei = "final_result_verified"
+wenn = ["ergebnis_ok"]
+nach = "fast_forward_integrate"
+
+[[uebergang]]
+von = "verify_final_result"
+bei = "final_result_verified"
+eskalation = "final_verification_failed"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "verify_final_result"
+bei = "finalization_error"
+nach = "error"
+
+[[uebergang]]
+von = "fast_forward_integrate"
+bei = "integration_completed"
+wenn = ["ergebnis_ok"]
+nach = "passed"
+
+[[uebergang]]
+von = "fast_forward_integrate"
+bei = "integration_completed"
+eskalation = "integration_failed"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "fast_forward_integrate"
+bei = "finalization_error"
+nach = "error"
+
+# --- technische Fehler und Schutzhalt des Ausführers ------------------
+
+# Eine Maschinenoperation (Vorbereitung, Nachweis, Review-Aufruf)
+# scheitert technisch: begrenzt wiederholen, dann anhalten.
+[[uebergang]]
+von = ["controller_step", "worker_step_prepare", "capture_step_result"]
+bei = "process_error"
+wenn = ["!prozessversuche_frei"]
+eskalation = "process_retries_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]
+von = "controller_step"
+bei = "process_error"
+aktion = ["prozess_wiederholen"]
+nach = "controller_step"
+
+[[uebergang]]
+von = "worker_step_prepare"
+bei = "process_error"
+aktion = ["prozess_wiederholen"]
+nach = "worker_step_prepare"
+
+[[uebergang]]
+von = "capture_step_result"
+bei = "process_error"
+aktion = ["prozess_wiederholen"]
+nach = "capture_step_result"
+
+# Schutzhalt (Kontext-/Kontingentgrenze, fehlgeschlagener
+# Agentenaufruf): aus jedem aktiven Zustand anhalten, Fortsetzung dort.
+[[uebergang]]
+von = [
+  "start", "controller_step", "worker_step_prepare", "worker_step",
+  "capture_step_result", "checkpoint", "freeze_reviewed_result",
+  "finalize_history", "verify_final_result", "fast_forward_integrate",
+]
+bei = "execution_stopped"
+eskalation = "execution_guard"
+nach = "paused_interactive"
+
+# --- Halt und Fortsetzung durch den Menschen --------------------------
+
+[[uebergang]]
+von = "waiting_decision"
+bei = "resume_requested"
+nach = "controller_step"
+
+[[uebergang]]
+von = "paused_interactive"
+bei = "resume_requested"
+nach = "@fortsetzungspunkt"

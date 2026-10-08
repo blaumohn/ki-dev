@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ki-dev"
 version = "0.0.1"
-description = "Begrenzte deterministische Agentenmaschine fuer ki-dev loop"
+description = "Deklarative Abläufe für Agentensitzungen: Ablauf, Ausführer, Adapter"
 requires-python = ">=3.12"
 dependencies = [
   "typer>=0.12",

@@ -10,7 +10,7 @@ from jsonschema import Draft202012Validator
 from plumbum import CommandNotFound, local
 from plumbum.commands.processes import ProcessTimedOut, run_proc
 
-from ki_dev.handoff import NONEMPTY_TEXT_SCHEMA, HandoffIssue
+from ki_dev.step.handoff import NONEMPTY_TEXT_SCHEMA, HandoffIssue
 
 BD_PROGRAM = "bd"
 BD_TIMEOUT_S = 10

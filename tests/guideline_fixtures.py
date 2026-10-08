@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ki_dev.handoff_guidelines import GUIDELINE_SOURCES
+from ki_dev.step.guidelines import GUIDELINE_SOURCES
 
 STAGES = ("map", "graph", "materialize", "build")
 

@@ -1,88 +1,115 @@
 <p align="right"><a href="README.md">Deutsch</a> | English</p>
 
----
-
 # ki-dev
 
-**A deterministic orchestrator for AI-assisted development and project work
-in small teams.**
+**Agent work as a declarative workflow: states and transitions live in
+TOML, an executor drives them, adapters talk to Claude, Codex or a human.**
 
-The machine keeps state, role order, step boundaries and evidence of change.
-The AI writes code and judges results.
+The AI writes code and judges results. What happens next (another
+correction round, a halt for a decision, a verified integration) is neither
+in the prompt nor in Python code; it is in the workflow.
 
-> **Status: active development.** Usable today is `ki-dev step`, the same
-> workflow driven by hand. The automated loop (`ki-dev loop`) comes next.
-> The German [README](README.md) is the full reference.
+```text
+ ablauf/bau.toml · planung.toml     WHAT  states, transitions, guards, actions      data
+        │ read by
+ ausfuehrer/        ki-dev run      HOW   formal answer → event → guard              LangGraph:
+        │ calls                           → edge action → next input                 checkpoint, halt
+ adapter/  claude · codex · manuell · mock                                           WHO
+```
+
+`ki-dev step` is the same idea by hand: exactly one transition of the
+planning workflow, carried on by a human as messenger.
+
+## A loop is an edge, not a component
+
+Build, review, fix, review again is not a "loop" layer but a back edge in
+the workflow. Guards decide when it ends; every back edge consumes a counter.
+From [`src/ki_dev/ablauf/bau.toml`](src/ki_dev/ablauf/bau.toml):
+
+```toml
+# controller_step --controller_changes [guard] / action--> target   (UML edge)
+
+[[uebergang]]                      # correction budget exhausted → human
+von = "controller_step"
+bei = "controller_changes"
+wenn = ["geprueftes_ergebnis", "!korrekturrunden_frei"]
+eskalation = "changes_rounds_exhausted"
+nach = "paused_interactive"
+
+[[uebergang]]                      # otherwise: next round, counter +1
+von = "controller_step"
+bei = "controller_changes"
+wenn = ["geprueftes_ergebnis"]
+aktion = ["korrektur_beginnen", "ergebnis_verwerfen"]
+nach = "worker_step_prepare"
+```
+
+Keys are German (`von` source, `bei` event, `wenn` guard/cond, `aktion`
+action, `nach` target); the semantics follow UML state machines and SCXML,
+including `@fortsetzungspunkt` as `<history>`. Candidates are tried in file
+order, the first matching guard wins, no match means the event is not
+allowed there.
+
+## Try it in a minute
+
+Offline, with mock adapters (needs `git` and `bd`):
+
+```bash
+scripts/demo-mock-lauf.sh
+```
+
+```text
+{ "run_id": "demo", "status": "passed", "phase": "passed", "round_id": 2, … }
+8ef6356 Geprüfter Abschluss (Demo)
+5c02782 start
+```
+
+The mock reviewer answers `CHANGES`, then `PASS`: the run takes the back
+edge once, freezes the reviewed result and fast-forwards it into `main`.
+
+## Two commands
+
+```bash
+ki-dev run --config lauf.json      # drive the build workflow to the next halt
+ki-dev run resume RUN_ID           # continue after a halt
+ki-dev step BEAD --step review     # one planning transition by hand
+```
+
+| Adapter | Config per role | Who answers |
+| --- | --- | --- |
+| `claude`, `codex` | `{"executor": "codex", "session_id": "…", "model": "…", "effort": "high"}` | prepared agent session |
+| `manuell` | `{"executor": "manuell"}` | you carry the input into a session |
+| `mock` | `{"executor": "mock", "antworten": ["CHANGES", "PASS"]}` | scripted answers |
+
+With `manuell` the **executor** halts (`awaiting_input`), not the workflow:
+the run stays in its state and continues after the answer file appears.
+The human thus has two separate roles: messenger (adapter) and decider
+(states of kind `warten`).
+
+## What the tests prove
+
+| Claim | Evidence |
+| --- | --- |
+| no unbounded cycle without a human | `tests/machine/test_reachability.py` enumerates the state space |
+| … visible in the data itself | `tests/test_ablauf_bau.py`: every cycle has a counting edge |
+| `PASSED` only via verified integration | `tests/machine/test_reachability.py` |
+| layers never import upwards | `tests/test_schichten.py` (transitive, AST) |
+| README diagrams match the workflows | `tests/test_ablauf_bau.py`, `tests/test_ablauf_planung.py` |
 
 ## Installation
 
-Requires Python ≥ 3.12, git ≥ 2.32 and [Beads](https://github.com/steveyegge/beads)
-`bd` **1.3.0** (release build). `go install` needs Go and a C compiler
-(CGO for embedded Dolt).
+Python ≥ 3.12, git ≥ 2.32, [Beads](https://github.com/steveyegge/beads) `bd`
+**1.3.0**:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
 CGO_ENABLED=1 go install -tags gms_pure_go github.com/steveyegge/beads/cmd/bd@v1.3.0
+.venv/bin/pytest -q && .venv/bin/ruff check .
 ```
 
-Or use the agent container, which ships bd, Codex and Claude Code:
+Or the agent container with bd, Codex and Claude Code:
 `./scripts/agent-container shell` ([docker/agent/README.md](docker/agent/README.md)).
 
-## `ki-dev step`: the workflow by hand
-
-`ki-dev step` prints a short, validated handoff for each step. You paste it
-into a Claude or Codex session and pass the answer on. Every rule that should
-later run automatically is tried by hand first. The command never starts an
-agent.
-
-```bash
-ki-dev step BEAD --step map           # map raw notes into a source map
-ki-dev step BEAD --step graph         # derive thin tasks
-ki-dev step BEAD --step materialize   # make one task ready to build
-ki-dev step BEAD --step build         # implement it
-ki-dev step BEAD --step review        # separate review after a deterministic preflight
-ki-dev step BEAD --step review --next-turn --decision-file answer.json
-```
-
-Each phase has its own states, declared as data in
-[`src/ki_dev/step-flow.toml`](src/ki_dev/step-flow.toml) and checked by tests
-(every state reaches the end). Review findings carry a class:
-
-| Class | Verdict | Next |
-| --- | --- | --- |
-| `fix` | `CHANGES` | the same writer fixes it |
-| `quelle` (source) | `NEEDS_DECISION` | planning session, then extend the **existing** map |
-| `entscheidung` (decision) | `NEEDS_DECISION` | the human decides |
-
-A build review ends with one JSON object, the same contract the loop uses:
-`{"action": "CHANGES", "detail": "…", "requirement_ref": "AC2"}`.
-`--decision-file` validates it, binds it to an acceptance criterion and
-prints the message for the next recipient. A partial preflight
-(`--preflight-args`, `--preflight-skip`) allows an interim review but never
-a PASS.
-
-## Direction
-
-Named stages instead of version numbers. Only the order **step → loop** is
-fixed:
-
-- **step**: the workflow by hand (today).
-- **loop**: sessions connected automatically, independent of the phase.
-
-Topics without a fixed order or date: **declarative workflows** (flows as
-data; `step-flow.toml` is a first approach) and a **state/event interface**
-for run state and events.
-
-## Sessions as sources
-
-```bash
-ki-dev session show SESSION_ID --agent claude --pager      # read-only, Rich output
-ki-dev session transcript SESSION_ID --agent claude --title 'Topic'
-ki-dev session export SESSION_ID --agent codex --format markdown
-```
-
-`transcript` and `ki-dev step map … --title …` write one dated JSONL snapshot
-(`.local/var/transcripts/YYMMDDTHH_title_sid8.jsonl`, not versioned); `show`
-and `export` write nothing. Search is not available yet.
-
-Details, design rationale and non-goals: [README.md](README.md) (German).
+The German [README](README.md) has the diagrams, the layout of `src/` and
+the open points; background and target picture:
+[docs/zielbild.de.md](docs/zielbild.de.md).

@@ -371,7 +371,7 @@ Dann wird keine Konfiguration erzeugt oder verwendet.
 
 ### Reichweite gegenüber ki-dev
 
-`ki_dev.executors.contract.TurnRequest` verlangt `model` und `effort` ohne
+`ki_dev.adapter.executors.contract.TurnRequest` verlangt `model` und `effort` ohne
 Default. Der Claude-Adapter übergibt `--model` und `--effort`, der
 Codex-Adapter `--model` und `-c model_reasoning_effort=…`. Nach Punkt 2 lässt
 der Launcher deshalb die B-Werte für Modell und Effort bei automatisierten

@@ -1,7 +1,7 @@
 """wu0.3.8: usage_task-Bindung aus der echten Loop-Konfiguration.
 
 ``start_from_config`` laeuft unveraendert (Konfigurationsparser,
-Manifest-Schreiber, ``LoopRuntime._usage_attribution``); ersetzt wird
+Manifest-Schreiber, ``RunRuntime._usage_attribution``); ersetzt wird
 nur der Prozessaufbau (``_runtime``) durch Fake-Rollen. Kein Test
 befuellt das Manifest von Hand.
 """
@@ -13,20 +13,29 @@ import json
 
 import pytest
 
-from ki_dev.executors import Effort
-from ki_dev.executors.contract import TurnResult, TurnStatus
-from ki_dev.loop import AgentBuildMode, AgentReviewer, ReviewAction
-from ki_dev.loop_cli import (
-    LoopConfigError,
+from ki_dev.adapter.agent import (
+    AgentBuildMode,
+    AgentReviewer,
+)
+from ki_dev.adapter.executors import Effort
+from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
+from ki_dev.ausfuehrer.run_cli import (
+    RunConfigError,
     resume_run,
     start_from_config,
 )
-from ki_dev.loop_runtime import LoopRuntime, StaticEvidenceCollector
-from ki_dev.loop_safety import CallLedger
+from ki_dev.ausfuehrer.run_runtime import (
+    RunRuntime,
+    StaticEvidenceCollector,
+)
+from ki_dev.ausfuehrer.run_safety import CallLedger
 from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.review_decision import (
+    ReviewAction,
+)
 from ki_dev.run_store import RunStore
-from tests.test_loop_runtime import FakeBuilder, FakeReviewer, _context
-from tests.test_loop_safety import USAGE, Executor
+from tests.test_run_runtime import FakeBuilder, FakeReviewer, _context
+from tests.test_run_safety import USAGE, Executor
 
 BINDING = {
     "bead_id": "ki-dev-ablauf-wu0.3.8",
@@ -38,7 +47,7 @@ BINDING = {
 
 
 def _config(tmp_path, **extra):
-    path = tmp_path / "loop.json"
+    path = tmp_path / "run.json"
     path.write_text(json.dumps({
         "task": "Auftrag",
         "acceptance_criteria": ["Kriterium 1"],
@@ -53,7 +62,7 @@ def _config(tmp_path, **extra):
 
 def _patch_runtime(monkeypatch, builder, reviewer=None):
     def build_runtime(_config, store, _projection):
-        return LoopRuntime(
+        return RunRuntime(
             store,
             builder(),
             (
@@ -67,7 +76,9 @@ def _patch_runtime(monkeypatch, builder, reviewer=None):
             StaticFinalizer(),
         )
 
-    monkeypatch.setattr("ki_dev.loop_cli._runtime", build_runtime)
+    monkeypatch.setattr(
+        "ki_dev.ausfuehrer.run_cli._runtime", build_runtime
+    )
 
 
 def _agent_builder(session_id="build-sess"):
@@ -195,7 +206,7 @@ def test_run_without_usage_task_stays_visibly_unattributed(
     ],
 )
 def test_usage_task_validation_stays_strict(tmp_path, usage_task):
-    with pytest.raises(LoopConfigError):
+    with pytest.raises(RunConfigError):
         start_from_config(
             _config(tmp_path, usage_task=usage_task),
             run_id="run-x",
@@ -205,7 +216,7 @@ def test_usage_task_validation_stays_strict(tmp_path, usage_task):
 
 def test_rejected_usage_task_leaves_no_run_behind(tmp_path):
     runs = tmp_path / "runs"
-    with pytest.raises(LoopConfigError):
+    with pytest.raises(RunConfigError):
         start_from_config(
             _config(
                 tmp_path,
@@ -233,7 +244,7 @@ def test_max_length_value_is_accepted(monkeypatch, tmp_path):
 
 
 def test_unknown_top_level_field_is_still_rejected(tmp_path):
-    with pytest.raises(LoopConfigError, match="unbekannte"):
+    with pytest.raises(RunConfigError, match="unbekannte"):
         start_from_config(
             _config(tmp_path, usage_tsk=BINDING),
             run_id="run-x",
@@ -266,7 +277,7 @@ def test_resume_keeps_revisions_from_manifest(monkeypatch, tmp_path):
     )
 
     def build_runtime(_config, store, _projection):
-        return LoopRuntime(
+        return RunRuntime(
             store,
             _agent_builder(),
             reviewer,
@@ -276,7 +287,9 @@ def test_resume_keeps_revisions_from_manifest(monkeypatch, tmp_path):
             StaticFinalizer(),
         )
 
-    monkeypatch.setattr("ki_dev.loop_cli._runtime", build_runtime)
+    monkeypatch.setattr(
+        "ki_dev.ausfuehrer.run_cli._runtime", build_runtime
+    )
     runs = tmp_path / "runs"
     paused = start_from_config(
         _config(tmp_path, usage_task=BINDING),

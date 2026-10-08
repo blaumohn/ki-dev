@@ -12,7 +12,7 @@ from ki_dev.config_sources import ConfigSource
 
 _FILE_NAME = "tool-versions.json"
 CONFIG_SOURCE = ConfigSource(
-    "loop (Agenten-CLI-Versionen)",
+    "run (Agenten-CLI-Versionen)",
     f"ki_dev/{_FILE_NAME} (Paket)",
     path=Path(str(files("ki_dev").joinpath(_FILE_NAME))),
 )

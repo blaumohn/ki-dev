@@ -12,21 +12,31 @@ from dataclasses import asdict, replace
 
 import pytest
 
-from ki_dev.executors import ClaudeCliAdapter, CodexCliAdapter, Effort
-from ki_dev.executors.contract import (
+from ki_dev.adapter.agent import (
+    AgentBuildMode,
+    AgentReviewer,
+)
+from ki_dev.adapter.executors import (
+    ClaudeCliAdapter,
+    CodexCliAdapter,
+    Effort,
+)
+from ki_dev.adapter.executors.contract import (
     ContextMeasurement,
     ContextStatus,
     QuotaMeasurement,
     QuotaStatus,
 )
-from ki_dev.loop import AgentBuildMode, AgentReviewer, ReviewAction
-from ki_dev.loop_safety import CallLedger
-from ki_dev.machine import Limits
+from ki_dev.ausfuehrer.machine import Limits
+from ki_dev.ausfuehrer.run_safety import CallLedger
+from ki_dev.review_decision import (
+    ReviewAction,
+)
 from ki_dev.run_store import RunStore
 from ki_dev.usage import CounterScope, TokenCounts, UsageStatus
 from tests.executors.usage_fakes import write_usage_cli
-from tests.test_loop_runtime import FakeBuilder, FakeReviewer, _task
-from tests.test_loop_safety import runtime
+from tests.test_run_runtime import FakeBuilder, FakeReviewer, _task
+from tests.test_run_safety import runtime
 
 
 @pytest.mark.parametrize(

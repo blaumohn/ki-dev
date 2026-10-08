@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 
 from ki_dev import session_snapshot
-from ki_dev.executors import codex_transcript
+from ki_dev.adapter.executors import codex_transcript
 from ki_dev.session_snapshot import (
     LEGACY_FORMAT,
     SnapshotError,

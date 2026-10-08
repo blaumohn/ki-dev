@@ -11,7 +11,7 @@ from rich.markdown import Markdown
 from rich.rule import Rule
 from rich.text import Text
 
-from ki_dev.executors.session_transcript import (
+from ki_dev.adapter.executors.session_transcript import (
     SessionTranscript,
     TranscriptMessage,
 )

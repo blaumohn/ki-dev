@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.executors import (
+from ki_dev.adapter.executors import (
     ClaudeCliAdapter,
     Effort,
     TurnRequest,

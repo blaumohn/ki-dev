@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.executors.claude_cli import ClaudeCliAdapter
-from ki_dev.executors.codex_cli import CodexCliAdapter
-from ki_dev.executors.contract import Effort, TurnRequest
+from ki_dev.adapter.executors.claude_cli import ClaudeCliAdapter
+from ki_dev.adapter.executors.codex_cli import CodexCliAdapter
+from ki_dev.adapter.executors.contract import Effort, TurnRequest
 
 REPO = Path(__file__).parents[1]
 REPO_SETTINGS = REPO / "docker" / "agent-settings"

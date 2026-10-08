@@ -4,17 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.executors import claude_transcript
-from ki_dev.executors.claude_sessions import (
+from ki_dev.adapter.executors import claude_transcript
+from ki_dev.adapter.executors.claude_sessions import (
     find_claude_sessions,
     resolve_claude_sessions_dir,
 )
-from ki_dev.executors.session_transcript import (
+from ki_dev.adapter.executors.session_transcript import (
     TranscriptError,
     TranscriptRequestError,
     require_started_at,
 )
-from ki_dev.executors.transcript import (
+from ki_dev.adapter.executors.transcript import (
     read_session_transcript,
     validate_session_request,
 )

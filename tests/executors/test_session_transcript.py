@@ -2,8 +2,8 @@ import dataclasses
 
 import pytest
 
-from ki_dev.executors import claude_transcript, codex_transcript
-from ki_dev.executors.session_transcript import (
+from ki_dev.adapter.executors import claude_transcript, codex_transcript
+from ki_dev.adapter.executors.session_transcript import (
     SessionTranscript,
     TranscriptError,
     dialog_advisories,

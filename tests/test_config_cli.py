@@ -3,14 +3,12 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from ki_dev import (
-    handoff_limit_config,
-    handoff_next_turn,
-    handoff_preflight,
-    loop_cli,
     tool_versions,
 )
+from ki_dev.ausfuehrer import run_cli
 from ki_dev.cli import app
 from ki_dev.config_cli import SOURCES
+from ki_dev.step import limit_config, next_turn, preflight
 
 runner = CliRunner()
 
@@ -47,10 +45,10 @@ def test_config_lists_every_source_from_module_constants(
     """Orte stammen aus den zuständigen Modulen, nicht aus Kopien."""
     lines = _lines(tmp_path, monkeypatch)
     assert SOURCES == (
-        handoff_preflight.CONFIG_SOURCE,
-        handoff_limit_config.CONFIG_SOURCE,
-        handoff_next_turn.CONFIG_SOURCE,
-        loop_cli.CONFIG_SOURCE,
+        preflight.CONFIG_SOURCE,
+        limit_config.CONFIG_SOURCE,
+        next_turn.CONFIG_SOURCE,
+        run_cli.CONFIG_SOURCE,
         tool_versions.CONFIG_SOURCE,
     )
     assert len(lines) == len(SOURCES)
@@ -65,7 +63,7 @@ def test_config_lists_every_source_from_module_constants(
 def test_config_reports_missing_and_present_project_file(
     tmp_path, monkeypatch
 ):
-    command = handoff_preflight.CONFIG_SOURCE.command
+    command = preflight.CONFIG_SOURCE.command
     assert _lines(tmp_path, monkeypatch)[command].endswith("fehlt")
     (tmp_path / "pyproject.toml").write_text("")
     assert _lines(tmp_path, monkeypatch)[command].endswith("vorhanden")
@@ -75,7 +73,7 @@ def test_config_names_per_call_source_and_package_file(
     tmp_path, monkeypatch
 ):
     lines = _lines(tmp_path, monkeypatch)
-    assert lines[loop_cli.CONFIG_SOURCE.command].endswith("je Aufruf")
+    assert lines[run_cli.CONFIG_SOURCE.command].endswith("je Aufruf")
     assert lines[tool_versions.CONFIG_SOURCE.command].endswith(
         "vorhanden"
     )

@@ -4,7 +4,7 @@ Normalisiert Rohverbrauchsdaten aus Claude- und Codex-Quellen (CLI-
 Turnergebnis und lokale Sitzungs-/Rollout-Dateien) auf eine gemeinsame,
 versionierte Form. Reine deterministische Normalisierung: kein
 Modellaufruf, keine Freigabeentscheidung, keine Zurechnung zu Auftrag/
-Lauf (das bleibt ``loop_safety``/``CallLedger``, ki-dev-ablauf-wu0.3).
+Lauf (das bleibt ``run_safety.CallLedger``, ki-dev-ablauf-wu0.3).
 
 Providersemantik ist nicht identisch: Codex liefert ``input_tokens``
 inklusive Cache (bestaetigt an echten lokalen Rollouts, siehe
@@ -33,10 +33,10 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from ki_dev.executors.claude_cli import (
+from ki_dev.adapter.executors.claude_cli import (
     CLI_VERSION as _CLAUDE_CLI_VERSION,
 )
-from ki_dev.executors.codex_cli import (
+from ki_dev.adapter.executors.codex_cli import (
     CLI_VERSION as _CODEX_CLI_VERSION,
 )
 

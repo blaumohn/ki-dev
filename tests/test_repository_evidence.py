@@ -7,8 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from ki_dev.adapter.contract import (
+    RunTask,
+)
 from ki_dev.deltas import ChangeMedium, MediaRefs, VcsRef
-from ki_dev.loop import LoopTask
 from ki_dev.repository_evidence import (
     CheckCommand,
     RepositoryEvidenceCollector,
@@ -47,7 +49,7 @@ def test_check_tests_bound_worktree_not_leaked_pythonpath(
     (worktree_src / "pkgname" / "__init__.py").write_text(
         "MARKER = 'worktree'\n"
     )
-    task = LoopTask(
+    task = RunTask(
         "run-1",
         "task",
         (),
@@ -82,7 +84,7 @@ def test_prepare_rejects_preexisting_foreign_changes(tmp_path: Path):
     _git(repo, "commit", "-q", "-m", "base")
     foreign = repo / "foreign.txt"
     foreign.write_text("must survive\n")
-    task = LoopTask(
+    task = RunTask(
         "run-1", "task", (), repo, "write",
         acceptance_criteria=("Kriterium 1",),
     )

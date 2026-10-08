@@ -8,8 +8,7 @@ vollstaendig aufzuzaehlen.
 
 from __future__ import annotations
 
-from ki_dev.deltas import StepDeltaAssessment
-from ki_dev.machine import (
+from ki_dev.ausfuehrer.machine import (
     CheckpointRecorded,
     ControllerChanges,
     ControllerEscalate,
@@ -17,12 +16,16 @@ from ki_dev.machine import (
     ControllerPass,
     ControllerTask,
     Event,
+    ExecutionStopped,
     FinalizationError,
     FinalResultVerified,
     HistoryFinalized,
     IntegrationCompleted,
     Limits,
+    Phase,
+    ProcessError,
     ProtocolError,
+    ResumeRequested,
     ReviewedResultFrozen,
     RunStarted,
     StepResultCaptured,
@@ -32,6 +35,7 @@ from ki_dev.machine import (
     WorkerNeedsDecision,
     WorkerProcessError,
 )
+from ki_dev.deltas import StepDeltaAssessment
 
 TIGHT_LIMITS = Limits(
     protocol_attempts=2,
@@ -63,4 +67,8 @@ EVENT_POOL: tuple[Event, ...] = (
     IntegrationCompleted(ok=True),
     IntegrationCompleted(ok=False),
     FinalizationError("Referenz fehlt"),
+    ProcessError("bd nicht erreichbar"),
+    ExecutionStopped("Kontextgrenze erreicht"),
+    ResumeRequested(),
+    ResumeRequested(Phase.WORKER_STEP),
 )

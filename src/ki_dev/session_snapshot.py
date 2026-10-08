@@ -22,7 +22,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.executors.session_transcript import (
+from ki_dev.adapter.executors.session_transcript import (
     TEXT_SCHEMA,
     TIMESTAMP_SCHEMA,
     SessionTranscript,

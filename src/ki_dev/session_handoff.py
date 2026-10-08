@@ -11,14 +11,16 @@ festgehaltene Review-Entscheidungen.
 
 from __future__ import annotations
 
-from ki_dev.loop import LoopTask
-from ki_dev.loop_safety import recorded_usage
+from ki_dev.adapter.contract import (
+    RunTask,
+)
+from ki_dev.ausfuehrer.run_safety import recorded_usage
 from ki_dev.run_store import RunStore
 
 
 def build_handoff(
     store: RunStore,
-    task: LoopTask,
+    task: RunTask,
     *,
     round_id: int,
     phase: str,

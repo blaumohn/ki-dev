@@ -9,7 +9,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from ki_dev.review_decision import (
-    LOOP_ACTIONS,
+    RUN_ACTIONS,
     STEP_ACTIONS,
     ReviewAction,
     ReviewContractError,
@@ -29,7 +29,7 @@ def _core(action="CHANGES", detail="x", ref="AC1") -> dict:
 def test_step_rejects_escalate_but_loop_accepts_it():
     value = _core("ESCALATE", "Grenze", None)
     assert (
-        parse_verdict(value, LOOP_ACTIONS).action
+        parse_verdict(value, RUN_ACTIONS).action
         is ReviewAction.ESCALATE
     )
     with pytest.raises(ReviewContractError, match="action: ungültiger"):

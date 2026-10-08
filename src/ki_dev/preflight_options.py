@@ -15,7 +15,7 @@ from dataclasses import replace
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.handoff_preflight import (
+from ki_dev.step.preflight import (
     ARGV_SCHEMA,
     PreflightConfig,
     argv_character_problem,

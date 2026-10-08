@@ -11,7 +11,7 @@ ki-dev session transcript 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --
 ```
 
 Die Sitzungsordner und die Dialogprüfung sind dieselben wie bei
-[`step map`](handoff.de.md#sitzung-als-quelle-step-map). Beide Aufrufe
+[`step map`](step.de.md#sitzung-als-quelle-step-map). Beide Aufrufe
 verwenden denselben Serializer und denselben Speicher.
 
 ## Datierte JSONL-Snapshots

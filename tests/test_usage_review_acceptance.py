@@ -15,7 +15,7 @@ import json
 
 import pytest
 
-from ki_dev.executors.codex_cli import CLI_VERSION
+from ki_dev.adapter.executors.codex_cli import CLI_VERSION
 from ki_dev.usage import (
     CounterScope,
     UsageStatus,

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sys
 
-from ki_dev.executors import run_cli_turn
-from ki_dev.executors.contract import TurnStatus
+from ki_dev.adapter.executors import run_cli_turn
+from ki_dev.adapter.executors.contract import TurnStatus
 
 
 def _py(code: str) -> list[str]:
