@@ -82,6 +82,12 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
   (Prozess abgestürzt, Kontextgrenze) in den Ausführer.
 - Schichtrichtung: Ablauf kennt weder Ausführer noch Adapter, Adapter
   kennen keinen Ablauf (`tests/test_schichten.py`).
+- Ein Graphmodell: Der LangGraph-Graph des Ausführers wird aus der
+  Ablaufdatei übersetzt (ein Knoten je Zustand); Diagramme erzeugt
+  `ki-dev flow show`. Keine zweite Zustandsmaschine neben dem Ablauf.
+- Ein Vokabular: Review-Antworten nennen ein Ereignis des Ablaufs
+  (`PASS` oder eine Befundklasse); das Urteil steht in
+  `finding_class`, nicht im Code.
 - Wiederkehrende Topologie steht einmal als Muster (`pattern`), jede
   Phase liefert nur Parameter (`flow/pattern.py`). Ablaufdaten
   enthalten Namen und Struktur, keine Ausdrücke in Strings

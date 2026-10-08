@@ -189,6 +189,10 @@ ausgelagert.
   Ein- und Ausgabegrenzen gelesen.
 - Neue Abhängigkeiten und Schnittstellenänderungen werden geprüft.
   Hilfsmodule dürfen keine verdeckte Rückkopplung zum aufrufenden Modul schaffen.
+- Importzyklen sind Entwurfsfehler, auch wenn lokale Importe oder
+  reine Typprüfungsimporte sie verdecken. Ein Modul, das nur eine
+  Schicht nutzt, liegt in dieser Schicht; gemeinsame Begriffe stehen
+  in einem neutralen Modul, das keine Seite zurückimportiert.
 - Konfiguration wird nach fachlicher Zuständigkeit gegliedert. Jeder Parameter
   hat genau eine maßgebliche Definition. Profile bündeln nur zusammengehörige
   Einstellungen; keine Sammeldatei für unabhängige Bereiche. Eigene Dateien
@@ -200,6 +204,42 @@ Prozessfristen unter `prozesse`.
 **Beispiel – rust-analyzer:** Der Analysekern erhält Quelltexte und
 Projektstruktur als Daten im Speicher und führt selbst keine Ein- oder Ausgabe aus.
 [Beleg: Architecture – Bird’s Eye View](https://rust-analyzer.github.io/book/contributing/architecture.html#birds-eye-view).
+
+### Jeder Sachverhalt hat genau eine maßgebliche Quelle
+{: .policy-subtitle }
+
+- Ein Modell beschreibt einen Sachverhalt einmal. Eine zweite
+  Darstellung desselben Inhalts (ein weiteres Zustandsmodell, eine
+  gepflegte Kopie, ein Diagramm) wird aus der Quelle erzeugt, nicht
+  nebenher gepflegt; ein Test vergleicht Erzeugtes und Eingebettetes.
+- Begriffe, die zwei Seiten austauschen, haben ein Vokabular. Wo eine
+  Seite eine Ableitung braucht (etwa ein Urteil aus einer Klasse),
+  steht die Abbildung an genau einer Stelle, nicht als Konstante je
+  Aufrufer.
+- Bevor eine Bibliothek ein Modell erhält, das sie selbst ausdrücken
+  kann, wird entschieden, welche Seite maßgeblich ist; die andere
+  wird daraus übersetzt.
+
+**Beispiel – Ablauf:** Die Zustände stehen nur in der Ablaufdatei.
+Der Laufzeitgraph und die Mermaid-Diagramme der Dokumentation werden
+daraus erzeugt; Review-Antworten sind Ereignisse dieses Ablaufs, das
+Urteil folgt aus seiner Befundklasse.
+
+### Jedes Modul hat einen belegten Nutzer
+{: .policy-subtitle }
+
+- Ein Modul wird importiert, von außen aufgerufen (Hook, Skript,
+  Container) oder gehört zu einem offenen Auftrag, der seine
+  Anbindung beschreibt.
+- Module für künftige, noch nicht angebundene Funktionen liegen in
+  einem eigenen, benannten Paket, dessen Beschreibung den Auftrag
+  nennt; ein Test hält fest, dass der übrige Code sie noch nicht nutzt.
+- Ohne einen dieser Belege wird ein Modul gelöscht, nicht
+  aufbewahrt.
+
+**Beispiel:** Ein Pilot für einen späteren Versuch liegt als
+Paket `pilot/` mit Verweis auf seinen Auftrag; ein Schichtentest
+meldet, sobald es ohne diese Anbindung importiert wird.
 
 ### Ressourcen werden auch bei frühem Verlassen freigegeben
 {: .policy-subtitle }
