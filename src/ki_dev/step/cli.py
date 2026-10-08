@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, BinaryIO, NamedTuple, NoReturn, cast
 
@@ -25,7 +26,7 @@ from ki_dev.runner.planning import (
     MachineOperation,
     PlanningContext,
     bind_planning,
-    drive,
+    planning_runtime,
     with_facts,
 )
 from ki_dev.session_snapshot import SnapshotTitleError, validate_title
@@ -103,6 +104,7 @@ from ki_dev.step.state import (
     StepStateError,
     load_state,
     remember,
+    step_dir,
 )
 
 IMPLEMENT = "implement"
@@ -452,6 +454,31 @@ def _bead_form(
         raise typer.Exit(code=output.exit_code)
 
 
+_Run = Callable[[str, str | None, dict[str, MachineOperation]], Halt]
+
+
+def _planner(
+    bead_id: str, flow: PlanningFlow, saved: SavedState | None
+) -> _Run:
+    """Ein Schritt des Planungs-Threads dieses Beads: wartet der Lauf
+    genau in ``state``, ist ``event`` seine Antwort (resume); sonst
+    beginnt der Aufruf dort (start, im Protokoll ggf. ein Sprung)."""
+
+    def run(
+        state: str,
+        event: str | None,
+        machine: dict[str, MachineOperation],
+    ) -> Halt:
+        with planning_runtime(
+            flow.flow, step_dir(bead_id), bead_id, machine
+        ) as runtime:
+            if saved is not None and saved.state == state and event:
+                return runtime.resume(event)
+            return runtime.start(state, event)
+
+    return run
+
+
 def _saved_state(bead_id: str) -> SavedState | None:
     try:
         check_bead_id(bead_id)
@@ -540,15 +567,16 @@ def _bead_output(
     vor jedem Beads-Zugriff und Vorlauf gelesen."""
     flow = _planning_flow()
     bound = bind_planning(flow.flow)
+    run = _planner(bead_id, flow, saved)
     if step is Step.REVIEW and next_turn:
         issue = read_issue(bead_id, Path.cwd())
         if inputs.decision is not None:
             text, halt = _decision_turn(
-                issue, inputs.decision, flow, bound, saved
+                issue, inputs.decision, flow, run, saved
             )
             return _Output(text, 0, halt, flow)
         text, code, halt = _next_turn_handoff(
-            issue, review_of, extra, inputs.feedback, flow, bound
+            issue, review_of, extra, inputs.feedback, flow, bound, run
         )
         return _Output(text, code, halt, flow)
     limit = load_base_max_chars(Path.cwd())
@@ -556,11 +584,11 @@ def _bead_output(
     if step is Step.REVIEW:
         guidelines = _selected_guidelines(step, review_of)
         text, code, halt = _review_handoff(
-            issue, review_of, extra, guidelines, limit, flow, bound
+            issue, review_of, extra, guidelines, limit, flow, run
         )
         return _Output(text, code, halt, flow)
     # Projektion: Der Ablauf hält im Zustand der Phase bei ihrem turn.
-    halt = _expect_turn(drive(bound, step.value, None, {}), step.value)
+    halt = _expect_turn(run(step.value, None, {}), step.value)
     guidelines = _selected_guidelines(step, None)
     text = render_handoff(
         issue,
@@ -671,7 +699,7 @@ def _review_handoff(
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
     flow: PlanningFlow,
-    bound: BoundFlow[PlanningContext],
+    run: _Run,
 ) -> tuple[str, int, Halt]:
     """Übergabe für ``--step review``, Exitcode und Halt.
 
@@ -690,7 +718,7 @@ def _review_handoff(
     if review_of not in (None, ReviewTarget.IMPLEMENT):
         target = cast(ReviewTarget, review_of)
         halt = _expect_turn(
-            drive(bound, target.value, DONE, {}),
+            run(target.value, DONE, {}),
             f"{target.value}.review",
         )
         return render_handoff(
@@ -707,7 +735,7 @@ def _review_handoff(
     ensure_base_fits(
         issue, Step.REVIEW, review_of, base_max_chars, flow=flow
     )
-    halt = drive(bound, IMPLEMENT, DONE, _machine(extra))
+    halt = run(IMPLEMENT, DONE, _machine(extra))
     outcome = cast(_PreflightOutcome, halt.context.outcome)
     if _is_correction(flow, halt):
         limit = load_feedback_max_chars(Path.cwd())
@@ -799,6 +827,7 @@ def _next_turn_handoff(
     feedback_file: str | None,
     flow: PlanningFlow,
     bound: BoundFlow[PlanningContext],
+    run: _Run,
 ) -> tuple[str, int, Halt]:
     """Nächste Nachricht nach einer Korrektur, Exitcode und Halt.
 
@@ -821,7 +850,7 @@ def _next_turn_handoff(
         feedback = read_feedback(feedback_file, limit, _stdin_binary)
     implement = target is ReviewTarget.IMPLEMENT
     machine = _machine(extra) if implement else {}
-    halt = drive(bound, f"{target.value}.correction", DONE, machine)
+    halt = run(f"{target.value}.correction", DONE, machine)
     outcome = cast("_PreflightOutcome | None", halt.context.outcome)
     if target is not ReviewTarget.IMPLEMENT:
         text = render_review_turn(
@@ -892,7 +921,7 @@ def _decision_turn(
     issue: HandoffIssue,
     source: str,
     flow: PlanningFlow,
-    bound: BoundFlow[PlanningContext],
+    run: _Run,
     saved: SavedState | None,
 ) -> tuple[str, Halt]:
     """Reviewer-Antwort prüfen und Nachricht laut Tabelle; der Bead
@@ -916,11 +945,8 @@ def _decision_turn(
             f"{saved.state}, nicht in {IMPLEMENT_REVIEW}"
         )
     # Das gebundene Ereignis nimmt die Kante aus implement.review.
-    context = None if saved is None else saved.context()
     try:
-        halt = drive(
-            bound, IMPLEMENT_REVIEW, decision.verdict.event, {}, context
-        )
+        halt = run(IMPLEMENT_REVIEW, decision.verdict.event, {})
     except FlowError as exc:
         raise DecisionInputError(
             f"Review-Antwort ungültig: {exc} (Teillauf: kein PASS)"

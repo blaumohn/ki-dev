@@ -293,7 +293,8 @@ src/ki_dev/
                (Mermaid), templates/ (Rollentexte), delivery.toml, planning.toml
   runner/      interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Wächter,
                Aktionen, advance), runtime.py (LangGraph-Graph aus delivery.toml),
-               planning.py (Planungsschleife), events.py (Protokoll), prompts.py
+               planning.py (Planungs-Thread je Bead), graph.py (Ablauf → Graph,
+               für run und step), events.py (Protokoll), prompts.py
                (Vorlagen füllen), cli.py,
                safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
   adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),
@@ -315,8 +316,9 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 
 - **Benutzbar:** `ki-dev step` (Planungsablauf von Hand), `ki-dev run` mit
   allen vier Adaptern (Bauablauf).
-- **Planungsablauf:** `step` fährt `planning.toml` über den Ausführer
-  (`runner/planning.py`) bis zum nächsten `turn`/`ask`; `map`, `graph` und
+- **Planungsablauf:** `step` fährt `planning.toml` als LangGraph-Thread je
+  Bead (`runner/planning.py`, derselbe Graph-Übersetzer wie `run`) bis zum
+  nächsten `turn`/`ask`; `map`, `graph` und
   `materialize` laufen ohne Vorlauf (Stub), `implement` mit
   `implement.preflight`.
 - **Laufzustand je Bead:** `ki-dev step BEAD_ID` ohne `--step` setzt den

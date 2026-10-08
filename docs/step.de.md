@@ -5,7 +5,9 @@
 Adapter `manual`: Ein Aufruf nimmt die Kante seines Startereignisses, fährt
 Maschinenzustände wie den Vorlauf (`implement.preflight`) selbst und hält beim
 nächsten `turn` (Übergabe an eine Sitzung) oder `ask` (der Mensch entscheidet).
-Die Schleife steht in `src/ki_dev/runner/planning.py`; step wählt aus Halt und
+Der Ausführer ist ein LangGraph-Thread je Bead (`src/ki_dev/runner/planning.py`),
+übersetzt mit demselben `compile_flow` wie `ki-dev run`; `turn` und `ask`
+halten mit `interrupt`. step wählt aus Halt und
 genommenem Weg die Vorlage und gibt sie aus, der Mensch trägt sie als Bote
 weiter (den Lieferablauf fährt `ki-dev run`, siehe [Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
 ausführungsreife Aufträge bleiben auf einen kleinen Umsetzungsschnitt
@@ -18,13 +20,16 @@ Arbeitsstand während Vorlauf und Review passend; nach weiteren Änderungen
 starte den Vorlauf erneut.
 
 **Laufzustand je Bead.** Jeder Aufruf endet in einem Halt des Ablaufs; step
-speichert ihn unter `.local/handoff/steps/<BEAD_ID>/state.json` (Zustand und
-Tatsachen für Wächter, etwa „kein PASS nach Teillauf“) und protokolliert jede
-genommene Kante in `events.jsonl` (wie `ki-dev run`). `ki-dev step BEAD_ID`
+speichert ihn als Checkpoint unter `.local/handoff/steps/<BEAD_ID>/checkpoints.sqlite`
+(wartender Zustand und Tatsachen für Wächter, etwa „kein PASS nach
+Teillauf“) und protokolliert jede genommene Kante in `events.jsonl` (wie
+`ki-dev run`). Eine Antwort (etwa `--decision-file`) gilt nur dort, wo der
+Thread wartet; nach rotem Vorlauf beendet ein PASS den Lauf nicht. `ki-dev step BEAD_ID`
 ohne `--step` setzt fort: nach dem Schreiben folgt das Review, nach der
 Korrektur die Folgerunde; in Review, Entscheidung und Quelle nennt step die
 Folgeschritte. Ein ausdrückliches `--step` beginnt dort; weicht das vom
-letzten Halt ab, steht ein Hinweis auf stderr und der Sprung im Protokoll.
+letzten Halt ab, steht ein Hinweis auf stderr und im Protokoll die Zeile
+`letzter Halt --@jump--> Start`, die `check_conformance` meldet.
 Der Zustand ist lokaler Arbeitsstand, nicht Teil von bd/Dolt.
 
 `ki-dev step BEAD_ID --step STEP` prüft einen Bead formal und gibt eine

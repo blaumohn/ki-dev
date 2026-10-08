@@ -14,7 +14,6 @@ from typing import NotRequired, Protocol, TypedDict, cast
 
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from ki_dev.adapter import manual, mock
@@ -43,7 +42,6 @@ from ki_dev.flow.model import (
     FlowError,
     Transition,
     Verdict,
-    targets,
 )
 from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
@@ -53,6 +51,7 @@ from ki_dev.review_context import (
 )
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.events import event_record
+from ki_dev.runner.graph import END_ROUTE, compile_flow
 from ki_dev.runner.machine import (
     DELIVERY,
     DELIVERY_BOUND,
@@ -148,18 +147,6 @@ _HALT_STATUSES = frozenset(
         "passed",
     }
 )
-_END = "end"
-
-
-def successors(state: str) -> set[str]:
-    """Mögliche Folgezustände laut ``delivery.toml``."""
-    return {
-        target
-        for transition in DELIVERY.outgoing(state)
-        for target in targets(DELIVERY, transition)
-    }
-
-
 # Agentenoperationen des Lieferablaufs und die Rolle, die sie ausführt
 # (Konfigurationsschlüssel, Verbrauchsbuch, Budget).
 _AGENT_ROLES = {"work": "worker", "review": "review"}
@@ -421,33 +408,20 @@ class RunRuntime:
         return _thread_config(self.store.run_id)
 
     def _compile_graph(self):
-        """Ein Graphmodell: jeder Zustand von ``delivery.toml`` ist ein
-        Knoten, jede Kante ein möglicher Übergang (``@history``
-        aufgelöst). Welche Kante gilt, wählt weiterhin der Ablauf
-        (``advance``); der Graph führt sie aus und hält an."""
-        graph = StateGraph(RunGraphState)
-        for state_id, flow_state in DELIVERY.states.items():
-            node = (
+        """Ein Graphmodell: der gemeinsame Übersetzer macht aus
+        ``delivery.toml`` den Graphen (ein Knoten je Zustand); welche
+        Kante gilt, wählt weiterhin der Ablauf (``advance``)."""
+        return compile_flow(
+            DELIVERY,
+            RunGraphState,
+            lambda state: (
                 self._wait_node
-                if flow_state.kind == WAIT_KIND
+                if state.kind == WAIT_KIND
                 else self._tick
-            )
-            graph.add_node(state_id, node)
-        graph.add_edge(START, DELIVERY.start)
-        for state_id in DELIVERY.states:
-            graph.add_conditional_edges(
-                state_id,
-                self._route,
-                {
-                    **{
-                        target: target
-                        for target in successors(state_id)
-                    },
-                    state_id: state_id,
-                    _END: END,
-                },
-            )
-        return graph.compile(checkpointer=self._checkpointer)
+            ),
+            self._route,
+            self._checkpointer,
+        )
 
     @staticmethod
     def _route(state: RunGraphState) -> str:
@@ -455,7 +429,7 @@ class RunRuntime:
         Knoten der aktuellen Phase (auch derselbe Zustand, solange eine
         Operation läuft oder ein wartender Zustand anhält)."""
         if state["status"] in _HALT_STATUSES:
-            return _END
+            return END_ROUTE
         return decode_run_state(state["run_state"]).state.phase.value
 
     def _current_node(self) -> str:

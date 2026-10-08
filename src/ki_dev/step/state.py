@@ -1,60 +1,43 @@
 """Laufzustand je Bead für ``ki-dev step`` (lokal, nicht in bd/Dolt).
 
-Jeder Aufruf endet in einem Halt des Planungsablaufs; dieser Halt und
-die genommenen Kanten bleiben unter ``.local/handoff/steps/<BEAD>/``:
-``state.json`` (Zustand und Tatsachen für Wächter, z. B. kein PASS nach
-Teillauf) und ``events.jsonl`` (dasselbe Ereignisprotokoll wie bei
-``ki-dev run``). Beads bleiben Auftrag und PM-Sicht; der Laufzustand
-ist Arbeitsstand dieses Arbeitsbaums wie die Vorlaufartefakte.
+Der Zustand ist der LangGraph-Thread des Planungsablaufs
+(:mod:`ki_dev.runner.planning`) mit Checkpoint unter
+``.local/handoff/steps/<BEAD>/checkpoints.sqlite``: wartender Zustand
+und Tatsachen für Wächter (z. B. kein PASS nach Teillauf). Daneben
+steht ``events.jsonl``, dasselbe Ereignisprotokoll wie bei
+``ki-dev run``. Beads bleiben Auftrag und PM-Sicht; der Laufzustand ist
+Arbeitsstand dieses Arbeitsbaums wie die Vorlaufartefakte.
 
 Ein ausdrückliches ``--step`` beginnt dort, ohne ``--step`` setzt step
-den gespeicherten Zustand fort. Beginnt ein Aufruf woanders, als der
-letzte endete, zeigt :func:`~ki_dev.runner.events.check_conformance`
-die Abweichung im Protokoll.
+den wartenden Zustand fort. Beginnt ein Aufruf woanders, als der letzte
+endete, steht davor eine Zeile ``letzter Halt --@jump--> Start``, die
+:func:`~ki_dev.runner.events.check_conformance` als Abweichung meldet.
 """
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from jsonschema import Draft202012Validator
-
-from ki_dev.flow.model import Flow, Transition
+from ki_dev.flow.model import Flow, Transition, load_flow
+from ki_dev.flow.planning import NAME as PLANNING
 from ki_dev.run_store import RunStore
 from ki_dev.runner.events import event_record
-from ki_dev.runner.planning import Halt, PlanningContext
+from ki_dev.runner.planning import (
+    CHECKPOINT_FILE,
+    Halt,
+    PlanningContext,
+    planning_runtime,
+)
 
 STATE_DIR = Path(".local") / "handoff" / "steps"
-STATE_FILE = "state.json"
 MANUAL = "manual"
 JUMP = "@jump"
 MACHINE = "ki-dev"
 
-_NAME = {"type": "string", "pattern": r"^[a-z_.]+$"}
-_VALIDATOR = Draft202012Validator(
-    {
-        "type": "object",
-        "required": ["state", "facts"],
-        "additionalProperties": False,
-        "properties": {
-            "state": _NAME,
-            "facts": {
-                "type": "array",
-                "uniqueItems": True,
-                "items": _NAME,
-            },
-        },
-    }
-)
-
-
 class StepStateError(ValueError):
-    """Gespeicherter Zustand ist unlesbar oder verletzt sein Schema."""
+    """Ort des Laufzustands ist für diese BEAD_ID ungültig."""
 
 
 @dataclass(frozen=True)
@@ -70,19 +53,20 @@ def state_root() -> Path:
     return Path.cwd() / STATE_DIR
 
 
+def step_dir(bead_id: str) -> Path:
+    return _store(bead_id).run_dir
+
+
 def load_state(bead_id: str) -> SavedState | None:
-    path = _store(bead_id).run_dir / STATE_FILE
-    if not path.exists():
+    """Wartender Zustand aus dem Checkpoint oder ``None``."""
+    directory = step_dir(bead_id)
+    if not (directory / CHECKPOINT_FILE).exists():
         return None
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise StepStateError(f"{path}: nicht lesbar") from exc
-    errors = list(_VALIDATOR.iter_errors(value))
-    if errors:
-        field = ".".join(map(str, errors[0].absolute_path)) or "$"
-        raise StepStateError(f"{path}: {field}: {errors[0].validator}")
-    return SavedState(value["state"], frozenset(value["facts"]))
+    with planning_runtime(
+        load_flow(PLANNING), directory, bead_id
+    ) as runtime:
+        waiting = runtime.waiting()
+    return None if waiting is None else SavedState(*waiting)
 
 
 def remember(
@@ -114,10 +98,6 @@ def remember(
                 adapter=_adapter(flow, transition.source),
             )
         )
-    _replace_json(
-        store.run_dir / STATE_FILE,
-        {"state": halt.state, "facts": sorted(halt.context.facts)},
-    )
 
 
 def _adapter(flow: Flow, state: str) -> str:
@@ -131,20 +111,3 @@ def _store(bead_id: str) -> RunStore:
         return RunStore(state_root(), bead_id)
     except ValueError as exc:
         raise StepStateError(f"BEAD_ID {bead_id!r}: {exc}") from exc
-
-
-def _replace_json(path: Path, value: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, ensure_ascii=False, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
