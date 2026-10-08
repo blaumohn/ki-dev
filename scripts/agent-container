@@ -12,6 +12,7 @@ main() {
   cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/agent-container"
   compose_files=(-f "$repo_dir/compose.yaml")
   mount_files=()
+  ro_sources=()
   mode=dev
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -28,6 +29,15 @@ main() {
         add_mounts "${1#--mount=}"
         shift
         ;;
+      --mount-ro)
+        if [[ $# -lt 2 ]]; then usage_error "$1 benötigt DIR"; fi
+        add_ro_mount "$2"
+        shift 2
+        ;;
+      --mount-ro=*)
+        add_ro_mount "${1#--mount-ro=}"
+        shift
+        ;;
       --fresh)
         mode="test"
         shift
@@ -36,6 +46,9 @@ main() {
       *) break ;;
     esac
   done
+  if [[ ${#ro_sources[@]} -gt 0 && "${1:-shell}" != shell && "$1" != run ]]; then
+    usage_error "--mount-ro gilt nur für shell und run"
+  fi
   if [[ $mode == test && "${1:-shell}" != shell && "$1" != run ]]; then
     usage_error "--fresh applies only to shell and run"
   fi
@@ -71,6 +84,8 @@ this checkout and the dependency volumes of the repos chosen with --mount.
 Options:
   -m, --mount NAME[,NAME...]  also apply the mount file NAME.yaml;
                               repeatable, unique prefixes are accepted
+      --mount-ro DIR          vorhandenen Ordner schreibgeschützt unter
+                              /references/<Ordnername> einbinden; wiederholbar
       --fresh                 test mode: temporary home, venv, dependency
                               directories and Go build cache
   -h, --help                  show this help and exit
@@ -90,6 +105,24 @@ usage_error() {
   echo "agent-container: $1" >&2
   echo "Try 'scripts/agent-container --help' for more information." >&2
   exit 2
+}
+
+# Referenzordner benötigen weder Repo-Vertrag noch Abhängigkeits-Volumes.
+add_ro_mount() {
+  local source="$1" name existing
+  if [[ ! -d "$source" ]]; then usage_error "kein Verzeichnis: '$source'"; fi
+  source="$(cd -- "$source" && pwd -P)"
+  if [[ "$source" == / || "$source" == *:* ]]; then
+    usage_error "nicht unterstützter Pfad für --mount-ro: '$source'"
+  fi
+  name="${source##*/}"
+  for existing in "${ro_sources[@]}"; do
+    if [[ "$existing" == "$source" ]]; then return; fi
+    if [[ "${existing##*/}" == "$name" ]]; then
+      usage_error "gleicher Ordnername bei --mount-ro: '$name'"
+    fi
+  done
+  ro_sources+=("$source")
 }
 
 # Optional sibling checkouts, chosen per call from $mount_dir/NAME.yaml.
@@ -228,6 +261,10 @@ run_agent() {
   fi
   add_beads_mount
   local run_args=(run --rm --no-deps)
+  local source
+  for source in "${ro_sources[@]}"; do
+    run_args+=(-v "$source:/references/${source##*/}:ro")
+  done
   if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
   exec docker compose "${compose_files[@]}" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"
 }

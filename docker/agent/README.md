@@ -100,6 +100,29 @@ Vor einem Wechsel zurück zu `/usr/local/bin/bd` prüfen, ob dessen Version
 das aktuelle Datenbankschema unterstützt. Ein neuerer Entwicklungsstand kann
 die Datenbank bereits migriert haben; eine Schemawarnung nicht umgehen.
 
+## Referenzordner schreibgeschützt einbinden
+
+Mit `--mount-ro PFAD` lassen sich vorhandene Ordner direkt zum Lesen
+einbinden. Die Option ist für mehrere Ordner wiederholbar:
+
+```bash
+./scripts/agent-container --mount-ro ../beispiel-repo --mount-ro /pfad/zu/doku shell
+./scripts/agent-container --mount-ro=../beispiel-repo run ls /references/beispiel-repo
+```
+
+Jeder Ordner erscheint schreibgeschützt unter `/references/<Ordnername>`.
+Relative Pfade beziehen sich auf das aktuelle Host-Verzeichnis; Pfade mit
+Leerzeichen in Anführungszeichen setzen. Symlinks werden aufgelöst; der
+Name des Zielordners bestimmt den Container-Pfad. Unterschiedliche Ordner
+mit demselben Namen werden abgelehnt, wiederholte identische Pfade nur
+einmal eingebunden. Fehlende Ordner, `/` und Pfade mit Doppelpunkt werden
+abgelehnt.
+
+Es braucht keine YAML-Datei; für diese Ordner werden keine Abhängigkeiten
+installiert und keine Builds gestartet. Die Option gilt für `shell` und
+`run` und lässt sich mit `--mount` und `--fresh` kombinieren. Ein bereits
+vorhandenes Agent-Image genügt, ein Image-Neubau ist dafür nicht nötig.
+
 ## Weitere Nachbar-Repos per `--mount`
 
 Weitere Nachbar-Repos werden je Aufruf gewählt, nach dem Muster von

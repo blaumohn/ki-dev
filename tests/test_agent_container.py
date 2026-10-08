@@ -168,6 +168,7 @@ def overlay_files(sandbox, args):
         (["--mount", "nope"], "unknown mount 'nope' in "),
         (["-m", "mdm"], "ambiguous mount 'mdm': "),
         (["--mount"], "--mount needs NAME[,NAME...]"),
+        (["--mount-ro"], "--mount-ro benötigt DIR"),
         (["--mount=../x"], "invalid mount list '../x'"),
         (["-m", "devkit,,mdman"], "invalid mount list"),
         (["-m", "devkit,"], "invalid mount list"),
@@ -188,6 +189,69 @@ def test_help_is_static(sandbox):
     assert "-m, --mount NAME[,NAME...]" in stdout
     assert "ki-dev/agent-container/mounts/NAME.yaml" in stdout
     assert "devkit" not in stdout
+    assert not (sandbox.log / "args").exists()
+
+
+@pytest.mark.parametrize("fresh", [[], ["--fresh"]])
+def test_read_only_reference_directories(sandbox, fresh):
+    first = sandbox.repo.parent / "example repo"
+    second = sandbox.repo.parent / "docs,notes"
+    first.mkdir()
+    second.mkdir()
+    sandbox.run(
+        *fresh, "--mount-ro", "../example repo",
+        f"--mount-ro={second}", "--mount-ro", str(first),
+        "run", "ls", "/references/example repo",
+    )
+    args = sandbox.logged("args")
+    volumes = [args[i + 1] for i, arg in enumerate(args) if arg == "-v"]
+    assert volumes == [
+        f"{first}:/references/example repo:ro",
+        f"{second}:/references/docs,notes:ro",
+    ]
+    assert args[-3:] == [
+        "agent", "ls", "/references/example repo"
+    ]
+    assert not (sandbox.log / "config-args").exists()
+
+
+@pytest.mark.parametrize("value", ["", "missing", "/", "bad:path"])
+def test_invalid_read_only_directory(sandbox, value):
+    if value == "bad:path":
+        (sandbox.repo / value).mkdir()
+    sandbox.run(f"--mount-ro={value}", retcode=2)
+    assert not (sandbox.log / "args").exists()
+
+
+def test_read_only_directory_name_collision(sandbox):
+    first = sandbox.repo / "a/example"
+    second = sandbox.repo / "b/example"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    _, _, stderr = sandbox.run(
+        "--mount-ro", str(first), "--mount-ro", str(second), retcode=2
+    )
+    assert "gleicher Ordnername bei --mount-ro: 'example'" in stderr
+    assert not (sandbox.log / "args").exists()
+
+
+def test_read_only_symlink_with_named_mount(sandbox):
+    source = sandbox.repo.parent / "reference"
+    source.mkdir()
+    (sandbox.repo / "alias").symlink_to(
+        source, target_is_directory=True
+    )
+    sandbox.run("-m", "devkit", "--mount-ro", "alias")
+    args = sandbox.logged("args")
+    assert f"{source}:/references/reference:ro" in args
+    assert mount_file(sandbox, "devkit") in compose_files(args)
+    assert args[-2:] == ["agent", "bash"]
+
+
+@pytest.mark.parametrize("command", ["build", "mounts", "reset"])
+def test_read_only_mount_only_for_shell_and_run(sandbox, command):
+    _, _, stderr = sandbox.run("--mount-ro", ".", command, retcode=2)
+    assert "--mount-ro gilt nur für shell und run" in stderr
     assert not (sandbox.log / "args").exists()
 
 
