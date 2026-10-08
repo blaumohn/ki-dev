@@ -289,13 +289,17 @@ Oder der Agent-Container mit bd, Codex und Claude Code:
 
 ```text
 src/ki_dev/
-  flow/        model.py (Schema, Prüfung), delivery.toml, planning.toml, planning.py
-  runner/      interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Zustand,
-               Ereignisse, advance), runtime.py (LangGraph), cli.py,
+  flow/        model.py (Schema, Prüfung), pattern.py (Muster), diagram.py
+               (Mermaid), templates/ (Rollentexte), delivery.toml, planning.toml
+  runner/      interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Wächter,
+               Aktionen, advance), runtime.py (LangGraph-Graph aus delivery.toml),
+               planning.py (Planungsschleife), events.py (Protokoll), cli.py,
                safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
   adapter/     contract.py, prompts.py, agent.py, manual.py, mock.py,
                executors/ (Claude- und Codex-CLI, Transkripte, Messung)
-  step/        Übergaben, Vorlauf und Leitlinien für ki-dev step
+  step/        Adapter manual für den Planungsablauf: Übergaben, Vorlauf,
+               Leitlinien, Laufzustand je Bead
+  pilot/, safety_profile/   abgelegt, noch nicht angebunden (urq, wu0.10.5)
 ```
 
 Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
