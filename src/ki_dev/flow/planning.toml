@@ -34,6 +34,10 @@ events = [
 # full_checks: der letzte Vorlauf lief vollständig (kein Teillauf);
 # ohne ihn gibt es kein PASS.
 guards = ["full_checks"]
+# Was der Ausführer beim Betreten tut: turn = Übergabe an eine Sitzung
+# (Adapter manual: Ausgabe für den Menschen als Boten), ask = der Mensch
+# entscheidet, checks = deterministischer Vorlauf (läuft automatisch).
+operations = ["turn", "ask", "checks"]
 
 # Pflichtereignisse je Zustandsart: jeder Zustand dieser Art muss sie
 # behandeln, sonst bleibt ein Ausgang einer Sitzung ohne Folge.
@@ -69,19 +73,23 @@ globals = ["source"]
 [[pattern.review_core.state]]
 local = "write"
 kind = "write"
+operation = [{ do = "turn" }]
 
 [[pattern.review_core.state]]
 local = "review"
 kind = "review"
+operation = [{ do = "turn" }]
 
 [[pattern.review_core.state]]
 local = "correction"
 kind = "correction"
+operation = [{ do = "turn" }]
 
 [[pattern.review_core.state]]
 local = "decision"
 kind = "decision"
 actor = "Mensch"
+operation = [{ do = "ask" }]
 
 [[pattern.review_core.transition]]
 source = "review"
@@ -144,6 +152,7 @@ extends = "review_core"
 local = "preflight"
 kind = "machine"
 actor = "ki-dev (Vorlauf: Korrekturen und Prüfungen)"
+operation = [{ do = "checks" }]
 
 [[pattern.write_review_preflight.transition]]
 source = "write"
@@ -283,6 +292,7 @@ correct = "Entscheidung an den Umsetzer (implementer) (bisherige Sitzung)"
 id = "source"
 kind = "source"
 actor = "Mensch (Planungssitzung)"
+operation = [{ do = "ask" }]
 
 [[state]]
 id = "finished"

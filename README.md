@@ -310,8 +310,12 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 
 - **Benutzbar:** `ki-dev step` (Planungsablauf von Hand), `ki-dev run` mit
   allen vier Adaptern (Bauablauf).
-- **Offen:** Der Planungsablauf hat noch keinen gebundenen Ausführer. `step`
-  rendert seine Übergaben direkt, `run` fährt bisher nur `delivery.toml`.
+- **Planungsablauf:** `step` fährt `planning.toml` über den Ausführer
+  (`runner/planning.py`) bis zum nächsten `turn`/`ask`; `map`, `graph` und
+  `materialize` laufen ohne Vorlauf (Stub), `implement` mit
+  `implement.preflight`.
+- **Offen:** Laufzustand je Bead für `step` (heute bestimmt der Aufruf den
+  Startzustand).
 - **Beobachtbar:** `ki-dev run` schreibt je Übergang eine Zeile nach
   `events.jsonl` ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
 - **Zur Kartierung offen:** Sitzungsbindung als Ablaufdatum

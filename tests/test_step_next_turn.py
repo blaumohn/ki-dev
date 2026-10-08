@@ -207,7 +207,9 @@ def test_repair_turn_names_recipient_request_limit_and_finding():
 
 def test_review_turn_has_phase_specific_focus_per_target():
     texts = {
-        target: render_review_turn(ISSUE, target, None, None)
+        target: render_review_turn(
+            ISSUE, target, None, None, pass_allowed=True
+        )
         for target in (
             ReviewTarget.MAP,
             ReviewTarget.GRAPH,

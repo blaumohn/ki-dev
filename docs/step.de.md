@@ -1,12 +1,13 @@
 # Manuelle Arbeitsübergaben mit `ki-dev step`
 
-`ki-dev step` ist eine Projektion des Planungsablaufs
-([`src/ki_dev/flow/planning.toml`](../src/ki_dev/flow/planning.toml)) auf
-genau einen Übergang: ki-dev erzeugt die Übergabe an die nächste Sitzung und
-hält an; der Mensch trägt sie als Bote (Adapter `manual`) weiter. So lassen
-sich Aufträge, Abläufe und Prompts von Hand erproben, bevor ein Ausführer sie
-fährt (den Bauablauf fährt `ki-dev run` bereits, siehe
-[Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
+`ki-dev step` ist eine Projektion des Ausführers für den Planungsablauf
+([`src/ki_dev/flow/planning.toml`](../src/ki_dev/flow/planning.toml)) mit dem
+Adapter `manual`: Ein Aufruf nimmt die Kante seines Startereignisses, fährt
+Maschinenzustände wie den Vorlauf (`implement.preflight`) selbst und hält beim
+nächsten `turn` (Übergabe an eine Sitzung) oder `ask` (der Mensch entscheidet).
+Die Schleife steht in `src/ki_dev/runner/planning.py`; step wählt aus Halt und
+genommenem Weg die Vorlage und gibt sie aus, der Mensch trägt sie als Bote
+weiter (den Lieferablauf fährt `ki-dev run`, siehe [Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
 ausführungsreife Aufträge bleiben auf einen kleinen Umsetzungsschnitt
 begrenzt: notwendige Anforderungen, Schnittstellen und Prüfnachweise; bei
 fachlicher Übergröße teilen statt immer mehr Details anzuhäufen.

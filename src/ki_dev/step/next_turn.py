@@ -19,7 +19,6 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from ki_dev.config_sources import ConfigSource
-from ki_dev.flow.model import PASS
 from ki_dev.flow.planning import NAME, PlanningFlow
 from ki_dev.flow.templates import render, text
 from ki_dev.step.contract import NONEMPTY_TEXT_SCHEMA, ReviewTarget
@@ -205,9 +204,12 @@ def render_review_turn(
     feedback: str | None,
     *,
     flow: PlanningFlow,
+    pass_allowed: bool,
 ) -> str:
     """Folgenachricht an die bisherige, vom Schreibagenten getrennte
     Review-Sitzung (keine neue Voll-Übergabe mit Rollentext).
+    ``pass_allowed`` sagt der Ausführer aus dem Ablauf (Wächter des
+    PASS im erreichten Review, z. B. kein PASS nach Teillauf).
 
     ``report`` liegt nur beim Prüfgegenstand implement vor (bestandener
     Vorlauf); map/graph/materialize gehen ohne Code-Vorlauf zur
@@ -221,7 +223,9 @@ def render_review_turn(
             bead=_bead(issue),
             focus=text(NAME, f"again-{target.value}"),
             rules=text(NAME, "review-rules"),
-            verdict=_verdict(flow, target, report),
+            verdict=text(
+                NAME, "verdict" if pass_allowed else "verdict-partial"
+            ),
         )
     ]
     if report is not None:
@@ -230,26 +234,6 @@ def render_review_turn(
     lines += ["", text(NAME, "human-note")]
     lines += _flow_hint(flow, f"{target.value}.review", issue)
     return "\n".join(lines) + "\n"
-
-
-def checks_facts(report: PreflightReport | None) -> frozenset[str]:
-    """Tatsachen für die Wächter des Planungsablaufs: ``full_checks``,
-    wenn kein Teillauf vorliegt."""
-    if report is not None and report.partial:
-        return frozenset()
-    return frozenset({"full_checks"})
-
-
-def _verdict(
-    flow: PlanningFlow,
-    target: ReviewTarget,
-    report: PreflightReport | None,
-) -> str:
-    """Erlaubt der Ablauf hier PASS (Wächter ``full_checks``)?"""
-    state = f"{target.value}.review"
-    if flow.allows(state, PASS, checks_facts(report)):
-        return text(NAME, "verdict")
-    return text(NAME, "verdict-partial")
 
 
 def render_repair_turn(

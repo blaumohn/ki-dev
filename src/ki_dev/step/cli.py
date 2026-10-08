@@ -14,8 +14,20 @@ from ki_dev.adapter.executors.session_transcript import (
     TranscriptRequestError,
 )
 from ki_dev.adapter.executors.transcript import validate_session_request
-from ki_dev.flow.model import FlowError
+from ki_dev.flow.model import PASS, FlowError
 from ki_dev.flow.planning import PlanningFlow, load_planning_flow
+from ki_dev.runner.interpreter import BoundFlow
+from ki_dev.runner.planning import (
+    CHECKS,
+    FULL_CHECKS,
+    TURN,
+    Halt,
+    MachineOperation,
+    PlanningContext,
+    bind_planning,
+    drive,
+    with_facts,
+)
 from ki_dev.session_snapshot import SnapshotTitleError, validate_title
 from ki_dev.step.beads_reader import (
     BeadsReadError,
@@ -86,7 +98,9 @@ from ki_dev.step.preflight_options import (
 )
 from ki_dev.step.source import HandoffSourceError
 
-_PREFLIGHT_STATE = "implement.preflight"
+IMPLEMENT = "implement"
+IMPLEMENT_REVIEW = "implement.review"
+DONE = "done"
 MAP_WORD = "map"
 LOCAL_WORD = "local"
 _MAP_KEPT_NOTE = (
@@ -427,20 +441,25 @@ def _bead_output(
     ``--next-turn`` (Folgenachricht, eigener Vertrag); sonst wird sie
     vor jedem Beads-Zugriff und Vorlauf gelesen."""
     flow = _planning_flow()
+    bound = bind_planning(flow.flow)
     if step is Step.REVIEW and next_turn:
         issue = read_issue(bead_id, Path.cwd())
         if inputs.decision is not None:
-            return _decision_turn(issue, inputs.decision, flow), 0
+            return _decision_turn(
+                issue, inputs.decision, flow, bound
+            ), 0
         return _next_turn_handoff(
-            issue, review_of, extra, inputs.feedback, flow
+            issue, review_of, extra, inputs.feedback, flow, bound
         )
     limit = load_base_max_chars(Path.cwd())
     issue = read_issue(bead_id, Path.cwd())
     if step is Step.REVIEW:
         guidelines = _selected_guidelines(step, review_of)
         return _review_handoff(
-            issue, review_of, extra, guidelines, limit, flow
+            issue, review_of, extra, guidelines, limit, flow, bound
         )
+    # Projektion: Der Ablauf hält im Zustand der Phase bei ihrem turn.
+    _expect_turn(drive(bound, step.value, None, {}), step.value)
     guidelines = _selected_guidelines(step, None)
     text = render_handoff(
         issue,
@@ -551,6 +570,7 @@ def _review_handoff(
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
     flow: PlanningFlow,
+    bound: BoundFlow[PlanningContext],
 ) -> tuple[str, int]:
     """Übergabe für ``--step review`` und ihr Exitcode.
 
@@ -567,6 +587,11 @@ def _review_handoff(
     können Dateien ändern.
     """
     if review_of not in (None, ReviewTarget.IMPLEMENT):
+        target = cast(ReviewTarget, review_of)
+        _expect_turn(
+            drive(bound, target.value, DONE, {}),
+            f"{target.value}.review",
+        )
         return render_handoff(
             issue,
             Step.REVIEW,
@@ -581,8 +606,9 @@ def _review_handoff(
     ensure_base_fits(
         issue, Step.REVIEW, review_of, base_max_chars, flow=flow
     )
-    outcome = _preflight_outcome(extra)
-    if _goes_to_correction(flow, outcome):
+    halt = drive(bound, IMPLEMENT, DONE, _machine(extra))
+    outcome = cast(_PreflightOutcome, halt.context.outcome)
+    if _is_correction(flow, halt):
         limit = load_feedback_max_chars(Path.cwd())
         return render_repair_turn(
             issue, cast(str, outcome.failure), limit, None, flow=flow
@@ -612,13 +638,36 @@ class _PreflightOutcome(NamedTuple):
         return "checks_passed"
 
 
-def _goes_to_correction(
-    flow: PlanningFlow, outcome: _PreflightOutcome
-) -> bool:
-    """Die Kante aus implement.preflight entscheidet: Review oder
-    Korrektur (Reparaturnachricht, Exit 1)."""
-    target = flow.target_after(_PREFLIGHT_STATE, outcome.event)
-    return flow.flow.state(target).kind == "correction"
+def _machine(extra: _PreflightRequest) -> dict[str, MachineOperation]:
+    """Maschinenoperationen des Planungsablaufs für den Ausführer:
+    checks ist der deterministische Vorlauf dieses Projekts."""
+
+    def checks(
+        _state: str, context: PlanningContext
+    ) -> tuple[str, PlanningContext]:
+        outcome = _preflight_outcome(extra)
+        partial = outcome.report is not None and outcome.report.partial
+        facts = frozenset() if partial else frozenset({FULL_CHECKS})
+        return outcome.event, with_facts(context, facts, outcome)
+
+    return {CHECKS: checks}
+
+
+def _is_correction(flow: PlanningFlow, halt: Halt) -> bool:
+    """Die genommene Kante entscheidet: Review oder Korrektur
+    (Reparaturnachricht, Exit 1)."""
+    return flow.flow.state(halt.state).kind == "correction"
+
+
+def _expect_turn(halt: Halt, state: str) -> Halt:
+    """step projiziert genau bis zum nächsten turn; alles andere wäre
+    ein Widerspruch zwischen Ablauf und Aufruf (Programmfehler)."""
+    if (halt.state, halt.operation) != (state, TURN):
+        raise FlowError(
+            f"Ablauf hält in {halt.state} ({halt.operation}), "
+            f"erwartet {state} (turn)"
+        )
+    return halt
 
 
 def _preflight_outcome(
@@ -648,6 +697,7 @@ def _next_turn_handoff(
     extra: _PreflightRequest,
     feedback_file: str | None,
     flow: PlanningFlow,
+    bound: BoundFlow[PlanningContext],
 ) -> tuple[str, int]:
     """Nächste Nachricht nach einer Korrektur und ihr Exitcode.
 
@@ -668,13 +718,22 @@ def _next_turn_handoff(
     feedback = None
     if feedback_file is not None:
         feedback = read_feedback(feedback_file, limit, _stdin_binary)
+    implement = target is ReviewTarget.IMPLEMENT
+    machine = _machine(extra) if implement else {}
+    halt = drive(bound, f"{target.value}.correction", DONE, machine)
+    outcome = cast("_PreflightOutcome | None", halt.context.outcome)
     if target is not ReviewTarget.IMPLEMENT:
         text = render_review_turn(
-            issue, target, None, feedback, flow=flow
+            issue,
+            target,
+            None,
+            feedback,
+            flow=flow,
+            pass_allowed=_pass_allowed(bound, halt),
         )
         return text, 0
-    outcome = _preflight_outcome(extra)
-    if _goes_to_correction(flow, outcome):
+    outcome = cast(_PreflightOutcome, outcome)
+    if _is_correction(flow, halt):
         return render_repair_turn(
             issue,
             cast(str, outcome.failure),
@@ -683,9 +742,21 @@ def _next_turn_handoff(
             flow=flow,
         ), 1
     text = render_review_turn(
-        issue, target, outcome.report, feedback, flow=flow
+        issue,
+        target,
+        outcome.report,
+        feedback,
+        flow=flow,
+        pass_allowed=_pass_allowed(bound, halt),
     )
     return text, 0
+
+
+def _pass_allowed(
+    bound: BoundFlow[PlanningContext], halt: Halt
+) -> bool:
+    """Ob der Ablauf im erreichten Review PASS zulässt (Wächter)."""
+    return bound.select(halt.state, PASS, halt.context) is not None
 
 
 def _check_decision_options(
@@ -717,7 +788,10 @@ def _check_decision_options(
 
 
 def _decision_turn(
-    issue: HandoffIssue, source: str, flow: PlanningFlow
+    issue: HandoffIssue,
+    source: str,
+    flow: PlanningFlow,
+    bound: BoundFlow[PlanningContext],
 ) -> str:
     """Reviewer-Antwort prüfen und Nachricht laut Tabelle; der Bead
     muss den Umsetzungsvertrag erfüllen (Abnahmekriterien)."""
@@ -730,6 +804,8 @@ def _decision_turn(
     decision = parse_step_decision(
         raw, issue, _project_preflight_config, flow=flow
     )
+    # Das gebundene Ereignis nimmt die Kante aus implement.review.
+    drive(bound, IMPLEMENT_REVIEW, decision.verdict.event, {})
     return render_decision_turn(issue, decision, flow=flow)
 
 
