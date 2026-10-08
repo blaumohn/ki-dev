@@ -87,9 +87,10 @@ class Sandbox:
             f"{key}={value}" for key, value in variables.items()
         ]
         script = str(self.repo / "scripts/agent-container")
+        bash = os.environ.get("KI_DEV_TEST_BASH", "/bin/bash")
         with local.cwd(self.repo):
             return local["/usr/bin/env"].run(
-                args=["-i", *assignments, "/bin/bash", script, *args],
+                args=["-i", *assignments, bash, script, *args],
                 retcode=retcode,
                 timeout=10,
             )
@@ -233,6 +234,17 @@ def test_read_only_directory_name_collision(sandbox):
     )
     assert "gleicher Ordnername bei --mount-ro: 'example'" in stderr
     assert not (sandbox.log / "args").exists()
+
+
+@pytest.mark.parametrize("options", [[], ["--mount-ro", "."]])
+def test_resume_with_optional_read_only_mount(sandbox, options):
+    command = [
+        "claude", "--resume", "20b378c0-d6ff-4641-a738-7f85efae115c"
+    ]
+    sandbox.run(*options, "run", *command)
+    args = sandbox.logged("args")
+    assert args[-4:] == ["agent", *command]
+    assert ("-v" in args) == bool(options)
 
 
 def test_read_only_symlink_with_named_mount(sandbox):

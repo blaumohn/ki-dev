@@ -116,7 +116,8 @@ add_ro_mount() {
     usage_error "nicht unterstützter Pfad für --mount-ro: '$source'"
   fi
   name="${source##*/}"
-  for existing in "${ro_sources[@]}"; do
+  # Bash 3.2 behandelt leere Arrays bei nounset als ungebunden.
+  for existing in ${ro_sources[@]+"${ro_sources[@]}"}; do
     if [[ "$existing" == "$source" ]]; then return; fi
     if [[ "${existing##*/}" == "$name" ]]; then
       usage_error "gleicher Ordnername bei --mount-ro: '$name'"
@@ -262,7 +263,7 @@ run_agent() {
   add_beads_mount
   local run_args=(run --rm --no-deps)
   local source
-  for source in "${ro_sources[@]}"; do
+  for source in ${ro_sources[@]+"${ro_sources[@]}"}; do
     run_args+=(-v "$source:/references/${source##*/}:ro")
   done
   if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
