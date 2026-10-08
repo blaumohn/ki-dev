@@ -128,7 +128,7 @@ def test_min_remaining_percent_blocks_regardless_of_delta(tmp_path):
 
     assert result.status == "paused_interactive"
     assert "Schutzreserve unterschritten" in result.detail
-    assert "build" in result.detail
+    assert "worker" in result.detail
     assert build_executor.calls == 0
     assert review_executor.calls == 0
 
@@ -269,7 +269,7 @@ def test_quota_guard_reports_incomplete_legacy_manifest_as_blocker(
                 }
             }
         )
-        blocker = runtime._quota_guard("build", build)
+        blocker = runtime._quota_guard("worker", build)
 
     assert blocker is not None
     assert "unvollstaendig" in blocker

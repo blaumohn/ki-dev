@@ -103,14 +103,14 @@ class RunTask:
 
 
 @dataclass(frozen=True)
-class BuildRequest:
+class WorkRequest:
     task: RunTask
     round_id: int
     objection: str | None = None
 
 
 @dataclass(frozen=True)
-class BuildReport:
+class WorkReport:
     summary: str
 
     def __post_init__(self) -> None:
@@ -122,12 +122,12 @@ class BuildReport:
 class ReviewRequest:
     task: RunTask
     round_id: int
-    build_report: BuildReport
+    work_report: WorkReport
     evidence: ReviewProjection
 
 
-class BuildMode(Protocol):
-    def build(self, request: BuildRequest) -> BuildReport: ...
+class Worker(Protocol):
+    def work(self, request: WorkRequest) -> WorkReport: ...
 
 
 class Reviewer(Protocol):

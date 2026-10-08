@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 
 from ki_dev.adapter.agent import (
-    AgentBuildMode,
+    AgentWorker,
 )
 from ki_dev.adapter.contract import (
-    BuildReport,
-    BuildRequest,
     ReviewRequest,
     RunTask,
+    WorkReport,
+    WorkRequest,
 )
 from ki_dev.adapter.executors import Effort
 from ki_dev.adapter.executors.contract import (
@@ -44,13 +44,13 @@ from ki_dev.runner.review_output import (
 )
 
 
-class FakeBuilder:
+class FakeWorker:
     def __init__(self) -> None:
         self.requests = []
 
-    def build(self, request):
+    def work(self, request):
         self.requests.append(request)
-        return BuildReport("Implementiert; pytest erfolgreich")
+        return WorkReport("Implementiert; pytest erfolgreich")
 
 
 class FakeReviewer:
@@ -116,7 +116,7 @@ def test_formal_review_output_becomes_typed_decision(action):
     request = ReviewRequest(
         task,
         1,
-        BuildReport("Implementiert"),
+        WorkReport("Implementiert"),
         project_review_context(_context()),
     )
     raw = reviewer.review(request)
@@ -297,7 +297,7 @@ def test_build_prompt_includes_acceptance_criteria():
             return ContextMeasurement(ContextStatus.UNSUPPORTED)
 
     executor = RecordingExecutor()
-    build = AgentBuildMode(executor, "build-session", "m", Effort.LOW)
+    build = AgentWorker(executor, "build-session", "m", Effort.LOW)
     task = RunTask(
         "run-1",
         "Auftrag",
@@ -309,7 +309,7 @@ def test_build_prompt_includes_acceptance_criteria():
             "Kein Netzwerkzugriff",
         ),
     )
-    build.build(BuildRequest(task, 1))
+    build.work(WorkRequest(task, 1))
     message = executor.requests[0].message
     assert "AC1: Ausgabe ist deterministisch" in message
     assert "AC2: Kein Netzwerkzugriff" in message

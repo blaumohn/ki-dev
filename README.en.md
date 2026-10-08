@@ -27,26 +27,25 @@ the workflow. Guards decide when it ends; every back edge consumes a counter.
 From [`src/ki_dev/flow/delivery.toml`](src/ki_dev/flow/delivery.toml):
 
 ```toml
-# controller_step --controller_changes [guard] / action--> target   (UML edge)
+# controller_step --controller_changes [cond] / actions--> target   (UML edge)
 
-[[uebergang]]                      # correction budget exhausted → human
-von = "controller_step"
-bei = "controller_changes"
-wenn = ["geprueftes_ergebnis", "!korrekturrunden_frei"]
-eskalation = "changes_rounds_exhausted"
-nach = "paused_interactive"
+[[transition]]                     # correction budget spent → human
+source = "controller_step"
+event = "controller_changes"
+cond = ["checked_result", "!changes_rounds_left"]
+escalation = "changes_rounds_exhausted"
+target = "paused_interactive"
 
-[[uebergang]]                      # otherwise: next round, counter +1
-von = "controller_step"
-bei = "controller_changes"
-wenn = ["geprueftes_ergebnis"]
-aktion = ["korrektur_beginnen", "ergebnis_verwerfen"]
-nach = "worker_step_prepare"
+[[transition]]                     # otherwise: next round, counter +1
+source = "controller_step"
+event = "controller_changes"
+cond = ["checked_result"]
+actions = ["begin_correction", "drop_result"]
+target = "worker_step_prepare"
 ```
 
-Keys are German (`von` source, `bei` event, `wenn` guard/cond, `aktion`
-action, `nach` target); the semantics follow UML state machines and SCXML,
-including `@fortsetzungspunkt` as `<history>`. Candidates are tried in file
+Keys and semantics follow UML state machines and SCXML (`source`,
+`event`, `cond`, `actions`, `target`, `@history` as `<history>`). Candidates are tried in file
 order, the first matching guard wins, no match means the event is not
 allowed there.
 
@@ -79,12 +78,12 @@ ki-dev step BEAD --step review     # one planning transition by hand
 | --- | --- | --- |
 | `claude`, `codex` | `{"executor": "codex", "session_id": "…", "model": "…", "effort": "high"}` | prepared agent session |
 | `manual` | `{"executor": "manual"}` | you carry the input into a session |
-| `mock` | `{"executor": "mock", "antworten": ["CHANGES", "PASS"]}` | scripted answers |
+| `mock` | `{"executor": "mock", "answers": ["CHANGES", "PASS"]}` | scripted answers |
 
 With `manual` the **executor** halts (`awaiting_input`), not the workflow:
 the run stays in its state and continues after the answer file appears.
 The human thus has two separate roles: messenger (adapter) and decider
-(states of kind `warten`).
+(states of kind `wait`).
 
 ## What the tests prove
 

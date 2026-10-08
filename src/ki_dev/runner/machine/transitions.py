@@ -6,22 +6,22 @@ weist den Übergang mit :class:`InvalidTransition` sichtbar ab. Es gibt
 keinen stillen Rücksprung und keinen stillen Standardfall.
 
 Welche Kante gilt, steht nur im Ablauf. Dieses Modul bindet dessen
-Vokabular: was ein Wächter prüft (:data:`_WAECHTER`) und was eine
-Aktion am Zustand ändert (:data:`_AKTIONEN`). Beim Import prüft
-:func:`~ki_dev.runner.interpreter.binde`, dass beide Seiten genau
+Vokabular: was ein Wächter prüft (:data:`_GUARDS`) und was eine
+Aktion am Zustand ändert (:data:`_ACTIONS`). Beim Import prüft
+:func:`~ki_dev.runner.interpreter.bind`, dass beide Seiten genau
 dieselben Namen kennen.
 
 Die Begrenztheit ruht auf den laufweit monotonen Zählern in
 ``Counters.run_total``: jede rücklaufende Kante des Ablaufs trägt eine
 Aktion, die ``worker_attempt``, ``process_retry`` oder
-``protocol_attempt`` erhöht, und ist durch den passenden ``*_frei``-
+``protocol_attempt`` erhöht, und ist durch den passenden ``*_left``-
 Wächter begrenzt. ``changes_round`` begrenzt zusätzlich die Korrekturen
-innerhalb genau eines TASK; ``task_beginnen`` setzt ihn bewusst zurück.
+innerhalb genau eines TASK; ``begin_task`` setzt ihn bewusst zurück.
 
-Zwei Wächter sind Fakten des Ausführers (``korrekturen_abgelehnt``,
+Zwei Wächter sind Fakten des Ausführers (``changes_refused``,
 ``stagnation``): sie hängen an Laufdaten außerhalb dieses Zustands
 (Verbrauchsbuch, Beanstandungsverlauf). Der Ausführer ermittelt sie
-und übergibt sie als ``fakten``; die Entscheidung, was daraus folgt,
+und übergibt sie als ``facts``; die Entscheidung, was daraus folgt,
 bleibt im Ablauf.
 """
 
@@ -31,16 +31,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ki_dev.deltas import StepDeltaAssessment
-from ki_dev.flow.model import HISTORY, AblaufError
+from ki_dev.flow.model import HISTORY, FlowError
 from ki_dev.runner.interpreter import (
-    Bindung,
-    GebundenerAblauf,
-    binde,
+    Binding,
+    BoundFlow,
+    bind,
 )
 
 from .contract import (
-    BAU,
     DEFAULT_LIMITS,
+    DELIVERY,
     AgentEscalation,
     Counters,
     Event,
@@ -62,7 +62,7 @@ class _Step:
     state: MachineState
     event: Event
     limits: Limits
-    fakten: frozenset[str] = field(default_factory=frozenset)
+    facts: frozenset[str] = field(default_factory=frozenset)
 
 
 def advance(
@@ -70,30 +70,30 @@ def advance(
     event: Event,
     limits: Limits = DEFAULT_LIMITS,
     *,
-    fakten: frozenset[str] = frozenset(),
+    facts: frozenset[str] = frozenset(),
 ) -> TransitionResult:
     """Entscheide den Folgezustand oder weise den Übergang ab."""
-    step = _Step(state=state, event=event, limits=limits, fakten=fakten)
-    if state.phase.value not in BAU.zustaende:
+    step = _Step(state=state, event=event, limits=limits, facts=facts)
+    if state.phase.value not in DELIVERY.states:
         raise InvalidTransition(state, event)
-    uebergang = BAU_GEBUNDEN.waehle(
-        state.phase.value, event.ereignis, step
+    transition = DELIVERY_BOUND.select(
+        state.phase.value, event.flow_event, step
     )
-    if uebergang is None:
+    if transition is None:
         raise InvalidTransition(state, event)
-    target = _target(step, uebergang.nach)
+    target = _target(step, transition.target)
     moved = state
-    for name in uebergang.aktion:
-        moved = _AKTIONEN[name](moved)
+    for name in transition.actions:
+        moved = _ACTIONS[name](moved)
     return TransitionResult(
         state=moved.moved_to(target),
-        escalation=_escalation(step, uebergang.eskalation),
+        escalation=_escalation(step, transition.escalation),
     )
 
 
-def _target(step: _Step, nach: str) -> Phase:
-    if nach != HISTORY:
-        return Phase(nach)
+def _target(step: _Step, target: str) -> Phase:
+    if target != HISTORY:
+        return Phase(target)
     event = step.event
     if (
         not isinstance(event, ResumeRequested)
@@ -125,28 +125,28 @@ def _counters(step: _Step) -> Counters:
     return step.state.counters
 
 
-_WAECHTER: dict[str, Callable[[_Step], bool]] = {
-    "geprueftes_ergebnis": lambda s: s.state.checkpointed_result,
-    "korrekturrunden_frei": lambda s: (
+_GUARDS: dict[str, Callable[[_Step], bool]] = {
+    "checked_result": lambda s: s.state.checkpointed_result,
+    "changes_rounds_left": lambda s: (
         _counters(s).changes_round < s.limits.changes_rounds
     ),
-    "bauversuche_frei": lambda s: (
+    "worker_attempts_left": lambda s: (
         _counters(s).worker_attempt < s.limits.worker_attempts
     ),
-    "protokollversuche_frei": lambda s: (
+    "protocol_attempts_left": lambda s: (
         _counters(s).protocol_attempt < s.limits.protocol_attempts
     ),
-    "prozessversuche_frei": lambda s: (
+    "process_retries_left": lambda s: (
         _counters(s).process_retry < s.limits.process_retries
     ),
-    "delta_wirksam": lambda s: (
+    "delta_effective": lambda s: (
         s.event.assessment is StepDeltaAssessment.EFFECTIVE
     ),
-    "ergebnis_ok": lambda s: s.event.ok,
-    "korrekturen_abgelehnt": lambda s: (
-        "korrekturen_abgelehnt" in s.fakten
+    "result_ok": lambda s: s.event.ok,
+    "changes_refused": lambda s: (
+        "changes_refused" in s.facts
     ),
-    "stagnation": lambda s: "stagnation" in s.fakten,
+    "stagnation": lambda s: "stagnation" in s.facts,
 }
 
 
@@ -161,15 +161,15 @@ def _with_counters(
     )
 
 
-_AKTIONEN: dict[str, Callable[[MachineState], MachineState]] = {
-    "task_beginnen": _with_counters(Counters.started_task),
-    "korrektur_beginnen": _with_counters(Counters.started_correction),
-    "protokoll_wiederholen": _with_counters(Counters.retried_protocol),
-    "prozess_wiederholen": _with_counters(Counters.retried_process),
-    "ergebnis_festhalten": lambda state: state.moved_to(
+_ACTIONS: dict[str, Callable[[MachineState], MachineState]] = {
+    "begin_task": _with_counters(Counters.started_task),
+    "begin_correction": _with_counters(Counters.started_correction),
+    "retry_protocol": _with_counters(Counters.retried_protocol),
+    "retry_process": _with_counters(Counters.retried_process),
+    "keep_result": lambda state: state.moved_to(
         state.phase, checkpointed_result=True
     ),
-    "ergebnis_verwerfen": lambda state: state.moved_to(
+    "drop_result": lambda state: state.moved_to(
         state.phase, checkpointed_result=False
     ),
 }
@@ -180,15 +180,15 @@ _ESKALATIONEN = frozenset(
 
 # Operationen führt die Laufzeit aus; hier nur ihre Namen, damit der
 # Ablauf auch ohne Laufzeit vollständig gebunden und geprüft ist.
-OPERATIONEN = frozenset(BAU.vokabular.operationen)
+OPERATIONEN = frozenset(DELIVERY.vocabulary.operations)
 
-BAU_GEBUNDEN: GebundenerAblauf[_Step] = binde(
-    BAU,
-    Bindung(
-        waechter=_WAECHTER,
-        aktionen=_AKTIONEN,
-        eskalationen=_ESKALATIONEN,
-        operationen=OPERATIONEN,
+DELIVERY_BOUND: BoundFlow[_Step] = bind(
+    DELIVERY,
+    Binding(
+        guards=_GUARDS,
+        actions=_ACTIONS,
+        escalations=_ESKALATIONEN,
+        operations=OPERATIONEN,
     ),
 )
 
@@ -198,7 +198,7 @@ def _event_types() -> dict[str, type[Event]]:
     found: dict[str, type[Event]] = {}
     while pending:
         cls = pending.pop()
-        found[cls.ereignis] = cls
+        found[cls.flow_event] = cls
         pending.extend(cls.__subclasses__())
     return found
 
@@ -206,18 +206,18 @@ def _event_types() -> dict[str, type[Event]]:
 EVENT_TYPES = _event_types()
 """Ereignisname im Ablauf → typisierte Ereignisklasse."""
 
-if set(EVENT_TYPES) != set(BAU.vokabular.ereignisse):
-    raise AblaufError(
+if set(EVENT_TYPES) != set(DELIVERY.vocabulary.events):
+    raise FlowError(
         "delivery.toml: Ereignisse passen nicht zu machine.Event"
     )
 
 _TRANSITIONS: dict[Phase, dict[type[Event], tuple[str, ...]]] = {}
 """Abgeleitete Sicht für Tests: welche Ereignistypen je Zustand
 überhaupt eine Kante haben (Ziele der Kandidaten in Prüfreihenfolge)."""
-for _t in BAU.uebergaenge:
-    _row = _TRANSITIONS.setdefault(Phase(_t.von), {})
-    _type = EVENT_TYPES[_t.bei]
-    _row[_type] = (*_row.get(_type, ()), _t.nach)
+for _t in DELIVERY.transitions:
+    _row = _TRANSITIONS.setdefault(Phase(_t.source), {})
+    _type = EVENT_TYPES[_t.event]
+    _row[_type] = (*_row.get(_type, ()), _t.target)
 
 
 def operation(
@@ -226,5 +226,5 @@ def operation(
     """Operation, die der Ausführer in ``state`` auszuführen hat
     (Moore-Ausgabe des Ablaufs); ``None`` für Halt und Ende."""
     step = _Step(state=state, event=Event(), limits=limits)
-    chosen = BAU_GEBUNDEN.operation(state.phase.value, step)
-    return None if chosen is None else chosen.tue
+    chosen = DELIVERY_BOUND.operation(state.phase.value, step)
+    return None if chosen is None else chosen.do

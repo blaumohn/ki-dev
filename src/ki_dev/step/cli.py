@@ -20,8 +20,8 @@ from ki_dev.beads_reader import (
     read_issue,
 )
 from ki_dev.beads_source import BeadsSourceError
-from ki_dev.flow.model import AblaufError
-from ki_dev.flow.planning import Planungsablauf, lade_planungsablauf
+from ki_dev.flow.model import FlowError
+from ki_dev.flow.planning import PlanningFlow, load_planning_flow
 from ki_dev.preflight_options import (
     PreflightOptionError,
     apply_preflight_options,
@@ -110,14 +110,14 @@ SCHRITTE (--step)
   map          Anforderungen aus Rohnotizen kartieren.
   graph        Aus der Karte einzelne Vorgänge ableiten.
   materialize  Einen Vorgang ausführungsreif beschreiben.
-  build        Den beschriebenen Auftrag umsetzen.
+  implement        Den beschriebenen Auftrag umsetzen.
   review       Ein Ergebnis in einer getrennten Sitzung prüfen.
 
 BEISPIELE
   ki-dev step projekt-42 --step map
   ki-dev step projekt-42 --step graph
   ki-dev step projekt-42 --step materialize
-  ki-dev step projekt-42 --step build > uebergabe.txt
+  ki-dev step projekt-42 --step implement > uebergabe.txt
   ki-dev step projekt-42 --step review
   ki-dev step projekt-42 --step review --preflight-args 'tests=-k x'
   ki-dev step projekt-42 --step review --preflight-skip 'lint=nur Doku'
@@ -129,8 +129,8 @@ BEISPIELE
   ki-dev step local > uebergabe.txt
 
 REVIEW
-  Standard: build. Führt vorab konfigurierte Korrekturen und Tests aus.
-  Korrekturen können Dateien ändern. Konfiguration: pyproject.toml,
+  Standard: implement. Führt vorab konfigurierte Korrekturen und Tests
+  aus. Korrekturen können Dateien ändern. Konfiguration: pyproject.toml,
   tool.ki-dev.handoff.preflight.
   --preflight-args NAME=ARGS hängt ARGS einmalig an die Prüfung NAME
   an; --preflight-skip NAME=GRUND lässt sie begründet aus (beide
@@ -139,17 +139,17 @@ REVIEW
   --review-of map, graph oder materialize: nur lesen, ohne Vorlauf.
 
 NÄCHSTE NACHRICHT (--step review --next-turn)
-  Nach einer Korrektur: Vorlauf (Ziel build) fehlgeschlagen -> Nachricht
-  an den Bau-Agenten (stdout, Exit 1); bestanden oder map/graph/
+  Nach einer Korrektur: Vorlauf (Ziel implement) fehlgeschlagen ->
+  Nachricht an den Umsetzer (stdout, Exit 1); bestanden oder map/graph/
   materialize -> erneute Review-Nachricht (Exit 0).
   --feedback-file DATEI|- hängt eine Rückmeldung des Schreibagenten an
   (UTF-8; - liest stdin; höchstens feedback_max_chars Zeichen, Standard
   600, in pyproject.toml, Abschnitt tool.ki-dev.handoff; nie gekürzt).
   Ohne die Option wird nichts gelesen.
   --decision-file DATEI|- liest stattdessen die JSON-Antwort der
-  Build-Review (action, detail, requirement_ref; höchstens 20000
+  Umsetzungs-Review (action, detail, requirement_ref; höchstens 20000
   Zeichen) und gibt ohne Vorlauf die Nachricht laut Planungsablauf aus:
-  CHANGES -> Bau-Agent, NEEDS_DECISION/PASS -> Mensch. Ungültig: Exit 2.
+  CHANGES -> Umsetzer, NEEDS_DECISION/PASS -> Mensch. Ungültig: Exit 2.
 
 BASISGRENZE
   Die gerenderte Basisübergabe (ohne Leitlinien und Prüfbericht) hat
@@ -209,7 +209,7 @@ def handoff(
         typer.Option(
             "--review-of",
             metavar="ZIEL",
-            help="map, graph, materialize oder build (Standard); "
+            help="map, graph, materialize oder implement (Standard); "
             "nur mit --step review.",
             show_default=False,
         ),
@@ -238,7 +238,7 @@ def handoff(
         bool,
         typer.Option(
             "--next-turn",
-            help="Nächste Nachricht nach einer Korrektur (Bau-Agent "
+            help="Nächste Nachricht nach einer Korrektur (Umsetzer "
             "bei Vorlauffehler, sonst Reviewer); nur mit --step "
             "review.",
         ),
@@ -258,8 +258,8 @@ def handoff(
         typer.Option(
             "--decision-file",
             metavar="DATEI|-",
-            help="JSON-Antwort der Build-Review (- liest stdin); nur "
-            "mit --next-turn, ohne Vorlauf.",
+            help="JSON-Antwort der Umsetzungs-Review (- liest stdin); "
+            "nur mit --next-turn, ohne Vorlauf.",
             show_default=False,
         ),
     ] = None,
@@ -426,7 +426,7 @@ def _bead_output(
     """Übergabetext und Exitcode. Die Basisgrenze gilt nicht für
     ``--next-turn`` (Folgenachricht, eigener Vertrag); sonst wird sie
     vor jedem Beads-Zugriff und Vorlauf gelesen."""
-    flow = _planungsablauf()
+    flow = _planning_flow()
     if step is Step.REVIEW and next_turn:
         issue = read_issue(bead_id, Path.cwd())
         if inputs.decision is not None:
@@ -453,12 +453,12 @@ def _bead_output(
     return text, 0
 
 
-def _planungsablauf() -> Planungsablauf:
+def _planning_flow() -> PlanningFlow:
     """Zustandstabelle an der I/O-Grenze laden; eine ungültige
     mitgelieferte Tabelle ist ein Programmfehler (Exit 1)."""
     try:
-        return lade_planungsablauf()
-    except AblaufError as exc:
+        return load_planning_flow()
+    except FlowError as exc:
         _fail(f"Planungsablauf ungültig: {exc}", code=1)
 
 
@@ -473,7 +473,7 @@ def _review_options(
     Lesen prüfen.
 
     Gibt die zerlegten Vorlauf-Optionen zurück; sie gelten nur für den
-    Vorlauf (Prüfgegenstand build).
+    Vorlauf (Prüfgegenstand implement).
     """
     if review_of is not None and step is not Step.REVIEW:
         _fail(
@@ -494,11 +494,11 @@ def _review_options(
         return _NO_PREFLIGHT_OPTIONS
     if step is not Step.REVIEW or review_of not in (
         None,
-        ReviewTarget.BUILD,
+        ReviewTarget.IMPLEMENT,
     ):
         _fail(
             "--preflight-args/--preflight-skip gelten nur für den "
-            "Vorlauf: --step review (Prüfgegenstand build)",
+            "Vorlauf: --step review (Prüfgegenstand implement)",
             code=2,
         )
     try:
@@ -551,11 +551,11 @@ def _review_handoff(
     extra: _PreflightRequest,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> str:
     """Übergabe für ``--step review``.
 
-    Nur für den (Standard- oder ausdrücklichen) Prüfgegenstand build
+    Nur für den (Standard- oder ausdrücklichen) Prüfgegenstand implement
     läuft der deterministische Vorlauf aus handoff_preflight: Bead und
     Konfiguration werden vollständig validiert, bevor der erste
     Korrekturbefehl läuft (kein Schreibeffekt vor dieser Prüfung); ein
@@ -566,7 +566,7 @@ def _review_handoff(
     Die Basisgrenze wird vor dem Vorlauf geprüft, denn Korrekturen
     können Dateien ändern.
     """
-    if review_of not in (None, ReviewTarget.BUILD):
+    if review_of not in (None, ReviewTarget.IMPLEMENT):
         return render_handoff(
             issue,
             Step.REVIEW,
@@ -600,7 +600,7 @@ class _PreflightOutcome(NamedTuple):
 def _preflight_outcome(
     extra: _PreflightRequest,
 ) -> _PreflightOutcome:
-    """Vorlauf für den Prüfgegenstand build; der Bead ist bereits
+    """Vorlauf für den Prüfgegenstand implement; der Bead ist bereits
     validiert. Die Konfiguration wird vollständig geprüft, bevor der
     erste Korrekturbefehl läuft (kein Schreibeffekt vor dieser
     Prüfung)."""
@@ -623,20 +623,20 @@ def _next_turn_handoff(
     review_of: ReviewTarget | None,
     extra: _PreflightRequest,
     feedback_file: str | None,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> tuple[str, int]:
     """Nächste Nachricht nach einer Korrektur und ihr Exitcode.
 
     Alle Eingaben (Bead, Grenze, Rückmeldung) sind geprüft, bevor der
-    Vorlauf startet. Nur der Prüfgegenstand build läuft durch den
-    Vorlauf: Fehlschlag -> Bau-Agent (Exit 1, Nachricht auf stdout),
+    Vorlauf startet. Nur der Prüfgegenstand implement läuft durch den
+    Vorlauf: Fehlschlag -> Umsetzer (Exit 1, Nachricht auf stdout),
     Erfolg -> Reviewer. map/graph/materialize gehen ohne Vorlauf zur
     erneuten Review-Übergabe. Die Grenze wird für jedes Ziel gelesen
     und geprüft (ungültiges TOML oder ein ungültiger Wert wird
     abgelehnt); eine fehlende Vorlauf-Konfiguration bleibt für
     map/graph/materialize erlaubt.
     """
-    target = review_of or ReviewTarget.BUILD
+    target = review_of or ReviewTarget.IMPLEMENT
     problems = validate_handoff(issue, Step.REVIEW, target)
     if problems:
         raise HandoffInvalidError(problems)
@@ -644,7 +644,7 @@ def _next_turn_handoff(
     feedback = None
     if feedback_file is not None:
         feedback = read_feedback(feedback_file, limit, _stdin_binary)
-    if target is not ReviewTarget.BUILD:
+    if target is not ReviewTarget.IMPLEMENT:
         text = render_review_turn(
             issue, target, None, feedback, flow=flow
         )
@@ -667,7 +667,7 @@ def _check_decision_options(
     inputs: _Inputs,
 ) -> None:
     """--decision-file vor jedem Lesen prüfen: nur Folgerunde der
-    Build-Review, ohne Vorlauf-Optionen und ohne Rückmeldung."""
+    Umsetzungs-Review, ohne Vorlauf-Optionen und ohne Rückmeldung."""
     if inputs.decision is None:
         return
     if not next_turn:
@@ -675,9 +675,9 @@ def _check_decision_options(
             "--decision-file ist nur zusammen mit --next-turn zulässig",
             code=2,
         )
-    if review_of not in (None, ReviewTarget.BUILD) or options:
+    if review_of not in (None, ReviewTarget.IMPLEMENT) or options:
         _fail(
-            "--decision-file gilt nur für die Build-Review, ohne "
+            "--decision-file gilt nur für die Umsetzungs-Review, ohne "
             "--preflight-args/--preflight-skip",
             code=2,
         )
@@ -689,11 +689,13 @@ def _check_decision_options(
 
 
 def _decision_turn(
-    issue: HandoffIssue, source: str, flow: Planungsablauf
+    issue: HandoffIssue, source: str, flow: PlanningFlow
 ) -> str:
     """Reviewer-Antwort prüfen und Nachricht laut Tabelle; der Bead
-    muss den Build-Vertrag erfüllen (Abnahmekriterien)."""
-    problems = validate_handoff(issue, Step.REVIEW, ReviewTarget.BUILD)
+    muss den Umsetzungsvertrag erfüllen (Abnahmekriterien)."""
+    problems = validate_handoff(
+        issue, Step.REVIEW, ReviewTarget.IMPLEMENT
+    )
     if problems:
         raise HandoffInvalidError(problems)
     raw = read_decision(source, _stdin_binary)
@@ -878,7 +880,7 @@ def _map_text(agent: str, session: str, title: str) -> str:
     jeder Schreibwirkung."""
     limit = _base_limit()
     guidelines = _selected_guidelines(Step.MAP, None)
-    flow = _planungsablauf()
+    flow = _planning_flow()
     try:
         text = map_handoff(
             agent, session, title, Path.cwd(), guidelines, limit, flow

@@ -155,7 +155,7 @@ def test_non_object_document_is_rejected(value: object):
         decode_run_state(value)
 
 
-@pytest.mark.parametrize("version", [0, 2, -1, 99])
+@pytest.mark.parametrize("version", [0, 1, -1, 99])
 def test_unknown_schema_version_is_rejected(version: int):
     with pytest.raises(RunStateFormatError, match="nicht unterstuetzt"):
         decode_run_state(_document() | {"schema_version": version})

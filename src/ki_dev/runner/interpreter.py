@@ -2,7 +2,7 @@
 
 Der Ausführer kennt keine Topologie. Er bekommt einen geprüften
 :class:`~ki_dev.flow.model.Ablauf`, bindet dessen Vokabular an
-Implementierungen (:class:`Bindung`) und wählt zu (Zustand, Ereignis)
+Implementierungen (:class:`Binding`) und wählt zu (Zustand, Ereignis)
 den ersten Übergang, dessen Wächter gelten. Welche Wirkung eine Aktion
 hat, entscheidet die Bindung; welche Kante gilt, allein der Ablauf.
 """
@@ -14,10 +14,10 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 from ki_dev.flow.model import (
-    Ablauf,
-    AblaufError,
+    Flow,
+    FlowError,
     Operation,
-    Uebergang,
+    Transition,
 )
 
 K = TypeVar("K")
@@ -25,66 +25,66 @@ K = TypeVar("K")
 
 
 @dataclass(frozen=True)
-class Bindung[K]:
+class Binding[K]:
     """Implementierung des Vokabulars eines Ablaufs.
 
-    ``waechter`` und ``aktionen`` müssen genau die im Ablauf
-    deklarierten Namen abdecken; ``eskalationen`` und ``operationen``
+    ``guards`` und ``actions`` müssen genau die im Ablauf
+    deklarierten Namen abdecken; ``escalations`` und ``operations``
     nennen die Namen, die der Ausführer versteht."""
 
-    waechter: Mapping[str, Callable[[K], bool]]
-    aktionen: Mapping[str, object]
-    eskalationen: frozenset[str]
-    operationen: frozenset[str]
+    guards: Mapping[str, Callable[[K], bool]]
+    actions: Mapping[str, object]
+    escalations: frozenset[str]
+    operations: frozenset[str]
 
 
 @dataclass(frozen=True)
-class GebundenerAblauf[K]:
-    ablauf: Ablauf
-    bindung: Bindung[K]
+class BoundFlow[K]:
+    flow: Flow
+    binding: Binding[K]
 
-    def waehle(
-        self, zustand: str, ereignis: str, kontext: K
-    ) -> Uebergang | None:
+    def select(
+        self, state: str, flow_event: str, context: K
+    ) -> Transition | None:
         """Erster Kandidat, dessen Wächter gelten; sonst ``None``."""
-        for uebergang in self.ablauf.kandidaten(zustand, ereignis):
-            if self.gilt(uebergang.wenn, kontext):
-                return uebergang
+        for transition in self.flow.candidates(state, flow_event):
+            if self.holds(transition.cond, context):
+                return transition
         return None
 
-    def operation(self, zustand: str, kontext: K) -> Operation | None:
-        """Was beim Betreten von ``zustand`` auszuführen ist (Moore)."""
-        for operation in self.ablauf.zustand(zustand).operationen:
-            if self.gilt(operation.wenn, kontext):
+    def operation(self, state: str, context: K) -> Operation | None:
+        """Was beim Betreten von ``state`` auszuführen ist (Moore)."""
+        for operation in self.flow.state(state).operations:
+            if self.holds(operation.cond, context):
                 return operation
         return None
 
-    def gilt(self, waechter: Iterable[str], kontext: K) -> bool:
-        return all(self._eins(name, kontext) for name in waechter)
+    def holds(self, guards: Iterable[str], context: K) -> bool:
+        return all(self._one(name, context) for name in guards)
 
-    def _eins(self, name: str, kontext: K) -> bool:
-        negiert = name.startswith("!")
-        wert = self.bindung.waechter[name.removeprefix("!")](kontext)
-        return not wert if negiert else wert
+    def _one(self, name: str, context: K) -> bool:
+        negated = name.startswith("!")
+        value = self.binding.guards[name.removeprefix("!")](context)
+        return not value if negated else value
 
 
-def binde[K](
-    ablauf: Ablauf, bindung: Bindung[K]
-) -> GebundenerAblauf[K]:
+def bind[K](
+    flow: Flow, binding: Binding[K]
+) -> BoundFlow[K]:
     """Prüfen, dass Ablauf und Ausführer dasselbe Vokabular sprechen."""
-    vokabular = ablauf.vokabular
-    for art, deklariert, implementiert in (
-        ("Wächter", vokabular.waechter, bindung.waechter),
-        ("Aktionen", vokabular.aktionen, bindung.aktionen),
-        ("Eskalationen", vokabular.eskalationen, bindung.eskalationen),
-        ("Operationen", vokabular.operationen, bindung.operationen),
+    vocabulary = flow.vocabulary
+    for kind, declared, implemented in (
+        ("Wächter", vocabulary.guards, binding.guards),
+        ("Aktionen", vocabulary.actions, binding.actions),
+        ("Eskalationen", vocabulary.escalations, binding.escalations),
+        ("Operationen", vocabulary.operations, binding.operations),
     ):
-        fehlt = sorted(set(deklariert) - set(implementiert))
-        fremd = sorted(set(implementiert) - set(deklariert))
-        if fehlt or fremd:
-            raise AblaufError(
-                f"{ablauf.name}.toml: {art} passen nicht zum Ausführer "
-                f"(fehlt: {', '.join(fehlt) or '-'}; "
-                f"nicht deklariert: {', '.join(fremd) or '-'})"
+        missing = sorted(set(declared) - set(implemented))
+        foreign = sorted(set(implemented) - set(declared))
+        if missing or foreign:
+            raise FlowError(
+                f"{flow.name}.toml: {kind} passen nicht zum Ausführer "
+                f"(fehlt: {', '.join(missing) or '-'}; "
+                f"nicht deklariert: {', '.join(foreign) or '-'})"
             )
-    return GebundenerAblauf(ablauf, bindung)
+    return BoundFlow(flow, binding)

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.flow.planning import lade_planungsablauf
+from ki_dev.flow.planning import load_planning_flow
 from ki_dev.step.guidelines import (
     GUIDELINE_SOURCES,
     GuidelineContractError,
@@ -42,14 +42,14 @@ from ki_dev.step.preflight import (
 )
 from tests.guideline_fixtures import guideline_data, write_guidelines
 
-FLOW = lade_planungsablauf()
+FLOW = load_planning_flow()
 render_base_handoff = partial(_render_base_handoff, flow=FLOW)
 render_handoff = partial(_render_handoff, flow=FLOW)
 render_review_handoff = partial(_render_review_handoff, flow=FLOW)
 
 REPO = Path(__file__).resolve().parents[1]
 SOURCE = GUIDELINE_SOURCES[0]
-NON_REVIEW = [Step.MAP, Step.GRAPH, Step.MATERIALIZE, Step.BUILD]
+NON_REVIEW = [Step.MAP, Step.GRAPH, Step.MATERIALIZE, Step.IMPLEMENT]
 
 
 def _documents():
@@ -106,7 +106,9 @@ def test_review_without_target_stays_build_review():
     documents = _documents()
     assert select_guidelines(
         documents, Step.REVIEW
-    ) == select_guidelines(documents, Step.REVIEW, ReviewTarget.BUILD)
+    ) == select_guidelines(
+        documents, Step.REVIEW, ReviewTarget.IMPLEMENT
+    )
 
 
 def test_common_selection_has_no_stage_sections_and_keeps_order():
@@ -132,7 +134,7 @@ def test_repository_common_sections_cover_former_entry_texts():
 
 
 def test_sources_keep_fixed_order_and_markdown():
-    selected = select_guidelines(_documents(), Step.BUILD)
+    selected = select_guidelines(_documents(), Step.IMPLEMENT)
     sources = [s.source for s in selected]
     assert sources == sorted(sources, key=sources.index)
     assert sources[0] == "docs/policies/programmierleitlinie.de.yaml"
@@ -149,8 +151,8 @@ def test_sources_keep_fixed_order_and_markdown():
 # übrigen Abschnitte gelten in jedem Schritt und Reviewziel.
 _FOCUS = {
     "architektur-planung": {Step.GRAPH, Step.MATERIALIZE},
-    "programmierung-umsetzung": {Step.BUILD},
-    "docstrings": {Step.BUILD},
+    "programmierung-umsetzung": {Step.IMPLEMENT},
+    "docstrings": {Step.IMPLEMENT},
 }
 _TARGETS = [(step, None) for step in NON_REVIEW] + [
     (Step.REVIEW, target) for target in [None, *ReviewTarget]
@@ -160,7 +162,7 @@ _TARGETS = [(step, None) for step in NON_REVIEW] + [
 def _effective(step, target):
     if step is not Step.REVIEW:
         return step
-    return Step((target or ReviewTarget.BUILD).value)
+    return Step((target or ReviewTarget.IMPLEMENT).value)
 
 
 @pytest.mark.parametrize(("step", "target"), _TARGETS)
@@ -190,9 +192,11 @@ def test_block_follows_unchanged_base_with_source_labels():
     guidelines = (
         GuidelineSection("q.yaml", "a", "## A\n\n```py\nx = 1\n```"),
     )
-    base = render_base_handoff(_issue(), Step.BUILD)
-    text = render_handoff(_issue(), Step.BUILD, guidelines=guidelines)
-    assert render_handoff(_issue(), Step.BUILD) == base
+    base = render_base_handoff(_issue(), Step.IMPLEMENT)
+    text = render_handoff(
+        _issue(), Step.IMPLEMENT, guidelines=guidelines
+    )
+    assert render_handoff(_issue(), Step.IMPLEMENT) == base
     assert text.startswith(base)
     block = text[len(base) :]
     assert "LEITLINIEN (mitgeliefert" in block
@@ -202,8 +206,10 @@ def test_block_follows_unchanged_base_with_source_labels():
 def test_long_guidelines_are_neither_cut_nor_part_of_base():
     long_text = "Regel " + "x" * 20_000
     guidelines = (GuidelineSection("q.yaml", "lang", long_text),)
-    base = render_base_handoff(_issue(), Step.BUILD)
-    text = render_handoff(_issue(), Step.BUILD, guidelines=guidelines)
+    base = render_base_handoff(_issue(), Step.IMPLEMENT)
+    text = render_handoff(
+        _issue(), Step.IMPLEMENT, guidelines=guidelines
+    )
     assert long_text in text
     assert len(base) < 4000 < len(text)
     assert text.startswith(base)
@@ -268,8 +274,8 @@ def _mutated(change):
             "(erlaubt: a-z, 0-9, -)",
         ),
         (
-            lambda d: d["stages"]["build"].pop("review"),
-            "stages.build: Pflichtfeld review fehlt",
+            lambda d: d["stages"]["implement"].pop("review"),
+            "stages.implement: Pflichtfeld review fehlt",
         ),
         (
             lambda d: d["stages"].pop("graph"),
@@ -318,12 +324,12 @@ def test_duplicate_section_id_is_rejected():
 def test_unknown_references_name_path_not_value():
     def unknown(data):
         data["common"].append("geheim-id")
-        data["stages"]["build"]["review"].insert(0, "geheim-id")
+        data["stages"]["implement"]["review"].insert(0, "geheim-id")
 
     problems = _problems(_mutated(unknown))
     assert problems == (
         "common[2]: unbekannte Abschnitts-ID",
-        "stages.build.review[0]: unbekannte Abschnitts-ID",
+        "stages.implement.review[0]: unbekannte Abschnitts-ID",
     )
     assert "geheim" not in " ".join(problems)
 
@@ -422,7 +428,7 @@ def test_rendered_document_keeps_front_matter_and_marks_generation():
         "<!-- Generiert aus docs/policies/programmierleitlinie.de.yaml"
     )
     assert "## Q0 common\n\n- Q0:common\n\n## Q0 shared" in text
-    assert text.endswith("- Q0:build-review\n")
+    assert text.endswith("- Q0:implement-review\n")
 
 
 def test_sync_writes_then_check_detects_drift_without_writing(tmp_path):

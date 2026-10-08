@@ -16,8 +16,8 @@ from typing import cast
 
 from ki_dev.adapter import manual, mock
 from ki_dev.adapter.agent import (
-    AgentBuildMode,
     AgentReviewer,
+    AgentWorker,
 )
 from ki_dev.adapter.contract import (
     RunTask,
@@ -59,7 +59,7 @@ def start_from_config(
 ) -> RunResult:
     config = _load_object(path)
     # Effektive Defaults bleiben ueber Upgrades nachvollziehbar.
-    for role in ("build", "review"):
+    for role in ("worker", "review"):
         values = _required_object(config, role)
         if values.get("executor") in _LOCAL_ADAPTERS:
             continue
@@ -144,7 +144,7 @@ def _runtime(
     store: RunStore,
     projection: ProjectionLimits,
 ) -> RunRuntime:
-    build = _required_object(config, "build")
+    build = _required_object(config, "worker")
     review = _required_object(config, "review")
     if (
         "session_id" in build
@@ -158,7 +158,7 @@ def _runtime(
     finalizer = _finalizer(_required_object(config, "finalization"))
     return RunRuntime(
         store=store,
-        builder=_adapter(build, "build", store),
+        worker=_adapter(build, "worker", store),
         reviewer=_adapter(review, "review", store),
         evidence_collector=RepositoryEvidenceCollector(
             checks=checks,
@@ -178,7 +178,7 @@ def _task(config: dict[str, object], run_id: str) -> RunTask:
         "workdir",
         "access_profile",
         "env",
-        "build",
+        "worker",
         "review",
         "tests",
         "limits",
@@ -298,27 +298,27 @@ def _adapter(
     kind = value.get("executor")
     if kind == manual.NAME:
         _exact_fields(value, {"executor"}, set(), "Rolle")
-        return manual.ManualRelay(store.run_dir / "eingang", role)
+        return manual.ManualRelay(store.run_dir / "inbox", role)
     if kind == mock.NAME:
         return _mock(value, role)
     agent = _role(value)
-    if role == "build":
-        return AgentBuildMode(**agent)
+    if role == "worker":
+        return AgentWorker(**agent)
     return AgentReviewer(**agent)
 
 
 def _mock(value: dict[str, object], role: str) -> object:
-    _exact_fields(value, {"executor"}, {"antworten", "datei"}, "Rolle")
-    if role == "build":
-        if "datei" in value:
-            return mock.MockBuilder(path=_text(value, "datei"))
-        return mock.MockBuilder()
-    answers = value.get("antworten", ["PASS"])
+    _exact_fields(value, {"executor"}, {"answers", "file"}, "Rolle")
+    if role == "worker":
+        if "file" in value:
+            return mock.MockWorker(path=_text(value, "file"))
+        return mock.MockWorker()
+    answers = value.get("answers", ["PASS"])
     if not isinstance(answers, list) or not all(
         item in _MOCK_ACTIONS for item in answers
     ):
         raise RunConfigError(
-            "antworten: Liste aus PASS, CHANGES, NEEDS_DECISION"
+            "answers: Liste aus PASS, CHANGES, NEEDS_DECISION"
         )
     return mock.MockReviewer(list(answers))
 

@@ -75,7 +75,7 @@ class GuidelineContractError(ValueError):
         self.problems = problems
 
 
-_STAGES = (Step.MAP, Step.GRAPH, Step.MATERIALIZE, Step.BUILD)
+_STAGES = (Step.MAP, Step.GRAPH, Step.MATERIALIZE, Step.IMPLEMENT)
 
 _SINGLE_LINE_SCHEMA = {
     "type": "string",
@@ -213,7 +213,7 @@ def select_guidelines(
 ) -> tuple[GuidelineSection, ...]:
     """Feste Auswahl: common + task des Ziels, bei Review + review.
 
-    ``Step.REVIEW`` ohne ``review_target`` bleibt die Build-Review.
+    ``Step.REVIEW`` ohne ``review_target`` bleibt die Umsetzungs-Review.
     Reihenfolge aus ``sections``, je Quelle jede ID einmal.
     """
     target, is_review = _target(step, review_target)
@@ -253,7 +253,7 @@ def _target(
 ) -> tuple[Step, bool]:
     if step is not Step.REVIEW:
         return step, False
-    return Step((review_target or ReviewTarget.BUILD).value), True
+    return Step((review_target or ReviewTarget.IMPLEMENT).value), True
 
 
 def render_guideline_documents(

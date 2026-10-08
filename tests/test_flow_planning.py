@@ -19,15 +19,15 @@ from typer.testing import CliRunner
 
 from ki_dev.cli import app
 from ki_dev.flow.model import (
-    AblaufError,
-    lies_rohdaten,
-    parse_ablauf,
-    reaching_end,
+    FlowError,
+    parse_flow,
+    reaching_final,
+    read_raw,
 )
 from ki_dev.flow.planning import (
     PASS,
-    Planungsablauf,
-    lade_planungsablauf,
+    PlanningFlow,
+    load_planning_flow,
 )
 from ki_dev.step import cli as step_cli
 from ki_dev.step.handoff import (
@@ -41,38 +41,38 @@ from ki_dev.step.handoff import (
 )
 from tests.readme_diagramme import diagram_edges
 
-FLOW = lade_planungsablauf()
-A = FLOW.ablauf
-END = A.ende[0]
+FLOW = load_planning_flow()
+A = FLOW.flow
+END = A.final[0]
 render_handoff = partial(_render_handoff, flow=FLOW)
-CLASSES = list(A.vorrang)
+CLASSES = list(A.priority)
 # Ereignisse, mit denen ein Lauf vorankommt: Review besteht, Schreiber
 # ist fertig, Mensch nimmt an, neue Quelle ist importiert.
-PROGRESS = ("PASS", "erledigt", "annehmen", "importiert")
+PROGRESS = ("PASS", "done", "accept", "imported")
 
 
 def _raw() -> dict:
-    return lies_rohdaten("planning")
+    return read_raw("planning")
 
 
 def test_shipped_table_is_valid_and_complete():
     assert A.start == "map"
-    assert END == "fertig"
-    phases = ("map", "graph", "materialize", "build")
+    assert END == "finished"
+    phases = ("map", "graph", "materialize", "implement")
     for phase in phases:
-        for suffix in ("", ".review", ".korrektur", ".entscheidung"):
-            assert f"{phase}{suffix}" in A.zustaende
-    assert {"quelle", "fertig"} <= set(A.zustaende)
+        for suffix in ("", ".review", ".correction", ".decision"):
+            assert f"{phase}{suffix}" in A.states
+    assert {"source", "finished"} <= set(A.states)
 
 
 def test_every_state_reaches_the_end_exhaustively():
-    assert reaching_end(A) == set(A.zustaende)
+    assert reaching_final(A) == set(A.states)
 
 
 def test_new_source_always_returns_through_the_existing_map():
-    (transition,) = FLOW.outgoing("quelle")
-    assert transition.nach == "map"
-    assert "keine zweite" in transition.befehl
+    (transition,) = FLOW.outgoing("source")
+    assert transition.target == "map"
+    assert "keine zweite" in transition.hint
 
 
 @pytest.mark.parametrize("step", list(Step))
@@ -96,7 +96,7 @@ def test_every_handoff_ends_with_its_flow_hint(step):
 @pytest.mark.parametrize("target", list(ReviewTarget))
 def test_review_targets_map_to_review_states(target):
     assert flow_state(Step.REVIEW, target) == f"{target.value}.review"
-    assert A.zustaende[f"{target.value}.review"].art == "review"
+    assert A.states[f"{target.value}.review"].kind == "review"
 
 
 def test_hint_inserts_bead_and_lists_every_transition():
@@ -111,29 +111,29 @@ def test_hint_inserts_bead_and_lists_every_transition():
 
 
 def _drop_transition(raw, source, event):
-    raw["uebergang"] = [
+    raw["transition"] = [
         t
-        for t in raw["uebergang"]
-        if not (t["von"] == source and t["bei"] == event)
+        for t in raw["transition"]
+        if not (t["source"] == source and t["event"] == event)
     ]
 
 
 def _mutations():
     def unknown_target(raw):
-        raw["uebergang"][0]["nach"] = "nirgends"
+        raw["transition"][0]["target"] = "nirgends"
 
     def missing_review_event(raw):
-        _drop_transition(raw, "graph.review", "quelle")
+        _drop_transition(raw, "graph.review", "source")
 
     def dead_end(raw):
-        # build.korrektur kommt nur noch zu sich selbst zurück.
-        _drop_transition(raw, "build.korrektur", "erledigt")
-        raw["uebergang"].append(
+        # implement.correction kommt nur noch zu sich selbst zurück.
+        _drop_transition(raw, "implement.correction", "done")
+        raw["transition"].append(
             {
-                "von": "build.korrektur",
-                "bei": "erledigt",
-                "nach": "build.korrektur",
-                "befehl": "x",
+                "source": "implement.correction",
+                "event": "done",
+                "target": "implement.correction",
+                "hint": "x",
             }
         )
 
@@ -141,66 +141,66 @@ def _mutations():
         raw["unbekannt"] = 1
 
     def bad_verdict(raw):
-        raw["befundklasse"]["fix"]["urteil"] = "FAIL"
+        raw["finding_class"]["fix"]["verdict"] = "FAIL"
 
     def duplicate_state(raw):
-        raw["zustand"].append(dict(raw["zustand"][0]))
+        raw["state"].append(dict(raw["state"][0]))
 
     def precedence_mismatch(raw):
-        raw["vorrang"] = ["fix", "quelle"]
+        raw["priority"] = ["fix", "source"]
 
     def duplicate_transition(raw):
-        raw["uebergang"].append(dict(raw["uebergang"][0]))
+        raw["transition"].append(dict(raw["transition"][0]))
 
     def unknown_event(raw):
-        raw["uebergang"][0]["bei"] = "vielleicht"
+        raw["transition"][0]["event"] = "vielleicht"
 
     def end_with_exit(raw):
-        raw["uebergang"].append(
+        raw["transition"].append(
             {
-                "von": "fertig",
-                "bei": "erledigt",
-                "nach": "map",
-                "befehl": "x",
+                "source": "finished",
+                "event": "done",
+                "target": "map",
+                "hint": "x",
             }
         )
 
     def unknown_guard(raw):
-        raw["uebergang"][0]["wenn"] = ["irgendwas"]
+        raw["transition"][0]["cond"] = ["irgendwas"]
 
     def unguarded_before_guarded(raw):
-        guarded = dict(raw["uebergang"][0], wenn=["irgendwas"])
-        raw["vokabular"]["waechter"] = ["irgendwas"]
-        raw["uebergang"].insert(1, guarded)
+        guarded = dict(raw["transition"][0], cond=["irgendwas"])
+        raw["vocabulary"]["guards"] = ["irgendwas"]
+        raw["transition"].insert(1, guarded)
 
     def history_outside_wait(raw):
-        raw["uebergang"][0]["nach"] = "@fortsetzungspunkt"
+        raw["transition"][0]["target"] = "@history"
 
     def unknown_kind(raw):
-        raw["zustand"][0]["art"] = "traeumen"
+        raw["state"][0]["kind"] = "traeumen"
 
     return [
         (
             unknown_guard,
-            "uebergang.0.wenn: unbekannte Wächter irgendwas",
+            "transition.0.cond: unbekannte Wächter irgendwas",
         ),
         (
             unguarded_before_guarded,
-            "doppelter Übergang map bei erledigt",
+            "doppelter Übergang map bei done",
         ),
-        (history_outside_wait, "@fortsetzungspunkt nur aus art warten"),
-        (unknown_kind, "zustand map: unbekannte art traeumen"),
-        (unknown_target, "uebergang.0.nach: unbekannter Zustand"),
+        (history_outside_wait, "@history nur aus kind wait"),
+        (unknown_kind, "state map: unbekannte kind traeumen"),
+        (unknown_target, "transition.0.target: unbekannter Zustand"),
         (
             missing_review_event,
-            "graph.review: fehlende Ereignisse quelle",
+            "graph.review: fehlende Ereignisse source",
         ),
         (dead_end, "Sackgasse"),
         (extra_key, "$: additionalProperties"),
-        (bad_verdict, "befundklasse.fix.urteil: enum"),
-        (duplicate_state, "zustand.18.id: doppelt"),
-        (precedence_mismatch, "vorrang: muss genau die Befundklassen"),
-        (duplicate_transition, "doppelter Übergang map bei erledigt"),
+        (bad_verdict, "finding_class.fix.verdict: enum"),
+        (duplicate_state, "state.18.id: doppelt"),
+        (precedence_mismatch, "priority: muss genau die Befundklassen"),
+        (duplicate_transition, "doppelter Übergang map bei done"),
         (unknown_event, "unbekanntes Ereignis vielleicht"),
         (end_with_exit, "Ende ohne Übergänge"),
     ]
@@ -214,8 +214,8 @@ def _mutations():
 def test_invalid_table_is_rejected_with_location(mutate, message):
     raw = copy.deepcopy(_raw())
     mutate(raw)
-    with pytest.raises(AblaufError, match=_escaped(message)):
-        parse_ablauf(raw)
+    with pytest.raises(FlowError, match=_escaped(message)):
+        parse_flow(raw)
 
 
 def _escaped(text: str) -> str:
@@ -232,9 +232,10 @@ def test_review_event_and_verdict_follow_precedence(findings):
         assert event == PASS
         assert FLOW.verdict(event) == PASS
         return
-    assert event == next(c for c in A.vorrang if c in findings)
+    assert event == next(c for c in A.priority if c in findings)
     needs_human = any(
-        A.befundklassen[c].urteil == "NEEDS_DECISION" for c in findings
+        A.finding_classes[c].verdict == "NEEDS_DECISION"
+        for c in findings
     )
     assert (FLOW.verdict(event) == "NEEDS_DECISION") is needs_human
 
@@ -250,10 +251,10 @@ def test_random_walk_ends_once_agents_make_progress(choices):
             return
         options = FLOW.outgoing(state)
         transition = options[choice % len(options)]
-        if transition.von == "quelle":
-            assert transition.nach == "map"
-        state = transition.nach
-    for _ in range(len(A.zustaende)):
+        if transition.source == "source":
+            assert transition.target == "map"
+        state = transition.target
+    for _ in range(len(A.states)):
         if state == END:
             return
         state = _progress(state)
@@ -261,7 +262,7 @@ def test_random_walk_ends_once_agents_make_progress(choices):
 
 
 def _progress(state: str) -> str:
-    events = {t.bei: t.nach for t in FLOW.outgoing(state)}
+    events = {t.event: t.target for t in FLOW.outgoing(state)}
     for event in PROGRESS:
         if event in events:
             return events[event]
@@ -269,17 +270,17 @@ def _progress(state: str) -> str:
 
 
 def test_unknown_class_or_event_is_visible():
-    with pytest.raises(AblaufError, match="unbekannte Befundklasse"):
+    with pytest.raises(FlowError, match="unbekannte Befundklasse"):
         FLOW.review_event(["vielleicht"])
-    with pytest.raises(AblaufError, match="kein Review-Ereignis"):
-        FLOW.verdict("erledigt")
-    with pytest.raises(AblaufError, match="unbekannter Zustand"):
+    with pytest.raises(FlowError, match="kein Review-Ereignis"):
+        FLOW.verdict("done")
+    with pytest.raises(FlowError, match="unbekannter Zustand"):
         FLOW.hint_lines("nirgends", "x")
 
 
 def test_readme_state_diagram_matches_table():
     """Jede Kante des README-Diagramms ist ein Übergang des Ablaufs."""
-    table = {(t.von, t.bei, t.nach) for t in A.uebergaenge}
+    table = {(t.source, t.event, t.target) for t in A.transitions}
     assert diagram_edges("planning") <= table
 
 
@@ -287,10 +288,10 @@ def test_renderer_uses_the_flow_it_is_given():
     """Die Tabelle ist ausdrückliche Eingabe des Renderers: eine andere
     Tabelle ändert den Hinweis ohne globale Eingriffe."""
     raw = copy.deepcopy(_raw())
-    for transition in raw["uebergang"]:
-        if transition["von"] == "build":
-            transition["befehl"] = "EIGENER-BEFEHL {bead}"
-    other = Planungsablauf(parse_ablauf(raw))
+    for transition in raw["transition"]:
+        if transition["source"] == "implement":
+            transition["hint"] = "EIGENER-BEFEHL {bead}"
+    other = PlanningFlow(parse_flow(raw))
     issue = HandoffIssue(
         id="x-1",
         title="T",
@@ -299,16 +300,16 @@ def test_renderer_uses_the_flow_it_is_given():
         acceptance_criteria="AC",
         source_refs=["a.md"],
     )
-    text = _render_handoff(issue, Step.BUILD, flow=other)
+    text = _render_handoff(issue, Step.IMPLEMENT, flow=other)
     assert "EIGENER-BEFEHL x-1" in text
-    assert "EIGENER-BEFEHL" not in render_handoff(issue, Step.BUILD)
+    assert "EIGENER-BEFEHL" not in render_handoff(issue, Step.IMPLEMENT)
 
 
 def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
     def broken():
-        raise AblaufError("planning.toml: $: additionalProperties")
+        raise FlowError("planning.toml: $: additionalProperties")
 
-    monkeypatch.setattr(step_cli, "lade_planungsablauf", broken)
+    monkeypatch.setattr(step_cli, "load_planning_flow", broken)
     monkeypatch.setattr(
         step_cli,
         "read_issue",
@@ -317,6 +318,8 @@ def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
     monkeypatch.setattr(
         step_cli, "load_base_max_chars", lambda _: 4000
     )
-    result = CliRunner().invoke(app, ["step", "x-1", "--step", "build"])
+    result = CliRunner().invoke(
+        app, ["step", "x-1", "--step", "implement"]
+    )
     assert result.exit_code == 1
     assert "Planungsablauf ungültig" in result.stderr

@@ -83,7 +83,7 @@ def _measured_base(project, *args: str) -> int:
         ["--step", "map"],
         ["--step", "graph"],
         ["--step", "materialize"],
-        ["--step", "build"],
+        ["--step", "implement"],
         ["--step", "review", "--review-of", "map"],
         ["--step", "review", "--review-of", "materialize"],
     ],
@@ -102,28 +102,28 @@ def test_overlong_base_exits_2_with_empty_stdout(bd, project, args):
 def test_boundary_equal_is_allowed_and_one_less_is_rejected(
     bd, project
 ):
-    size = _measured_base(project, "--step", "build")
+    size = _measured_base(project, "--step", "implement")
     _limit(project, size)
-    ok = _handoff("--step", "build")
+    ok = _handoff("--step", "implement")
     assert ok.exit_code == 0
     assert ok.stdout.index("\nLEITLINIEN") == size
     _limit(project, size - 1)
-    assert _handoff("--step", "build").exit_code == 2
+    assert _handoff("--step", "implement").exit_code == 2
 
 
 def test_guidelines_do_not_count_to_the_base(bd, project):
-    size = _measured_base(project, "--step", "build")
+    size = _measured_base(project, "--step", "implement")
     _limit(project, size)
-    text = _handoff("--step", "build").stdout
-    assert text.startswith("Schritt: build\n")
+    text = _handoff("--step", "implement").stdout
+    assert text.startswith("Schritt: implement\n")
     assert len(text) > size
 
 
 def test_default_4000_applies_without_configuration(bd, project):
     assert not (project / "pyproject.toml").exists()
-    assert _handoff("--step", "build").exit_code == 0
+    assert _handoff("--step", "implement").exit_code == 0
     bd.state["stdout"] = json.dumps([FULL | {"title": "T" * 6000}])
-    assert _handoff("--step", "build").exit_code == 2
+    assert _handoff("--step", "implement").exit_code == 2
 
 
 def test_epic_hint_counts_and_is_named_by_index(bd, project):
@@ -142,7 +142,7 @@ def test_epic_hint_counts_and_is_named_by_index(bd, project):
     bd.state["graph"] = {"x-1": child, "ep": epic}
     bd.state["stdout"] = ""
     _limit(project, 1)
-    result = _handoff("--step", "build")
+    result = _handoff("--step", "implement")
     assert result.exit_code == 2
     assert "epic_context[0]" in result.stderr
     assert "Epic-Text" not in result.stderr
@@ -161,7 +161,7 @@ def test_epic_hint_counts_and_is_named_by_index(bd, project):
 )
 def test_invalid_value_exits_2_before_reading_beads(bd, project, text):
     _config(project, f"{TABLE}{text}\n")
-    result = _handoff("--step", "build")
+    result = _handoff("--step", "implement")
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "tool.ki-dev.handoff.base_max_chars" in result.stderr
@@ -173,7 +173,7 @@ def test_invalid_value_exits_2_before_reading_beads(bd, project, text):
 )
 def test_wrong_table_or_defective_toml_exits_2(bd, project, text):
     _config(project, text)
-    result = _handoff("--step", "build")
+    result = _handoff("--step", "implement")
     assert result.exit_code == 2
     assert result.stdout == ""
     assert bd.calls == []
@@ -181,7 +181,7 @@ def test_wrong_table_or_defective_toml_exits_2(bd, project, text):
 
 def test_unreadable_configuration_exits_1(bd, project):
     (project / "pyproject.toml").mkdir()
-    result = _handoff("--step", "build")
+    result = _handoff("--step", "implement")
     assert result.exit_code == 1
     assert result.stdout == ""
     assert bd.calls == []
@@ -190,7 +190,7 @@ def test_unreadable_configuration_exits_1(bd, project):
 def test_non_default_valid_value_is_effective(bd, project):
     _limit(project, 9999)
     bd.state["stdout"] = json.dumps([FULL | {"title": "T" * 6000}])
-    assert _handoff("--step", "build").exit_code == 0
+    assert _handoff("--step", "implement").exit_code == 0
 
 
 # --- Build-Review: Grenze vor dem Vorlauf ---------------------------
@@ -215,7 +215,7 @@ def test_review_over_limit_blocks_before_any_preflight(bd, project):
     marker = _review_project(project, 1)
     for args in (
         ["--step", "review"],
-        ["--step", "review", "--review-of", "build"],
+        ["--step", "review", "--review-of", "implement"],
     ):
         result = _handoff(*args)
         assert result.exit_code == 2

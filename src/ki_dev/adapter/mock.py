@@ -14,25 +14,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ki_dev.adapter.contract import (
-    BuildReport,
-    BuildRequest,
     ReviewRequest,
+    WorkReport,
+    WorkRequest,
 )
 
 NAME = "mock"
 
 
 @dataclass
-class MockBuilder:
+class MockWorker:
     path: str = "MOCK.md"
     calls: int = 0
 
-    def build(self, request: BuildRequest) -> BuildReport:
+    def work(self, request: WorkRequest) -> WorkReport:
         self.calls += 1
         target = Path(request.task.workdir) / self.path
         with target.open("a", encoding="utf-8") as handle:
             handle.write(f"Runde {request.round_id}\n")
-        return BuildReport(f"mock: {self.path} um Runde ergänzt")
+        return WorkReport(f"mock: {self.path} um Runde ergänzt")
 
 
 @dataclass

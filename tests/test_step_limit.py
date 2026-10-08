@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.flow.planning import lade_planungsablauf
+from ki_dev.flow.planning import load_planning_flow
 from ki_dev.step.guidelines import GuidelineSection
 from ki_dev.step.handoff import (
     HandoffIssue,
@@ -31,7 +31,7 @@ from ki_dev.step.limit_config import (
     load_base_max_chars,
 )
 
-FLOW = lade_planungsablauf()
+FLOW = load_planning_flow()
 render_handoff = partial(_render_handoff, flow=FLOW)
 render_base_handoff = partial(_render_base_handoff, flow=FLOW)
 
@@ -42,12 +42,12 @@ COMBINATIONS = [
     (Step.MAP, None),
     (Step.GRAPH, None),
     (Step.MATERIALIZE, None),
-    (Step.BUILD, None),
+    (Step.IMPLEMENT, None),
     (Step.REVIEW, None),
     (Step.REVIEW, ReviewTarget.MAP),
     (Step.REVIEW, ReviewTarget.GRAPH),
     (Step.REVIEW, ReviewTarget.MATERIALIZE),
-    (Step.REVIEW, ReviewTarget.BUILD),
+    (Step.REVIEW, ReviewTarget.IMPLEMENT),
 ]
 
 
@@ -156,12 +156,14 @@ def test_default_limit_is_4000_and_fits_every_step_with_one_epic():
 
 
 def test_without_limit_nothing_is_checked():
-    text = render_handoff(_issue(title="T" * 9000), Step.BUILD, None)
+    text = render_handoff(
+        _issue(title="T" * 9000), Step.IMPLEMENT, None
+    )
     assert len(text) > 9000
 
 
 def test_guidelines_are_not_counted():
-    title = _padded_title(Step.BUILD, None, 4000)
+    title = _padded_title(Step.IMPLEMENT, None, 4000)
     sections = [
         GuidelineSection(
             source="doc.yaml", id="a", text="Regel " * 3000
@@ -169,7 +171,7 @@ def test_guidelines_are_not_counted():
     ]
     text = render_handoff(
         _issue(title=title),
-        Step.BUILD,
+        Step.IMPLEMENT,
         None,
         sections,
         base_max_chars=4000,
@@ -219,7 +221,7 @@ def test_diagnosis_does_not_contain_the_title_text():
     with pytest.raises(HandoffBaseTooLongError) as error:
         render_handoff(
             _issue(title=SECRET * 400),
-            Step.BUILD,
+            Step.IMPLEMENT,
             None,
             base_max_chars=100,
         )

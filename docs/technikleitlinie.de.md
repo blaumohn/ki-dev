@@ -13,6 +13,19 @@ fachlich geänderte Validierungs- und Prozessgrenzen sowie Abläufe. Bestehende 
 sind keine Vorbilder; ihre Migration erfolgt im passenden Auftrag, ohne
 unbeteiligten Code nebenbei umzubauen.
 
+## Sprache von Code und Daten
+
+- Englisch: Paket-, Modul- und Dateinamen, Bezeichner, Schlüssel und
+  IDs in Ablauf- und Konfigurationsdaten (Zustände, Ereignisse,
+  Wächter, Aktionen, Arten).
+- Deutsch: Doku, Beads, Commits, Kommentare, Docstrings und Texte für
+  Menschen (Hinweise, Prompttexte, Fehlermeldungen).
+- Umbenennen ersetzt den alten Namen überall zugleich; keine Aliasse
+  oder Übergangsnamen.
+
+**Beispiel:** Die Kante `implement.review --fix--> implement.correction`
+trägt den Hinweis „Befunde an den Umsetzer (implementer)“.
+
 ## Gemeinsame Validierungssprache
 
 - JSON Schema mit der vorhandenen Python-Bibliothek `jsonschema` verwenden;
@@ -61,7 +74,7 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
   Ausführers. Eine Schleife ist eine Rückkante mit Wächter und zählender
   Aktion, keine eigene Komponente oder Schicht.
 - Der Ausführer implementiert nur benannte Wächter, Aktionen und
-  Operationen; `binde` prüft beim Laden, dass Ablauf und Code dasselbe
+  Operationen; `bind` prüft beim Laden, dass Ablauf und Code dasselbe
   Vokabular kennen. Agenten liefern Ereignisse und Laufdaten, wählen aber
   nie selbst eine Kante.
 - Inhaltliche Entscheidungen (CHANGES → neue Runde, Rundenlimit,
@@ -71,7 +84,7 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
   kennen keinen Ablauf (`tests/test_schichten.py`).
 
 **Beispiel:** „Nach fünf CHANGES hält der Lauf an“ ist der Wächter
-`!korrekturrunden_frei` an der Kante `controller_changes` in `delivery.toml`,
+`!changes_rounds_left` an der Kante `controller_changes` in `delivery.toml`,
 nicht ein `if` in der Laufzeit.
 
 ## Ausnahmen

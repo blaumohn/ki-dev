@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from ki_dev.adapter.agent import (
-    AgentBuildMode,
     AgentReviewer,
+    AgentWorker,
 )
 from ki_dev.adapter.contract import (
     RunTask,
@@ -53,8 +53,8 @@ from ki_dev.usage import (
     UsageStatus,
 )
 from tests.test_runner_runtime import (
-    FakeBuilder,
     FakeReviewer,
+    FakeWorker,
     _context,
     _task,
 )
@@ -93,10 +93,10 @@ class Executor:
         )
 
 
-def runtime(tmp_path, builder, reviewer, **kwargs):
+def runtime(tmp_path, worker, reviewer, **kwargs):
     return RunRuntime(
         RunStore(tmp_path, "guard"),
-        builder,
+        worker,
         reviewer,
         StaticEvidenceCollector(
             tuple(_context(i) for i in range(1, 6))
@@ -106,7 +106,7 @@ def runtime(tmp_path, builder, reviewer, **kwargs):
     )
 
 
-@pytest.mark.parametrize("role", ["build", "review"])
+@pytest.mark.parametrize("role", ["worker", "review"])
 def test_agent_failure_pauses_immediately_and_keeps_usage(
     tmp_path, role
 ):
@@ -122,17 +122,17 @@ def test_agent_failure_pauses_immediately_and_keeps_usage(
             usage=USAGE,
         )
     )
-    builder = (
-        AgentBuildMode(executor, "build", "model", Effort.LOW)
-        if role == "build"
-        else FakeBuilder()
+    worker = (
+        AgentWorker(executor, "worker", "model", Effort.LOW)
+        if role == "worker"
+        else FakeWorker()
     )
     reviewer = (
         AgentReviewer(executor, "review", "model", Effort.LOW)
         if role == "review"
         else FakeReviewer([ReviewAction.PASS])
     )
-    with runtime(tmp_path, builder, reviewer) as run:
+    with runtime(tmp_path, worker, reviewer) as run:
         result = run.start(_task("guard"), Limits(process_retries=3))
     assert result.status == "paused_interactive"
     assert "session limit" in result.detail
@@ -144,14 +144,14 @@ def test_agent_failure_pauses_immediately_and_keeps_usage(
     ]
     assert any(d["usage"] == USAGE for d in docs)
     with (
-        runtime(tmp_path, builder, reviewer) as run,
+        runtime(tmp_path, worker, reviewer) as run,
         pytest.raises(RunResumeError, match="Antwort"),
     ):
         run.resume()
     assert executor.calls == 1
 
 
-@pytest.mark.parametrize("role", ["build", "review"])
+@pytest.mark.parametrize("role", ["worker", "review"])
 def test_agent_failure_still_records_normalized_usage_event(
     tmp_path, role
 ):
@@ -193,17 +193,17 @@ def test_agent_failure_still_records_normalized_usage_event(
             usage_event=event,
         )
     )
-    builder = (
-        AgentBuildMode(executor, "build", "model", Effort.LOW)
-        if role == "build"
-        else FakeBuilder()
+    worker = (
+        AgentWorker(executor, "worker", "model", Effort.LOW)
+        if role == "worker"
+        else FakeWorker()
     )
     reviewer = (
         AgentReviewer(executor, "review", "model", Effort.LOW)
         if role == "review"
         else FakeReviewer([ReviewAction.PASS])
     )
-    with runtime(tmp_path, builder, reviewer) as run:
+    with runtime(tmp_path, worker, reviewer) as run:
         run.start(_task("guard"), Limits(process_retries=3))
 
     report = CallLedger(RunStore(tmp_path, "guard")).usage_report()
@@ -252,9 +252,9 @@ def test_successful_review_turn_records_usage_event(tmp_path):
             usage_event=event,
         )
     )
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = AgentReviewer(executor, "review", "model", Effort.LOW)
-    with runtime(tmp_path, builder, reviewer) as run:
+    with runtime(tmp_path, worker, reviewer) as run:
         result = run.start(_task("guard"), Limits())
 
     assert result.status == "passed"
@@ -291,7 +291,7 @@ def test_reservation_stays_locked_between_record_usage_and_finish(
         "cli_result",
         CounterScope.CALL_TOTAL,
         cli_version="0.0.0",
-        session_id="build",
+        session_id="worker",
         tokens=TokenCounts(
             fresh_input=10,
             cache_read=100,
@@ -324,7 +324,7 @@ def test_reservation_stays_locked_between_record_usage_and_finish(
         )
     )
     executor = Executor(result)
-    builder = AgentBuildMode(executor, "build", "model", Effort.LOW)
+    worker = AgentWorker(executor, "worker", "model", Effort.LOW)
     reviewer = FakeReviewer([ReviewAction.PASS])
 
     # Fuer jeden ``finish()``-Aufruf festhalten, ob der Verbrauchs-
@@ -346,7 +346,7 @@ def test_reservation_stays_locked_between_record_usage_and_finish(
 
     monkeypatch.setattr(CallLedger, "finish", spy)
 
-    with runtime(tmp_path, builder, reviewer) as run:
+    with runtime(tmp_path, worker, reviewer) as run:
         run.start(_task("guard"), Limits(process_retries=3))
 
     report = CallLedger(RunStore(tmp_path, "guard")).usage_report()
@@ -364,21 +364,21 @@ def test_reservation_stays_locked_between_record_usage_and_finish(
 
 
 def test_two_failed_corrections_stop_before_fourth_build(tmp_path):
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer([ReviewAction.CHANGES] * 4)
-    with runtime(tmp_path, builder, reviewer) as run:
+    with runtime(tmp_path, worker, reviewer) as run:
         result = run.start(_task("guard"), Limits(changes_rounds=5))
     assert result.status == "paused_interactive"
     assert "Korrekturen" in result.detail
-    assert builder.calls == reviewer.calls == 3
+    assert worker.calls == reviewer.calls == 3
 
 
 def test_stagnant_same_reference_stops_before_next_build(tmp_path):
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer([ReviewAction.CHANGES] * 5)
     with runtime(
         tmp_path,
-        builder,
+        worker,
         reviewer,
         safety_limits=SafetyLimits(
             max_failed_corrections=10, max_stagnant_changes=3
@@ -390,7 +390,7 @@ def test_stagnant_same_reference_stops_before_next_build(tmp_path):
     assert "AC1" in result.detail
     # Drei CHANGES-Runden in Folge an derselben Referenz halten vor
     # dem vierten Bauaufruf an, unabhaengig von max_failed_corrections.
-    assert builder.calls == reviewer.calls == 3
+    assert worker.calls == reviewer.calls == 3
     handoffs = list((tmp_path / "guard" / "handoff").glob("*.json"))
     assert len(handoffs) == 1
     handoff = json.loads(handoffs[0].read_text())
@@ -408,7 +408,7 @@ def test_changing_reference_is_not_treated_as_stagnation(tmp_path):
         "write",
         acceptance_criteria=("Kriterium 1", "Kriterium 2"),
     )
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer(
         [
             (ReviewAction.CHANGES, "AC1"),
@@ -419,7 +419,7 @@ def test_changing_reference_is_not_treated_as_stagnation(tmp_path):
     )
     with runtime(
         tmp_path,
-        builder,
+        worker,
         reviewer,
         safety_limits=SafetyLimits(
             max_agent_calls=20,
@@ -429,7 +429,7 @@ def test_changing_reference_is_not_treated_as_stagnation(tmp_path):
     ) as run:
         result = run.start(task, Limits(changes_rounds=5))
     assert result.status == "passed"
-    assert builder.calls == reviewer.calls == 4
+    assert worker.calls == reviewer.calls == 4
 
 
 def test_stagnation_reason_persists_across_fresh_store_instances(
@@ -545,20 +545,20 @@ def test_stagnation_reason_reports_recorded_consumption(tmp_path):
 
 
 def test_call_limit_survives_restart_and_answer(tmp_path):
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer([ReviewAction.CHANGES])
     with runtime(
         tmp_path,
-        builder,
+        worker,
         reviewer,
         safety_limits=SafetyLimits(max_agent_calls=2),
     ) as run:
         result = run.start(_task("guard"), Limits())
     assert result.status == "paused_interactive"
-    with runtime(tmp_path, builder, reviewer) as run:
+    with runtime(tmp_path, worker, reviewer) as run:
         result = run.resume("weiter")
     assert result.status == "paused_interactive"
-    assert builder.calls == reviewer.calls == 1
+    assert worker.calls == reviewer.calls == 1
     assert "Aufrufgrenze" in result.detail
 
 
@@ -574,10 +574,10 @@ def test_budget_blocks_next_paid_call(tmp_path, limits, usage, match):
     executor = Executor(
         TurnResult(TurnStatus.OK, 0, "Bau", "", (), 1.0, usage=usage)
     )
-    builder = AgentBuildMode(executor, "build", "model", Effort.LOW)
+    worker = AgentWorker(executor, "worker", "model", Effort.LOW)
     reviewer = FakeReviewer([ReviewAction.PASS])
     with runtime(
-        tmp_path, builder, reviewer, safety_limits=limits
+        tmp_path, worker, reviewer, safety_limits=limits
     ) as run:
         result = run.start(_task("guard"), Limits())
     assert result.status == "paused_interactive"
@@ -590,7 +590,7 @@ def test_legacy_run_cannot_silently_start_paid_work(tmp_path):
     store = RunStore(tmp_path, "old")
     store.initialize({"configuration": {}})
     with pytest.raises(SafetyStop, match="Altlauf"):
-        CallLedger(store).reserve("call-1", "build", True)
+        CallLedger(store).reserve("call-1", "worker", True)
     assert not (store.run_dir / "calls").exists()
 
 
@@ -599,9 +599,9 @@ def test_started_call_without_result_is_not_free_after_restart(
 ):
     store = RunStore(tmp_path, "guard")
     store.initialize({"safety_limits": asdict(SafetyLimits())})
-    CallLedger(store).reserve("call-1", "build", True)
+    CallLedger(store).reserve("call-1", "worker", True)
     with pytest.raises(SafetyStop, match="ungeklaert"):
-        CallLedger(store).reserve("call-2", "build", True)
+        CallLedger(store).reserve("call-2", "worker", True)
 
 
 def test_concurrent_reservations_cannot_bypass_limit(tmp_path):
@@ -610,7 +610,7 @@ def test_concurrent_reservations_cannot_bypass_limit(tmp_path):
 
     def reserve(number):
         try:
-            CallLedger(store).reserve(f"call-{number}", "build", True)
+            CallLedger(store).reserve(f"call-{number}", "worker", True)
             return True
         except SafetyStop:
             return False
@@ -624,7 +624,7 @@ def test_reconcile_real_call_requires_usage(tmp_path):
     store = RunStore(tmp_path, "guard")
     store.initialize({"safety_limits": asdict(SafetyLimits())})
     ledger = CallLedger(store)
-    ledger.reserve("call-1", "build", True)
+    ledger.reserve("call-1", "worker", True)
     with pytest.raises(SafetyStop, match="Verbrauchsnachweis"):
         ledger.reconcile("call-1", {"summary": "fertig"})
     ledger.reconcile("call-1", {"summary": "fertig", "usage": USAGE})
@@ -632,18 +632,18 @@ def test_reconcile_real_call_requires_usage(tmp_path):
 
 
 def test_permission_error_is_not_retried(tmp_path):
-    class BlockedBuilder(FakeBuilder):
-        def build(self, request):
+    class BlockedBuilder(FakeWorker):
+        def work(self, request):
             del request
             self.calls += 1
             raise PermissionError("Zugriff verweigert")
 
-    builder = BlockedBuilder()
-    with runtime(tmp_path, builder, FakeReviewer([])) as run:
+    worker = BlockedBuilder()
+    with runtime(tmp_path, worker, FakeReviewer([])) as run:
         result = run.start(_task("guard"), Limits())
     assert result.status == "paused_interactive"
     assert "Zugriff verweigert" in result.detail
-    assert builder.calls == 1
+    assert worker.calls == 1
 
 
 def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
@@ -655,7 +655,7 @@ def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
                 "acceptance_criteria": ["Kriterium 1"],
                 "workdir": str(tmp_path),
                 "access_profile": "write",
-                "build": {},
+                "worker": {},
                 "review": {},
             }
         )
@@ -677,7 +677,7 @@ def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
         "ki_dev.runner.cli._runtime", lambda *_: Runtime()
     )
     start_from_config(path, run_id="pin", runs_dir=tmp_path)
-    for role in ("build", "review"):
+    for role in ("worker", "review"):
         assert seen["configuration"][role]["budget"] == {
             "max_turns": 12,
             "max_budget_usd": 1.0,
@@ -712,14 +712,16 @@ def test_role_configuration_cannot_disable_bounds(override):
 def test_quota_baseline_first_measurement_returns_zero_delta(tmp_path):
     store = RunStore(tmp_path, "run-x")
     baseline = QuotaBaseline(store)
-    assert baseline.delta_percent("build", 40.0, resets_at=1000) == 0.0
+    assert baseline.delta_percent("worker", 40.0, resets_at=1000) == 0.0
 
 
 def test_quota_baseline_same_window_returns_growth(tmp_path):
     store = RunStore(tmp_path, "run-x")
     baseline = QuotaBaseline(store)
-    baseline.delta_percent("build", 40.0, resets_at=1000)
-    assert baseline.delta_percent("build", 55.0, resets_at=1000) == 15.0
+    baseline.delta_percent("worker", 40.0, resets_at=1000)
+    assert (
+        baseline.delta_percent("worker", 55.0, resets_at=1000) == 15.0
+    )
 
 
 def test_quota_baseline_window_rollover_resets_to_zero(tmp_path):
@@ -731,11 +733,11 @@ def test_quota_baseline_window_rollover_resets_to_zero(tmp_path):
     gegen eine alte, sehr niedrige Basislinie erscheinen."""
     store = RunStore(tmp_path, "run-x")
     baseline = QuotaBaseline(store)
-    baseline.delta_percent("build", 1.0, resets_at=1000)
+    baseline.delta_percent("worker", 1.0, resets_at=1000)
     # Fenster wechselt (anderes resets_at); ohne Reset waere das
     # Delta 15.0 - 1.0 = 14.0 statt der korrekten 0.0 fuer ein
     # frisches Fenster.
-    assert baseline.delta_percent("build", 15.0, resets_at=2000) == 0.0
+    assert baseline.delta_percent("worker", 15.0, resets_at=2000) == 0.0
 
 
 def test_quota_baseline_persists_across_new_instance_same_store(
@@ -744,17 +746,17 @@ def test_quota_baseline_persists_across_new_instance_same_store(
     """Die Basislinie ueberlebt Resume/Prozessneustart unveraendert,
     solange das Fenster dasselbe bleibt (kein stiller Reset)."""
     store = RunStore(tmp_path, "run-x")
-    QuotaBaseline(store).delta_percent("build", 40.0, resets_at=1000)
+    QuotaBaseline(store).delta_percent("worker", 40.0, resets_at=1000)
     fresh = QuotaBaseline(RunStore(tmp_path, "run-x"))
-    assert fresh.delta_percent("build", 48.0, resets_at=1000) == 8.0
+    assert fresh.delta_percent("worker", 48.0, resets_at=1000) == 8.0
 
 
 def test_quota_baseline_is_independent_per_role(tmp_path):
     store = RunStore(tmp_path, "run-x")
     baseline = QuotaBaseline(store)
-    baseline.delta_percent("build", 10.0, resets_at=1000)
+    baseline.delta_percent("worker", 10.0, resets_at=1000)
     baseline.delta_percent("review", 70.0, resets_at=1000)
-    assert baseline.delta_percent("build", 12.0, resets_at=1000) == 2.0
+    assert baseline.delta_percent("worker", 12.0, resets_at=1000) == 2.0
     assert baseline.delta_percent("review", 74.0, resets_at=1000) == 4.0
 
 
@@ -765,6 +767,6 @@ def test_quota_baseline_rejects_resets_at_regression(tmp_path):
     er wird gemeldet, nicht als stiller Reset uebernommen."""
     store = RunStore(tmp_path, "run-x")
     baseline = QuotaBaseline(store)
-    baseline.delta_percent("build", 50.0, resets_at=2000)
+    baseline.delta_percent("worker", 50.0, resets_at=2000)
     with pytest.raises(RunStoreError, match="widerspruechlich"):
-        baseline.delta_percent("build", 5.0, resets_at=1000)
+        baseline.delta_percent("worker", 5.0, resets_at=1000)

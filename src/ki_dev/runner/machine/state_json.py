@@ -9,7 +9,7 @@ Eskalationstypen.
 Aufbau eines Dokuments::
 
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "run_id": "...",
       "revision": 0,
       "limits": {protocol_attempts, worker_attempts,
@@ -57,7 +57,9 @@ from .contract import (
     RunState,
 )
 
-SCHEMA_VERSION = 1
+# 2: englische Ablaufnamen (Operation work statt build,
+# ki-dev-ablauf-gna.10); ältere Läufe werden abgelehnt, nicht migriert.
+SCHEMA_VERSION = 2
 
 JsonObject = dict[str, object]
 

@@ -6,7 +6,7 @@ Codex schicken würde, in eine Sitzung seiner Wahl und legt deren
 formale Antwort zurück. Er entscheidet nichts: die Antwort durchläuft
 dieselbe Prüfung wie bei jedem anderen Adapter (z. B. das JSON-Urteil
 des Reviews). Entscheider ist der Mensch nur in den Zuständen der Art
-``warten`` des Ablaufs, nicht hier.
+``wait`` des Ablaufs, nicht hier.
 
 Fehlt die Antwort noch, schreibt der Adapter die Eingabe in den
 Posteingang und meldet :class:`ManualInputPending`. Das ist ein Halt des
@@ -22,13 +22,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ki_dev.adapter.contract import (
-    BuildReport,
-    BuildRequest,
     ReviewRequest,
+    WorkReport,
+    WorkRequest,
 )
 from ki_dev.adapter.prompts import (
-    build_prompt,
     review_prompt,
+    work_prompt,
 )
 
 NAME = "manual"
@@ -53,19 +53,19 @@ class ManualRelay:
     inbox: Path
     role: str
 
-    def build(self, request: BuildRequest) -> BuildReport:
-        return BuildReport(self._relay(request, build_prompt(request)))
+    def work(self, request: WorkRequest) -> WorkReport:
+        return WorkReport(self._relay(request, work_prompt(request)))
 
     def review(self, request: ReviewRequest) -> str:
         return self._relay(request, review_prompt(request))
 
     def _relay(
-        self, request: BuildRequest | ReviewRequest, prompt: str
+        self, request: WorkRequest | ReviewRequest, prompt: str
     ) -> str:
         digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
         key = f"r{request.round_id:04d}-{self.role}-{digest}"
-        ask = self.inbox / f"{key}.eingabe.md"
-        answer = self.inbox / f"{key}.antwort.md"
+        ask = self.inbox / f"{key}.input.md"
+        answer = self.inbox / f"{key}.answer.md"
         if answer.is_file():
             text = answer.read_text(encoding="utf-8")
             if text.strip():

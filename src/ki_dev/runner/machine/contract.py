@@ -27,10 +27,10 @@ from typing import ClassVar
 
 from ki_dev.deltas import StepDeltaAssessment
 from ki_dev.flow.model import (
-    END_KIND,
+    FINAL_KIND,
     WAIT_KIND,
-    AblaufError,
-    lade_ablauf,
+    FlowError,
+    load_flow,
 )
 
 
@@ -58,27 +58,27 @@ class Phase(StrEnum):
     ERROR = "error"
 
 
-BAU = lade_ablauf("delivery")
+DELIVERY = load_flow("delivery")
 
-if {phase.value for phase in Phase} != set(BAU.zustaende):
-    raise AblaufError("delivery.toml: Zustände passen nicht zu Phase")
+if {phase.value for phase in Phase} != set(DELIVERY.states):
+    raise FlowError("delivery.toml: Zustände passen nicht zu Phase")
 
 
 def _phases_of(kind: str) -> tuple[Phase, ...]:
     return tuple(
-        Phase(zustand.id)
-        for zustand in BAU.zustaende.values()
-        if zustand.art == kind
+        Phase(state.id)
+        for state in DELIVERY.states.values()
+        if state.kind == kind
     )
 
 
-TERMINAL_PHASES = frozenset(_phases_of(END_KIND))
+TERMINAL_PHASES = frozenset(_phases_of(FINAL_KIND))
 
 WAITING_PHASES = frozenset(_phases_of(WAIT_KIND))
 
 STOPPED_PHASES = TERMINAL_PHASES | WAITING_PHASES
 
-FINALIZATION_PHASES = _phases_of("abschluss")
+FINALIZATION_PHASES = _phases_of("finalization")
 
 
 class MachineEscalationCause(StrEnum):
@@ -321,12 +321,12 @@ class Event:
     aus dem Klassennamen: ``ControllerTask`` → ``controller_task``.
     """
 
-    ereignis: ClassVar[str] = ""
+    flow_event: ClassVar[str] = ""
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
         snake = re.sub(r"(?<!^)(?=[A-Z])", "_", cls.__name__)
-        cls.ereignis = snake.lower()
+        cls.flow_event = snake.lower()
 
 
 @dataclass(frozen=True)

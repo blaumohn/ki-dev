@@ -31,26 +31,26 @@ jede Rückkante verbraucht einen Zähler. Auszug aus
 [`src/ki_dev/flow/delivery.toml`](src/ki_dev/flow/delivery.toml):
 
 ```toml
-# controller_step --controller_changes [wenn] / aktion--> nach   (UML-Kante)
+# controller_step --controller_changes [cond] / actions--> target   (UML-Kante)
 
-[[uebergang]]                      # Korrekturbudget erschöpft → Mensch
-von = "controller_step"
-bei = "controller_changes"
-wenn = ["geprueftes_ergebnis", "!korrekturrunden_frei"]
-eskalation = "changes_rounds_exhausted"
-nach = "paused_interactive"
+[[transition]]                     # Korrekturbudget erschöpft → Mensch
+source = "controller_step"
+event = "controller_changes"
+cond = ["checked_result", "!changes_rounds_left"]
+escalation = "changes_rounds_exhausted"
+target = "paused_interactive"
 
-[[uebergang]]                      # sonst: neue Runde, Zähler +1
-von = "controller_step"
-bei = "controller_changes"
-wenn = ["geprueftes_ergebnis"]
-aktion = ["korrektur_beginnen", "ergebnis_verwerfen"]
-nach = "worker_step_prepare"
+[[transition]]                     # sonst: neue Runde, Zähler +1
+source = "controller_step"
+event = "controller_changes"
+cond = ["checked_result"]
+actions = ["begin_correction", "drop_result"]
+target = "worker_step_prepare"
 ```
 
 Kandidaten werden in Dateireihenfolge geprüft, der erste passende Wächter
 gewinnt. Passt keiner, ist das Ereignis dort nicht erlaubt. Die Begriffe folgen
-UML-Zustandsmaschinen bzw. SCXML (`event`, `cond`, `target`, `<history>`); der
+UML-Zustandsmaschinen bzw. SCXML (`event`, `cond`, `target`, `@history`); der
 Ausführer kennt nur das Vokabular, nicht die Topologie.
 
 ---
@@ -100,16 +100,16 @@ Je Rolle wählt die Konfiguration einen Adapter:
 | --- | --- | --- |
 | `claude`, `codex` | `{"executor": "codex", "session_id": "…", "model": "…", "effort": "high"}` | vorbereitete Agentensitzung |
 | `manual` | `{"executor": "manual"}` | du trägst die Eingabe in eine Sitzung deiner Wahl |
-| `mock` | `{"executor": "mock", "antworten": ["CHANGES", "PASS"]}` | vorgegebene Antworten |
+| `mock` | `{"executor": "mock", "answers": ["CHANGES", "PASS"]}` | vorgegebene Antworten |
 
 Beim Adapter `manual` hält der **Ausführer**, nicht der Ablauf. Der Lauf
 bleibt in `worker_step` und meldet `awaiting_input`. Die Eingabe liegt in
-`<runs>/<RUN_ID>/eingang/…eingabe.md`. Die Antwort kommt als `…antwort.md`
+`<runs>/<RUN_ID>/inbox/…input.md`. Die Antwort kommt als `…answer.md`
 daneben, dann `ki-dev run resume`. Sie durchläuft dieselbe Prüfung wie bei
 einem Agenten.
 
 Der Mensch hat damit zwei getrennte Rollen: **Bote** (Adapter `manual`) und
-**Entscheider** (Zustände der Art `warten`, z. B. nach `NEEDS_DECISION`).
+**Entscheider** (Zustände der Art `wait`, z. B. nach `NEEDS_DECISION`).
 
 ### `ki-dev step`: ein Übergang des Planungsablaufs von Hand
 
@@ -125,7 +125,7 @@ Schritt: materialize
 Bead: ki-dev-ablauf-5we - Vor GitHub: begrenzte Reviewer-Prüfsteuerung in step anschließen
 …
 Hinweis für den Menschen: Zustand materialize; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
-- erledigt → materialize.review: `ki-dev step ki-dev-ablauf-5we --step review --review-of materialize`
+- done → materialize.review: `ki-dev step ki-dev-ablauf-5we --step review --review-of materialize`
 ```
 
 Ein Review vergibt je Befund eine Klasse. Die stärkste Klasse bestimmt die
@@ -134,14 +134,14 @@ Kante:
 | Klasse | Urteil | Weiter |
 | --- | --- | --- |
 | `fix` | `CHANGES` | derselbe Schreibagent korrigiert |
-| `quelle` | `NEEDS_DECISION` | Planungssitzung, dann **bestehende** Karte ergänzen |
-| `entscheidung` | `NEEDS_DECISION` | der Mensch entscheidet |
+| `source` | `NEEDS_DECISION` | Planungssitzung, dann **bestehende** Karte ergänzen |
+| `decision` | `NEEDS_DECISION` | der Mensch entscheidet |
 
 ---
 
 ## Die zwei Abläufe
 
-**Bauablauf** ([`delivery.toml`](src/ki_dev/flow/delivery.toml), Hauptweg; Fehler-,
+**Lieferablauf** ([`delivery.toml`](src/ki_dev/flow/delivery.toml), Hauptweg; Fehler-,
 Grenz- und Schutzkanten stehen nur in der Datei):
 
 <!-- diagramm:delivery -->
@@ -175,20 +175,20 @@ stateDiagram-v2
     state "map.review" as map_review
     state "graph.review" as graph_review
     state "materialize.review" as materialize_review
-    state "build.review" as build_review
-    state "build.korrektur" as build_korrektur
-    map --> map_review: erledigt
+    state "implement.review" as implement_review
+    state "implement.correction" as implement_correction
+    map --> map_review: done
     map_review --> graph: PASS
-    graph --> graph_review: erledigt
+    graph --> graph_review: done
     graph_review --> materialize: PASS
-    materialize --> materialize_review: erledigt
-    materialize_review --> build: PASS
-    build --> build_review: erledigt
-    build_review --> fertig: PASS
-    build_review --> build_korrektur: fix
-    build_korrektur --> build_review: erledigt
-    graph_review --> quelle: quelle
-    quelle --> map: importiert
+    materialize --> materialize_review: done
+    materialize_review --> implement: PASS
+    implement --> implement_review: done
+    implement_review --> finished: PASS
+    implement_review --> implement_correction: fix
+    implement_correction --> implement_review: done
+    graph_review --> source: source
+    source --> map: imported
 ```
 
 Beide Diagramme sind getestet: Jede gezeichnete Kante muss im Ablauf stehen.
@@ -202,7 +202,7 @@ Beide Diagramme sind getestet: Jede gezeichnete Kante muss im Ablauf stehen.
 | Kein Zyklus ohne Mensch läuft unbegrenzt | `tests/machine/test_reachability.py` zählt den ganzen Zustandsraum auf |
 | … und das schon an den Daten | `tests/test_flow_delivery.py`: jeder Zyklus hat eine zählende Kante |
 | `PASSED` nur über die geprüfte Integration | `tests/machine/test_reachability.py` |
-| Ablauf und Ausführer sprechen dasselbe Vokabular | `binde()` prüft beim Import; `tests/test_flow_delivery.py` |
+| Ablauf und Ausführer sprechen dasselbe Vokabular | `bind()` prüft beim Import; `tests/test_flow_delivery.py` |
 | Schichten importieren nie rückwärts | `tests/test_schichten.py` (transitiv, per AST) |
 | Der Bote hält den Ausführer, nicht den Ablauf | `tests/test_runner_runtime.py`, `tests/test_runner_cli.py` |
 

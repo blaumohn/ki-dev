@@ -298,11 +298,11 @@ def test_pause_without_resume_point_is_rejected():
 def test_executor_facts_stop_changes_before_round_budget():
     """Fakten des Ausführers (Korrekturbudget, Stagnation) haben
     Vorrang vor den Rundengrenzen des Ablaufs."""
-    for fact in ("korrekturen_abgelehnt", "stagnation"):
+    for fact in ("changes_refused", "stagnation"):
         result = advance(
             _reviewed(worker_attempt=1),
             ControllerChanges("Test fehlt"),
-            fakten=frozenset({fact}),
+            facts=frozenset({fact}),
         )
         assert result.phase is Phase.PAUSED_INTERACTIVE
         assert result.escalation.cause is (

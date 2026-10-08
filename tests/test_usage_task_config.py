@@ -14,8 +14,8 @@ import json
 import pytest
 
 from ki_dev.adapter.agent import (
-    AgentBuildMode,
     AgentReviewer,
+    AgentWorker,
 )
 from ki_dev.adapter.executors import Effort
 from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
@@ -35,8 +35,8 @@ from ki_dev.runner.runtime import (
 )
 from ki_dev.runner.safety import CallLedger
 from tests.test_runner_runtime import (
-    FakeBuilder,
     FakeReviewer,
+    FakeWorker,
     _context,
 )
 from tests.test_runner_safety import USAGE, Executor
@@ -57,18 +57,18 @@ def _config(tmp_path, **extra):
         "acceptance_criteria": ["Kriterium 1"],
         "workdir": str(tmp_path),
         "access_profile": "write",
-        "build": {},
+        "worker": {},
         "review": {},
         **extra,
     }))
     return path
 
 
-def _patch_runtime(monkeypatch, builder, reviewer=None):
+def _patch_runtime(monkeypatch, worker, reviewer=None):
     def build_runtime(_config, store, _projection):
         return RunRuntime(
             store,
-            builder(),
+            worker(),
             (
                 reviewer(store.run_id)
                 if reviewer
@@ -91,7 +91,7 @@ def _agent_builder(session_id="build-sess"):
             TurnStatus.OK, 0, "fertig", "", (), 1.0, usage=dict(USAGE)
         )
     )
-    return AgentBuildMode(executor, session_id, "model", Effort.LOW)
+    return AgentWorker(executor, session_id, "model", Effort.LOW)
 
 
 def _agent_reviewer(session_id):
@@ -121,7 +121,7 @@ def _agent_reviewer(session_id):
 def test_start_from_config_writes_usage_task_to_manifest(
     monkeypatch, tmp_path
 ):
-    _patch_runtime(monkeypatch, FakeBuilder)
+    _patch_runtime(monkeypatch, FakeWorker)
     runs = tmp_path / "runs"
     start_from_config(
         _config(tmp_path, usage_task=BINDING),
@@ -398,7 +398,7 @@ def test_revision_change_via_new_run_keeps_family_cumulative(
         "rev-1"
     }
     assert _sessions(a_after) == {
-        ("build", "build-a"),
+        ("worker", "build-a"),
         ("review", "review-a"),
     }
     assert a_after.total == 2 * TURN_TOKENS
@@ -411,7 +411,7 @@ def test_revision_change_via_new_run_keeps_family_cumulative(
         "rev-2"
     }
     assert _sessions(b_report) == {
-        ("build", "build-b"),
+        ("worker", "build-b"),
         ("review", "review-b"),
     }
     assert b_report.total == 2 * TURN_TOKENS

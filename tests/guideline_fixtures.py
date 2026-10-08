@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ki_dev.step.guidelines import GUIDELINE_SOURCES
 
-STAGES = ("map", "graph", "materialize", "build")
+STAGES = ("map", "graph", "materialize", "implement")
 
 
 def guideline_data(prefix: str) -> dict:

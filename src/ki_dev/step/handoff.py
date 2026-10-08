@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.flow.planning import Planungsablauf
+from ki_dev.flow.planning import PlanningFlow
 from ki_dev.review_decision import (
     ReviewContractError,
     criterion_refs,
@@ -25,7 +25,7 @@ class Step(StrEnum):
     MAP = "map"
     GRAPH = "graph"
     MATERIALIZE = "materialize"
-    BUILD = "build"
+    IMPLEMENT = "implement"
     REVIEW = "review"
 
 
@@ -33,14 +33,14 @@ class ReviewTarget(StrEnum):
     """Prüfgegenstand von ``Step.REVIEW``; nur dieser wertet es aus.
 
     Fehlt ``review_target`` bei ``Step.REVIEW``, bleibt das
-    Verhalten die bisherige Build-Review (Rückwärtskompatibilität
+    Verhalten die bisherige Umsetzungs-Review (Rückwärtskompatibilität
     von ``--step review`` ohne ``--review-of``).
     """
 
     MAP = "map"
     GRAPH = "graph"
     MATERIALIZE = "materialize"
-    BUILD = "build"
+    IMPLEMENT = "implement"
 
 
 @dataclass(frozen=True)
@@ -66,9 +66,9 @@ class HandoffInvalidError(ValueError):
 
 _SOURCE_REFS_PATH = "metadata.handoff.source_refs"
 _REFS_STEPS = {Step.MAP, Step.GRAPH, Step.MATERIALIZE}
-_CONTRACT_STEPS = {Step.BUILD}
+_CONTRACT_STEPS = {Step.IMPLEMENT}
 # Ein fehlender review_target bei Step.REVIEW bleibt die bisherige
-# Build-Review (Rückwärtskompatibilität von --step review ohne
+# Umsetzungs-Review (Rückwärtskompatibilität von --step review ohne
 # --review-of).
 _REVIEW_TARGET_REFS = {
     ReviewTarget.MAP,
@@ -78,7 +78,7 @@ _REVIEW_TARGET_REFS = {
 _REVIEW_TARGET_CONTRACT = {
     None,
     ReviewTarget.MATERIALIZE,
-    ReviewTarget.BUILD,
+    ReviewTarget.IMPLEMENT,
 }
 
 
@@ -190,8 +190,8 @@ def validate_handoff(
     """Formale Lücken als Feldpfade; leer heißt vollständig.
 
     ``review_target`` wirkt nur bei ``step is Step.REVIEW``: er wählt,
-    welcher Prüfgegenstand (map/graph/materialize/build) benötigt wird.
-    Für andere Schritte wird er ignoriert.
+    welcher Prüfgegenstand (map/graph/materialize/implement) benötigt
+    wird. Für andere Schritte wird er ignoriert.
     """
     refs = _needs_refs(step, review_target)
     contract = _needs_contract(step, review_target)
@@ -209,8 +209,9 @@ def validate_handoff(
 
 
 def _criterion_problems(issue: HandoffIssue) -> tuple[str, ...]:
-    """AC-Zerlegung der Build-Review vor jedem Vorlauf prüfen (Erst-
-    Review, --next-turn und --decision-file teilen diese Grenze)."""
+    """AC-Zerlegung der Umsetzungs-Review vor jedem Vorlauf
+    prüfen (Erst-Review, --next-turn und --decision-file teilen
+    diese Grenze)."""
     try:
         split_acceptance_criteria(str(issue.acceptance_criteria))
     except ReviewContractError as exc:
@@ -254,7 +255,7 @@ def render_handoff(
     guidelines: Sequence[GuidelineSection] = (),
     base_max_chars: int | None = None,
     *,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> str:
     """Basisübergabe, danach der gesonderte Leitlinienblock; die Grenze
     gilt nur für die Basis (``None``: ungeprüft). ``flow`` ist die an
@@ -270,7 +271,7 @@ def render_base_handoff(
     step: Step,
     review_target: ReviewTarget | None = None,
     *,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
     reading_hint: str | None = None,
     max_chars: int | None = None,
 ) -> str:
@@ -301,11 +302,11 @@ def _base_lines(
     issue: HandoffIssue,
     step: Step,
     review_target: ReviewTarget | None,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> list[str]:
     lines = [f"Schritt: {step.value}"]
     if step is Step.REVIEW:
-        effective_target = review_target or ReviewTarget.BUILD
+        effective_target = review_target or ReviewTarget.IMPLEMENT
         lines.append(f"Reviewziel: {effective_target.value}")
     lines += [
         f"Bead: {one_line(issue.id)} - {one_line(issue.title)}",
@@ -343,7 +344,7 @@ def _is_build_review(
 ) -> bool:
     return step is Step.REVIEW and review_target in (
         None,
-        ReviewTarget.BUILD,
+        ReviewTarget.IMPLEMENT,
     )
 
 
@@ -371,7 +372,9 @@ def flow_state(step: Step, review_target: ReviewTarget | None) -> str:
     """Zustand der Tabelle flow/planning.toml, in dem diese Übergabe
     entsteht (Schreibschritt oder Review der jeweiligen Phase)."""
     if step is Step.REVIEW:
-        return f"{(review_target or ReviewTarget.BUILD).value}.review"
+        return (
+            f"{(review_target or ReviewTarget.IMPLEMENT).value}.review"
+        )
     return step.value
 
 
@@ -381,7 +384,7 @@ def ensure_base_fits(
     review_target: ReviewTarget | None,
     max_chars: int,
     *,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> None:
     """Basisgrenze prüfen, ohne den Text zu verwenden (vor einem
     Vorlauf, der Dateien ändern kann)."""
@@ -435,11 +438,11 @@ def render_guideline_block(
 
 
 def _roles(
-    step: Step, review_target: ReviewTarget | None, flow: Planungsablauf
+    step: Step, review_target: ReviewTarget | None, flow: PlanningFlow
 ) -> tuple[str, ...]:
     if step is not Step.REVIEW:
         return _ROLES[step]
-    role = _REVIEW_ROLES[review_target or ReviewTarget.BUILD]
+    role = _REVIEW_ROLES[review_target or ReviewTarget.IMPLEMENT]
     return (*role, *flow.class_lines())
 
 
@@ -505,8 +508,8 @@ _ROLES = {
         "Schreibe keine Historie als Nachtragsstapel in die",
         "Beschreibung.",
     ),
-    Step.BUILD: (
-        "Rolle: Bau-Agent.",
+    Step.IMPLEMENT: (
+        "Rolle: Umsetzer.",
         "Setze genau diesen materialisierten Bead um (description,",
         "design, acceptance_criteria), führe gezielte",
         "Entwicklungstests aus, schreibe Tests und untersuche Fehler.",
@@ -521,7 +524,7 @@ _ROLES = {
 }
 
 # Je Step.REVIEW-Prüfgegenstand ein eigener Rollentext: Nur die
-# Build-Review hat einen vorgeschalteten deterministischen Vorlauf
+# Umsetzungs-Review hat einen vorgeschalteten deterministischen Vorlauf
 # (Diff, Prüfbericht) aus handoff_preflight; das dort behauptete
 # Ergebnis existiert für map/graph/materialize nicht und darf ihnen
 # nicht unterstellt werden. Alle vier verbieten trotzdem eigene
@@ -585,7 +588,7 @@ _REVIEW_ROLES = {
         "und schließt nichts automatisch; unentscheidbare Konflikte",
         "gehen an den Menschen.",
     ),
-    ReviewTarget.BUILD: (
+    ReviewTarget.IMPLEMENT: (
         "Rolle: Review-Agent in frischer, getrennter Sitzung.",
         "Bilde zuerst dein eigenes Urteil anhand der geltenden",
         "description, design und acceptance_criteria, des",
@@ -602,7 +605,7 @@ _REVIEW_ROLES = {
         "unzureichende Nachweise als Befund, ohne dafür selbst",
         "Tests zu starten.",
         "Verwende notes, comments, Selbsteinschätzungen des",
-        "Bau-Agenten und frühere Reviews vor diesem Urteil nicht als",
+        "Umsetzers und frühere Reviews vor diesem Urteil nicht als",
         "Bewertungsinput.",
         "Ausgabe: PASS | CHANGES | NEEDS_DECISION. Nenne zuerst je",
         "Befund kurz Klasse und Anforderungs- oder Codebezug; zum",
@@ -614,6 +617,6 @@ _REVIEW_ROLES = {
         "Grund}) begrenzen nur den Prüfumfang der nächsten Runde; nie",
         "bei PASS, keine Programme oder Korrekturen.",
         "Du hast keine automatische Autorität gegenüber dem",
-        "Bau-Agenten und schließt nichts automatisch.",
+        "Umsetzer und schließt nichts automatisch.",
     ),
 }

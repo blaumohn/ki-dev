@@ -37,8 +37,8 @@ cat >"$DEMO/lauf.json" <<EOF
     "commit_message": "Geprüfter Abschluss (Demo)",
     "data_mode": "file_proposal"
   },
-  "build": {"executor": "mock"},
-  "review": {"executor": "mock", "antworten": ["CHANGES", "PASS"]},
+  "worker": {"executor": "mock"},
+  "review": {"executor": "mock", "answers": ["CHANGES", "PASS"]},
   "tests": []
 }
 EOF

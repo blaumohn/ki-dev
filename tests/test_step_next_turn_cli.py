@@ -102,7 +102,7 @@ def test_passing_check_routes_to_reviewer_with_report(
     result = runner.invoke(app, BASE)
     assert result.exit_code == 0
     assert result.stdout.startswith("Empfänger: Review-Agent")
-    assert "\nReviewziel: build\nBead: x-1 - " in result.stdout
+    assert "\nReviewziel: implement\nBead: x-1 - " in result.stdout
     assert_follow_up_message(result.stdout)
     assert "PRUEFBERICHT vorlauf-start=" in result.stdout
     assert "- tests: PASS" in result.stdout
@@ -122,7 +122,7 @@ def test_failing_check_routes_to_builder_on_stdout(
     _project(tmp_path, monkeypatch, check=failing, limit="600")
     result = runner.invoke(app, BASE)
     assert result.exit_code == 1
-    assert result.stdout.startswith("Empfänger: Bau-Agent")
+    assert result.stdout.startswith("Empfänger: Umsetzer")
     assert "Bead: x-1 - Titel [red]rot[/red]\n" in result.stdout
     assert (
         "Bitte die gemeldeten Fehler beheben. Melde anschließend nur "
@@ -149,7 +149,7 @@ def test_correction_failure_routes_to_builder_with_omitted_checks(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, BASE)
     assert result.exit_code == 1
-    assert result.stdout.startswith("Empfänger: Bau-Agent")
+    assert result.stdout.startswith("Empfänger: Umsetzer")
     assert "- fmt: FAIL" in result.stdout
     assert "- tests: OMITTED" in result.stdout
 
@@ -161,7 +161,7 @@ def test_start_failure_routes_to_builder(bd, tmp_path, monkeypatch):
     _project(tmp_path, monkeypatch, check=missing)
     result = runner.invoke(app, BASE)
     assert result.exit_code == 1
-    assert result.stdout.startswith("Empfänger: Bau-Agent")
+    assert result.stdout.startswith("Empfänger: Umsetzer")
     assert "- tests: FAIL" in result.stdout
 
 
@@ -170,7 +170,7 @@ def test_timeout_routes_to_builder(bd, tmp_path, monkeypatch):
     _project(tmp_path, monkeypatch, check=slow)
     result = runner.invoke(app, BASE)
     assert result.exit_code == 1
-    assert result.stdout.startswith("Empfänger: Bau-Agent")
+    assert result.stdout.startswith("Empfänger: Umsetzer")
     assert "- tests: FAIL" in result.stdout
 
 
@@ -184,7 +184,7 @@ def test_artifact_failure_routes_to_builder_without_artifact_line(
     result = runner.invoke(app, BASE)
     assert type(result.exception) is SystemExit
     assert result.exit_code == 1
-    assert result.stdout.startswith("Empfänger: Bau-Agent")
+    assert result.stdout.startswith("Empfänger: Umsetzer")
     assert "Vorlauf-Ausführungsfehler" in result.stdout
     assert "- tests: PASS" in result.stdout
     assert "Vollständig:" not in result.stdout
@@ -261,11 +261,11 @@ def test_explicit_review_of_build_matches_default(
 ):
     _project(tmp_path, monkeypatch)
     plain = runner.invoke(app, BASE)
-    explicit = runner.invoke(app, [*BASE, "--review-of", "build"])
+    explicit = runner.invoke(app, [*BASE, "--review-of", "implement"])
     assert plain.exit_code == explicit.exit_code == 0
     first_line = plain.stdout.splitlines()[0]
     assert first_line == explicit.stdout.splitlines()[0]
-    assert "Reviewziel: build" in explicit.stdout
+    assert "Reviewziel: implement" in explicit.stdout
 
 
 def test_without_next_turn_failure_keeps_empty_stdout(
@@ -287,10 +287,10 @@ def test_without_next_turn_failure_keeps_empty_stdout(
 @pytest.mark.parametrize(
     "args",
     [
-        ["step", "x-1", "--step", "build", "--next-turn"],
+        ["step", "x-1", "--step", "implement", "--next-turn"],
         ["step", "x-1", "--step", "map", "--next-turn"],
         ["step", "x-1", "--step", "review", "--feedback-file", "f"],
-        ["step", "x-1", "--step", "build", "--feedback-file", "f"],
+        ["step", "x-1", "--step", "implement", "--feedback-file", "f"],
         [
             "step",
             "map",
@@ -374,7 +374,7 @@ def test_without_feedback_option_stdin_is_not_read(
     write_guidelines(tmp_path)
     for args in (
         [*BASE, "--review-of", "map"],
-        ["step", "x-1", "--step", "build"],
+        ["step", "x-1", "--step", "implement"],
     ):
         result = runner.invoke(app, args, input=b"unbeachtet")
         assert result.exit_code == 0, result.exception
@@ -570,10 +570,10 @@ def test_changes_bound_to_criterion_goes_to_builder(bd, tmp_path):
     result = runner.invoke(app, [*BASE, "--decision-file", source])
     assert result.exit_code == 0, result.stderr
     out = result.stdout
-    assert out.startswith("Empfänger: Bau-Agent (bisherige Sitzung)")
+    assert out.startswith("Empfänger: Umsetzer (bisherige Sitzung)")
     assert "Review-Befund (CHANGES, AC1): Test fehlt" in out
-    assert "Zustand build.review" in out
-    assert "- fix → build.korrektur:" in out
+    assert "Zustand implement.review" in out
+    assert "- fix → implement.correction:" in out
     assert "PASS →" not in out
     assert "Vorlauf:" not in result.stderr
 
@@ -586,8 +586,8 @@ def test_unbound_changes_becomes_decision_for_human(bd, tmp_path):
     assert result.exit_code == 0, result.stderr
     assert result.stdout.startswith("Empfänger: Mensch")
     assert "NEEDS_DECISION: CHANGES abgewiesen" in result.stdout
-    assert "- quelle → quelle:" in result.stdout
-    assert "- entscheidung → build.entscheidung:" in result.stdout
+    assert "- source → source:" in result.stdout
+    assert "- decision → implement.decision:" in result.stdout
 
 
 def test_pass_goes_to_human_with_close_hint(bd, tmp_path):

@@ -20,8 +20,8 @@ import pytest
 from plumbum import CommandNotFound, local
 
 from ki_dev.adapter.agent import (
-    AgentBuildMode,
     AgentReviewer,
+    AgentWorker,
 )
 from ki_dev.adapter.contract import (
     RunTask,
@@ -191,7 +191,7 @@ def test_offline_run_connects_reader_contract_progress_env_projection(
         assert "+hello" in request.message
         return _review_json(run_id, 2, "PASS")
 
-    build = AgentBuildMode(
+    build = AgentWorker(
         FakeExecutor([write_typo, fix_typo]),
         "build-session",
         "model",
@@ -254,7 +254,7 @@ def test_offline_run_pauses_on_stagnation_and_stays_readable(tmp_path):
 
         return _review
 
-    build = AgentBuildMode(
+    build = AgentWorker(
         FakeExecutor([touch, touch]), "build-session", "m", Effort.LOW
     )
     review = AgentReviewer(

@@ -7,10 +7,10 @@ Bote (der den Text in eine Sitzung trägt) erhalten denselben Wortlaut.
 
 from __future__ import annotations
 
-from ki_dev.adapter.contract import BuildRequest, ReviewRequest
+from ki_dev.adapter.contract import ReviewRequest, WorkRequest
 
 
-def build_prompt(request: BuildRequest) -> str:
+def work_prompt(request: WorkRequest) -> str:
     task = request.task
     sources = (
         "\n".join(f"- {source}" for source in task.sources) or "- keine"
@@ -84,7 +84,7 @@ BESTEHENDE ABNAHMEKRITERIEN (nur diese sind fuer CHANGES bindbar)
 {criteria}
 
 BAUBERICHT
-{request.build_report.summary}
+{request.work_report.summary}
 
 BEGRENZTE NACHWEISPROJEKTION
 {request.evidence.text}

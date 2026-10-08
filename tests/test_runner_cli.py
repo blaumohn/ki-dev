@@ -22,8 +22,8 @@ from ki_dev.runner.runtime import (
     StaticEvidenceCollector,
 )
 from tests.test_runner_runtime import (
-    FakeBuilder,
     FakeReviewer,
+    FakeWorker,
     _context,
 )
 
@@ -61,13 +61,13 @@ def _add_configuration(tmp_path: Path, run_id: str) -> None:
 
 
 def test_status_reads_persisted_state_without_advancing(tmp_path):
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer(
         [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
     )
     with RunRuntime(
         RunStore(tmp_path, "run-status"),
-        builder,
+        worker,
         reviewer,
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -84,20 +84,20 @@ def test_status_reads_persisted_state_without_advancing(tmp_path):
     assert first.phase is Phase.WAITING_DECISION
     assert first.round_id == waiting.round_id
     assert second == first
-    assert builder.calls == 1
+    assert worker.calls == 1
     assert reviewer.calls == 1
 
 
 def test_status_works_with_relative_runs_dir(tmp_path, monkeypatch):
     """0we: der CLI-Standard ``--runs-dir .ki-dev/runs`` ist relativ;
     ``as_uri()`` braucht aber einen absoluten Pfad."""
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer([ReviewAction.NEEDS_DECISION])
     monkeypatch.chdir(tmp_path)
     relative_runs_dir = Path(".ki-dev/runs")
     with RunRuntime(
         RunStore(relative_runs_dir, "run-relative"),
-        builder,
+        worker,
         reviewer,
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -119,7 +119,7 @@ def test_status_reports_missing_run_clearly(tmp_path):
 def test_status_reports_manifest_without_configuration(tmp_path):
     with RunRuntime(
         RunStore(tmp_path, "run-no-config"),
-        FakeBuilder(),
+        FakeWorker(),
         FakeReviewer([ReviewAction.PASS]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -133,13 +133,13 @@ def test_status_reports_manifest_without_configuration(tmp_path):
 def test_status_reads_live_run_while_writer_holds_wal_open(
     tmp_path,
 ):
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer(
         [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
     )
     runtime = RunRuntime(
         RunStore(tmp_path, "run-live"),
-        builder,
+        worker,
         reviewer,
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -155,20 +155,20 @@ def test_status_reads_live_run_while_writer_holds_wal_open(
         assert result.status == "waiting_decision"
         assert result.phase is waiting.phase
         assert result.round_id == waiting.round_id
-        assert builder.calls == 1
+        assert worker.calls == 1
         assert reviewer.calls == 1
     finally:
         runtime.close()
 
 
 def test_status_reads_crash_state_with_wal_but_no_shm(tmp_path):
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer(
         [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
     )
     runtime = RunRuntime(
         RunStore(tmp_path, "run-crash"),
-        builder,
+        worker,
         reviewer,
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -213,13 +213,13 @@ def test_status_read_is_consistent_despite_concurrent_checkpoint(
     zu einer Mischung aus zwei Schreibvorgaengen fuehren (re0)."""
     import ki_dev.runner.runtime as run_runtime_module
 
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer(
         [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
     )
     runtime = RunRuntime(
         RunStore(tmp_path, "run-race"),
-        builder,
+        worker,
         reviewer,
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -290,7 +290,7 @@ def _corrupt_latest_checkpoint(
 def test_status_reports_checkpoint_missing_required_field(tmp_path):
     runtime = RunRuntime(
         RunStore(tmp_path, "run-missing-status"),
-        FakeBuilder(),
+        FakeWorker(),
         FakeReviewer([ReviewAction.NEEDS_DECISION]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -311,7 +311,7 @@ def test_status_reports_checkpoint_missing_required_field(tmp_path):
 def test_status_reports_checkpoint_with_invalid_run_state(tmp_path):
     runtime = RunRuntime(
         RunStore(tmp_path, "run-bad-run-state"),
-        FakeBuilder(),
+        FakeWorker(),
         FakeReviewer([ReviewAction.NEEDS_DECISION]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -348,7 +348,7 @@ def test_status_rejects_semantically_invalid_required_fields(
     nicht nur irgendein vorhandenes JSON-Feld."""
     runtime = RunRuntime(
         RunStore(tmp_path, "run-invalid-status"),
-        FakeBuilder(),
+        FakeWorker(),
         FakeReviewer([ReviewAction.NEEDS_DECISION]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -371,7 +371,7 @@ def test_status_cli_exits_with_code_2_for_incomplete_checkpoint(
 
     runtime = RunRuntime(
         RunStore(tmp_path, "run-cli-corrupt"),
-        FakeBuilder(),
+        FakeWorker(),
         FakeReviewer([ReviewAction.NEEDS_DECISION]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -450,13 +450,13 @@ def test_status_leaves_unusable_checkpoint_file_untouched(tmp_path):
 def test_status_leaves_complete_run_checkpoint_byte_identical(
     tmp_path,
 ):
-    builder = FakeBuilder()
+    worker = FakeWorker()
     reviewer = FakeReviewer(
         [ReviewAction.NEEDS_DECISION, ReviewAction.PASS]
     )
     with RunRuntime(
         RunStore(tmp_path, "run-complete"),
-        builder,
+        worker,
         reviewer,
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
@@ -500,8 +500,8 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
                 "workdir": str(tmp_path),
                 "access_profile": "write",
                 "finalization": {},
-                "build": {"executor": "manual"},
-                "review": {"executor": "mock", "antworten": ["PASS"]},
+                "worker": {"executor": "manual"},
+                "review": {"executor": "mock", "answers": ["PASS"]},
                 "tests": [],
             }
         )
@@ -515,8 +515,8 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
         Phase.WORKER_STEP,
     )
     assert status_run("r-1", runs_dir=runs).status == "awaiting_input"
-    (ask,) = (runs / "r-1" / "eingang").glob("*.eingabe.md")
-    ask.with_name(ask.name.replace("eingabe", "antwort")).write_text(
+    (ask,) = (runs / "r-1" / "inbox").glob("*.input.md")
+    ask.with_name(ask.name.replace(".input.", ".answer.")).write_text(
         "Gebaut."
     )
     result = runner_cli.resume_run("r-1", runs_dir=runs, answer=None)
@@ -526,7 +526,7 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
 def test_unknown_mock_answer_is_rejected(tmp_path):
     from ki_dev.runner import cli as runner_cli
 
-    with pytest.raises(RunConfigError, match="antworten"):
+    with pytest.raises(RunConfigError, match="answers"):
         runner_cli._mock(
-            {"executor": "mock", "antworten": ["OK"]}, "review"
+            {"executor": "mock", "answers": ["OK"]}, "review"
         )

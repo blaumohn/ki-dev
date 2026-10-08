@@ -7,17 +7,17 @@ from dataclasses import dataclass
 
 from ki_dev.adapter.contract import (
     AgentTurnError,
-    BuildReport,
-    BuildRequest,
     ReviewRequest,
+    WorkReport,
+    WorkRequest,
 )
 from ki_dev.adapter.executors import Effort, Executor, TurnRequest
 from ki_dev.adapter.executors.contract import TurnBudget, TurnResult
-from ki_dev.adapter.prompts import build_prompt, review_prompt
+from ki_dev.adapter.prompts import review_prompt, work_prompt
 
 
 @dataclass
-class AgentBuildMode:
+class AgentWorker:
     executor: Executor
     session_id: str
     model: str
@@ -25,14 +25,14 @@ class AgentBuildMode:
     budget: TurnBudget = TurnBudget()
     last_result: TurnResult | None = None
 
-    def build(self, request: BuildRequest) -> BuildReport:
+    def work(self, request: WorkRequest) -> WorkReport:
         self.last_result = None
         result = self.executor.send_turn(
             TurnRequest(
                 session_id=self.session_id,
                 model=self.model,
                 effort=self.effort,
-                message=build_prompt(request),
+                message=work_prompt(request),
                 workdir=request.task.workdir,
                 env=request.task.env,
                 budget=self.budget,
@@ -41,7 +41,7 @@ class AgentBuildMode:
         self.last_result = result
         if not result.ok:
             raise AgentTurnError(result)
-        return BuildReport(result.stdout)
+        return WorkReport(result.stdout)
 
 
 @dataclass

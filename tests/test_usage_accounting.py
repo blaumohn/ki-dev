@@ -97,7 +97,7 @@ def _record_purpose_call(ledger, purpose, amount, *, call_id=None):
     call_id = call_id or f"call-{purpose.value}"
     ledger.reserve(
         call_id,
-        "build",
+        "worker",
         False,
         "codex-cli",
         attribution=_purpose_attribution(purpose),
@@ -125,13 +125,13 @@ def test_executor_name_vs_provider_family_does_not_block_next_call(
     ("codex"). Ein gueltiger Beleg darf daraus keinen provider_mismatch
     erzeugen, der jede weitere Reservierung sperrt."""
     ledger = _ledger(tmp_path)
-    ledger.reserve("call-1", "build", True, "codex-cli")
+    ledger.reserve("call-1", "worker", True, "codex-cli")
     ledger.record_usage(
         "call-1", _codex_event(), "evidence-1", summary=True
     )
     _finish_metered(ledger, "call-1")
 
-    ledger.reserve("call-2", "build", True, "codex-cli")
+    ledger.reserve("call-2", "worker", True, "codex-cli")
 
 
 def test_same_summary_evidence_cannot_be_charged_to_two_calls(tmp_path):
@@ -141,11 +141,11 @@ def test_same_summary_evidence_cannot_be_charged_to_two_calls(tmp_path):
     ledger = _ledger(tmp_path)
     event = _codex_event()
 
-    ledger.reserve("call-1", "build", True, "codex-cli")
+    ledger.reserve("call-1", "worker", True, "codex-cli")
     ledger.record_usage("call-1", event, "same-evidence", summary=True)
     _finish_metered(ledger, "call-1")
 
-    ledger.reserve("call-2", "build", True, "codex-cli")
+    ledger.reserve("call-2", "worker", True, "codex-cli")
     with pytest.raises(SafetyStop, match="Verbrauchsbeleg"):
         ledger.record_usage(
             "call-2", event, "same-evidence", summary=True
@@ -154,13 +154,13 @@ def test_same_summary_evidence_cannot_be_charged_to_two_calls(tmp_path):
 
 def test_distinct_evidence_on_different_calls_is_allowed(tmp_path):
     ledger = _ledger(tmp_path)
-    ledger.reserve("call-1", "build", True, "codex-cli")
+    ledger.reserve("call-1", "worker", True, "codex-cli")
     ledger.record_usage(
         "call-1", _codex_event(), "evidence-1", summary=True
     )
     _finish_metered(ledger, "call-1")
 
-    ledger.reserve("call-2", "build", True, "codex-cli")
+    ledger.reserve("call-2", "worker", True, "codex-cli")
     ledger.record_usage(
         "call-2", _codex_event(), "evidence-2", summary=True
     )
@@ -186,7 +186,7 @@ def test_claude_call_total_summary_reconciles_with_legacy_usage(
         session_id="sess-1",
     )
 
-    ledger.reserve("call-1", "build", True, "claude-cli")
+    ledger.reserve("call-1", "worker", True, "claude-cli")
     ledger.record_usage("call-1", event, "turn:call-1", summary=True)
     _finish_metered(ledger, "call-1")
 
@@ -201,7 +201,7 @@ def test_claude_call_total_summary_reconciles_with_legacy_usage(
 
     # Beweis, dass die Gaps tatsaechlich nicht blockieren: eine
     # weitere Reservierung bleibt moeglich.
-    ledger.reserve("call-2", "build", True, "claude-cli")
+    ledger.reserve("call-2", "worker", True, "claude-cli")
 
 
 def test_partial_call_total_keeps_counts_and_blocks_next_reservation(
@@ -215,7 +215,7 @@ def test_partial_call_total_keeps_counts_and_blocks_next_reservation(
         TURN_USAGE, cli_version="999.999.999", session_id="sess-1"
     )
     assert event.status is UsageStatus.PARTIAL
-    ledger.reserve("call-1", "build", True, "claude-cli")
+    ledger.reserve("call-1", "worker", True, "claude-cli")
     _finish_metered(ledger, "call-1")
     ledger.record_usage("call-1", event, "turn:call-1", summary=True)
 
@@ -229,7 +229,7 @@ def test_partial_call_total_keeps_counts_and_blocks_next_reservation(
     }
     assert "measurement_incomplete" in report.calls[0].gaps
     with pytest.raises(SafetyStop, match="measurement_incomplete"):
-        ledger.reserve("call-2", "build", True, "claude-cli")
+        ledger.reserve("call-2", "worker", True, "claude-cli")
 
 
 def test_result_without_start_file_is_visible_gap_not_dropped(tmp_path):
@@ -303,7 +303,7 @@ def test_unattributed_call_stays_visible_and_separate_from_purposes(
     }.items():
         _record_purpose_call(ledger, purpose, amount)
 
-    ledger.reserve("call-unattributed", "build", False, "codex-cli")
+    ledger.reserve("call-unattributed", "worker", False, "codex-cli")
     event = normalize_codex_turn_usage(
         {
             "input_tokens": 7,
@@ -347,10 +347,10 @@ def test_runtime_purpose_mapping_matches_round_and_role(tmp_path):
     nicht an einer Testnachbildung."""
     from types import SimpleNamespace
 
-    from tests.test_runner_runtime import FakeBuilder, FakeReviewer
+    from tests.test_runner_runtime import FakeReviewer, FakeWorker
     from tests.test_runner_safety import runtime
 
-    with runtime(tmp_path, FakeBuilder(), FakeReviewer([])) as run:
+    with runtime(tmp_path, FakeWorker(), FakeReviewer([])) as run:
         # ``usage_task`` wird hier nur fuer diesen Test direkt ins
         # Manifest geschrieben, um die Runde/Rolle-Zuordnung isoliert
         # zu pruefen. Den echten Schreiber (start_from_config) belegt
@@ -367,10 +367,10 @@ def test_runtime_purpose_mapping_matches_round_and_role(tmp_path):
         actor = SimpleNamespace(session_id="sess-runtime")
 
         build_round_1 = run._usage_attribution(
-            {"round_id": 1}, {"kind": "build"}, actor
+            {"round_id": 1}, {"kind": "work"}, actor
         )
         build_round_2 = run._usage_attribution(
-            {"round_id": 2}, {"kind": "build"}, actor
+            {"round_id": 2}, {"kind": "work"}, actor
         )
         review_round_1 = run._usage_attribution(
             {"round_id": 1}, {"kind": "review"}, actor
@@ -396,7 +396,7 @@ def test_aborted_attempt_still_counts_under_its_purpose(tmp_path):
     ledger = _ledger(tmp_path)
     ledger.reserve(
         "call-aborted",
-        "build",
+        "worker",
         True,
         "codex-cli",
         attribution=_purpose_attribution(UsagePurpose.REPAIR),
@@ -458,7 +458,7 @@ def test_resubmitting_identical_evidence_for_same_call_keeps_balance(
     zum unzulaessigen Fall (derselbe Beleg fuer einen ANDEREN Call,
     siehe test_same_summary_evidence_cannot_be_charged_to_two_calls)."""
     ledger = _ledger(tmp_path)
-    ledger.reserve("call-1", "build", False, "codex-cli")
+    ledger.reserve("call-1", "worker", False, "codex-cli")
     event = normalize_codex_turn_usage(
         {
             "input_tokens": 33,
@@ -496,7 +496,7 @@ def _bound_call(
         parent_bead_id="ki-dev-ablauf-wu0.3",
     )
     ledger.reserve(
-        call_id, "build", False, "codex-cli", attribution=attribution
+        call_id, "worker", False, "codex-cli", attribution=attribution
     )
     event = normalize_codex_turn_usage(
         {
@@ -586,7 +586,7 @@ def test_shared_effort_evidence_cannot_be_charged_to_child_call(
         session_id="sess-child",
     )
     ledger.reserve(
-        "child", "build", False, "codex-cli", attribution=attribution
+        "child", "worker", False, "codex-cli", attribution=attribution
     )
     with pytest.raises(SafetyStop, match="Verbrauchsbeleg"):
         ledger.record_usage(

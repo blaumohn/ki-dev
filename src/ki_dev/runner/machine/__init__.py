@@ -18,8 +18,8 @@ Diese Ebene kennt weder Dateien noch Prozesse noch Git-Aktionen.
 from __future__ import annotations
 
 from .contract import (
-    BAU,
     DEFAULT_LIMITS,
+    DELIVERY,
     FINALIZATION_PHASES,
     STOPPED_PHASES,
     TERMINAL_PHASES,
@@ -65,10 +65,10 @@ from .state_json import (
     decode_run_state,
     encode_run_state,
 )
-from .transitions import BAU_GEBUNDEN, advance, operation
+from .transitions import DELIVERY_BOUND, advance, operation
 
 __all__ = [
-    "BAU",
+    "DELIVERY",
     "DEFAULT_LIMITS",
     "FINALIZATION_PHASES",
     "SCHEMA_VERSION",
@@ -110,7 +110,7 @@ __all__ = [
     "WorkerInputsPrepared",
     "WorkerNeedsDecision",
     "WorkerProcessError",
-    "BAU_GEBUNDEN",
+    "DELIVERY_BOUND",
     "advance",
     "operation",
     "decode_run_state",

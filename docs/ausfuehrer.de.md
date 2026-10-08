@@ -34,7 +34,7 @@ ki-dev run --config lauf.json --run-id run-42
     "commit_message": "Geprüfter Abschluss (projekt-42)",
     "data_mode": "file_proposal"
   },
-  "build": {
+  "worker": {
     "executor": "codex",
     "session_id": "build-session",
     "model": "gpt-5.6-terra",
@@ -69,7 +69,7 @@ ki-dev run --config lauf.json --run-id run-42
 }
 ```
 
-`build` und `review` müssen verschiedene vorbereitete Sitzungen benutzen.
+`worker` und `review` müssen verschiedene vorbereitete Sitzungen benutzen.
 Optionale Felder dürfen entfallen; für Grenzen gelten dann die eingebauten
 Werte. Unbekannte Felder werden abgewiesen.
 
@@ -78,8 +78,8 @@ Werte. Unbekannte Felder werden abgewiesen.
 | `executor` | Felder | Halt |
 | --- | --- | --- |
 | `claude`, `codex` | `session_id`, `model`, `effort`, optional `timeout_s`, `budget` | Schutzhalt (`execution_stopped`) bei Kontext-/Kontingentgrenze |
-| `manual` | keine | `awaiting_input`: Eingabe in `<runs>/<RUN_ID>/eingang/*.eingabe.md`, Antwort als `*.antwort.md` daneben, dann `ki-dev run resume RUN_ID` |
-| `mock` | Bau: optional `datei`; Review: `antworten` (`PASS`, `CHANGES`, `NEEDS_DECISION`) | erschöpfte Antwortliste ist ein Prozessfehler |
+| `manual` | keine | `awaiting_input`: Eingabe in `<runs>/<RUN_ID>/inbox/*.input.md`, Antwort als `*.answer.md` daneben, dann `ki-dev run resume RUN_ID` |
+| `mock` | Worker: optional `file`; Review: `answers` (`PASS`, `CHANGES`, `NEEDS_DECISION`) | erschöpfte Antwortliste ist ein Prozessfehler |
 
 `awaiting_input` ist ein Halt des Ausführers, kein Zustand des Ablaufs:
 Der Lauf bleibt im aktuellen Zustand (`worker_step` bzw.
@@ -198,7 +198,7 @@ konfigurierbare Standardgrenzen:
 | `safety_limits.max_stagnant_changes` | 3 | Bei so vielen CHANGES in Folge an derselben `requirement_ref` (die aktuelle Runde eingeschlossen) kein weiterer automatischer Bau |
 | `safety_limits.min_remaining_percent` | 10 | Zentrale, rollenunabhaengige Schutzreserve des Fuenfstundenkontingents (siehe unten); betrifft nicht `max_claude_cost_usd` (bezahlte Zusatznutzung) |
 | `budget.max_usage_delta_percentage_points` je Rolle | 20 | Aufgaben-Delta-Budget des Fuenfstundenkontingents (siehe unten) |
-| `build.budget.max_turns` / `review.budget.max_turns` | 12 | Native Claude-Turn-Grenze pro Aufruf |
+| `worker.budget.max_turns` / `review.budget.max_turns` | 12 | Native Claude-Turn-Grenze pro Aufruf |
 | `budget.max_budget_usd` je Rolle | 1 | Native Claude-Kostengrenze pro Aufruf |
 | `budget.max_context_tokens` je Rolle | 80.000 | Kontextvorpruefung durch die Orchestrierung vor jedem Bau-/Review-Aufruf und bei Resume (siehe unten) |
 | `budget.timeout_s` je Rolle | 180 s | Prozesstimeout fuer beide Adapter; der kleinere Wert aus Rollen-Timeout und Budget gilt. Eine vorgeschaltete CLI-Versionsprobe teilt sich diese Frist mit dem Turn, statt sie zu verdoppeln (siehe [cli-adapters.md](cli-adapters.md#versionsprobe-teilt-sich-die-zeitgrenze-mit-dem-turn)) |

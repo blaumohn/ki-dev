@@ -37,7 +37,7 @@ from plumbum import ProcessTimedOut, local
 from plumbum.machines.local import LocalCommand
 
 from ki_dev.config_sources import ConfigSource
-from ki_dev.flow.planning import Planungsablauf
+from ki_dev.flow.planning import PlanningFlow
 from ki_dev.step.guidelines import GuidelineSection
 from ki_dev.step.handoff import (
     HandoffIssue,
@@ -720,7 +720,7 @@ def render_review_handoff(
     report: PreflightReport,
     guidelines: Sequence[GuidelineSection] = (),
     *,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> str:
     """Reines Rendering: Basis-Review-Übergabe, kompakter
     Vorlaufbericht, danach der gesonderte Leitlinienblock."""

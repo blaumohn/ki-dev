@@ -19,7 +19,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from ki_dev.config_sources import ConfigSource
-from ki_dev.flow.planning import Planungsablauf
+from ki_dev.flow.planning import PlanningFlow
 from ki_dev.step.handoff import (
     NONEMPTY_TEXT_SCHEMA,
     HandoffIssue,
@@ -200,7 +200,7 @@ def _check_feedback(text: str, limit: int) -> None:
 
 
 _RE_REVIEW_FOCUS = {
-    ReviewTarget.BUILD: (
+    ReviewTarget.IMPLEMENT: (
         "Prüfe die Korrekturen und die davon betroffenen Kriterien "
         "samt Regressionen fachlich anhand von Diff und Prüfbericht. "
         "Grüne Tests sind kein Review-PASS."
@@ -257,12 +257,12 @@ def render_review_turn(
     report: PreflightReport | None,
     feedback: str | None,
     *,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> str:
     """Folgenachricht an die bisherige, vom Schreibagenten getrennte
     Review-Sitzung (keine neue Voll-Übergabe mit Rollentext).
 
-    ``report`` liegt nur beim Prüfgegenstand build vor (bestandener
+    ``report`` liegt nur beim Prüfgegenstand implement vor (bestandener
     Vorlauf); map/graph/materialize gehen ohne Code-Vorlauf zur
     erneuten, phasengerechten Prüfung.
     """
@@ -296,15 +296,15 @@ def render_repair_turn(
     limit: int,
     feedback: str | None,
     *,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> str:
-    """Nachricht an den Bau-Agenten, wenn der Vorlauf scheitert.
+    """Nachricht an den Umsetzer, wenn der Vorlauf scheitert.
 
     ``finding`` ist der unveränderte Befund des Vorlaufs (jeder Befehl
     mit Status; bei Artefaktfehler ohne Artefaktverweis).
     """
     lines = [
-        "Empfänger: Bau-Agent (Vorlauf fehlgeschlagen)",
+        "Empfänger: Umsetzer (Vorlauf fehlgeschlagen)",
         f"Bead: {_one_line(issue.id)} - {_one_line(issue.title)}",
         "",
         f"{_REPAIR_REQUEST} Die Rückmeldung darf höchstens {limit} "
@@ -313,12 +313,12 @@ def render_repair_turn(
         finding,
     ]
     lines += _feedback_lines(feedback)
-    lines += _flow_hint(flow, "build.korrektur", issue)
+    lines += _flow_hint(flow, "implement.correction", issue)
     return "\n".join(lines) + "\n"
 
 
 def _flow_hint(
-    flow: Planungsablauf, state: str, issue: HandoffIssue
+    flow: PlanningFlow, state: str, issue: HandoffIssue
 ) -> list[str]:
     """Folgeschritte aus dem Planungsablauf als abschließender Block."""
     return ["", *flow.hint_lines(state, _one_line(issue.id))]

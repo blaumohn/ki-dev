@@ -16,35 +16,35 @@ import pytest
 
 from ki_dev.flow.model import (
     WAIT_KIND,
-    AblaufError,
-    lade_ablauf,
-    lies_rohdaten,
-    parse_ablauf,
+    FlowError,
+    load_flow,
+    parse_flow,
+    read_raw,
 )
-from ki_dev.runner.interpreter import binde
-from ki_dev.runner.machine import BAU_GEBUNDEN, Phase
+from ki_dev.runner.interpreter import bind
+from ki_dev.runner.machine import DELIVERY_BOUND, Phase
 from tests.readme_diagramme import diagram_edges
 
-BAU = lade_ablauf("delivery")
+DELIVERY = load_flow("delivery")
 COUNTING = {
-    "task_beginnen",
-    "korrektur_beginnen",
-    "protokoll_wiederholen",
-    "prozess_wiederholen",
+    "begin_task",
+    "begin_correction",
+    "retry_protocol",
+    "retry_process",
 }
 
 
 def test_phase_names_exactly_the_states_of_the_flow():
-    assert {phase.value for phase in Phase} == set(BAU.zustaende)
+    assert {phase.value for phase in Phase} == set(DELIVERY.states)
 
 
 def test_every_cycle_without_a_human_consumes_a_counter():
     """Kanten ohne zählende Aktion und Halt bilden keinen Zyklus."""
     free = {
-        (t.von, t.nach)
-        for t in BAU.uebergaenge
-        if not COUNTING & set(t.aktion)
-        and BAU.zustand(t.von).art != WAIT_KIND
+        (t.source, t.target)
+        for t in DELIVERY.transitions
+        if not COUNTING & set(t.actions)
+        and DELIVERY.state(t.source).kind != WAIT_KIND
     }
     assert not _has_cycle(free)
 
@@ -70,45 +70,47 @@ def _has_cycle(edges: set[tuple[str, str]]) -> bool:
 
 
 def test_executor_must_speak_the_declared_vocabulary():
-    bindung = BAU_GEBUNDEN.bindung
-    missing = dict(bindung.waechter)
+    binding = DELIVERY_BOUND.binding
+    missing = dict(binding.guards)
     missing.pop("stagnation")
-    with pytest.raises(AblaufError, match="fehlt: stagnation"):
-        binde(BAU, replace(bindung, waechter=missing))
-    extra = {**bindung.aktionen, "zaubern": lambda state: state}
-    with pytest.raises(AblaufError, match="nicht deklariert: zaubern"):
-        binde(BAU, replace(bindung, aktionen=extra))
+    with pytest.raises(FlowError, match="fehlt: stagnation"):
+        bind(DELIVERY, replace(binding, guards=missing))
+    extra = {**binding.actions, "zaubern": lambda state: state}
+    with pytest.raises(FlowError, match="nicht deklariert: zaubern"):
+        bind(DELIVERY, replace(binding, actions=extra))
 
 
 def test_controller_operation_depends_on_reviewed_result():
     """Moore-Ausgabe: ohne geprüftes Ergebnis beauftragt die Maschine,
     mit Ergebnis urteilt der Controller."""
-    (review, auftrag) = BAU.zustand("controller_step").operationen
-    assert (review.tue, review.wenn) == (
+    (review, task) = DELIVERY.state("controller_step").operations
+    assert (review.do, review.cond) == (
         "review",
-        ("geprueftes_ergebnis",),
+        ("checked_result",),
     )
-    assert (auftrag.tue, auftrag.wenn) == ("task", ())
+    assert (task.do, task.cond) == ("task", ())
 
 
 def test_unguarded_candidate_must_come_last():
-    raw = copy.deepcopy(lies_rohdaten("delivery"))
+    raw = copy.deepcopy(read_raw("delivery"))
     index = next(
         i
-        for i, t in enumerate(raw["uebergang"])
-        if t["von"] == "controller_step"
-        and t["bei"] == "controller_task"
+        for i, t in enumerate(raw["transition"])
+        if t["source"] == "controller_step"
+        and t["event"] == "controller_task"
     )
-    raw["uebergang"][index], raw["uebergang"][index + 1] = (
-        raw["uebergang"][index + 1],
-        raw["uebergang"][index],
+    raw["transition"][index], raw["transition"][index + 1] = (
+        raw["transition"][index + 1],
+        raw["transition"][index],
     )
-    with pytest.raises(AblaufError, match="doppelter Übergang"):
-        parse_ablauf(raw)
+    with pytest.raises(FlowError, match="doppelter Übergang"):
+        parse_flow(raw)
 
 
 def test_readme_diagram_draws_only_edges_of_the_flow():
     """Die README zeigt den Hauptweg; jede Kante steht in
     delivery.toml."""
-    table = {(t.von, t.bei, t.nach) for t in BAU.uebergaenge}
+    table = {
+        (t.source, t.event, t.target) for t in DELIVERY.transitions
+    }
     assert diagram_edges("delivery") <= table

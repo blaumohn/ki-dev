@@ -13,7 +13,7 @@ import pytest
 from plumbum import local
 from plumbum.machines.local import LocalMachine
 
-from ki_dev.flow.planning import lade_planungsablauf
+from ki_dev.flow.planning import load_planning_flow
 from ki_dev.preflight_options import (
     PreflightOptionError,
     apply_preflight_options,
@@ -39,7 +39,7 @@ from ki_dev.step.preflight import (
     render_review_handoff as _render_review_handoff,
 )
 
-FLOW = lade_planungsablauf()
+FLOW = load_planning_flow()
 render_review_handoff = partial(_render_review_handoff, flow=FLOW)
 
 

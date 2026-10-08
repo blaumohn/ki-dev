@@ -5,7 +5,7 @@ from functools import partial
 
 import pytest
 
-from ki_dev.flow.planning import lade_planungsablauf
+from ki_dev.flow.planning import load_planning_flow
 from ki_dev.step.handoff import HandoffIssue, ReviewTarget
 from ki_dev.step.next_turn import (
     DEFAULT_FEEDBACK_MAX_CHARS as DEFAULT_MAX,
@@ -23,7 +23,7 @@ from ki_dev.step.next_turn import (
     render_review_turn as _render_review_turn,
 )
 
-FLOW = lade_planungsablauf()
+FLOW = load_planning_flow()
 render_repair_turn = partial(_render_repair_turn, flow=FLOW)
 render_review_turn = partial(_render_review_turn, flow=FLOW)
 
@@ -195,7 +195,7 @@ def test_read_errors_name_no_content(tmp_path):
 def test_repair_turn_names_recipient_request_limit_and_finding():
     finding = "- tests: FAIL [argv=x]"
     text = render_repair_turn(ISSUE, finding, 600, None)
-    assert text.startswith("Empfänger: Bau-Agent")
+    assert text.startswith("Empfänger: Umsetzer")
     assert "Bead: x-1 - Titel" in text
     assert "Bitte die gemeldeten Fehler beheben." in text
     assert "höchstens 600 Zeichen" in text

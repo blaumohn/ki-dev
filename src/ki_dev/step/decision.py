@@ -1,12 +1,12 @@
 """--decision-file: Reviewer-Antwort lesen, nächste Nachricht wählen.
 
-Datenfluss: Die Build-Review endet mit genau einem JSON-Objekt im
+Datenfluss: Die Umsetzungs-Review endet mit genau einem JSON-Objekt im
 gemeinsamen Vertrag (review_decision). Der Mensch gibt es mit
 ``ki-dev step BEAD_ID --step review --next-turn --decision-file
 DATEI|-`` weiter. step prüft es, bindet CHANGES an ein Abnahmekriterium
 des Beads (sonst NEEDS_DECISION wie im Bauablauf) und gibt die
 Nachricht für den Empfänger aus, den der Planungsablauf für
-``build.review`` und dieses Urteil nennt. Kein Vorlauf, keine
+``implement.review`` und dieses Urteil nennt. Kein Vorlauf, keine
 Schreibwirkung, kein Agentenstart.
 
 Begrenzte Prüfsteuerung (5we): Die Antwort darf optional
@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import BinaryIO
 
-from ki_dev.flow.planning import Planungsablauf
+from ki_dev.flow.planning import PlanningFlow
 from ki_dev.preflight_options import (
     ARGS_OPTION,
     SKIP_OPTION,
@@ -51,7 +51,7 @@ from ki_dev.step.preflight import PreflightConfig
 
 # Obergrenze der eingelesenen Antwort (Zeichen); nie gekürzt.
 DECISION_MAX_CHARS = 20000
-_REVIEW_STATE = "build.review"
+_REVIEW_STATE = "implement.review"
 _WHAT = "Review-Antwort"
 
 
@@ -137,7 +137,7 @@ def _pairs(values: dict[str, str]) -> list[str]:
 
 
 def render_decision_turn(
-    issue: HandoffIssue, decision: StepDecision, *, flow: Planungsablauf
+    issue: HandoffIssue, decision: StepDecision, *, flow: PlanningFlow
 ) -> str:
     """Nachricht an den Empfänger laut Zustandstabelle."""
     verdict = decision.verdict
@@ -176,7 +176,7 @@ def _control_lines(decision: StepDecision, bead: str) -> list[str]:
 
 def _recipient(action: ReviewAction) -> str:
     if action is ReviewAction.CHANGES:
-        return "Bau-Agent (bisherige Sitzung)"
+        return "Umsetzer (bisherige Sitzung)"
     return "Mensch"
 
 

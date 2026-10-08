@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from ki_dev import beads_reader
 from ki_dev.cli import app
-from ki_dev.flow.planning import lade_planungsablauf
+from ki_dev.flow.planning import load_planning_flow
 from ki_dev.step.guidelines import GUIDELINE_SOURCES
 from ki_dev.step.handoff import HandoffIssue, Step
 from ki_dev.step.handoff import (
@@ -17,7 +17,7 @@ from ki_dev.step.handoff import (
 )
 from tests.guideline_fixtures import write_guidelines
 
-FLOW = lade_planungsablauf()
+FLOW = load_planning_flow()
 render_base_handoff = partial(_render_base_handoff, flow=FLOW)
 
 runner = CliRunner()
@@ -62,8 +62,8 @@ def test_local_gives_only_common_sections_once_per_source(offline):
     for index, source in enumerate(GUIDELINE_SOURCES):
         assert f"--- {source.path}#common ---" in out
         assert out.count(f"- Q{index}:shared") == 1
-        assert f"- Q{index}:build-task" not in out
-        assert f"- Q{index}:build-review" not in out
+        assert f"- Q{index}:implement-task" not in out
+        assert f"- Q{index}:implement-review" not in out
 
 
 def test_local_carries_former_entry_texts_without_claim_or_close(
@@ -95,8 +95,8 @@ def test_local_carries_former_entry_texts_without_claim_or_close(
 @pytest.mark.parametrize(
     "extra",
     [
-        ["--step", "build"],
-        ["--step", "review", "--review-of", "build"],
+        ["--step", "implement"],
+        ["--step", "review", "--review-of", "implement"],
         ["--step", "review", "--preflight-args", "tests=-k x"],
         ["--step", "review", "--next-turn"],
         ["--step", "review", "--next-turn", "--feedback-file", "-"],
@@ -164,6 +164,6 @@ def test_bead_handoff_no_longer_points_to_agents_md():
         design="S",
         acceptance_criteria="A",
     )
-    text = render_base_handoff(issue, Step.BUILD)
+    text = render_base_handoff(issue, Step.IMPLEMENT)
     assert "AGENTS.md" not in text
     assert "bd show BEAD_ID" in text

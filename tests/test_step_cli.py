@@ -66,7 +66,7 @@ def test_every_step_prints_plain_handoff(bd, step):
 def test_same_input_gives_same_output(bd):
     # Nicht review: dessen Bericht trägt einen Zeitstempel, und ohne
     # eigenes Projekt liefe der Vorlauf dieses Repos (pytest) rekursiv.
-    args = ["step", "x-1", "--step", "build"]
+    args = ["step", "x-1", "--step", "implement"]
     assert (
         runner.invoke(app, args).stdout
         == runner.invoke(app, args).stdout
@@ -80,7 +80,7 @@ def test_missing_bead_names_id_on_stderr(bd):
             {"error": "no issues found matching the provided IDs"}
         ),
     )
-    result = runner.invoke(app, ["step", "x-1", "--step", "build"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "implement"])
     assert result.exit_code == 1
     assert result.stdout == ""
     assert (
@@ -91,7 +91,7 @@ def test_missing_bead_names_id_on_stderr(bd):
 def test_long_lines_are_not_wrapped(bd):
     bd.state["stdout"] = json.dumps([FULL | {"title": "T" * 300}])
     result = runner.invoke(
-        app, ["step", "x-1", "--step", "build"], terminal_width=40
+        app, ["step", "x-1", "--step", "implement"], terminal_width=40
     )
     assert f"Bead: x-1 - {'T' * 300}\n" in result.stdout
 
@@ -122,7 +122,7 @@ def test_help_explains_steps_and_shows_examples(bd):
         "map",
         "graph",
         "materialize",
-        "build",
+        "implement",
         "review",
         "Anforderungen aus Rohnotizen kartieren",
         "Vorgänge ableiten",
@@ -130,7 +130,7 @@ def test_help_explains_steps_and_shows_examples(bd):
         "Auftrag umsetzen",
         "getrennten Sitzung prüfen",
         "BEISPIELE",
-        "ki-dev step projekt-42 --step build > uebergabe.txt",
+        "ki-dev step projekt-42 --step implement > uebergabe.txt",
         "--review-of materialize",
         "--next-turn --feedback-file",
         "höchstens feedback_max_chars Zeichen",
@@ -145,7 +145,7 @@ def test_help_explains_steps_and_shows_examples(bd):
 @pytest.mark.parametrize(
     "args",
     [
-        ["handoff", "x-1", "--step", "build"],
+        ["handoff", "x-1", "--step", "implement"],
         ["handoff", "map", "--agent", "codex", "--session", "s"],
         ["handoff", "local"],
     ],
@@ -171,7 +171,7 @@ def test_build_works_without_metadata(bd):
     bd.state["stdout"] = json.dumps([bead])
     assert (
         runner.invoke(
-            app, ["step", "x-1", "--step", "build"]
+            app, ["step", "x-1", "--step", "implement"]
         ).exit_code
         == 0
     )
@@ -180,7 +180,7 @@ def test_build_works_without_metadata(bd):
 def test_missing_contract_fields_are_named_on_stderr(bd):
     bead = FULL | {"design": "", "acceptance_criteria": 5}
     bd.state["stdout"] = json.dumps([bead])
-    result = runner.invoke(app, ["step", "x-1", "--step", "build"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "implement"])
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "acceptance_criteria" in result.stderr
@@ -411,13 +411,20 @@ def test_review_without_preflight_config_exits_2(
 @pytest.mark.parametrize(
     "args",
     [
-        ["step", "x-1", "--step", "build", "--review-of", "build"],
+        [
+            "step",
+            "x-1",
+            "--step",
+            "implement",
+            "--review-of",
+            "implement",
+        ],
         ["step", "x-1", "--review-of", "map"],
         [
             "step",
             "map",
             "--review-of",
-            "build",
+            "implement",
             "--agent",
             "codex",
             "--session",
@@ -532,7 +539,7 @@ def test_review_of_build_matches_plain_review(
     plain = runner.invoke(app, ["step", "x-1", "--step", "review"])
     explicit = runner.invoke(
         app,
-        ["step", "x-1", "--step", "review", "--review-of", "build"],
+        ["step", "x-1", "--step", "review", "--review-of", "implement"],
     )
     assert plain.exit_code == explicit.exit_code == 0
     assert plain.stdout == explicit.stdout
@@ -621,7 +628,7 @@ def test_review_invalid_preflight_args_exit_2_before_any_write(
 @pytest.mark.parametrize(
     "extra",
     [
-        ["--step", "build"],
+        ["--step", "implement"],
         ["--step", "review", "--review-of", "map"],
         ["--step", "review", "--review-of", "materialize"],
     ],
@@ -800,7 +807,7 @@ def test_productive_step_appends_selected_guidelines(
         assert f"- {prefix}:shared" in block
         assert block.count(f"- {prefix}:shared") == 1
         assert f"{prefix}:materialize-review" not in block
-        assert f"{prefix}:build-task" not in block
+        assert f"{prefix}:implement-task" not in block
     assert (
         "--- docs/policies/technikleitlinie.de.yaml#common ---\n"
         "## Q1 common\n\n- Q1:common\n"
@@ -830,8 +837,8 @@ def test_build_review_appends_guidelines_after_report(
     assert result.exit_code == 0, result.stderr
     text = result.stdout
     assert text.index("PRUEFBERICHT") < text.index("LEITLINIEN")
-    assert "- Q0:build-review" in text
-    assert "- Q1:build-task" in text
+    assert "- Q0:implement-review" in text
+    assert "- Q1:implement-task" in text
 
 
 def test_missing_guideline_source_blocks_preflight(

@@ -1,29 +1,29 @@
 """Gemeinsames Format aller Abläufe: Zustände und Übergänge als Daten.
 
-Ein Ablauf ist ein erweiterter endlicher Automat (EFSM) in der
-Schreibweise von UML-Zustandsmaschinen und SCXML::
+Ein Ablauf ist ein erweiterter endlicher Automat (EFSM). Schlüssel und
+Bedeutung folgen UML-Zustandsmaschinen und SCXML::
 
-    von --bei [wenn] / aktion--> nach
+    source --event [cond] / actions--> target
 
 ==============  =========================  ============================
 TOML-Schlüssel  SCXML / UML                Bedeutung
 ==============  =========================  ============================
-``von``         umschließender ``<state>``  Quellzustand (auch Liste)
-``bei``         ``event``                  auslösendes Ereignis
-``wenn``        ``cond`` / ``[guard]``     benannte Wächter (UND, ``!``)
-``aktion``      ausführbarer Inhalt        benannte Kantenaktionen
-``nach``        ``target``                 Zielzustand
-``@fortsetzungspunkt``  ``<history>``      zurück zum Pausenursprung
+``source``      umschließender ``<state>``  Quellzustand (auch Liste)
+``event``       ``event``                  auslösendes Ereignis
+``cond``        ``cond`` / ``[guard]``     benannte Wächter (UND, ``!``)
+``actions``     ausführbarer Inhalt        benannte Kantenaktionen
+``target``      ``target``                 Zielzustand
+``@history``    ``<history>``              zurück zum Pausenursprung
 ==============  =========================  ============================
 
-Der Ablauf legt nur Namen fest (``vokabular``). Was ein Wächter prüft
+Der Ablauf legt nur Namen fest (``vocabulary``). Was ein Wächter prüft
 und was eine Aktion tut, implementiert der Ausführer; beim Binden prüft
 er, dass er genau dieses Vokabular kennt. So bleibt die Topologie Daten
 und das Vokabular Code, ohne dass eine Schicht die andere kennt.
 
-Gleiche (``von``, ``bei``) sind erlaubt, wenn Wächter sie trennen: die
-Kandidaten werden in Dateireihenfolge geprüft, der erste passende
-gewinnt. Ein Übergang ohne ``wenn`` muss der letzte seiner Gruppe sein,
+Gleiche (``source``, ``event``) sind erlaubt, wenn Wächter sie trennen:
+die Kandidaten werden in Dateireihenfolge geprüft, der erste passende
+gewinnt. Ein Übergang ohne ``cond`` muss der letzte seiner Gruppe sein,
 sonst wäre ein späterer unerreichbar. Passt kein Kandidat, ist das
 Ereignis in diesem Zustand nicht erlaubt; einen stillen Standardfall
 gibt es nicht.
@@ -43,12 +43,12 @@ from typing import cast
 
 from jsonschema import Draft202012Validator
 
-HISTORY = "@fortsetzungspunkt"
-END_KIND = "ende"
-WAIT_KIND = "warten"
+HISTORY = "@history"
+FINAL_KIND = "final"
+WAIT_KIND = "wait"
 
 
-class AblaufError(ValueError):
+class FlowError(ValueError):
     """Ablauf verletzt Schema oder Beziehungen (Programmfehler)."""
 
 
@@ -56,79 +56,79 @@ class AblaufError(ValueError):
 class Operation:
     """Was der Ausführer beim Betreten eines Zustands tut (Moore)."""
 
-    tue: str
-    wenn: tuple[str, ...] = ()
+    do: str
+    cond: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
-class Zustand:
+class State:
     id: str
-    art: str
-    wer: str | None = None
-    operationen: tuple[Operation, ...] = ()
+    kind: str
+    actor: str | None = None
+    operations: tuple[Operation, ...] = ()
 
 
 @dataclass(frozen=True)
-class Uebergang:
-    von: str
-    bei: str
-    nach: str
-    wenn: tuple[str, ...] = ()
-    aktion: tuple[str, ...] = ()
-    eskalation: str | None = None
-    befehl: str | None = None
+class Transition:
+    source: str
+    event: str
+    target: str
+    cond: tuple[str, ...] = ()
+    actions: tuple[str, ...] = ()
+    escalation: str | None = None
+    hint: str | None = None
 
 
 @dataclass(frozen=True)
-class Vokabular:
-    arten: tuple[str, ...]
-    ereignisse: tuple[str, ...]
-    waechter: tuple[str, ...] = ()
-    aktionen: tuple[str, ...] = ()
-    eskalationen: tuple[str, ...] = ()
-    operationen: tuple[str, ...] = ()
-    pflicht: Mapping[str, tuple[str, ...]] = ()  # type: ignore[assignment]
+class Vocabulary:
+    kinds: tuple[str, ...]
+    events: tuple[str, ...]
+    guards: tuple[str, ...] = ()
+    actions: tuple[str, ...] = ()
+    escalations: tuple[str, ...] = ()
+    operations: tuple[str, ...] = ()
+    required: Mapping[str, tuple[str, ...]] = ()  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
-class Befundklasse:
-    urteil: str
+class FindingClass:
+    verdict: str
     text: str
 
 
 @dataclass(frozen=True)
-class Ablauf:
+class Flow:
     name: str
     start: str
-    ende: tuple[str, ...]
-    vokabular: Vokabular
-    zustaende: Mapping[str, Zustand]
-    uebergaenge: tuple[Uebergang, ...]
-    befundklassen: Mapping[str, Befundklasse]
-    vorrang: tuple[str, ...]
+    final: tuple[str, ...]
+    vocabulary: Vocabulary
+    states: Mapping[str, State]
+    transitions: tuple[Transition, ...]
+    finding_classes: Mapping[str, FindingClass]
+    priority: tuple[str, ...]
 
-    def ausgehend(self, zustand: str) -> tuple[Uebergang, ...]:
-        self.zustand(zustand)
-        return tuple(t for t in self.uebergaenge if t.von == zustand)
+    def outgoing(self, state: str) -> tuple[Transition, ...]:
+        self.state(state)
+        return tuple(t for t in self.transitions if t.source == state)
 
-    def kandidaten(
-        self, zustand: str, ereignis: str
-    ) -> tuple[Uebergang, ...]:
+    def candidates(
+        self, state: str, flow_event: str
+    ) -> tuple[Transition, ...]:
         """Übergänge für (zustand, ereignis) in Prüfreihenfolge."""
         return tuple(
-            t for t in self.ausgehend(zustand) if t.bei == ereignis
+            t for t in self.outgoing(state) if t.event == flow_event
         )
 
-    def zustand(self, zustand: str) -> Zustand:
+    def state(self, state: str) -> State:
         try:
-            return self.zustaende[zustand]
+            return self.states[state]
         except KeyError:
-            raise AblaufError(
-                f"unbekannter Zustand: {zustand}"
+            raise FlowError(
+                f"unbekannter Zustand: {state}"
             ) from None
 
 
-def lade_ablauf(name: str) -> Ablauf:
+def load_flow(name: str) -> Flow:
     """Mitgelieferten Ablauf ``ki_dev/flow/<name>.toml`` laden.
 
     I/O-Grenze: Aufrufer laden einmal und reichen das geprüfte Objekt
@@ -137,95 +137,99 @@ def lade_ablauf(name: str) -> Ablauf:
     try:
         raw = tomllib.loads(resource.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeError) as exc:
-        raise AblaufError(f"{name}.toml: kein gültiges TOML") from exc
+        raise FlowError(f"{name}.toml: kein gültiges TOML") from exc
     except FileNotFoundError as exc:
-        raise AblaufError(f"unbekannter Ablauf: {name}") from exc
-    return parse_ablauf(raw)
+        raise FlowError(f"unbekannter Ablauf: {name}") from exc
+    return parse_flow(raw)
 
 
-def lies_rohdaten(name: str) -> dict:
+def read_raw(name: str) -> dict:
     """Rohdaten eines mitgelieferten Ablaufs (Werkzeuge, Tests)."""
     resource = files("ki_dev.flow").joinpath(f"{name}.toml")
     return tomllib.loads(resource.read_text(encoding="utf-8"))
 
 
-def parse_ablauf(raw: object) -> Ablauf:
+def parse_flow(raw: object) -> Flow:
     """Erst Schema, dann Beziehungen prüfen; danach Objekte bauen."""
     _check_schema(raw)
     table = cast(dict, raw)
     where = f"{table['name']}.toml"
-    ablauf = Ablauf(
+    flow = Flow(
         name=table["name"],
         start=table["start"],
-        ende=tuple(table["ende"]),
-        vokabular=_vokabular(
-            table["vokabular"], table.get("pflicht", {})
+        final=tuple(table["final"]),
+        vocabulary=_vocabulary(
+            table["vocabulary"], table.get("required", {})
         ),
-        zustaende=_zustaende(table["zustand"], where),
-        uebergaenge=tuple(
-            uebergang
-            for item in table["uebergang"]
-            for uebergang in _uebergaenge(item)
+        states=_states(table["state"], where),
+        transitions=tuple(
+            transition
+            for item in table["transition"]
+            for transition in _transitions(item)
         ),
-        befundklassen={
-            name: Befundklasse(item["urteil"], item["text"])
-            for name, item in table.get("befundklasse", {}).items()
+        finding_classes={
+            name: FindingClass(item["verdict"], item["text"])
+            for name, item in table.get("finding_class", {}).items()
         },
-        vorrang=tuple(table.get("vorrang", ())),
+        priority=tuple(table.get("priority", ())),
     )
-    _check_relations(ablauf, where)
-    return ablauf
+    _check_relations(flow, where)
+    return flow
 
 
-def _vokabular(item: dict, pflicht: dict) -> Vokabular:
-    return Vokabular(
-        arten=tuple(item["arten"]),
-        ereignisse=tuple(item["ereignisse"]),
-        waechter=tuple(item.get("waechter", ())),
-        aktionen=tuple(item.get("aktionen", ())),
-        eskalationen=tuple(item.get("eskalationen", ())),
-        operationen=tuple(item.get("operationen", ())),
-        pflicht={art: tuple(events) for art, events in pflicht.items()},
+def _vocabulary(item: dict, required: dict) -> Vocabulary:
+    return Vocabulary(
+        kinds=tuple(item["kinds"]),
+        events=tuple(item["events"]),
+        guards=tuple(item.get("guards", ())),
+        actions=tuple(item.get("actions", ())),
+        escalations=tuple(item.get("escalations", ())),
+        operations=tuple(item.get("operations", ())),
+        required={
+            kind: tuple(events) for kind, events in required.items()
+        },
     )
 
 
-def _zustaende(items: list[dict], where: str) -> dict[str, Zustand]:
-    zustaende: dict[str, Zustand] = {}
+def _states(items: list[dict], where: str) -> dict[str, State]:
+    states: dict[str, State] = {}
     for index, item in enumerate(items):
-        if item["id"] in zustaende:
-            raise AblaufError(
-                f"{where}: zustand.{index}.id: doppelt ({item['id']})"
+        if item["id"] in states:
+            raise FlowError(
+                f"{where}: state.{index}.id: doppelt ({item['id']})"
             )
-        zustaende[item["id"]] = Zustand(
+        states[item["id"]] = State(
             id=item["id"],
-            art=item["art"],
-            wer=item.get("wer"),
-            operationen=tuple(
-                Operation(op["tue"], tuple(op.get("wenn", ())))
+            kind=item["kind"],
+            actor=item.get("actor"),
+            operations=tuple(
+                Operation(op["do"], tuple(op.get("cond", ())))
                 for op in item.get("operation", ())
             ),
         )
-    return zustaende
+    return states
 
 
-def _uebergaenge(item: dict) -> tuple[Uebergang, ...]:
-    """``von`` als Liste ist dieselbe Kante aus mehreren Zuständen
+def _transitions(item: dict) -> tuple[Transition, ...]:
+    """``source`` als Liste ist dieselbe Kante aus mehreren Zuständen
     (flache Form eines gemeinsamen Elternzustands in SCXML)."""
     sources = (
-        item["von"] if isinstance(item["von"], list) else [item["von"]]
+        item["source"]
+        if isinstance(item["source"], list)
+        else [item["source"]]
     )
-    return tuple(_uebergang(item, source) for source in sources)
+    return tuple(_transition(item, source) for source in sources)
 
 
-def _uebergang(item: dict, von: str) -> Uebergang:
-    return Uebergang(
-        von=von,
-        bei=item["bei"],
-        nach=item["nach"],
-        wenn=tuple(item.get("wenn", ())),
-        aktion=tuple(item.get("aktion", ())),
-        eskalation=item.get("eskalation"),
-        befehl=item.get("befehl"),
+def _transition(item: dict, source: str) -> Transition:
+    return Transition(
+        source=source,
+        event=item["event"],
+        target=item["target"],
+        cond=tuple(item.get("cond", ())),
+        actions=tuple(item.get("actions", ())),
+        escalation=item.get("escalation"),
+        hint=item.get("hint"),
     )
 
 
@@ -246,97 +250,97 @@ _SCHEMA = {
     "required": [
         "name",
         "start",
-        "ende",
-        "vokabular",
-        "zustand",
-        "uebergang",
+        "final",
+        "vocabulary",
+        "state",
+        "transition",
     ],
     "additionalProperties": False,
     "dependentRequired": {
-        "befundklasse": ["vorrang"],
-        "vorrang": ["befundklasse"],
+        "finding_class": ["priority"],
+        "priority": ["finding_class"],
     },
     "properties": {
         "name": _ID,
         "start": _ID,
-        "ende": {
+        "final": {
             "type": "array",
             "minItems": 1,
             "uniqueItems": True,
             "items": _ID,
         },
-        "vokabular": {
+        "vocabulary": {
             "type": "object",
-            "required": ["arten", "ereignisse"],
+            "required": ["kinds", "events"],
             "additionalProperties": False,
             "properties": {
-                "arten": {**_NAMES, "minItems": 1},
-                "ereignisse": {**_NAMES, "minItems": 1},
-                "waechter": _NAMES,
-                "aktionen": _NAMES,
-                "eskalationen": _NAMES,
-                "operationen": _NAMES,
+                "kinds": {**_NAMES, "minItems": 1},
+                "events": {**_NAMES, "minItems": 1},
+                "guards": _NAMES,
+                "actions": _NAMES,
+                "escalations": _NAMES,
+                "operations": _NAMES,
             },
         },
-        "pflicht": {
+        "required": {
             "type": "object",
             "additionalProperties": _NAMES,
         },
-        "befundklasse": {
+        "finding_class": {
             "type": "object",
             "minProperties": 1,
             "additionalProperties": {
                 "type": "object",
-                "required": ["urteil", "text"],
+                "required": ["verdict", "text"],
                 "additionalProperties": False,
                 "properties": {
-                    "urteil": {"enum": ["CHANGES", "NEEDS_DECISION"]},
+                    "verdict": {"enum": ["CHANGES", "NEEDS_DECISION"]},
                     "text": _TEXT,
                 },
             },
         },
-        "vorrang": {
+        "priority": {
             "type": "array",
             "minItems": 1,
             "uniqueItems": True,
             "items": _ID,
         },
-        "zustand": {
+        "state": {
             "type": "array",
             "minItems": 1,
             "items": {
                 "type": "object",
-                "required": ["id", "art"],
+                "required": ["id", "kind"],
                 "additionalProperties": False,
                 "properties": {
                     "id": _ID,
-                    "art": _NAME,
-                    "wer": _TEXT,
+                    "kind": _NAME,
+                    "actor": _TEXT,
                     "operation": {
                         "type": "array",
                         "minItems": 1,
                         "items": {
                             "type": "object",
-                            "required": ["tue"],
+                            "required": ["do"],
                             "additionalProperties": False,
                             "properties": {
-                                "tue": _NAME,
-                                "wenn": _GUARDS,
+                                "do": _NAME,
+                                "cond": _GUARDS,
                             },
                         },
                     },
                 },
             },
         },
-        "uebergang": {
+        "transition": {
             "type": "array",
             "minItems": 1,
             "items": {
                 "type": "object",
-                "required": ["von", "bei", "nach"],
+                "required": ["source", "event", "target"],
                 "additionalProperties": False,
                 "properties": {
-                    "von": {
+                    "source": {
                         "anyOf": [
                             _ID,
                             {
@@ -347,14 +351,14 @@ _SCHEMA = {
                             },
                         ],
                     },
-                    "bei": _NAME,
-                    "nach": {
+                    "event": _NAME,
+                    "target": {
                         "anyOf": [_ID, {"const": HISTORY}],
                     },
-                    "wenn": _GUARDS,
-                    "aktion": {**_NAMES, "minItems": 1},
-                    "eskalation": _NAME,
-                    "befehl": _TEXT,
+                    "cond": _GUARDS,
+                    "actions": {**_NAMES, "minItems": 1},
+                    "escalation": _NAME,
+                    "hint": _TEXT,
                 },
             },
         },
@@ -372,59 +376,63 @@ def _check_schema(raw: object) -> None:
         name = raw.get("name") if isinstance(raw, dict) else None
         where = f"{name}.toml" if isinstance(name, str) else "Ablauf"
         path = ".".join(map(str, error.absolute_path)) or "$"
-        raise AblaufError(f"{where}: {path}: {error.validator}")
+        raise FlowError(f"{where}: {path}: {error.validator}")
 
 
 # --- Beziehungen (außerhalb des Schemas) ------------------------------
 
 
-def _check_relations(ablauf: Ablauf, where: str) -> None:
-    _check_kinds(ablauf, where)
-    _check_classes(ablauf, where)
-    _check_endpoints(ablauf, where)
-    _check_operations(ablauf, where)
-    _check_transitions(ablauf, where)
-    _check_guard_order(ablauf, where)
-    _check_required_events(ablauf, where)
-    _check_end_reachable(ablauf, where)
+def _check_relations(flow: Flow, where: str) -> None:
+    _check_kinds(flow, where)
+    _check_classes(flow, where)
+    _check_endpoints(flow, where)
+    _check_operations(flow, where)
+    _check_transitions(flow, where)
+    _check_guard_order(flow, where)
+    _check_required_events(flow, where)
+    _check_end_reachable(flow, where)
 
 
-def _check_kinds(ablauf: Ablauf, where: str) -> None:
-    known = set(ablauf.vokabular.arten)
-    if END_KIND not in known:
-        raise AblaufError(f"{where}: vokabular.arten: {END_KIND} fehlt")
-    for zustand in ablauf.zustaende.values():
-        if zustand.art not in known:
-            raise AblaufError(
-                f"{where}: zustand {zustand.id}: unbekannte art "
-                f"{zustand.art}"
+def _check_kinds(flow: Flow, where: str) -> None:
+    known = set(flow.vocabulary.kinds)
+    if FINAL_KIND not in known:
+        raise FlowError(
+            f"{where}: vocabulary.kinds: {FINAL_KIND} fehlt"
+        )
+    for state in flow.states.values():
+        if state.kind not in known:
+            raise FlowError(
+                f"{where}: state {state.id}: unbekannte kind "
+                f"{state.kind}"
             )
-    for art in ablauf.vokabular.pflicht:
-        if art not in known:
-            raise AblaufError(f"{where}: pflicht.{art}: unbekannte art")
+    for kind in flow.vocabulary.required:
+        if kind not in known:
+            raise FlowError(
+                f"{where}: required.{kind}: unbekannte kind"
+            )
 
 
-def _check_classes(ablauf: Ablauf, where: str) -> None:
-    if set(ablauf.vorrang) != set(ablauf.befundklassen):
-        raise AblaufError(
-            f"{where}: vorrang: muss genau die Befundklassen nennen"
+def _check_classes(flow: Flow, where: str) -> None:
+    if set(flow.priority) != set(flow.finding_classes):
+        raise FlowError(
+            f"{where}: priority: muss genau die Befundklassen nennen"
         )
 
 
-def _check_endpoints(ablauf: Ablauf, where: str) -> None:
+def _check_endpoints(flow: Flow, where: str) -> None:
     for field, state in (
-        ("start", ablauf.start),
-        *(("ende", end) for end in ablauf.ende),
+        ("start", flow.start),
+        *(("final", end) for end in flow.final),
     ):
-        if state not in ablauf.zustaende:
-            raise AblaufError(
+        if state not in flow.states:
+            raise FlowError(
                 f"{where}: {field}: unbekannter Zustand {state}"
             )
-    for zustand in ablauf.zustaende.values():
-        is_end = zustand.id in ablauf.ende
-        if is_end != (zustand.art == END_KIND):
-            raise AblaufError(
-                f"{where}: zustand {zustand.id}: art {END_KIND} genau "
+    for state in flow.states.values():
+        is_end = state.id in flow.final
+        if is_end != (state.kind == FINAL_KIND):
+            raise FlowError(
+                f"{where}: state {state.id}: kind {FINAL_KIND} genau "
                 "für die Zustände in ende"
             )
 
@@ -433,69 +441,70 @@ def _names(guards: Iterable[str]) -> set[str]:
     return {guard.removeprefix("!") for guard in guards}
 
 
-def _check_operations(ablauf: Ablauf, where: str) -> None:
-    vokabular = ablauf.vokabular
-    for zustand in ablauf.zustaende.values():
-        for index, op in enumerate(zustand.operationen):
-            label = f"{where}: zustand {zustand.id}: operation.{index}"
-            if op.tue not in vokabular.operationen:
-                raise AblaufError(
-                    f"{label}: unbekannte Operation {op.tue}"
+def _check_operations(flow: Flow, where: str) -> None:
+    vocabulary = flow.vocabulary
+    for state in flow.states.values():
+        for index, op in enumerate(state.operations):
+            label = f"{where}: state {state.id}: operation.{index}"
+            if op.do not in vocabulary.operations:
+                raise FlowError(
+                    f"{label}: unbekannte Operation {op.do}"
                 )
             _require_known(
-                _names(op.wenn),
-                vokabular.waechter,
-                f"{label}.wenn",
+                _names(op.cond),
+                vocabulary.guards,
+                f"{label}.cond",
                 "Wächter",
             )
-            last = index == len(zustand.operationen) - 1
-            if not op.wenn and not last:
-                raise AblaufError(
-                    f"{label}: ohne wenn nur als letzte Operation"
+            last = index == len(state.operations) - 1
+            if not op.cond and not last:
+                raise FlowError(
+                    f"{label}: ohne cond nur als letzte Operation"
                 )
 
 
-def _check_transitions(ablauf: Ablauf, where: str) -> None:
-    vokabular = ablauf.vokabular
-    events = set(vokabular.ereignisse)
-    for index, t in enumerate(ablauf.uebergaenge):
-        label = f"{where}: uebergang.{index}"
-        _require_state(ablauf, t.von, f"{label}.von")
-        if t.nach == HISTORY:
-            if ablauf.zustand(t.von).art != WAIT_KIND:
-                raise AblaufError(
-                    f"{label}.nach: {HISTORY} nur aus art {WAIT_KIND}"
+def _check_transitions(flow: Flow, where: str) -> None:
+    vocabulary = flow.vocabulary
+    events = set(vocabulary.events)
+    for index, t in enumerate(flow.transitions):
+        label = f"{where}: transition.{index}"
+        _require_state(flow, t.source, f"{label}.source")
+        if t.target == HISTORY:
+            if flow.state(t.source).kind != WAIT_KIND:
+                raise FlowError(
+                    f"{label}.target: {HISTORY} nur aus kind "
+                    f"{WAIT_KIND}"
                 )
         else:
-            _require_state(ablauf, t.nach, f"{label}.nach")
-        if t.bei not in events:
-            raise AblaufError(
-                f"{label}.bei: unbekanntes Ereignis {t.bei}"
+            _require_state(flow, t.target, f"{label}.target")
+        if t.event not in events:
+            raise FlowError(
+                f"{label}.bei: unbekanntes Ereignis {t.event}"
             )
         _require_known(
-            _names(t.wenn),
-            vokabular.waechter,
-            f"{label}.wenn",
+            _names(t.cond),
+            vocabulary.guards,
+            f"{label}.cond",
             "Wächter",
         )
         _require_known(
-            set(t.aktion),
-            vokabular.aktionen,
-            f"{label}.aktion",
+            set(t.actions),
+            vocabulary.actions,
+            f"{label}.actions",
             "Aktion",
         )
-        if t.eskalation is not None:
+        if t.escalation is not None:
             _require_known(
-                {t.eskalation},
-                vokabular.eskalationen,
-                f"{label}.eskalation",
+                {t.escalation},
+                vocabulary.escalations,
+                f"{label}.escalation",
                 "Eskalation",
             )
 
 
-def _require_state(ablauf: Ablauf, state: str, label: str) -> None:
-    if state not in ablauf.zustaende:
-        raise AblaufError(f"{label}: unbekannter Zustand {state}")
+def _require_state(flow: Flow, state: str, label: str) -> None:
+    if state not in flow.states:
+        raise FlowError(f"{label}: unbekannter Zustand {state}")
 
 
 def _require_known(
@@ -503,67 +512,69 @@ def _require_known(
 ) -> None:
     unknown = sorted(names - set(known))
     if unknown:
-        raise AblaufError(
+        raise FlowError(
             f"{label}: unbekannte {kind} {', '.join(unknown)}"
         )
 
 
-def _check_guard_order(ablauf: Ablauf, where: str) -> None:
+def _check_guard_order(flow: Flow, where: str) -> None:
     """Gleiche (von, bei) nur mit Wächtern; ungeschützt zuletzt."""
-    groups: dict[tuple[str, str], list[Uebergang]] = {}
-    for t in ablauf.uebergaenge:
-        groups.setdefault((t.von, t.bei), []).append(t)
-    for (von, bei), group in groups.items():
+    groups: dict[tuple[str, str], list[Transition]] = {}
+    for t in flow.transitions:
+        groups.setdefault((t.source, t.event), []).append(t)
+    for (source, event), group in groups.items():
         for t in group[:-1]:
-            if not t.wenn:
-                raise AblaufError(
-                    f"{where}: doppelter Übergang {von} bei {bei}"
+            if not t.cond:
+                raise FlowError(
+                    f"{where}: doppelter Übergang {source} bei {event}"
                 )
 
 
-def _check_required_events(ablauf: Ablauf, where: str) -> None:
-    pflicht = ablauf.vokabular.pflicht
-    for zustand in ablauf.zustaende.values():
-        present = {t.bei for t in ablauf.ausgehend(zustand.id)}
-        missing = set(pflicht.get(zustand.art, ())) - present
+def _check_required_events(flow: Flow, where: str) -> None:
+    required = flow.vocabulary.required
+    for state in flow.states.values():
+        present = {t.event for t in flow.outgoing(state.id)}
+        missing = set(required.get(state.kind, ())) - present
         if missing:
-            raise AblaufError(
-                f"{where}: zustand {zustand.id}: fehlende Ereignisse "
+            raise FlowError(
+                f"{where}: state {state.id}: fehlende Ereignisse "
                 f"{', '.join(sorted(missing))}"
             )
-        if zustand.art == END_KIND and present:
-            raise AblaufError(
-                f"{where}: zustand {zustand.id}: Ende ohne Übergänge"
+        if state.kind == FINAL_KIND and present:
+            raise FlowError(
+                f"{where}: state {state.id}: Ende ohne Übergänge"
             )
 
 
-def ziele(ablauf: Ablauf, uebergang: Uebergang) -> set[str]:
-    """Mögliche Ziele; ``@fortsetzungspunkt`` steht für jeden Zustand,
+def targets(flow: Flow, transition: Transition) -> set[str]:
+    """Mögliche Ziele; ``@history`` steht für jeden Zustand,
     aus dem eine Kante in den wartenden Zustand führt."""
-    if uebergang.nach != HISTORY:
-        return {uebergang.nach}
+    if transition.target != HISTORY:
+        return {transition.target}
     return {
-        t.von for t in ablauf.uebergaenge if t.nach == uebergang.von
+        t.source
+        for t in flow.transitions
+        if t.target == transition.source
     }
 
 
-def reaching_end(ablauf: Ablauf) -> set[str]:
+def reaching_final(flow: Flow) -> set[str]:
     """Zustände, von denen aus ein Ende erreichbar ist (rückwärts)."""
-    reached = set(ablauf.ende)
+    reached = set(flow.final)
     changed = True
     while changed:
         changed = False
-        for t in ablauf.uebergaenge:
-            if t.von not in reached and ziele(ablauf, t) & reached:
-                reached.add(t.von)
+        for t in flow.transitions:
+            if t.source not in reached and targets(flow, t) & reached:
+                reached.add(t.source)
                 changed = True
     return reached
 
 
-def _check_end_reachable(ablauf: Ablauf, where: str) -> None:
-    dead = sorted(set(ablauf.zustaende) - reaching_end(ablauf))
+def _check_end_reachable(flow: Flow, where: str) -> None:
+    dead = sorted(set(flow.states) - reaching_final(flow))
     if dead:
-        raise AblaufError(
-            f"{where}: Sackgasse ohne Weg zu {', '.join(ablauf.ende)}: "
+        raise FlowError(
+            f"{where}: Sackgasse ohne Weg zu {', '.join(flow.final)}: "
             f"{', '.join(dead)}"
         )

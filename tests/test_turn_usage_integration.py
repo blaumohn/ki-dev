@@ -13,8 +13,8 @@ from dataclasses import asdict, replace
 import pytest
 
 from ki_dev.adapter.agent import (
-    AgentBuildMode,
     AgentReviewer,
+    AgentWorker,
 )
 from ki_dev.adapter.executors import (
     ClaudeCliAdapter,
@@ -35,7 +35,7 @@ from ki_dev.runner.machine import Limits
 from ki_dev.runner.safety import CallLedger
 from ki_dev.usage import CounterScope, TokenCounts, UsageStatus
 from tests.executors.usage_fakes import write_usage_cli
-from tests.test_runner_runtime import FakeBuilder, FakeReviewer, _task
+from tests.test_runner_runtime import FakeReviewer, FakeWorker, _task
 from tests.test_runner_safety import runtime
 
 
@@ -47,7 +47,7 @@ from tests.test_runner_safety import runtime
     ],
     ids=["claude", "codex"],
 )
-@pytest.mark.parametrize("role", ["build", "review"])
+@pytest.mark.parametrize("role", ["worker", "review"])
 @pytest.mark.parametrize("failed", [False, True])
 def test_cli_turn_records_usage_once_through_agent_and_ledger(
     tmp_path,
@@ -60,7 +60,7 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
 ):
     answer = (
         "fertig"
-        if role == "build"
+        if role == "worker"
         else json.dumps({
             "run_id": "guard",
             "round_id": 1,
@@ -125,10 +125,10 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
             resets_at=9_999_999_999,
         ),
     )
-    builder = (
-        AgentBuildMode(adapter, "build", "model", Effort.LOW)
-        if role == "build"
-        else FakeBuilder()
+    worker = (
+        AgentWorker(adapter, "worker", "model", Effort.LOW)
+        if role == "worker"
+        else FakeWorker()
     )
     reviewer = (
         AgentReviewer(adapter, "review", "model", Effort.LOW)
@@ -136,7 +136,7 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
         else FakeReviewer([ReviewAction.PASS])
     )
     task = replace(_task("guard"), workdir=tmp_path)
-    with runtime(tmp_path, builder, reviewer) as run:
+    with runtime(tmp_path, worker, reviewer) as run:
         result = run.start(task, Limits(process_retries=3))
 
     assert result.status == (

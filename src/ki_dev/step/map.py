@@ -15,7 +15,7 @@ from ki_dev.adapter.executors.session_transcript import (
 from ki_dev.adapter.executors.transcript import read_session_transcript
 from ki_dev.beads_reader import read_issue
 from ki_dev.beads_source import SourceBead, ensure_source_bead
-from ki_dev.flow.planning import Planungsablauf
+from ki_dev.flow.planning import PlanningFlow
 from ki_dev.step.guidelines import GuidelineSection
 from ki_dev.step.handoff import (
     Step,
@@ -50,7 +50,7 @@ def map_handoff(
     workdir: Path,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
-    flow: Planungsablauf,
+    flow: PlanningFlow,
 ) -> str:
     """Kurzer map-Auftrag; schreibt Snapshot und Quellen-Bead.
 

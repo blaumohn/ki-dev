@@ -2,7 +2,7 @@ from functools import partial
 
 import pytest
 
-from ki_dev.flow.planning import lade_planungsablauf
+from ki_dev.flow.planning import load_planning_flow
 from ki_dev.step.handoff import (
     HandoffInvalidError,
     HandoffIssue,
@@ -14,7 +14,7 @@ from ki_dev.step.handoff import (
     render_handoff as _render_handoff,
 )
 
-FLOW = lade_planungsablauf()
+FLOW = load_planning_flow()
 render_handoff = partial(_render_handoff, flow=FLOW)
 
 REFS = ["docs/design/a.md#L12-L40", "bd:karte"]
@@ -63,12 +63,12 @@ def test_source_ref_problem_names_the_index():
     )
 
 
-@pytest.mark.parametrize("step", [Step.BUILD, Step.REVIEW])
+@pytest.mark.parametrize("step", [Step.IMPLEMENT, Step.REVIEW])
 def test_build_review_need_no_metadata(step):
     assert validate_handoff(_issue(source_refs=None), step) == ()
 
 
-@pytest.mark.parametrize("step", [Step.BUILD, Step.REVIEW])
+@pytest.mark.parametrize("step", [Step.IMPLEMENT, Step.REVIEW])
 @pytest.mark.parametrize("field", ["acceptance_criteria", "design"])
 @pytest.mark.parametrize("bad", [None, "", 5])
 def test_build_review_require_contract_fields(step, field, bad):
@@ -85,7 +85,7 @@ def test_map_graph_materialize_need_no_design_or_ac(step):
 
 def test_all_problems_are_reported_together():
     issue = HandoffIssue()
-    assert validate_handoff(issue, Step.BUILD) == (
+    assert validate_handoff(issue, Step.IMPLEMENT) == (
         "id",
         "title",
         "description",
@@ -115,7 +115,7 @@ def test_render_roles_are_distinct():
     assert "dünne Vorgänge" in roles[Step.GRAPH]
     assert "Materialisierungsagent" in roles[Step.MATERIALIZE]
     assert "ausführungsreif" in roles[Step.MATERIALIZE]
-    assert "Bau-Agent" in roles[Step.BUILD]
+    assert "Umsetzer" in roles[Step.IMPLEMENT]
     assert "Review-Agent" in roles[Step.REVIEW]
     assert "PASS | CHANGES | NEEDS_DECISION" in roles[Step.REVIEW]
 
@@ -124,7 +124,7 @@ def test_source_refs_only_in_reference_steps():
     for step in (Step.MAP, Step.GRAPH, Step.MATERIALIZE):
         text = render_handoff(_issue(), step)
         assert "- docs/design/a.md#L12-L40\n- bd:karte\n" in text
-    for step in (Step.BUILD, Step.REVIEW):
+    for step in (Step.IMPLEMENT, Step.REVIEW):
         assert "docs/design/a.md" not in render_handoff(_issue(), step)
 
 
@@ -143,7 +143,7 @@ def test_successor_is_only_a_human_hint():
 
 def test_title_control_characters_and_newlines_are_flattened():
     text = render_handoff(
-        _issue(title="A\x1b[31mB\nC\t[bold]D"), Step.BUILD
+        _issue(title="A\x1b[31mB\nC\t[bold]D"), Step.IMPLEMENT
     )
     assert "\x1b" not in text
     assert "Bead: x-1 - A[31mB C [bold]D\n" in text
@@ -151,7 +151,7 @@ def test_title_control_characters_and_newlines_are_flattened():
 
 def test_render_refuses_invalid_issue():
     with pytest.raises(HandoffInvalidError) as info:
-        render_handoff(_issue(design=None), Step.BUILD)
+        render_handoff(_issue(design=None), Step.IMPLEMENT)
     assert info.value.problems == ("design",)
 
 
@@ -171,7 +171,7 @@ def test_build_may_test_review_may_not():
     """Build darf gezielt testen (kein pauschales Werkzeugverbot);
     Review startet selbst keine Prüfwerkzeuge, darf aber lesen und
     Testqualität/Abdeckung beurteilen (AC1/AC2)."""
-    build = " ".join(render_handoff(_issue(), Step.BUILD).split())
+    build = " ".join(render_handoff(_issue(), Step.IMPLEMENT).split())
     review = " ".join(render_handoff(_issue(), Step.REVIEW).split())
 
     assert "gezielte Entwicklungstests" in build
@@ -211,7 +211,7 @@ def test_epic_context_instruction_appears_once_before_ordered_hints():
     issue = _issue(
         epic_context=(("outer", "Ziel"), ("inner", "Beitrag"))
     )
-    text = render_handoff(issue, Step.BUILD)
+    text = render_handoff(issue, Step.IMPLEMENT)
     instruction = "Die Epic-Hinweise vermitteln"
     assert text.count(instruction) == 1
     assert text.index(instruction) < text.index("Epic-Hinweis (outer)")
@@ -239,11 +239,11 @@ SOURCE_TARGETS = (
 
 def test_review_without_target_equals_build_target():
     assert render_handoff(_issue(), Step.REVIEW) == render_handoff(
-        _issue(), Step.REVIEW, ReviewTarget.BUILD
+        _issue(), Step.REVIEW, ReviewTarget.IMPLEMENT
     )
     assert validate_handoff(
         _issue(), Step.REVIEW
-    ) == validate_handoff(_issue(), Step.REVIEW, ReviewTarget.BUILD)
+    ) == validate_handoff(_issue(), Step.REVIEW, ReviewTarget.IMPLEMENT)
 
 
 @pytest.mark.parametrize("target", SOURCE_TARGETS)
@@ -279,7 +279,9 @@ def test_materialize_review_needs_refs_and_contract_fields():
 
 def test_build_review_target_needs_no_source_refs():
     issue = _issue(source_refs=None)
-    problems = validate_handoff(issue, Step.REVIEW, ReviewTarget.BUILD)
+    problems = validate_handoff(
+        issue, Step.REVIEW, ReviewTarget.IMPLEMENT
+    )
     assert problems == ()
 
 
@@ -291,7 +293,7 @@ def test_source_review_targets_render_source_refs(target):
 
 def test_build_review_target_does_not_render_source_refs():
     assert "docs/design/a.md" not in render_handoff(
-        _issue(), Step.REVIEW, ReviewTarget.BUILD
+        _issue(), Step.REVIEW, ReviewTarget.IMPLEMENT
     )
 
 
@@ -305,7 +307,7 @@ def test_review_targets_have_distinct_role_texts():
     assert (
         "Materialisierungsprüfung" in texts[ReviewTarget.MATERIALIZE]
     )
-    assert "deterministischen Vorlauf" in texts[ReviewTarget.BUILD]
+    assert "deterministischen Vorlauf" in texts[ReviewTarget.IMPLEMENT]
     for target in SOURCE_TARGETS:
         assert "deterministischen Vorlauf" not in texts[target]
 
@@ -400,7 +402,7 @@ def test_default_review_is_build_and_forbids_further_models():
     default = " ".join(
         render_handoff(_issue(), Step.REVIEW).split()
     )
-    assert "Reviewziel: build" in default
+    assert "Reviewziel: implement" in default
     assert "Prüfwerkzeuge oder Folgemodelle" in default
 
 
@@ -413,7 +415,7 @@ def test_every_review_target_outputs_pass_changes_needs_decision(
 
 
 def test_review_line_names_effective_target():
-    assert "Reviewziel: build\n" in render_handoff(
+    assert "Reviewziel: implement\n" in render_handoff(
         _issue(), Step.REVIEW
     )
     assert "Reviewziel: map\n" in render_handoff(
@@ -427,7 +429,7 @@ def test_review_line_names_effective_target():
         (Step.MAP, "--review-of map"),
         (Step.GRAPH, "--review-of graph"),
         (Step.MATERIALIZE, "--review-of materialize"),
-        (Step.BUILD, "--step review"),
+        (Step.IMPLEMENT, "--step review"),
     ],
 )
 def test_productive_steps_name_the_concrete_review_call(
@@ -459,7 +461,7 @@ def test_build_review_states_requirement_ref_is_always_present():
     assert "bei PASS und NEEDS_DECISION null" in text
 
 
-@pytest.mark.parametrize("target", [None, ReviewTarget.BUILD])
+@pytest.mark.parametrize("target", [None, ReviewTarget.IMPLEMENT])
 def test_validate_reports_gapped_criteria_for_build_review(target):
     issue = _issue(acceptance_criteria="1. a\n3. b")
     (problem,) = validate_handoff(issue, Step.REVIEW, target)

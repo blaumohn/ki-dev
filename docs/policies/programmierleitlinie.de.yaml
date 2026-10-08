@@ -15,7 +15,7 @@ stages:
   materialize:
     task: [architektur-planung]
     review: []
-  build:
+  implement:
     task: [programmierung-umsetzung, docstrings]
     review: []
 sections:

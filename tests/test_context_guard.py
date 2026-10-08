@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from ki_dev.adapter.agent import (
-    AgentBuildMode,
     AgentReviewer,
+    AgentWorker,
 )
 from ki_dev.adapter.contract import (
     RunTask,
@@ -103,7 +103,7 @@ def _review_json(run_id: str, round_id: int, action: str) -> str:
 
 
 def _agents(build_executor, review_executor):
-    build = AgentBuildMode(
+    build = AgentWorker(
         build_executor,
         "build-session",
         "model",
@@ -149,7 +149,7 @@ def test_context_at_limit_blocks_call_and_writes_structured_handoff(
 
     assert result.status == "paused_interactive"
     assert "Kontextgrenze erreicht" in result.detail
-    assert "build" in result.detail
+    assert "worker" in result.detail
     assert "session=build-session" in result.detail
     assert "80000" in result.detail
     # Kein externer Aufruf und keine Budgetreservierung fuer den

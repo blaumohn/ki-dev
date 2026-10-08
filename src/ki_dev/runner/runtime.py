@@ -17,17 +17,17 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from ki_dev.adapter.agent import (
-    AgentBuildMode,
     AgentReviewer,
+    AgentWorker,
 )
 from ki_dev.adapter.contract import (
     AgentTurnError,
-    BuildMode,
-    BuildReport,
-    BuildRequest,
     Reviewer,
     ReviewRequest,
     RunTask,
+    Worker,
+    WorkReport,
+    WorkRequest,
 )
 from ki_dev.adapter.executors.contract import ContextStatus, QuotaStatus
 from ki_dev.adapter.manual import ManualInputPending, ManualRelay
@@ -36,7 +36,7 @@ from ki_dev.deltas import (
     StepDeltaAssessment,
     assess_step_delta,
 )
-from ki_dev.flow.model import AblaufError
+from ki_dev.flow.model import FlowError
 from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
     DEFAULT_PROJECTION_LIMITS,
@@ -48,8 +48,8 @@ from ki_dev.review_decision import (
 )
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.machine import (
-    BAU,
-    BAU_GEBUNDEN,
+    DELIVERY,
+    DELIVERY_BOUND,
     FINALIZATION_PHASES,
     WAITING_PHASES,
     AgentEscalation,
@@ -112,7 +112,7 @@ _IMMEDIATE_OPERATIONS = frozenset(
 )
 _EXTERNAL_OPERATIONS = frozenset(
     {
-        "build",
+        "work",
         "review",
         "evidence",
         "freeze",
@@ -122,11 +122,16 @@ _EXTERNAL_OPERATIONS = frozenset(
     }
 )
 if set(
-    BAU_GEBUNDEN.ablauf.vokabular.operationen
+    DELIVERY_BOUND.flow.vocabulary.operations
 ) != _IMMEDIATE_OPERATIONS | _EXTERNAL_OPERATIONS:
-    raise AblaufError(
+    raise FlowError(
         "delivery.toml: Operationen passen nicht zur Laufzeit"
     )
+
+
+# Agentenoperationen des Lieferablaufs und die Rolle, die sie ausführt
+# (Konfigurationsschlüssel, Verbrauchsbuch, Budget).
+_AGENT_ROLES = {"work": "worker", "review": "review"}
 
 
 class RunResumeError(RuntimeError):
@@ -144,7 +149,7 @@ class EvidenceCollector(Protocol):
         round_id: int,
         base: object,
         run_base: object,
-        report: BuildReport,
+        report: WorkReport,
     ) -> ControllerContext: ...
 
 
@@ -157,7 +162,7 @@ class RunGraphState(TypedDict):
     open_objection: str | None
     round_base: object | None
     run_base: object | None
-    build_report: str | None
+    work_report: str | None
     evidence: dict[str, object] | None
     reviewed_refs: dict[str, object] | None
     frozen_result: dict[str, object] | None
@@ -184,7 +189,7 @@ class RunRuntime:
     """Fuehrt genau einen Laufthread mit SQLite-Checkpoints aus."""
 
     store: RunStore
-    builder: BuildMode
+    worker: Worker
     reviewer: Reviewer
     evidence_collector: EvidenceCollector
     finalizer: Finalizer
@@ -193,9 +198,9 @@ class RunRuntime:
 
     def __post_init__(self) -> None:
         if (
-            isinstance(self.builder, AgentBuildMode)
+            isinstance(self.worker, AgentWorker)
             and isinstance(self.reviewer, AgentReviewer)
-            and self.builder.session_id == self.reviewer.session_id
+            and self.worker.session_id == self.reviewer.session_id
         ):
             raise ValueError(
                 "Bau und Review brauchen unabhaengige Sitzungen"
@@ -250,7 +255,7 @@ class RunRuntime:
                 RunState(
                     task.run_id,
                     0,
-                    MachineState(Phase(BAU.start)),
+                    MachineState(Phase(DELIVERY.start)),
                     limits,
                 )
             ),
@@ -261,7 +266,7 @@ class RunRuntime:
             "open_objection": None,
             "round_base": None,
             "run_base": None,
-            "build_report": None,
+            "work_report": None,
             "evidence": None,
             "reviewed_refs": None,
             "frozen_result": None,
@@ -501,11 +506,13 @@ class RunRuntime:
         status = pending["status"]
         if status == "prepared":
             call_id = None
-            if pending["kind"] in {"build", "review"} and not (
+            if pending["kind"] in _AGENT_ROLES and not (
                 _is_relay(self._actor(pending))
             ):
                 actor = self._actor(pending)
-                blocker = self._call_guards(pending["kind"], actor)
+                blocker = self._call_guards(
+                    _AGENT_ROLES[pending["kind"]], actor
+                )
                 if blocker is not None:
                     return self._safety_stop(state, blocker)
                 call_id = f"{operation_id}-{uuid.uuid4().hex}"
@@ -514,11 +521,11 @@ class RunRuntime:
                         call_id,
                         operation_id,
                         isinstance(
-                            actor, (AgentBuildMode, AgentReviewer)
+                            actor, (AgentWorker, AgentReviewer)
                         ),
                         actor.executor.name
                         if isinstance(
-                            actor, (AgentBuildMode, AgentReviewer)
+                            actor, (AgentWorker, AgentReviewer)
                         )
                         else None,
                         attribution=self._usage_attribution(
@@ -567,9 +574,9 @@ class RunRuntime:
 
     def _actor(
         self, pending: dict[str, object]
-    ) -> BuildMode | Reviewer:
-        if pending["kind"] == "build":
-            return self.builder
+    ) -> Worker | Reviewer:
+        if pending["kind"] == "work":
+            return self.worker
         return self.reviewer
 
     @staticmethod
@@ -589,7 +596,7 @@ class RunRuntime:
         }
 
     def _call_guards(
-        self, role: str, actor: BuildMode | Reviewer
+        self, role: str, actor: Worker | Reviewer
     ) -> str | None:
         """Alle zutreffenden Pausengruende vor einem Aufruf gemeinsam
         ausgeben, keine Kurzschluss-Auswertung: eine erreichte
@@ -606,7 +613,7 @@ class RunRuntime:
         return "; ".join(blockers) if blockers else None
 
     def _context_guard(
-        self, role: str, actor: BuildMode | Reviewer
+        self, role: str, actor: Worker | Reviewer
     ) -> str | None:
         """Kontextgrenze technisch pruefen, bevor ein Aufruf reserviert
         wird (ki-dev-ablauf-agu).
@@ -628,7 +635,7 @@ class RunRuntime:
         deshalb nicht stillschweigend uebertoenen; die Pruefung steht
         vor jeder Fallunterscheidung nach Kontextstatus.
         """
-        if not isinstance(actor, (AgentBuildMode, AgentReviewer)):
+        if not isinstance(actor, (AgentWorker, AgentReviewer)):
             return None
         if actor.budget is None:
             raise ValueError(
@@ -661,7 +668,7 @@ class RunRuntime:
         return blocker
 
     def _quota_guard(
-        self, role: str, actor: BuildMode | Reviewer
+        self, role: str, actor: Worker | Reviewer
     ) -> str | None:
         """Fuenfstundenkontingent technisch pruefen, bevor ein Aufruf
         reserviert wird (ki-dev-ablauf-hju, ueberarbeitet in dqv).
@@ -704,7 +711,7 @@ class RunRuntime:
         Ausnahme wird deshalb hier selbst in einen Blocker-Text
         uebersetzt statt unbehandelt aus dem Graph-Tick zu entkommen.
         """
-        if not isinstance(actor, (AgentBuildMode, AgentReviewer)):
+        if not isinstance(actor, (AgentWorker, AgentReviewer)):
             return None
         try:
             limits = self._ledger.limits()
@@ -770,14 +777,14 @@ class RunRuntime:
             family_id=binding.get("family_id"),
             family_revision=binding.get("family_revision"),
             parent_bead_id=binding.get("parent_bead_id"),
-            role=pending["kind"], purpose=purpose,
+            role=_AGENT_ROLES[pending["kind"]], purpose=purpose,
             session_id=getattr(actor, "session_id", None),
         )
 
     def _metered_operation(
         self, state: RunGraphState, pending: dict[str, object]
     ) -> object:
-        if pending["kind"] not in {"build", "review"} or _is_relay(
+        if pending["kind"] not in _AGENT_ROLES or _is_relay(
             self._actor(pending)
         ):
             # Der Bote verbraucht kein Agentenbudget von ki-dev: die
@@ -789,8 +796,8 @@ class RunRuntime:
                 "Agentenaufruf ohne persistierte Budgetreservierung"
             )
         actor = (
-            self.builder
-            if pending["kind"] == "build"
+            self.worker
+            if pending["kind"] == "work"
             else self.reviewer
         )
         try:
@@ -811,7 +818,7 @@ class RunRuntime:
                 f"{type(exc).__name__}: {exc}",
             )
             if isinstance(
-                actor, (AgentBuildMode, AgentReviewer)
+                actor, (AgentWorker, AgentReviewer)
             ) and not isinstance(exc, AgentProtocolError):
                 raise SafetyStop(str(exc)) from exc
             raise
@@ -822,7 +829,7 @@ class RunRuntime:
         return value
 
     def _record_turn_usage(
-        self, call_id: str, actor: BuildMode | Reviewer
+        self, call_id: str, actor: Worker | Reviewer
     ) -> None:
         """Den vom Adapter aus dem echten Turnergebnis normalisierten
         UsageEvent verbuchen (ki-dev-ablauf-wu0.3): derselbe reale
@@ -925,13 +932,13 @@ class RunRuntime:
         kind = pending["kind"]
         task = _task(state)
         round_id = state["round_id"]
-        if kind == "build":
-            report = self.builder.build(
-                BuildRequest(task, round_id, state["open_objection"])
+        if kind == "work":
+            report = self.worker.work(
+                WorkRequest(task, round_id, state["open_objection"])
             )
             return {"summary": report.summary}
         if kind == "evidence":
-            report = BuildReport(cast(str, state["build_report"]))
+            report = WorkReport(cast(str, state["work_report"]))
             context = self.evidence_collector.collect(
                 task,
                 round_id,
@@ -958,7 +965,7 @@ class RunRuntime:
             }
         if kind == "review":
             evidence = cast(dict[str, object], state["evidence"])
-            summary = cast(str, state["build_report"])
+            summary = cast(str, state["work_report"])
             answer = state["decision_answer"]
             if answer:
                 summary += f"\n\nGebundene Entscheidung: {answer}"
@@ -976,7 +983,7 @@ class RunRuntime:
                 ReviewRequest(
                     task,
                     round_id,
-                    BuildReport(summary),
+                    WorkReport(summary),
                     projection,
                 )
             )
@@ -1025,10 +1032,10 @@ class RunRuntime:
             raise RuntimeError("Operationsartefakt ist kein Objekt")
         kind = pending["kind"]
         run = decode_run_state(state["run_state"])
-        if kind == "build":
+        if kind == "work":
             return {
                 **self._transition(run, WorkerCompleted()),
-                "build_report": cast(str, artifact["summary"]),
+                "work_report": cast(str, artifact["summary"]),
                 "pending_operation": None,
                 "last_error": None,
             }
@@ -1110,11 +1117,11 @@ class RunRuntime:
         decision: ReviewDecision,
     ) -> dict[str, object]:
         if decision.action is ReviewAction.CHANGES:
-            fakten, guard_detail = self._changes_facts(
+            facts, guard_detail = self._changes_facts(
                 run, decision
             )
             update = self._transition(
-                run, ControllerChanges(decision.detail), fakten=fakten
+                run, ControllerChanges(decision.detail), facts=facts
             )
             if _halted_by_guard(update):
                 return self._guard_halt(state, update, guard_detail)
@@ -1132,7 +1139,7 @@ class RunRuntime:
                 "round_id": state["round_id"] + 1,
                 "open_objection": decision.detail,
                 "round_base": None,
-                "build_report": None,
+                "work_report": None,
                 "evidence": None,
                 "decision_answer": None,
             }
@@ -1175,16 +1182,16 @@ class RunRuntime:
     ) -> tuple[frozenset[str], str]:
         """Fakten aus Laufdaten außerhalb des Maschinenzustands
         (Verbrauchsbuch, Beanstandungsverlauf) für die Wächter
-        ``korrekturen_abgelehnt`` und ``stagnation`` von
+        ``changes_refused`` und ``stagnation`` von
         ``delivery.toml``.
 
-        Der Ablauf prüft ``korrekturen_abgelehnt`` vor ``stagnation``;
+        Der Ablauf prüft ``changes_refused`` vor ``stagnation``;
         der zurückgegebene Text beschreibt den ersten zutreffenden."""
         limits = self._ledger.limits()
         if run.state.counters.changes_round >= (
             limits.max_failed_corrections
         ):
-            return frozenset({"korrekturen_abgelehnt"}), (
+            return frozenset({"changes_refused"}), (
                 "Korrekturen wiederholt abgelehnt; "
                 "Ursache/Loesungsansatz vor weiterem Bau klaeren. "
                 + decision.detail
@@ -1234,7 +1241,7 @@ class RunRuntime:
         # ein Worker-Ereignis, jede andere Operation ein Prozessfehler.
         event = (
             WorkerProcessError(detail)
-            if operation(run.state, run.limits) == "build"
+            if operation(run.state, run.limits) == "work"
             else ProcessError(detail)
         )
         update = self._transition(run, event)
@@ -1260,9 +1267,9 @@ class RunRuntime:
         run: RunState,
         event: Event,
         *,
-        fakten: frozenset[str] = frozenset(),
+        facts: frozenset[str] = frozenset(),
     ) -> dict[str, object]:
-        result = advance(run.state, event, run.limits, fakten=fakten)
+        result = advance(run.state, event, run.limits, facts=facts)
         return self._replace_run(run, result.state, result.escalation)
 
     @staticmethod
@@ -1601,7 +1608,7 @@ class StaticEvidenceCollector:
         round_id: int,
         base: object,
         run_base: object,
-        report: BuildReport,
+        report: WorkReport,
     ) -> ControllerContext:
         del task, base, run_base, report
         try:

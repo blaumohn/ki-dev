@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import cast
 
 from ki_dev.adapter.contract import (
-    BuildReport,
     RunTask,
+    WorkReport,
 )
 from ki_dev.deltas import (
     ChangeMedium,
@@ -59,7 +59,7 @@ class RepositoryEvidenceCollector:
         round_id: int,
         base: object,
         run_base: object,
-        report: BuildReport,
+        report: WorkReport,
     ) -> ControllerContext:
         del report
         step_base = _decode_refs(base)
