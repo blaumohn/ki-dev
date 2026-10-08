@@ -155,8 +155,54 @@ def test_jump_is_noted_and_visible_in_the_log(
     assert "letzter Halt map.review" in result.stderr
     problems = check_conformance(PLANNING, _events(step_state_root))
     assert problems == [
-        "1: beginnt in implement, vorher endete map.review"
+        "1: keine Kante map.review --@jump--> implement"
     ]
+
+
+def test_jump_without_any_edge_is_still_logged(
+    bd, project, step_state_root
+):
+    """--step implement, dann --step map: keiner der Aufrufe nimmt eine
+    Kante, der Sprung steht trotzdem im Protokoll."""
+    project()
+    runner.invoke(app, ["step", "x-1", "--step", "implement"])
+    runner.invoke(app, ["step", "x-1", "--step", "map"])
+    events = _events(step_state_root)
+    assert [(e["state"], e["event"], e["target"]) for e in events] == [
+        ("implement", "@jump", "map")
+    ]
+    assert check_conformance(PLANNING, events) == [
+        "0: keine Kante implement --@jump--> map"
+    ]
+
+
+def test_pass_while_waiting_in_correction_is_refused(
+    bd, project, tmp_path
+):
+    """Roter vollständiger Vorlauf: der Lauf wartet in
+    implement.correction; eine PASS-Antwort darf ihn nicht beenden."""
+    project(FAIL)
+    red = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    assert red.exit_code == 1
+    answer = tmp_path / "antwort.json"
+    answer.write_text(
+        '{"event": "PASS", "detail": "", "requirement_ref": null}'
+    )
+    result = runner.invoke(
+        app,
+        [
+            "step",
+            "x-1",
+            "--step",
+            "review",
+            "--next-turn",
+            "--decision-file",
+            str(answer),
+        ],
+    )
+    assert result.exit_code == 2
+    assert "wartet in implement.correction" in result.stderr
+    assert load_state("x-1").state == "implement.correction"
 
 
 def test_continue_rejects_further_options(bd, project):

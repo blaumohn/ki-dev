@@ -441,7 +441,12 @@ def _bead_form(
     except (FeedbackReadError, LimitConfigReadError) as exc:
         _fail(str(exc), code=1)
     _note_jump(saved, output.halt)
-    remember(bead_id, output.halt, output.flow.flow)
+    remember(
+        bead_id,
+        output.halt,
+        output.flow.flow,
+        None if saved is None else saved.state,
+    )
     typer.echo(output.text, nl=False)
     if output.exit_code:
         raise typer.Exit(code=output.exit_code)
@@ -903,6 +908,13 @@ def _decision_turn(
     decision = parse_step_decision(
         raw, issue, _project_preflight_config, flow=flow
     )
+    # Die Antwort gilt nur dort, wo der Lauf auf sie wartet: nach einem
+    # roten Vorlauf (implement.correction) ist ein PASS kein Ausweg.
+    if saved is not None and saved.state != IMPLEMENT_REVIEW:
+        raise DecisionInputError(
+            f"Review-Antwort ungültig: der Lauf wartet in "
+            f"{saved.state}, nicht in {IMPLEMENT_REVIEW}"
+        )
     # Das gebundene Ereignis nimmt die Kante aus implement.review.
     context = None if saved is None else saved.context()
     try:

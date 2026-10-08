@@ -24,7 +24,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.flow.model import Flow
+from ki_dev.flow.model import Flow, Transition
 from ki_dev.run_store import RunStore
 from ki_dev.runner.events import event_record
 from ki_dev.runner.planning import Halt, PlanningContext
@@ -32,6 +32,7 @@ from ki_dev.runner.planning import Halt, PlanningContext
 STATE_DIR = Path(".local") / "handoff" / "steps"
 STATE_FILE = "state.json"
 MANUAL = "manual"
+JUMP = "@jump"
 MACHINE = "ki-dev"
 
 _NAME = {"type": "string", "pattern": r"^[a-z_.]+$"}
@@ -84,11 +85,23 @@ def load_state(bead_id: str) -> SavedState | None:
     return SavedState(value["state"], frozenset(value["facts"]))
 
 
-def remember(bead_id: str, halt: Halt, flow: Flow) -> None:
-    """Genommene Kanten protokollieren, dann den Halt speichern."""
+def remember(
+    bead_id: str, halt: Halt, flow: Flow, previous: str | None
+) -> None:
+    """Genommene Kanten protokollieren, dann den Halt speichern.
+
+    Beginnt der Aufruf woanders als ``previous`` (letzter Halt), steht
+    davor eine Zeile ``previous --@jump--> start``: kein Übergang des
+    Ablaufs, darum meldet check_conformance sie als Abweichung."""
     store = _store(bead_id)
     seq = len(store.load_events())
-    for transition in halt.path:
+    start = halt.entry.source if halt.entry is not None else halt.state
+    jumps = []
+    if previous is not None and previous != start:
+        jumps.append(
+            Transition(source=previous, event=JUMP, target=start)
+        )
+    for transition in (*jumps, *halt.path):
         seq += 1
         store.append_event(
             event_record(
