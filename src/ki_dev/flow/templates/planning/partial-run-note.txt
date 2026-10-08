@@ -1,0 +1,1 @@
+TEILLAUF: Zusatzargumente oder ausgelassene Prüfungen (siehe Bericht). Abweichend von der Rolle ist PASS ausgeschlossen; Ausgabe: die stärkste Befundklasse. PASS erst nach einem vollständigen Vorlauf ohne --preflight-args/--preflight-skip.

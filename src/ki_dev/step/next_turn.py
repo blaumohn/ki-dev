@@ -19,7 +19,8 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from ki_dev.config_sources import ConfigSource
-from ki_dev.flow.planning import PlanningFlow
+from ki_dev.flow.planning import NAME, PlanningFlow
+from ki_dev.flow.templates import render, text
 from ki_dev.step.contract import NONEMPTY_TEXT_SCHEMA, ReviewTarget
 from ki_dev.step.handoff import HandoffIssue
 from ki_dev.step.preflight import (
@@ -196,58 +197,6 @@ def _check_feedback(text: str, limit: int) -> None:
         raise NextTurnInputError("Rückmeldung ist leer")
 
 
-_RE_REVIEW_FOCUS = {
-    ReviewTarget.IMPLEMENT: (
-        "Prüfe die Korrekturen und die davon betroffenen Kriterien "
-        "samt Regressionen fachlich anhand von Diff und Prüfbericht. "
-        "Grüne Tests sind kein Review-PASS."
-    ),
-    ReviewTarget.MAP: (
-        "Prüfe fachlich, ob die Korrekturen die früheren Befunde "
-        "beheben und bei Quellenabdeckung, Fundstellen und bewahrten "
-        "Einschränkungen keine neuen Abweichungen entstanden sind."
-    ),
-    ReviewTarget.GRAPH: (
-        "Prüfe fachlich, ob die Korrekturen die früheren Befunde "
-        "beheben und bei Abdeckung, Zuschnitt und Abhängigkeiten der "
-        "Vorgänge keine neuen Abweichungen entstanden sind."
-    ),
-    ReviewTarget.MATERIALIZE: (
-        "Prüfe fachlich, ob die Korrekturen die früheren Befunde "
-        "beheben und bei Ausführungsreife, Schnittstellen und "
-        "Abnahmekriterien keine neuen Abweichungen entstanden sind."
-    ),
-}
-
-_REVIEW_RULES = (
-    "Starte selbst keine Prüfwerkzeuge oder Folgemodelle; du hast "
-    "keine automatische Autorität gegenüber dem Schreibagenten und "
-    "schließt nichts automatisch."
-)
-
-_VERDICT = "Ausgabe: PASS oder die stärkste Befundklasse."
-_PARTIAL_VERDICT = (
-    "Ausgabe: die stärkste Befundklasse (Teillauf, kein PASS)."
-)
-
-_HUMAN_NOTE = (
-    "Empfänger, Befundkontext und Quellstand verantwortest du; "
-    "Schließen und weitere Schritte entscheidest du selbst."
-)
-
-_FEEDBACK_HEADER = (
-    "Rückmeldung des Schreibagenten (unbestätigte Aussage, nicht "
-    "geprüft; kein Beleg"
-)
-_FEEDBACK_REVIEW_TAIL = ", erst nach eigenem Urteil heranziehen"
-
-_REPAIR_REQUEST = (
-    "Bitte die gemeldeten Fehler beheben. Melde anschließend nur "
-    "zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa "
-    "offene Entscheidungen oder Hindernisse."
-)
-
-
 def render_review_turn(
     issue: HandoffIssue,
     target: ReviewTarget,
@@ -264,18 +213,20 @@ def render_review_turn(
     erneuten, phasengerechten Prüfung.
     """
     lines = [
-        "Empfänger: Review-Agent (bisherige, vom Schreibagenten "
-        "getrennte Sitzung)",
-        f"Reviewziel: {target.value}",
-        f"Bead: {_one_line(issue.id)} - {_one_line(issue.title)}",
-        "",
-        f"Erneute Prüfung nach Korrekturen: {_RE_REVIEW_FOCUS[target]} "
-        f"{_REVIEW_RULES} {_verdict(report)}",
+        render(
+            NAME,
+            "again-head",
+            target=target.value,
+            bead=_bead(issue),
+            focus=text(NAME, f"again-{target.value}"),
+            rules=text(NAME, "review-rules"),
+            verdict=_verdict(report),
+        )
     ]
     if report is not None:
         lines += ["", *render_report_lines(report)]
-    lines += _feedback_lines(feedback, _FEEDBACK_REVIEW_TAIL)
-    lines += ["", _HUMAN_NOTE]
+    lines += _feedback_lines(feedback, "feedback-header-review")
+    lines += ["", text(NAME, "human-note")]
     lines += _flow_hint(flow, f"{target.value}.review", issue)
     return "\n".join(lines) + "\n"
 
@@ -283,8 +234,8 @@ def render_review_turn(
 def _verdict(report: PreflightReport | None) -> str:
     """Ein Teillauf trägt keinen PASS (PARTIAL_RUN_NOTE im Bericht)."""
     if report is not None and report.partial:
-        return _PARTIAL_VERDICT
-    return _VERDICT
+        return text(NAME, "verdict-partial")
+    return text(NAME, "verdict")
 
 
 def render_repair_turn(
@@ -301,11 +252,13 @@ def render_repair_turn(
     mit Status; bei Artefaktfehler ohne Artefaktverweis).
     """
     lines = [
-        "Empfänger: Umsetzer (Vorlauf fehlgeschlagen)",
-        f"Bead: {_one_line(issue.id)} - {_one_line(issue.title)}",
-        "",
-        f"{_REPAIR_REQUEST} Die Rückmeldung darf höchstens {limit} "
-        "Zeichen lang sein.",
+        render(
+            NAME,
+            "repair-head",
+            bead=_bead(issue),
+            request=text(NAME, "repair-request"),
+            limit=limit,
+        ),
         "",
         finding,
     ]
@@ -321,14 +274,20 @@ def _flow_hint(
     return ["", *flow.hint_lines(state, _one_line(issue.id))]
 
 
-def _feedback_lines(feedback: str | None, tail: str = "") -> list[str]:
+def _bead(issue: HandoffIssue) -> str:
+    return f"{_one_line(issue.id)} - {_one_line(issue.title)}"
+
+
+def _feedback_lines(
+    feedback: str | None, header: str = "feedback-header"
+) -> list[str]:
     if feedback is None:
         return []
     quoted = [
         f"| {_one_line(line)}".rstrip()
         for line in feedback.splitlines()
     ]
-    return ["", f"{_FEEDBACK_HEADER}{tail}):", *quoted]
+    return ["", text(NAME, header), *quoted]
 
 
 def _one_line(value: object) -> str:

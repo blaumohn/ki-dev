@@ -25,7 +25,8 @@ from dataclasses import dataclass, field
 from typing import BinaryIO
 
 from ki_dev.flow.model import PASS, Verdict
-from ki_dev.flow.planning import PlanningFlow
+from ki_dev.flow.planning import NAME, PlanningFlow
+from ki_dev.flow.templates import render
 from ki_dev.review_decision import (
     ReviewContractError,
     ReviewVerdict,
@@ -183,16 +184,21 @@ def _recipient(judgement: Verdict) -> str:
 
 def _body(verdict: ReviewVerdict, judgement: Verdict) -> list[str]:
     if judgement is Verdict.CHANGES:
-        return [
-            f"Review-Befund ({verdict.event}, {judgement.value}, "
-            f"{verdict.requirement_ref}): "
-            f"{one_line(verdict.detail)}",
-            "Bitte beheben. Melde anschließend nur zurück, was aus "
-            "Diff und Prüfergebnissen nicht hervorgeht, etwa offene "
-            "Entscheidungen oder Hindernisse.",
-        ]
-    detail = one_line(verdict.detail) or "ohne Begründung"
+        return render(
+            NAME,
+            "decision-changes",
+            event=verdict.event,
+            verdict=judgement.value,
+            ref=verdict.requirement_ref,
+            detail=one_line(verdict.detail),
+        ).split("\n")
     return [
-        f"Review-Urteil {judgement.value} ({verdict.event}): {detail}"
+        render(
+            NAME,
+            "decision-other",
+            event=verdict.event,
+            verdict=judgement.value,
+            detail=one_line(verdict.detail) or "ohne Begründung",
+        )
     ]
 

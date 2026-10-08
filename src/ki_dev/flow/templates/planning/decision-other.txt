@@ -1,0 +1,1 @@
+Review-Urteil ${verdict} (${event}): ${detail}

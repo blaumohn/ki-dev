@@ -1,0 +1,1 @@
+requirement_ref: ${refs} (nummerierte Zeilen „N.“ in acceptance_criteria; ohne Nummerierung das ganze Feld).

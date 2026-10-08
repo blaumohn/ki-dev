@@ -1,0 +1,4 @@
+Empfänger: Umsetzer (Vorlauf fehlgeschlagen)
+Bead: ${bead}
+
+${request} Die Rückmeldung darf höchstens ${limit} Zeichen lang sein.

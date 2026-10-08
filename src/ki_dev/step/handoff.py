@@ -7,7 +7,9 @@ from dataclasses import dataclass
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.flow.planning import PlanningFlow
+from ki_dev.flow.planning import NAME, PlanningFlow
+from ki_dev.flow.templates import lines as lines_of
+from ki_dev.flow.templates import render
 from ki_dev.review_decision import (
     ReviewContractError,
     criterion_refs,
@@ -288,23 +290,21 @@ def _base_lines(
     lines += [
         f"Bead: {one_line(issue.id)} - {one_line(issue.title)}",
         "",
-        *_COMMON,
+        *lines_of(NAME, "common"),
         "",
         *_roles(step, review_target, flow),
     ]
     if issue.epic_context:
-        lines += [
-            "",
-            "Die Epic-Hinweise vermitteln Ziel, Zusammenhang und",
-            "begründende Entscheidungen des Elternvorhabens. Nutze",
-            "diesen Kontext für eine dazu passende Lösung deiner",
-            "Teilaufgabe. Melde Widersprüche zum konkreten Auftrag.",
-        ]
+        lines += ["", *lines_of(NAME, "epic-intro")]
     for epic_id, epic_context in issue.epic_context:
         lines += [
             "",
-            f"Epic-Hinweis ({one_line(epic_id)}):",
-            one_line(epic_context),
+            render(
+                NAME,
+                "epic-hint",
+                id=one_line(epic_id),
+                context=one_line(epic_context),
+            ),
         ]
     if _needs_refs(step, review_target):
         lines += ["", "Quellenreferenzen (unaufgelöst):"]
@@ -328,10 +328,7 @@ def _is_build_review(
 def _criterion_line(issue: HandoffIssue) -> str:
     """Nur die Referenzen; den Text liest der Reviewer im Bead."""
     refs = ", ".join(ref for ref, _ in criteria_with_refs(issue))
-    return (
-        f"requirement_ref: {refs} (nummerierte Zeilen „N.“ in "
-        "acceptance_criteria; ohne Nummerierung das ganze Feld)."
-    )
+    return render(NAME, "criterion-line", refs=refs)
 
 
 def criteria_with_refs(issue: HandoffIssue) -> list[tuple[str, str]]:
@@ -399,166 +396,9 @@ def _roles(
     step: Step, review_target: ReviewTarget | None, flow: PlanningFlow
 ) -> tuple[str, ...]:
     if step is not Step.REVIEW:
-        return _ROLES[step]
-    role = _REVIEW_ROLES[review_target or ReviewTarget.IMPLEMENT]
-    return (*role, *flow.class_lines())
-
-
-_COMMON = (
-    "Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies",
-    "den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und",
-    "den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende",
-    "Voraussetzungen, statt zu raten.",
-)
-
-_ROLES = {
-    Step.MAP: (
-        "Rolle: Kartierungsagent.",
-        "Lies die referenzierten Rohnotizen abschnittsweise und",
-        "erstelle Quellenkarten-Beads mit Themen und genauen",
-        "Fundstellen. Führe die Abschnittsabdeckung (kartiert /",
-        "begründet irrelevant /",
-        "offen). Bewahre Einschränkungen, Widersprüche und offene",
-        "Fragen. Die Karte ersetzt die Originalquellen nicht.",
-        "Ist der Bead schon eine Karte oder nennt der Mensch eine",
-        "bestehende Karte, ergänze diese: neue Quellen in ihre",
-        "source_refs, Abdeckung fortschreiben, geklärte offene Fragen",
-        "mit Fundstelle schließen; lege keine zweite Karte an.",
-        "Hinterlasse bei Kontextende den aktuellen Stand und den",
-        "nächsten unbearbeiteten Abschnitt in Beads. Erstelle noch",
-        "keine Executor-Aufträge.",
-    ),
-    Step.GRAPH: (
-        "Rolle: Auflösungsagent.",
-        "Nutze die Karte und lies gezielt Originalstellen nach.",
-        "Materialisiere dünne Vorgänge mit Ergebnis, Schnittstellen,",
-        "Quellenbezügen und echten Abhängigkeiten; noch keine",
-        "vollständigen Executor-Aufträge. Du verantwortest den",
-        "fachlichen Zuschnitt und meldest unentscheidbare Konflikte.",
-        "Bestehen aus dieser Karte schon Vorgänge, ergänze oder",
-        "ersetze deren Inhalt, statt Doppel anzulegen.",
-    ),
-    Step.MATERIALIZE: (
-        "Rolle: Materialisierungsagent.",
-        "Löse genau diesen dünnen Vorgang ausführungsreif auf. Finde",
-        "den Kontext selbst über Karten-/Graphreferenzen und",
-        "Code-Einstiege. Schreibe den aktuellen Auftrag mit Ziel und",
-        "Umfang, Schnittstellen, Prüfanweisungen und Abnahmekriterien;",
-        "übernimm relevante ADR-Festlegungen in den Auftrag. Gib zu",
-        "große Vorgänge als begründeten Teilungsvorschlag zurück.",
-        "Schreibe keine Historie als Nachtragsstapel in die",
-        "Beschreibung.",
-    ),
-    Step.IMPLEMENT: (
-        "Rolle: Umsetzer.",
-        "Setze genau diesen materialisierten Bead um (description,",
-        "design, acceptance_criteria), führe gezielte",
-        "Entwicklungstests aus, schreibe Tests und untersuche Fehler.",
-        "Kein pauschales Test-, Typprüfer- oder Werkzeugverbot: Ein",
-        "deterministischer Vorlauf übernimmt nach dieser Sitzung",
-        "lediglich mechanisches Linting/Formatieren und die",
-        "abschließenden Prüfungen; das entlastet dich nur davon.",
-        "Melde kurz Ergebnis, Prüfungen und Blocker. Durchsuche",
-        "keine allgemeinen ADR-Sammlungen, um den Auftrag zu",
-        "rekonstruieren; melde konkrete Vertragslücken zurück.",
-    ),
-}
-
-# Je Step.REVIEW-Prüfgegenstand ein eigener Rollentext: Nur die
-# Umsetzungs-Review hat einen vorgeschalteten deterministischen Vorlauf
-# (Diff, Prüfbericht) aus handoff_preflight; das dort behauptete
-# Ergebnis existiert für map/graph/materialize nicht und darf ihnen
-# nicht unterstellt werden. Alle vier verbieten trotzdem eigene
-# Prüfwerkzeuge und Folgemodellaufrufe.
-_REVIEW_ROLES = {
-    ReviewTarget.MAP: (
-        "Rolle: Review-Agent in frischer, getrennter Sitzung",
-        "(Kartenprüfung).",
-        "Bilde zuerst dein eigenes Urteil aus den referenzierten",
-        "Rohquellen und der erstellten Karte; nicht aus notes,",
-        "comments oder früheren Reviews. Prüfe Quellenabdeckung,",
-        "genaue Fundstellen sowie bewahrte Einschränkungen,",
-        "Widersprüche und offene Fragen; werte eine erfundene",
-        "Entscheidung der Karte als Befund. Starte selbst keine",
-        "Prüfwerkzeuge oder Folgemodelle.",
-        "Ausgabe: PASS oder die stärkste Befundklasse; je Befund",
-        "Klasse, Quellenbezug, konkrete Abweichung und betroffener",
-        "Abschnitt. Du hast keine",
-        "automatische Autorität gegenüber dem Kartierungsagenten und",
-        "schließt nichts automatisch; unentscheidbare Konflikte gehen",
-        "an den Menschen.",
-    ),
-    ReviewTarget.GRAPH: (
-        "Rolle: Review-Agent in frischer, getrennter Sitzung",
-        "(Graphprüfung).",
-        "Bilde zuerst dein eigenes Urteil aus Karte, Originalquellen",
-        "und den angelegten dünnen Vorgängen; nicht aus notes,",
-        "comments oder früheren Reviews. Prüfe, ob alle relevanten",
-        "Anforderungen abgedeckt sind, die Vorgänge sinnvoll begrenzt",
-        "bleiben, Abhängigkeiten echt bestehen und keine",
-        "unbeauftragte Umfangserweiterung oder stillschweigende",
-        "Entscheidung vorliegt. Starte selbst keine Prüfwerkzeuge",
-        "oder Folgemodelle.",
-        "Ausgabe: PASS oder die stärkste Befundklasse; je Befund",
-        "Klasse, Quellenbezug, konkrete Abweichung und betroffener",
-        "Vorgang. Du hast keine",
-        "automatische Autorität gegenüber dem Auflösungsagenten und",
-        "schließt nichts automatisch; unentscheidbare Konflikte gehen",
-        "an den Menschen.",
-    ),
-    ReviewTarget.MATERIALIZE: (
-        "Rolle: Review-Agent in frischer, getrennter Sitzung",
-        "(Materialisierungsprüfung).",
-        "Bilde zuerst dein eigenes Urteil gegen die ursprünglichen,",
-        "bestätigten Nutzeranforderungen und Quellen, nicht nur",
-        "gegen einen möglicherweise fehlerhaften Bead; nicht aus",
-        "notes, comments oder früheren Reviews. Gleiche Rollen,",
-        "Modalität (darf/muss/darf nicht), Geltungsbereich,",
-        "Nicht-Ziele, Schnittstellen, konkrete Prüfaufträge und",
-        "messbare Abnahmekriterien ab. Unterscheide bestätigte",
-        "Entscheidungen von Umsetzungsvorschlägen und offenen",
-        "Produktfragen. Eine fehlende Quelle ist Klasse source;",
-        "formal gefüllte Felder allein rechtfertigen kein PASS.",
-        "Benenne Übergröße, widersprüchliche Nachträge und nötige",
-        "Teilung mit betroffenem Abschnitt. Starte selbst keine",
-        "Prüfwerkzeuge oder Folgemodelle.",
-        "Ausgabe: PASS oder die stärkste Befundklasse; je Befund",
-        "Klasse, Quellenbezug, konkrete Abweichung und betroffener",
-        "Abschnitt. Du hast keine",
-        "automatische Autorität gegenüber dem Materialisierungsagenten",
-        "und schließt nichts automatisch; unentscheidbare Konflikte",
-        "gehen an den Menschen.",
-    ),
-    ReviewTarget.IMPLEMENT: (
-        "Rolle: Review-Agent in frischer, getrennter Sitzung.",
-        "Bilde zuerst dein eigenes Urteil anhand der geltenden",
-        "description, design und acceptance_criteria, des",
-        "tatsächlichen Diffs und des beigefügten Prüfberichts. Diese",
-        "Übergabe hat bereits einen deterministischen Vorlauf",
-        "ausgeführt (Korrekturen und Prüfungen); starte selbst keine",
-        "Formatter, Linter, Typprüfer oder Tests, auch keine",
-        "Prüfwerkzeuge oder Folgemodelle. Der Bericht nennt",
-        "nur seinen Zeitpunkt und belegt keinen unveränderten",
-        "Quellstand; diese Zuordnung verantwortet der Mensch.",
-        "Lesen von Dateien, Diff,",
-        "Anforderungen und Prüfbericht bleibt erlaubt. Beurteile",
-        "Testqualität und Abdeckung; melde fehlende oder",
-        "unzureichende Nachweise als Befund, ohne dafür selbst",
-        "Tests zu starten.",
-        "Verwende notes, comments, Selbsteinschätzungen des",
-        "Umsetzers und frühere Reviews vor diesem Urteil nicht als",
-        "Bewertungsinput.",
-        "Ausgabe: PASS oder die stärkste Befundklasse.",
-        "Nenne zuerst je Befund kurz Klasse und Anforderungs- oder",
-        "Codebezug; zum Schluss genau ein JSON-Objekt",
-        '{"event": …, "detail": …, "requirement_ref": …}; event ist',
-        "PASS oder die stärkste Befundklasse, requirement_ref ist",
-        'immer vorhanden: bei fix "AC<n>", sonst null. Der Mensch',
-        "gibt es mit --decision-file weiter.",
-        'Optional "preflight_args"/"preflight_skip" ({NAME: ARGS bzw.',
-        "Grund}) begrenzen nur den Prüfumfang der nächsten Runde; nie",
-        "bei PASS, keine Programme oder Korrekturen.",
-        "Du hast keine automatische Autorität gegenüber dem",
-        "Umsetzer und schließt nichts automatisch.",
-    ),
-}
+        return lines_of(NAME, f"role-{step.value}")
+    target = review_target or ReviewTarget.IMPLEMENT
+    return (
+        *lines_of(NAME, f"review-{target.value}"),
+        *flow.class_lines(),
+    )

@@ -37,7 +37,8 @@ from plumbum import ProcessTimedOut, local
 from plumbum.machines.local import LocalCommand
 
 from ki_dev.config_sources import ConfigSource
-from ki_dev.flow.planning import PlanningFlow
+from ki_dev.flow.planning import NAME, PlanningFlow
+from ki_dev.flow.templates import text
 from ki_dev.step.contract import Step
 from ki_dev.step.guidelines import (
     GuidelineSection,
@@ -73,15 +74,6 @@ _MAX_ARGV_DISPLAY_CHARS = 100
 # Steht nie gekürzt neben argv, damit eine Abwahl per --preflight-args
 # auch bei gekürzter argv sichtbar bleibt.
 ADDED_MARKER = "[ergänzt per --preflight-args]"
-# Teillauf: Zusatzargumente oder ausgelassene Prüfungen. Gilt für
-# Erst-Review und Folgerunde; ein PASS braucht den vollen Vorlauf.
-PARTIAL_RUN_NOTE = (
-    "TEILLAUF: Zusatzargumente oder ausgelassene Prüfungen (siehe "
-    "Bericht). Abweichend von der Rolle ist PASS ausgeschlossen; "
-    "Ausgabe: die stärkste Befundklasse. PASS erst nach einem "
-    "vollständigen Vorlauf ohne --preflight-args/--preflight-skip."
-)
-
 _PATH_SEPARATORS = tuple(sep for sep in (os.sep, os.altsep) if sep)
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
@@ -739,7 +731,7 @@ def render_report_lines(report: PreflightReport) -> list[str]:
     lines += [format_command_result(item) for item in report.commands]
     lines.append(artifact_line(report))
     if report.partial:
-        lines.append(PARTIAL_RUN_NOTE)
+        lines.append(text(NAME, "partial-run-note"))
     lines.append(
         "Hinweis: Der Zeitpunkt dient der manuellen Zuordnung, nicht "
         "als Beweis eines unveränderten Quellstands; nach weiteren "

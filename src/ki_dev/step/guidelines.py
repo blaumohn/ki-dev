@@ -14,6 +14,8 @@ from pathlib import PurePosixPath
 
 from jsonschema import Draft202012Validator, ValidationError
 
+from ki_dev.flow.planning import NAME
+from ki_dev.flow.templates import lines as lines_of
 from ki_dev.step.contract import (
     NONEMPTY_TEXT_SCHEMA,
     ReviewTarget,
@@ -294,7 +296,7 @@ def render_guideline_block(
     Zeilenumbrüche) und werden weder gekürzt noch zur Basis gezählt."""
     if not guidelines:
         return ""
-    lines = ["", *_GUIDELINE_INTRO]
+    lines = ["", *lines_of(NAME, "guideline-intro")]
     for section in guidelines:
         lines += [
             "",
@@ -303,11 +305,3 @@ def render_guideline_block(
             section.text,
         ]
     return "\n".join(lines) + "\n"
-
-
-_GUIDELINE_INTRO = (
-    "LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)",
-    "Diese Regeltexte gelten für diesen Schritt. Wende sie direkt",
-    "an; lies ihre Quelldokumente dafür nicht erneut vollständig.",
-    "Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.",
-)

@@ -1,0 +1,13 @@
+Schritt: local
+
+Freie lokale Sitzung ohne Bead: Es gibt keine Beads-ID und keinen
+Auftrag aus Beads, und die Übergabe braucht weder Bead noch
+Datenbankverbindung. Arbeite nach der Anweisung des Menschen und
+dem tatsächlichen Arbeitsstand; lies gezielt. Melde konkrete
+fehlende Voraussetzungen, statt zu raten.
+
+Es ist keine Rolle eines Handoff-Schritts gewählt: Beads-Status
+nur lesen. Lesebefehle und Rollenrechte stehen im Block unten.
+
+Hinweis für den Menschen: Für einen Beads-Auftrag stattdessen
+`ki-dev step BEAD_ID --step STEP` verwenden.

@@ -13,7 +13,8 @@ from ki_dev.adapter.executors.session_transcript import (
     SessionTranscript,
 )
 from ki_dev.adapter.executors.transcript import read_session_transcript
-from ki_dev.flow.planning import PlanningFlow
+from ki_dev.flow.planning import NAME, PlanningFlow
+from ki_dev.flow.templates import text
 from ki_dev.step.beads_reader import read_issue
 from ki_dev.step.beads_source import SourceBead, ensure_source_bead
 from ki_dev.step.contract import Step
@@ -27,19 +28,6 @@ from ki_dev.step.source import (
     accepted_refs,
     source_key,
     store_source,
-)
-
-_READING_HINT = (
-    "Quelle: normalisiertes Transkript; Zeile 1 ist der Kopf "
-    "(transcript_meta mit Titel und Sitzungsbeginn), danach eine "
-    "Nachricht je Zeile (position, ordinal, role, text, source_line, "
-    "timestamp); ältere Quellen unter .local/handoff haben keinen "
-    "Kopf. "
-    "Abschnittsweise lesen und Fundstellen über source_line angeben; "
-    "ordinal ist die Herkunftsnummer und kann fehlen (null). "
-    "Wiederholte Rollen und offene Eingaben sind gültig. "
-    "Wiederholungen, Präzisierungen und Widersprüche gehören in die "
-    "Karte; die Quelle wurde nicht inhaltlich bereinigt."
 )
 
 
@@ -76,7 +64,7 @@ def map_handoff(
         issue,
         Step.MAP,
         flow=flow,
-        reading_hint=_READING_HINT,
+        reading_hint=text(NAME, "map-reading-hint"),
         max_chars=base_max_chars,
     )
     return base + render_guideline_block(guidelines)

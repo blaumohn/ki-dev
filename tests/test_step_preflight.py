@@ -13,12 +13,12 @@ import pytest
 from plumbum import local
 from plumbum.machines.local import LocalMachine
 
+from ki_dev.flow import templates
 from ki_dev.flow.planning import load_planning_flow
 from ki_dev.step.handoff import HandoffIssue
 from ki_dev.step.preflight import (
     ADDED_MARKER,
     ARTIFACT_DIR,
-    PARTIAL_RUN_NOTE,
     CommandResult,
     CommandSpec,
     PreflightConfig,
@@ -41,6 +41,8 @@ from ki_dev.step.preflight_options import (
 
 FLOW = load_planning_flow()
 render_review_handoff = partial(_render_review_handoff, flow=FLOW)
+
+PARTIAL_RUN_NOTE = templates.text("planning", "partial-run-note")
 
 
 def _git(repo: Path, *args: str) -> str:

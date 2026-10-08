@@ -1,0 +1,2 @@
+Review-Befund (${event}, ${verdict}, ${ref}): ${detail}
+Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
