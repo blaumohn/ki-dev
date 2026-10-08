@@ -25,17 +25,17 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import ClassVar
 
-from ki_dev.ablauf.format import (
+from ki_dev.deltas import StepDeltaAssessment
+from ki_dev.flow.model import (
     END_KIND,
     WAIT_KIND,
     AblaufError,
     lade_ablauf,
 )
-from ki_dev.deltas import StepDeltaAssessment
 
 
 class Phase(StrEnum):
-    """Bezeichner der Zustände von ``ablauf/bau.toml``.
+    """Bezeichner der Zustände von ``flow/delivery.toml``.
 
     Nur Namen, keine Topologie: welche Kante von wo nach wo führt, steht
     allein im Ablauf. Beim Import wird geprüft, dass Enum und Ablauf
@@ -58,10 +58,10 @@ class Phase(StrEnum):
     ERROR = "error"
 
 
-BAU = lade_ablauf("bau")
+BAU = lade_ablauf("delivery")
 
 if {phase.value for phase in Phase} != set(BAU.zustaende):
-    raise AblaufError("bau.toml: Zustände passen nicht zu Phase")
+    raise AblaufError("delivery.toml: Zustände passen nicht zu Phase")
 
 
 def _phases_of(kind: str) -> tuple[Phase, ...]:
@@ -317,8 +317,8 @@ class RunState:
 class Event:
     """Basis aller typisierten Ereignisse der V0-Maschine.
 
-    ``ereignis`` ist der Name im Ablauf (``bau.toml``), abgeleitet aus
-    dem Klassennamen: ``ControllerTask`` → ``controller_task``.
+    ``ereignis`` ist der Name im Ablauf (``delivery.toml``), abgeleitet
+    aus dem Klassennamen: ``ControllerTask`` → ``controller_task``.
     """
 
     ereignis: ClassVar[str] = ""

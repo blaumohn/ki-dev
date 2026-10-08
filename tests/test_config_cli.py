@@ -5,9 +5,9 @@ from typer.testing import CliRunner
 from ki_dev import (
     tool_versions,
 )
-from ki_dev.ausfuehrer import run_cli
 from ki_dev.cli import app
 from ki_dev.config_cli import SOURCES
+from ki_dev.runner import cli as runner_cli
 from ki_dev.step import limit_config, next_turn, preflight
 
 runner = CliRunner()
@@ -48,7 +48,7 @@ def test_config_lists_every_source_from_module_constants(
         preflight.CONFIG_SOURCE,
         limit_config.CONFIG_SOURCE,
         next_turn.CONFIG_SOURCE,
-        run_cli.CONFIG_SOURCE,
+        runner_cli.CONFIG_SOURCE,
         tool_versions.CONFIG_SOURCE,
     )
     assert len(lines) == len(SOURCES)
@@ -73,7 +73,7 @@ def test_config_names_per_call_source_and_package_file(
     tmp_path, monkeypatch
 ):
     lines = _lines(tmp_path, monkeypatch)
-    assert lines[run_cli.CONFIG_SOURCE.command].endswith("je Aufruf")
+    assert lines[runner_cli.CONFIG_SOURCE.command].endswith("je Aufruf")
     assert lines[tool_versions.CONFIG_SOURCE.command].endswith(
         "vorhanden"
     )

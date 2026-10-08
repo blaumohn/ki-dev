@@ -13,7 +13,7 @@ import pytest
 from plumbum import local
 from plumbum.machines.local import LocalMachine
 
-from ki_dev.ablauf.planung import lade_planungsablauf
+from ki_dev.flow.planning import lade_planungsablauf
 from ki_dev.preflight_options import (
     PreflightOptionError,
     apply_preflight_options,

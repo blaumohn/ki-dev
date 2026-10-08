@@ -5,7 +5,7 @@ from functools import partial
 
 import pytest
 
-from ki_dev.ablauf.planung import lade_planungsablauf
+from ki_dev.flow.planning import lade_planungsablauf
 from ki_dev.step.handoff import HandoffIssue, ReviewTarget
 from ki_dev.step.next_turn import (
     DEFAULT_FEEDBACK_MAX_CHARS as DEFAULT_MAX,

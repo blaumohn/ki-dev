@@ -1,9 +1,9 @@
 # Manuelle Arbeitsübergaben mit `ki-dev step`
 
 `ki-dev step` ist eine Projektion des Planungsablaufs
-([`src/ki_dev/ablauf/planung.toml`](../src/ki_dev/ablauf/planung.toml)) auf
+([`src/ki_dev/flow/planning.toml`](../src/ki_dev/flow/planning.toml)) auf
 genau einen Übergang: ki-dev erzeugt die Übergabe an die nächste Sitzung und
-hält an; der Mensch trägt sie als Bote (Adapter `manuell`) weiter. So lassen
+hält an; der Mensch trägt sie als Bote (Adapter `manual`) weiter. So lassen
 sich Aufträge, Abläufe und Prompts von Hand erproben, bevor ein Ausführer sie
 fährt (den Bauablauf fährt `ki-dev run` bereits, siehe
 [Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
@@ -371,15 +371,15 @@ Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen
 
 Der Block „Hinweis für den Menschen“ am Ende jeder Übergabe nennt die
 Folgeschritte des aktuellen Zustands aus der
-[Planungsablauf](#zustände-und-befundklassen-planungtoml); du trägst sie
+[Planungsablauf](#zustände-und-befundklassen-planningtoml); du trägst sie
 weiter.
 
-## Zustände und Befundklassen (`planung.toml`)
+## Zustände und Befundklassen (`planning.toml`)
 
 Jede Phase hat eigene Zustände; der Ablauf
-[`src/ki_dev/ablauf/planung.toml`](../src/ki_dev/ablauf/planung.toml) ist
+[`src/ki_dev/flow/planning.toml`](../src/ki_dev/flow/planning.toml) ist
 Daten, kein Code. Das gemeinsame Ablaufformat
-(`src/ki_dev/ablauf/format.py`) prüft ihn per JSON Schema und mit benannten
+(`src/ki_dev/flow/model.py`) prüft ihn per JSON Schema und mit benannten
 Regeln: Jedes Ziel existiert, jedes Review kennt die Pflichtereignisse seiner
 Art (`[pflicht]` in der Datei), und von jedem Zustand führt ein Weg zu
 `fertig`.

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from ki_dev.ausfuehrer.machine import (
+from ki_dev.deltas import StepDeltaAssessment
+from ki_dev.runner.machine import (
     STOPPED_PHASES,
     AgentEscalation,
     CheckpointRecorded,
@@ -37,8 +38,7 @@ from ki_dev.ausfuehrer.machine import (
     WorkerProcessError,
     advance,
 )
-from ki_dev.ausfuehrer.machine.transitions import _TRANSITIONS
-from ki_dev.deltas import StepDeltaAssessment
+from ki_dev.runner.machine.transitions import _TRANSITIONS
 
 _EFFECTIVE = StepResultCaptured(StepDeltaAssessment.EFFECTIVE)
 _EMPTY = StepResultCaptured(StepDeltaAssessment.EMPTY_UNEXPLAINED)

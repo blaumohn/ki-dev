@@ -9,8 +9,6 @@ from typing import Annotated, BinaryIO, NamedTuple, NoReturn
 
 import typer
 
-from ki_dev.ablauf.format import AblaufError
-from ki_dev.ablauf.planung import Planungsablauf, lade_planungsablauf
 from ki_dev.adapter.executors.session_transcript import (
     TranscriptError,
     TranscriptRequestError,
@@ -22,6 +20,8 @@ from ki_dev.beads_reader import (
     read_issue,
 )
 from ki_dev.beads_source import BeadsSourceError
+from ki_dev.flow.model import AblaufError
+from ki_dev.flow.planning import Planungsablauf, lade_planungsablauf
 from ki_dev.preflight_options import (
     PreflightOptionError,
     apply_preflight_options,

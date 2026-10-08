@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.ablauf.planung import Planungsablauf
+from ki_dev.flow.planning import Planungsablauf
 from ki_dev.review_decision import (
     ReviewContractError,
     criterion_refs,
@@ -368,7 +368,7 @@ def criteria_with_refs(issue: HandoffIssue) -> list[tuple[str, str]]:
 
 
 def flow_state(step: Step, review_target: ReviewTarget | None) -> str:
-    """Zustand der Tabelle ablauf/planung.toml, in dem diese Übergabe
+    """Zustand der Tabelle flow/planning.toml, in dem diese Übergabe
     entsteht (Schreibschritt oder Review der jeweiligen Phase)."""
     if step is Step.REVIEW:
         return f"{(review_target or ReviewTarget.BUILD).value}.review"

@@ -1,4 +1,4 @@
-"""Planungsablauf (planung.toml): Gültigkeit, Erreichbarkeit, Läufe.
+"""Planungsablauf (planning.toml): Gültigkeit, Erreichbarkeit, Läufe.
 
 Die Tabelle ist endlich; deshalb wird die Erreichbarkeit des Endes
 erschöpfend geprüft. Hypothesis simuliert Agentenausgaben (Befundlisten
@@ -17,18 +17,18 @@ from hypothesis import given
 from hypothesis import strategies as st
 from typer.testing import CliRunner
 
-from ki_dev.ablauf.format import (
+from ki_dev.cli import app
+from ki_dev.flow.model import (
     AblaufError,
     lies_rohdaten,
     parse_ablauf,
     reaching_end,
 )
-from ki_dev.ablauf.planung import (
+from ki_dev.flow.planning import (
     PASS,
     Planungsablauf,
     lade_planungsablauf,
 )
-from ki_dev.cli import app
 from ki_dev.step import cli as step_cli
 from ki_dev.step.handoff import (
     HandoffIssue,
@@ -52,7 +52,7 @@ PROGRESS = ("PASS", "erledigt", "annehmen", "importiert")
 
 
 def _raw() -> dict:
-    return lies_rohdaten("planung")
+    return lies_rohdaten("planning")
 
 
 def test_shipped_table_is_valid_and_complete():
@@ -280,7 +280,7 @@ def test_unknown_class_or_event_is_visible():
 def test_readme_state_diagram_matches_table():
     """Jede Kante des README-Diagramms ist ein Übergang des Ablaufs."""
     table = {(t.von, t.bei, t.nach) for t in A.uebergaenge}
-    assert diagram_edges("planung") <= table
+    assert diagram_edges("planning") <= table
 
 
 def test_renderer_uses_the_flow_it_is_given():
@@ -306,7 +306,7 @@ def test_renderer_uses_the_flow_it_is_given():
 
 def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
     def broken():
-        raise AblaufError("planung.toml: $: additionalProperties")
+        raise AblaufError("planning.toml: $: additionalProperties")
 
     monkeypatch.setattr(step_cli, "lade_planungsablauf", broken)
     monkeypatch.setattr(

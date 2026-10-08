@@ -4,7 +4,7 @@ Geprüft wird die transitive Hülle der Importe im Quelltext (AST, auch
 Importe innerhalb von Funktionen), nicht nur direkte Importe: ein
 Umweg über ein Hilfsmodul ist ebenso eine Abhängigkeit.
 
-- ``ki_dev.ablauf`` kennt weder Ausführer noch Adapter: Abläufe sind
+- ``ki_dev.flow`` kennt weder Ausführer noch Adapter: Abläufe sind
   Daten, die nichts ausführen.
 - ``ki_dev.adapter`` kennt weder Ausführer noch Ablauf: ein Adapter
   transportiert Eingabe und formale Ausgabe, mehr nicht.
@@ -76,9 +76,9 @@ def _layer(prefix: str) -> list[str]:
 @pytest.mark.parametrize(
     ("layer", "forbidden"),
     [
-        ("ki_dev.ablauf", ("ki_dev.ausfuehrer", "ki_dev.adapter")),
-        ("ki_dev.adapter", ("ki_dev.ausfuehrer", "ki_dev.ablauf")),
-        ("ki_dev.step", ("ki_dev.ausfuehrer",)),
+        ("ki_dev.flow", ("ki_dev.runner", "ki_dev.adapter")),
+        ("ki_dev.adapter", ("ki_dev.runner", "ki_dev.flow")),
+        ("ki_dev.step", ("ki_dev.runner",)),
     ],
 )
 def test_layers_never_import_upwards(layer, forbidden):

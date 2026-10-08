@@ -1,4 +1,5 @@
-"""LangGraph-Laufzeit des Ausführers: fährt bau.toml bis zum Halt."""
+"""LangGraph-Laufzeit des Ausführers: fährt delivery.toml bis zum
+Halt."""
 
 from __future__ import annotations
 
@@ -15,7 +16,6 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
-from ki_dev.ablauf.format import AblaufError
 from ki_dev.adapter.agent import (
     AgentBuildMode,
     AgentReviewer,
@@ -30,8 +30,24 @@ from ki_dev.adapter.contract import (
     RunTask,
 )
 from ki_dev.adapter.executors.contract import ContextStatus, QuotaStatus
-from ki_dev.adapter.manuell import ManualInputPending, ManualRelay
-from ki_dev.ausfuehrer.machine import (
+from ki_dev.adapter.manual import ManualInputPending, ManualRelay
+from ki_dev.deltas import (
+    ControllerContext,
+    StepDeltaAssessment,
+    assess_step_delta,
+)
+from ki_dev.flow.model import AblaufError
+from ki_dev.repository_finalization import Finalizer
+from ki_dev.review_context import (
+    DEFAULT_PROJECTION_LIMITS,
+    ProjectionLimits,
+    project_review_context,
+)
+from ki_dev.review_decision import (
+    ReviewAction,
+)
+from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.machine import (
     BAU,
     BAU_GEBUNDEN,
     FINALIZATION_PHASES,
@@ -70,41 +86,27 @@ from ki_dev.ausfuehrer.machine import (
     encode_run_state,
     operation,
 )
-from ki_dev.ausfuehrer.review_output import (
+from ki_dev.runner.review_output import (
     AgentProtocolError,
     ReviewDecision,
     bind_review_decision,
     parse_review_decision,
 )
-from ki_dev.ausfuehrer.run_safety import (
+from ki_dev.runner.safety import (
     CallLedger,
     QuotaBaseline,
     SafetyLimits,
     SafetyStop,
     stagnation_reason,
 )
-from ki_dev.deltas import (
-    ControllerContext,
-    StepDeltaAssessment,
-    assess_step_delta,
-)
-from ki_dev.repository_finalization import Finalizer
-from ki_dev.review_context import (
-    DEFAULT_PROJECTION_LIMITS,
-    ProjectionLimits,
-    project_review_context,
-)
-from ki_dev.review_decision import (
-    ReviewAction,
-)
-from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.session_handoff import build_handoff
 from ki_dev.usage import UsageStatus
 from ki_dev.usage_accounting import UsageAttribution, UsagePurpose
 
-# Operationen aus ``bau.toml``: sofort erzeugte Ereignisse (``_tick``)
-# und persistierte externe Wirkungen (``_execute_operation``). Beide
-# Mengen zusammen müssen genau das Vokabular des Ablaufs sein.
+# Operationen aus ``delivery.toml``: sofort erzeugte Ereignisse
+# (``_tick``) und persistierte externe Wirkungen
+# (``_execute_operation``). Beide Mengen zusammen müssen genau das
+# Vokabular des Ablaufs sein.
 _IMMEDIATE_OPERATIONS = frozenset(
     {"start", "task", "prepare", "checkpoint"}
 )
@@ -122,7 +124,9 @@ _EXTERNAL_OPERATIONS = frozenset(
 if set(
     BAU_GEBUNDEN.ablauf.vokabular.operationen
 ) != _IMMEDIATE_OPERATIONS | _EXTERNAL_OPERATIONS:
-    raise AblaufError("bau.toml: Operationen passen nicht zur Laufzeit")
+    raise AblaufError(
+        "delivery.toml: Operationen passen nicht zur Laufzeit"
+    )
 
 
 class RunResumeError(RuntimeError):
@@ -414,9 +418,9 @@ class RunRuntime:
         """Einen Schritt fahren: was zu tun ist, sagt der Ablauf.
 
         Halt- und Endzustände melden nur ihren Status; sonst liefert
-        ``bau.toml`` die Operation des Zustands (Moore-Ausgabe). Sofort
-        erzeugte Ereignisse laufen direkt durch ``advance``, externe
-        Wirkungen über eine persistierte Operation."""
+        ``delivery.toml`` die Operation des Zustands (Moore-Ausgabe).
+        Sofort erzeugte Ereignisse laufen direkt durch ``advance``,
+        externe Wirkungen über eine persistierte Operation."""
         pending = state["pending_operation"]
         if pending is not None:
             return self._progress_operation(state, pending)
@@ -1171,7 +1175,8 @@ class RunRuntime:
     ) -> tuple[frozenset[str], str]:
         """Fakten aus Laufdaten außerhalb des Maschinenzustands
         (Verbrauchsbuch, Beanstandungsverlauf) für die Wächter
-        ``korrekturen_abgelehnt`` und ``stagnation`` von ``bau.toml``.
+        ``korrekturen_abgelehnt`` und ``stagnation`` von
+        ``delivery.toml``.
 
         Der Ablauf prüft ``korrekturen_abgelehnt`` vor ``stagnation``;
         der zurückgegebene Text beschreibt den ersten zutreffenden."""

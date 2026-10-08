@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.ablauf.planung import lade_planungsablauf
+from ki_dev.flow.planning import lade_planungsablauf
 from ki_dev.step.guidelines import GuidelineSection
 from ki_dev.step.handoff import (
     HandoffIssue,

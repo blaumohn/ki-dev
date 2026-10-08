@@ -48,10 +48,10 @@ class TurnBudget:
 
     ``max_usage_delta_percentage_points`` ist die einzige Ausnahme:
     das erlaubte Wachstum des beobachteten Fuenfstundenkontingents
-    dieser Rolle seit ihrer Baseline (``run_safety.QuotaBaseline``),
+    dieser Rolle seit ihrer Baseline (``runner.safety.QuotaBaseline``),
     in Prozentpunkten -- ein kontoweiter, konservativer Naeherungswert
     fuer den Verbrauch dieser Aufgabe, keine exakte Zurechnung (siehe
-    ``run_runtime._quota_guard``, ki-dev-ablauf-dqv).
+    ``runner.runtime._quota_guard``, ki-dev-ablauf-dqv).
     """
 
     max_turns: int = 12
@@ -209,7 +209,7 @@ class QuotaMeasurement:
     verbraucht hat (0..100), nicht ein aus Tokenzahlen geschaetzter
     Wert. ``resets_at`` (Unix-Sekunden) identifiziert das Fenster
     dieses Messwerts und macht einen Fensterrollover erkennbar (siehe
-    ``run_safety.QuotaBaseline``). Nur ``MEASURED`` traegt beide
+    ``runner.safety.QuotaBaseline``). Nur ``MEASURED`` traegt beide
     Felder; ein veralteter Messwert (``resets_at`` in der
     Vergangenheit) zaehlt nicht als ``MEASURED`` mit ``0``, sondern als
     ``UNAVAILABLE`` (siehe Adapterimplementierung).

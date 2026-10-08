@@ -11,11 +11,11 @@ Korrekturrunde, Halt für eine Entscheidung, geprüfte Integration), steht nicht
 im Prompt und nicht im Python-Code, sondern im Ablauf.
 
 ```text
- ablauf/bau.toml · planung.toml     WAS   Zustände, Übergänge, Wächter, Aktionen     Daten
+ flow/delivery.toml · planning.toml     WAS   Zustände, Übergänge, Wächter, Aktionen     Daten
         │ wird gelesen von
- ausfuehrer/        ki-dev run      WIE   formale Antwort → Ereignis → Wächter       LangGraph:
+  runner/           ki-dev run      WIE   formale Antwort → Ereignis → Wächter       LangGraph:
         │ ruft                            → Kantenaktion → nächste Eingabe           Checkpoint, Halt
- adapter/  claude · codex · manuell · mock                                           WER
+ adapter/  claude · codex · manual · mock                                           WER
 ```
 
 `ki-dev step` ist dieselbe Idee von Hand: genau ein Übergang des
@@ -28,7 +28,7 @@ Planungsablaufs, die Übergabe trägt der Mensch als Bote weiter.
 Bau, Review, Korrektur, erneutes Review: das ist keine eigene „Loop“-Schicht,
 sondern eine Rückkante im Ablauf. Wann sie endet, entscheiden Wächter, und
 jede Rückkante verbraucht einen Zähler. Auszug aus
-[`src/ki_dev/ablauf/bau.toml`](src/ki_dev/ablauf/bau.toml):
+[`src/ki_dev/flow/delivery.toml`](src/ki_dev/flow/delivery.toml):
 
 ```toml
 # controller_step --controller_changes [wenn] / aktion--> nach   (UML-Kante)
@@ -99,16 +99,16 @@ Je Rolle wählt die Konfiguration einen Adapter:
 | Adapter | Konfiguration | Wer antwortet |
 | --- | --- | --- |
 | `claude`, `codex` | `{"executor": "codex", "session_id": "…", "model": "…", "effort": "high"}` | vorbereitete Agentensitzung |
-| `manuell` | `{"executor": "manuell"}` | du trägst die Eingabe in eine Sitzung deiner Wahl |
+| `manual` | `{"executor": "manual"}` | du trägst die Eingabe in eine Sitzung deiner Wahl |
 | `mock` | `{"executor": "mock", "antworten": ["CHANGES", "PASS"]}` | vorgegebene Antworten |
 
-Beim Adapter `manuell` hält der **Ausführer**, nicht der Ablauf. Der Lauf
+Beim Adapter `manual` hält der **Ausführer**, nicht der Ablauf. Der Lauf
 bleibt in `worker_step` und meldet `awaiting_input`. Die Eingabe liegt in
 `<runs>/<RUN_ID>/eingang/…eingabe.md`. Die Antwort kommt als `…antwort.md`
 daneben, dann `ki-dev run resume`. Sie durchläuft dieselbe Prüfung wie bei
 einem Agenten.
 
-Der Mensch hat damit zwei getrennte Rollen: **Bote** (Adapter `manuell`) und
+Der Mensch hat damit zwei getrennte Rollen: **Bote** (Adapter `manual`) und
 **Entscheider** (Zustände der Art `warten`, z. B. nach `NEEDS_DECISION`).
 
 ### `ki-dev step`: ein Übergang des Planungsablaufs von Hand
@@ -124,7 +124,7 @@ Echte Ausgabe (gekürzt) für einen Bead dieses Repositorys:
 Schritt: materialize
 Bead: ki-dev-ablauf-5we - Vor GitHub: begrenzte Reviewer-Prüfsteuerung in step anschließen
 …
-Hinweis für den Menschen: Zustand materialize; Folgeschritte laut planung.toml (Adapter manuell, du trägst sie weiter):
+Hinweis für den Menschen: Zustand materialize; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
 - erledigt → materialize.review: `ki-dev step ki-dev-ablauf-5we --step review --review-of materialize`
 ```
 
@@ -141,10 +141,10 @@ Kante:
 
 ## Die zwei Abläufe
 
-**Bauablauf** ([`bau.toml`](src/ki_dev/ablauf/bau.toml), Hauptweg; Fehler-,
+**Bauablauf** ([`delivery.toml`](src/ki_dev/flow/delivery.toml), Hauptweg; Fehler-,
 Grenz- und Schutzkanten stehen nur in der Datei):
 
-<!-- diagramm:bau -->
+<!-- diagramm:delivery -->
 ```mermaid
 stateDiagram-v2
     [*] --> start
@@ -165,10 +165,10 @@ stateDiagram-v2
     passed --> [*]
 ```
 
-**Planungsablauf** ([`planung.toml`](src/ki_dev/ablauf/planung.toml),
+**Planungsablauf** ([`planning.toml`](src/ki_dev/flow/planning.toml),
 Auszug):
 
-<!-- diagramm:planung -->
+<!-- diagramm:planning -->
 ```mermaid
 stateDiagram-v2
     direction LR
@@ -200,11 +200,11 @@ Beide Diagramme sind getestet: Jede gezeichnete Kante muss im Ablauf stehen.
 | Behauptung | Nachweis |
 | --- | --- |
 | Kein Zyklus ohne Mensch läuft unbegrenzt | `tests/machine/test_reachability.py` zählt den ganzen Zustandsraum auf |
-| … und das schon an den Daten | `tests/test_ablauf_bau.py`: jeder Zyklus hat eine zählende Kante |
+| … und das schon an den Daten | `tests/test_flow_delivery.py`: jeder Zyklus hat eine zählende Kante |
 | `PASSED` nur über die geprüfte Integration | `tests/machine/test_reachability.py` |
-| Ablauf und Ausführer sprechen dasselbe Vokabular | `binde()` prüft beim Import; `tests/test_ablauf_bau.py` |
+| Ablauf und Ausführer sprechen dasselbe Vokabular | `binde()` prüft beim Import; `tests/test_flow_delivery.py` |
 | Schichten importieren nie rückwärts | `tests/test_schichten.py` (transitiv, per AST) |
-| Der Bote hält den Ausführer, nicht den Ablauf | `tests/test_run_runtime.py`, `tests/test_run_cli.py` |
+| Der Bote hält den Ausführer, nicht den Ablauf | `tests/test_runner_runtime.py`, `tests/test_runner_cli.py` |
 
 ```bash
 .venv/bin/pytest -q && .venv/bin/ruff check .
@@ -231,11 +231,11 @@ Oder der Agent-Container mit bd, Codex und Claude Code:
 
 ```text
 src/ki_dev/
-  ablauf/      format.py (Schema, Prüfung), bau.toml, planung.toml, planung.py
-  ausfuehrer/  interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Zustand,
-               Ereignisse, advance), run_runtime.py (LangGraph), run_cli.py,
-               run_safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
-  adapter/     contract.py, prompts.py, agent.py, manuell.py, mock.py,
+  flow/        model.py (Schema, Prüfung), delivery.toml, planning.toml, planning.py
+  runner/      interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Zustand,
+               Ereignisse, advance), runtime.py (LangGraph), cli.py,
+               safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
+  adapter/     contract.py, prompts.py, agent.py, manual.py, mock.py,
                executors/ (Claude- und Codex-CLI, Transkripte, Messung)
   step/        Übergaben, Vorlauf und Leitlinien für ki-dev step
 ```
@@ -253,7 +253,7 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 - **Benutzbar:** `ki-dev step` (Planungsablauf von Hand), `ki-dev run` mit
   allen vier Adaptern (Bauablauf).
 - **Offen:** Der Planungsablauf hat noch keinen gebundenen Ausführer. `step`
-  rendert seine Übergaben direkt, `run` fährt bisher nur `bau.toml`.
+  rendert seine Übergaben direkt, `run` fährt bisher nur `delivery.toml`.
 - **Zur Kartierung offen:** Ereignisprotokoll nach IEEE 1849 (XES) als
   Zustand/Ereignis-Schnittstelle, Sitzungsbindung als Ablaufdatum
   (`neu | wie:<zustand>`), adaptive Schnitte des Controllers

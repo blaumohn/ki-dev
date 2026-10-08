@@ -24,12 +24,12 @@ from ki_dev.adapter.executors.codex_cli import (
     CLI_VERSION as CODEX_CLI_VERSION,
 )
 from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
-from ki_dev.ausfuehrer.run_safety import (
+from ki_dev.run_store import RunStore
+from ki_dev.runner.safety import (
     CallLedger,
     SafetyLimits,
     SafetyStop,
 )
-from ki_dev.run_store import RunStore
 from ki_dev.usage import (
     UsageStatus,
     normalize_claude_cli_result,
@@ -341,14 +341,14 @@ def test_unattributed_call_stays_visible_and_separate_from_purposes(
 
 def test_runtime_purpose_mapping_matches_round_and_role(tmp_path):
     """AC3, Schritt 3: die bestehende Laufzeit-Zuordnung
-    (``run_runtime.RunRuntime._usage_attribution``) bindet Bau-Runde
+    (``runner.runtime.RunRuntime._usage_attribution``) bindet Bau-Runde
     1 an implementation, jede spaetere Bau-Runde an repair und Review
     unabhaengig von der Runde an review -- Nachweis am echten Symbol,
     nicht an einer Testnachbildung."""
     from types import SimpleNamespace
 
-    from tests.test_run_runtime import FakeBuilder, FakeReviewer
-    from tests.test_run_safety import runtime
+    from tests.test_runner_runtime import FakeBuilder, FakeReviewer
+    from tests.test_runner_safety import runtime
 
     with runtime(tmp_path, FakeBuilder(), FakeReviewer([])) as run:
         # ``usage_task`` wird hier nur fuer diesen Test direkt ins
@@ -389,7 +389,7 @@ def test_runtime_purpose_mapping_matches_round_and_role(tmp_path):
 
 def test_aborted_attempt_still_counts_under_its_purpose(tmp_path):
     """AC3: ein abgebrochener Versuch bleibt unter seinem Zweck
-    sichtbar. Wie in run_runtime._metered_operation
+    sichtbar. Wie in runner.runtime._metered_operation
     wird der bekannte Teilverbrauch verbucht, bevor der Fehler das
     Ergebnis ohne Legacy-Summe abschliesst -- der Verbrauch
     verschwindet nicht mit dem gescheiterten Versuch."""

@@ -31,8 +31,8 @@ from ki_dev.adapter.executors.contract import (
     QuotaMeasurement,
     QuotaStatus,
 )
-from ki_dev.ausfuehrer.machine import Limits
-from ki_dev.ausfuehrer.run_safety import SafetyLimits
+from ki_dev.runner.machine import Limits
+from ki_dev.runner.safety import SafetyLimits
 from tests.test_context_guard import (
     ControlledExecutor,
     _agents,

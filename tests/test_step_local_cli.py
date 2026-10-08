@@ -8,8 +8,8 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev import beads_reader
-from ki_dev.ablauf.planung import lade_planungsablauf
 from ki_dev.cli import app
+from ki_dev.flow.planning import lade_planungsablauf
 from ki_dev.step.guidelines import GUIDELINE_SOURCES
 from ki_dev.step.handoff import HandoffIssue, Step
 from ki_dev.step.handoff import (

@@ -9,19 +9,23 @@ from langgraph.checkpoint.base import uuid6
 from ki_dev.adapter.contract import (
     RunTask,
 )
-from ki_dev.ausfuehrer.machine import Limits, Phase
-from ki_dev.ausfuehrer.run_cli import RunConfigError, status_run
-from ki_dev.ausfuehrer.run_runtime import (
-    RunResumeError,
-    RunRuntime,
-    StaticEvidenceCollector,
-)
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.review_decision import (
     ReviewAction,
 )
 from ki_dev.run_store import RunStore, RunStoreError
-from tests.test_run_runtime import FakeBuilder, FakeReviewer, _context
+from ki_dev.runner.cli import RunConfigError, status_run
+from ki_dev.runner.machine import Limits, Phase
+from ki_dev.runner.runtime import (
+    RunResumeError,
+    RunRuntime,
+    StaticEvidenceCollector,
+)
+from tests.test_runner_runtime import (
+    FakeBuilder,
+    FakeReviewer,
+    _context,
+)
 
 
 def _task(run_id: str) -> RunTask:
@@ -207,7 +211,7 @@ def test_status_read_is_consistent_despite_concurrent_checkpoint(
 ):
     """Ein Checkpoint mitten in unserer eigenen Momentaufnahme darf nie
     zu einer Mischung aus zwei Schreibvorgaengen fuehren (re0)."""
-    import ki_dev.ausfuehrer.run_runtime as run_runtime_module
+    import ki_dev.runner.runtime as run_runtime_module
 
     builder = FakeBuilder()
     reviewer = FakeReviewer(
@@ -473,18 +477,18 @@ def test_status_leaves_complete_run_checkpoint_byte_identical(
 
 
 def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
-    """Adapter manuell über die echte Konfiguration: Start hält
+    """Adapter manual über die echte Konfiguration: Start hält
     mit ``awaiting_input``, der Bote legt die Antwort ab, ``resume``
     fährt dieselbe Operation weiter bis ``passed``."""
-    from ki_dev.ausfuehrer import run_cli
+    from ki_dev.runner import cli as runner_cli
 
     monkeypatch.setattr(
-        run_cli,
+        runner_cli,
         "RepositoryEvidenceCollector",
         lambda **_: StaticEvidenceCollector((_context(1),)),
     )
     monkeypatch.setattr(
-        run_cli, "_finalizer", lambda _: StaticFinalizer()
+        runner_cli, "_finalizer", lambda _: StaticFinalizer()
     )
     config = tmp_path / "lauf.json"
     config.write_text(
@@ -496,14 +500,14 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
                 "workdir": str(tmp_path),
                 "access_profile": "write",
                 "finalization": {},
-                "build": {"executor": "manuell"},
+                "build": {"executor": "manual"},
                 "review": {"executor": "mock", "antworten": ["PASS"]},
                 "tests": [],
             }
         )
     )
     runs = tmp_path / "runs"
-    halted = run_cli.start_from_config(
+    halted = runner_cli.start_from_config(
         config, run_id="r-1", runs_dir=runs
     )
     assert (halted.status, halted.phase) == (
@@ -515,14 +519,14 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
     ask.with_name(ask.name.replace("eingabe", "antwort")).write_text(
         "Gebaut."
     )
-    result = run_cli.resume_run("r-1", runs_dir=runs, answer=None)
+    result = runner_cli.resume_run("r-1", runs_dir=runs, answer=None)
     assert result.status == "passed"
 
 
 def test_unknown_mock_answer_is_rejected(tmp_path):
-    from ki_dev.ausfuehrer import run_cli
+    from ki_dev.runner import cli as runner_cli
 
     with pytest.raises(RunConfigError, match="antworten"):
-        run_cli._mock(
+        runner_cli._mock(
             {"executor": "mock", "antworten": ["OK"]}, "review"
         )

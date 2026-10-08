@@ -2,9 +2,9 @@
 
 Diese Seite sammelt Begründung und **Zielbild** von ki-dev. Was heute
 läuft, beschreibt die [README](../README.md): Abläufe als Daten
-(`src/ki_dev/ablauf/`), ein Ausführer ohne eigene Topologie (`ki-dev run`)
-und Adapter (`claude`, `codex`, `manuell`, `mock`). Alles hier, was über
-`bau.toml` und `planung.toml` hinausgeht (adaptive Schnitte mit `PASS_STEP`,
+(`src/ki_dev/flow/`), ein Ausführer ohne eigene Topologie (`ki-dev run`)
+und Adapter (`claude`, `codex`, `manual`, `mock`). Alles hier, was über
+`delivery.toml` und `planning.toml` hinausgeht (adaptive Schnitte mit `PASS_STEP`,
 Größen-Gate, Vorgangsauswahl aus bd, Messprofile), ist Entwurf. Wo es
 umgesetzt wird, dann als weitere Zustände und Kanten eines Ablaufs, nicht als
 eigene Schleifen-Schicht.
@@ -108,7 +108,7 @@ KI         Wie setze ich das um? · Ist diese Umsetzung richtig?
 ## Zielbild eines Laufs mit adaptiven Schnitten
 
 Zwei vorbereitete Agentensitzungen, ein Befehl. `PASS_STEP` und das
-Größen-Gate stehen noch nicht in `bau.toml`:
+Größen-Gate stehen noch nicht in `delivery.toml`:
 
 ```bash
 ki-dev run --config lauf.json
@@ -357,7 +357,7 @@ Nur Sonderfälle meldet der Worker selbst: `NEEDS_DECISION` und `ESCALATE`.
 ### Jede Rückkante hat eine Obergrenze
 
 Korrekturrunden, Protokollfehler, Prozess-Retries: jede Rückkante in
-`bau.toml` trägt eine zählende Aktion und einen Wächter. Ist der Zähler
+`delivery.toml` trägt eine zählende Aktion und einen Wächter. Ist der Zähler
 erschöpft, führt die nächste Kante zu `paused_interactive`.
 
 ---
@@ -368,7 +368,7 @@ erschöpft, führt die nächste Kante zu `paused_interactive`.
 eigene persistente Agentenlaufzeit.
 
 Heute hat der LangGraph-Graph nur zwei generische Knoten: `tick` fährt die
-Operation, die `bau.toml` für den aktuellen Zustand nennt, `wait` hält bis
+Operation, die `delivery.toml` für den aktuellen Zustand nennt, `wait` hält bis
 zur Antwort von außen (`interrupt`). Die Topologie steht nicht im Graphen,
 sondern im Ablauf.
 
@@ -383,7 +383,7 @@ LangGraph liefert            ki-dev liefert
 ─────────────────────────    ─────────────────────────────────
 Graphzustand                 Controller-/Worker-Vertrag
 Knoten und Übergänge         adaptive Worker-Schnitte
-Rückkanten (aus bau.toml)   Größen-Gates
+Rückkanten (aus delivery.toml)   Größen-Gates
 Checkpoints                  Git-/bd-Wirkungsnachweis
 Unterbrechung / Resume       PASS_STEP vs. PASS
                              Zähler und Eskalationsregeln

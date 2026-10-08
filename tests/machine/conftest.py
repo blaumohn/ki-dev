@@ -8,7 +8,8 @@ vollstaendig aufzuzaehlen.
 
 from __future__ import annotations
 
-from ki_dev.ausfuehrer.machine import (
+from ki_dev.deltas import StepDeltaAssessment
+from ki_dev.runner.machine import (
     CheckpointRecorded,
     ControllerChanges,
     ControllerEscalate,
@@ -35,7 +36,6 @@ from ki_dev.ausfuehrer.machine import (
     WorkerNeedsDecision,
     WorkerProcessError,
 )
-from ki_dev.deltas import StepDeltaAssessment
 
 TIGHT_LIMITS = Limits(
     protocol_attempts=2,

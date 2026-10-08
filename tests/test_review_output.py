@@ -21,11 +21,6 @@ from ki_dev.adapter.executors.contract import (
     TurnResult,
     TurnStatus,
 )
-from ki_dev.ausfuehrer.review_output import (
-    AgentProtocolError,
-    bind_review_decision,
-    parse_review_decision,
-)
 from ki_dev.deltas import (
     BeadsDelta,
     ChangeMedium,
@@ -41,6 +36,11 @@ from ki_dev.deltas import (
 from ki_dev.review_context import project_review_context
 from ki_dev.review_decision import (
     ReviewAction,
+)
+from ki_dev.runner.review_output import (
+    AgentProtocolError,
+    bind_review_decision,
+    parse_review_decision,
 )
 
 

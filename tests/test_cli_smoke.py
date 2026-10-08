@@ -5,9 +5,9 @@ from hypothesis import strategies as st
 from typer.testing import CliRunner
 
 import ki_dev.cli
-from ki_dev.ausfuehrer.machine import Phase
-from ki_dev.ausfuehrer.run_runtime import RunResult
 from ki_dev.cli import app
+from ki_dev.runner.machine import Phase
+from ki_dev.runner.runtime import RunResult
 
 runner = CliRunner()
 

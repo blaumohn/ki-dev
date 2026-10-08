@@ -18,8 +18,8 @@ from typing import BinaryIO, cast
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
-from ki_dev.ablauf.planung import Planungsablauf
 from ki_dev.config_sources import ConfigSource
+from ki_dev.flow.planning import Planungsablauf
 from ki_dev.step.handoff import (
     NONEMPTY_TEXT_SCHEMA,
     HandoffIssue,

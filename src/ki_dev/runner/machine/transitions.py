@@ -1,4 +1,4 @@
-"""Reine Übergangsentscheidung: Interpreter über ``ablauf/bau.toml``.
+"""Reine Übergangsentscheidung: Interpreter über ``flow/delivery.toml``.
 
 :func:`advance` ist die einzige öffentliche Entscheidung. Sie bildet
 ``(Zustand, Ereignis)`` deterministisch auf einen Folgezustand ab oder
@@ -8,7 +8,7 @@ keinen stillen Rücksprung und keinen stillen Standardfall.
 Welche Kante gilt, steht nur im Ablauf. Dieses Modul bindet dessen
 Vokabular: was ein Wächter prüft (:data:`_WAECHTER`) und was eine
 Aktion am Zustand ändert (:data:`_AKTIONEN`). Beim Import prüft
-:func:`~ki_dev.ausfuehrer.interpreter.binde`, dass beide Seiten genau
+:func:`~ki_dev.runner.interpreter.binde`, dass beide Seiten genau
 dieselben Namen kennen.
 
 Die Begrenztheit ruht auf den laufweit monotonen Zählern in
@@ -30,13 +30,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from ki_dev.ablauf.format import HISTORY, AblaufError
-from ki_dev.ausfuehrer.interpreter import (
+from ki_dev.deltas import StepDeltaAssessment
+from ki_dev.flow.model import HISTORY, AblaufError
+from ki_dev.runner.interpreter import (
     Bindung,
     GebundenerAblauf,
     binde,
 )
-from ki_dev.deltas import StepDeltaAssessment
 
 from .contract import (
     BAU,
@@ -208,7 +208,7 @@ EVENT_TYPES = _event_types()
 
 if set(EVENT_TYPES) != set(BAU.vokabular.ereignisse):
     raise AblaufError(
-        "bau.toml: Ereignisse passen nicht zu machine.Event"
+        "delivery.toml: Ereignisse passen nicht zu machine.Event"
     )
 
 _TRANSITIONS: dict[Phase, dict[type[Event], tuple[str, ...]]] = {}

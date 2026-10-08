@@ -4,7 +4,7 @@ Normalisiert Rohverbrauchsdaten aus Claude- und Codex-Quellen (CLI-
 Turnergebnis und lokale Sitzungs-/Rollout-Dateien) auf eine gemeinsame,
 versionierte Form. Reine deterministische Normalisierung: kein
 Modellaufruf, keine Freigabeentscheidung, keine Zurechnung zu Auftrag/
-Lauf (das bleibt ``run_safety.CallLedger``, ki-dev-ablauf-wu0.3).
+Lauf (das bleibt ``runner.safety.CallLedger``, ki-dev-ablauf-wu0.3).
 
 Providersemantik ist nicht identisch: Codex liefert ``input_tokens``
 inklusive Cache (bestaetigt an echten lokalen Rollouts, siehe

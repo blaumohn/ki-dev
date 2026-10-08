@@ -1,7 +1,7 @@
 # Ausführer: `ki-dev run`
 
 Der Ausführer fährt einen deklarativen Ablauf
-([`src/ki_dev/ablauf/bau.toml`](../src/ki_dev/ablauf/bau.toml)) bis zum
+([`src/ki_dev/flow/delivery.toml`](../src/ki_dev/flow/delivery.toml)) bis zum
 nächsten Halt. Er liest die formale Antwort eines Adapters, macht daraus
 ein Ereignis, wählt mit den Wächtern des Ablaufs die Kante, führt deren
 Aktion aus und gibt die nächste Eingabe aus. Eine eigene Topologie hat er
@@ -78,7 +78,7 @@ Werte. Unbekannte Felder werden abgewiesen.
 | `executor` | Felder | Halt |
 | --- | --- | --- |
 | `claude`, `codex` | `session_id`, `model`, `effort`, optional `timeout_s`, `budget` | Schutzhalt (`execution_stopped`) bei Kontext-/Kontingentgrenze |
-| `manuell` | keine | `awaiting_input`: Eingabe in `<runs>/<RUN_ID>/eingang/*.eingabe.md`, Antwort als `*.antwort.md` daneben, dann `ki-dev run resume RUN_ID` |
+| `manual` | keine | `awaiting_input`: Eingabe in `<runs>/<RUN_ID>/eingang/*.eingabe.md`, Antwort als `*.antwort.md` daneben, dann `ki-dev run resume RUN_ID` |
 | `mock` | Bau: optional `datei`; Review: `antworten` (`PASS`, `CHANGES`, `NEEDS_DECISION`) | erschöpfte Antwortliste ist ein Prozessfehler |
 
 `awaiting_input` ist ein Halt des Ausführers, kein Zustand des Ablaufs:
@@ -247,7 +247,7 @@ wurde durch das unten beschriebene Delta-/Reserve-Paar ersetzt
 Vor jedem Bau-/Review-Aufruf und bei Resume misst der zustaendige
 Adapter (`Executor.measure_context(session_id)`) den zuletzt bekannten
 Sitzungskontext; **Freigabe, Halt und Persistenz entscheidet
-ausschliesslich die Orchestrierung** (`run_runtime._context_guard`),
+ausschliesslich die Orchestrierung** (`runner.runtime._context_guard`),
 nie eine Selbsteinschaetzung des Agenten oder eine Prompt-Anweisung.
 Ein Adapter liefert nur den Messwert.
 
@@ -286,13 +286,13 @@ Vor jedem Bau-/Review-Aufruf und bei Resume misst der zustaendige
 Adapter (`Executor.measure_quota(session_id)`) den zuletzt bekannten
 Verbrauchsanteil des rollierenden Fuenfstundenfensters des
 Kontokontingents; **Freigabe, Halt und Persistenz entscheidet
-ausschliesslich die Orchestrierung** (`run_runtime._quota_guard`),
+ausschliesslich die Orchestrierung** (`runner.runtime._quota_guard`),
 nie eine Selbsteinschaetzung des Agenten. Ein Adapter liefert nur den
 Messwert.
 
 Zwei unabhaengige, gemeinsam ausgegebene Pausengruende (keine
 Kurzschluss-Auswertung -- eine erreichte Grenze verdeckt nicht, dass
-auch die andere greift, `run_runtime._call_guards`):
+auch die andere greift, `runner.runtime._call_guards`):
 
 1. **Aufgaben-Delta-Budget** (`budget.max_usage_delta_percentage_points`,
    je Rolle): wie viele Prozentpunkte das beobachtete, kontoweite
@@ -366,7 +366,7 @@ als Nachweis akzeptiert werden.
 
 Die Basislinie fuer das Delta-Budget ist rollengebunden, liegt unter
 `<run>/quota/<rolle>.json` und ueberlebt Resume unveraendert
-(`run_safety.QuotaBaseline`). Ein echter Fensterrollover (`resets_at`
+(`runner.safety.QuotaBaseline`). Ein echter Fensterrollover (`resets_at`
 steigt gegenueber der gespeicherten Basislinie) setzt sie bewusst neu
 auf `0` -- das Kontingent hat sich real erneuert, ein neues Budget pro
 Fenster ist beabsichtigt, kein kumulatives Aufgabenbudget ueber

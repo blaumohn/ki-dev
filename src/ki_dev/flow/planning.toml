@@ -12,10 +12,10 @@
 # Ebene. Ein Review endet mit PASS oder mit der stärksten Befundklasse
 # nach `vorrang`; das Urteil (CHANGES/NEEDS_DECISION) folgt aus der
 # Klasse. `befehl` ist die Übergabe an den Menschen als Boten
-# (Adapter manuell, `ki-dev step`); {bead} setzt ki-dev ein.
-# Format und Prüfung: src/ki_dev/ablauf/format.py.
+# (Adapter manual, `ki-dev step`); {bead} setzt ki-dev ein.
+# Format und Prüfung: src/ki_dev/flow/model.py.
 
-name = "planung"
+name = "planning"
 start = "map"
 ende = ["fertig"]
 vorrang = ["entscheidung", "quelle", "fix"]

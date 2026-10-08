@@ -23,36 +23,36 @@ from ki_dev.adapter.executors.contract import (
     TurnResult,
     TurnStatus,
 )
-from ki_dev.ausfuehrer.machine import Limits
-from ki_dev.ausfuehrer.run_cli import (
+from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.review_decision import (
+    ReviewAction,
+)
+from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.cli import (
     RunConfigError,
     _role,
     start_from_config,
 )
-from ki_dev.ausfuehrer.run_runtime import (
+from ki_dev.runner.machine import Limits
+from ki_dev.runner.runtime import (
     RunResumeError,
     RunRuntime,
     StaticEvidenceCollector,
 )
-from ki_dev.ausfuehrer.run_safety import (
+from ki_dev.runner.safety import (
     CallLedger,
     QuotaBaseline,
     SafetyLimits,
     SafetyStop,
     stagnation_reason,
 )
-from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.review_decision import (
-    ReviewAction,
-)
-from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.usage import (
     CounterScope,
     TokenCounts,
     UsageEvent,
     UsageStatus,
 )
-from tests.test_run_runtime import (
+from tests.test_runner_runtime import (
     FakeBuilder,
     FakeReviewer,
     _context,
@@ -674,7 +674,7 @@ def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
             seen.update(manifest_extra)
 
     monkeypatch.setattr(
-        "ki_dev.ausfuehrer.run_cli._runtime", lambda *_: Runtime()
+        "ki_dev.runner.cli._runtime", lambda *_: Runtime()
     )
     start_from_config(path, run_id="pin", runs_dir=tmp_path)
     for role in ("build", "review"):

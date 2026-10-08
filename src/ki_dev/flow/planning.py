@@ -1,10 +1,10 @@
-"""Planungsablauf (``planung.toml``): Review-Semantik, Übergaben.
+"""Planungsablauf (``planning.toml``): Review-Semantik, Übergaben.
 
 Fachliche Sicht auf den allgemeinen
-:class:`~ki_dev.ablauf.format.Ablauf` für die Phasen map, graph,
+:class:`~ki_dev.flow.model.Ablauf` für die Phasen map, graph,
 materialize und build: welche Befundklasse ein Review-Ereignis ist,
 welches Urteil daraus folgt und welche Folgeschritte der Mensch als
-Bote (Adapter ``manuell``, ``ki-dev step``) erhält.
+Bote (Adapter ``manual``, ``ki-dev step``) erhält.
 """
 
 from __future__ import annotations
@@ -12,14 +12,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from ki_dev.ablauf.format import (
+from ki_dev.flow.model import (
     Ablauf,
     AblaufError,
     Uebergang,
     lade_ablauf,
 )
 
-NAME = "planung"
+NAME = "planning"
 FILE_NAME = f"{NAME}.toml"
 PASS = "PASS"
 
@@ -78,7 +78,7 @@ class Planungsablauf:
         wanted = None if events is None else set(events)
         lines = [
             f"Hinweis für den Menschen: Zustand {state}; Folgeschritte "
-            f"laut {FILE_NAME} (Adapter manuell, du trägst sie weiter):"
+            f"laut {FILE_NAME} (Adapter manual, du trägst sie weiter):"
         ]
         for transition in self.outgoing(state):
             if wanted is not None and transition.bei not in wanted:

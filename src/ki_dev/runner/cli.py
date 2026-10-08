@@ -2,7 +2,7 @@
 
 Eine JSON-Konfiguration beschreibt Auftrag, Grenzen und je Rolle den
 Adapter: ``claude`` oder ``codex`` (vorbereitete Agentensitzung),
-``manuell`` (Mensch als Bote, Posteingang im Laufverzeichnis) oder
+``manual`` (Mensch als Bote, Posteingang im Laufverzeichnis) oder
 ``mock`` (vorgegebene Antworten, ohne Anbieterzugang).
 """
 
@@ -14,7 +14,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
-from ki_dev.adapter import manuell, mock
+from ki_dev.adapter import manual, mock
 from ki_dev.adapter.agent import (
     AgentBuildMode,
     AgentReviewer,
@@ -24,13 +24,6 @@ from ki_dev.adapter.contract import (
 )
 from ki_dev.adapter.executors import Effort, build_executor
 from ki_dev.adapter.executors.contract import TurnBudget
-from ki_dev.ausfuehrer.machine import Limits
-from ki_dev.ausfuehrer.run_runtime import (
-    RunResult,
-    RunRuntime,
-    read_run_status,
-)
-from ki_dev.ausfuehrer.run_safety import SafetyLimits
 from ki_dev.config_sources import ConfigSource
 from ki_dev.repository_evidence import (
     CheckCommand,
@@ -39,6 +32,13 @@ from ki_dev.repository_evidence import (
 from ki_dev.repository_finalization import RepositoryFinalizer
 from ki_dev.review_context import ProjectionLimits
 from ki_dev.run_store import RunStore
+from ki_dev.runner.machine import Limits
+from ki_dev.runner.runtime import (
+    RunResult,
+    RunRuntime,
+    read_run_status,
+)
+from ki_dev.runner.safety import SafetyLimits
 from ki_dev.usage_accounting import metadata
 
 # Neue Läufe lesen ihre JSON-Konfiguration aus der hier benannten
@@ -287,7 +287,7 @@ def _usage_task(config: dict[str, object]) -> dict[str, str] | None:
     return result
 
 
-_LOCAL_ADAPTERS = (manuell.NAME, mock.NAME)
+_LOCAL_ADAPTERS = (manual.NAME, mock.NAME)
 _MOCK_ACTIONS = ("PASS", "CHANGES", "NEEDS_DECISION")
 
 
@@ -296,9 +296,9 @@ def _adapter(
 ) -> object:
     """Adapter einer Rolle aus ihrer Konfiguration bauen."""
     kind = value.get("executor")
-    if kind == manuell.NAME:
+    if kind == manual.NAME:
         _exact_fields(value, {"executor"}, set(), "Rolle")
-        return manuell.ManualRelay(store.run_dir / "eingang", role)
+        return manual.ManualRelay(store.run_dir / "eingang", role)
     if kind == mock.NAME:
         return _mock(value, role)
     agent = _role(value)

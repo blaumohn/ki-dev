@@ -129,11 +129,11 @@ class Ablauf:
 
 
 def lade_ablauf(name: str) -> Ablauf:
-    """Mitgelieferten Ablauf ``ki_dev/ablauf/<name>.toml`` laden.
+    """Mitgelieferten Ablauf ``ki_dev/flow/<name>.toml`` laden.
 
     I/O-Grenze: Aufrufer laden einmal und reichen das geprüfte Objekt
     ausdrücklich weiter."""
-    resource = files("ki_dev.ablauf").joinpath(f"{name}.toml")
+    resource = files("ki_dev.flow").joinpath(f"{name}.toml")
     try:
         raw = tomllib.loads(resource.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeError) as exc:
@@ -145,7 +145,7 @@ def lade_ablauf(name: str) -> Ablauf:
 
 def lies_rohdaten(name: str) -> dict:
     """Rohdaten eines mitgelieferten Ablaufs (Werkzeuge, Tests)."""
-    resource = files("ki_dev.ablauf").joinpath(f"{name}.toml")
+    resource = files("ki_dev.flow").joinpath(f"{name}.toml")
     return tomllib.loads(resource.read_text(encoding="utf-8"))
 
 

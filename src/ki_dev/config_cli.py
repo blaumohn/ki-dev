@@ -10,8 +10,8 @@ from rich.table import Table
 from rich.text import Text
 
 from ki_dev import tool_versions
-from ki_dev.ausfuehrer import run_cli
 from ki_dev.config_sources import ConfigSource
+from ki_dev.runner import cli as runner_cli
 from ki_dev.step import limit_config, next_turn, preflight
 
 # Reihenfolge der Ausgabe; die Orte selbst definieren die Module.
@@ -19,7 +19,7 @@ SOURCES = (
     preflight.CONFIG_SOURCE,
     limit_config.CONFIG_SOURCE,
     next_turn.CONFIG_SOURCE,
-    run_cli.CONFIG_SOURCE,
+    runner_cli.CONFIG_SOURCE,
     tool_versions.CONFIG_SOURCE,
 )
 

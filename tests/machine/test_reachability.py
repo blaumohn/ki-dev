@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections import Counter as Multiset
 
-from ki_dev.ausfuehrer.machine import (
+from ki_dev.runner.machine import (
     STOPPED_PHASES,
     ControllerPass,
     Event,

@@ -22,7 +22,7 @@ from itertools import pairwise
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ki_dev.ausfuehrer.machine import (
+from ki_dev.runner.machine import (
     STOPPED_PHASES,
     Event,
     InvalidTransition,
@@ -30,7 +30,7 @@ from ki_dev.ausfuehrer.machine import (
     Phase,
     advance,
 )
-from ki_dev.ausfuehrer.machine.transitions import _TRANSITIONS
+from ki_dev.runner.machine.transitions import _TRANSITIONS
 
 from .conftest import EVENT_POOL, TIGHT_LIMITS
 

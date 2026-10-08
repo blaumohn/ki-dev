@@ -9,15 +9,7 @@ from ki_dev.adapter.contract import (
     BuildReport,
     RunTask,
 )
-from ki_dev.adapter.manuell import ManualRelay
-from ki_dev.ausfuehrer import run_runtime
-from ki_dev.ausfuehrer.machine import Limits, Phase
-from ki_dev.ausfuehrer.review_output import AgentProtocolError
-from ki_dev.ausfuehrer.run_runtime import (
-    RunResumeError,
-    RunRuntime,
-    StaticEvidenceCollector,
-)
+from ki_dev.adapter.manual import ManualRelay
 from ki_dev.deltas import (
     BeadsDelta,
     ChangeMedium,
@@ -35,6 +27,14 @@ from ki_dev.review_decision import (
     ReviewAction,
 )
 from ki_dev.run_store import RunStore
+from ki_dev.runner import runtime
+from ki_dev.runner.machine import Limits, Phase
+from ki_dev.runner.review_output import AgentProtocolError
+from ki_dev.runner.runtime import (
+    RunResumeError,
+    RunRuntime,
+    StaticEvidenceCollector,
+)
 
 
 class FakeBuilder:
@@ -626,7 +626,7 @@ def test_failed_integration_pauses_and_writes_handoff(tmp_path):
 
 
 def test_manual_relay_halts_executor_not_flow_and_continues(tmp_path):
-    """Adapter manuell: fehlt die Antwort des Boten, hält der Ausführer
+    """Adapter manual: fehlt die Antwort des Boten, hält der Ausführer
     im selben Ablaufzustand an; nach abgelegter Antwort fährt dieselbe
     Operation weiter. Der Bote verbraucht kein Agentenbudget."""
     inbox = tmp_path / "eingang"
@@ -664,7 +664,7 @@ def test_manual_relay_halts_executor_not_flow_and_continues(tmp_path):
 def test_evidence_of_a_foreign_task_is_a_protocol_error():
     wrong = _context(1)
     with pytest.raises(AgentProtocolError, match="fremdem Auftrag"):
-        run_runtime._validate_context(
+        runtime._validate_context(
             ControllerContext(
                 "Fremder Auftrag", wrong.step_delta, wrong.round_status
             ),

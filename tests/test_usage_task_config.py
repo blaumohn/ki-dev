@@ -19,23 +19,27 @@ from ki_dev.adapter.agent import (
 )
 from ki_dev.adapter.executors import Effort
 from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
-from ki_dev.ausfuehrer.run_cli import (
-    RunConfigError,
-    resume_run,
-    start_from_config,
-)
-from ki_dev.ausfuehrer.run_runtime import (
-    RunRuntime,
-    StaticEvidenceCollector,
-)
-from ki_dev.ausfuehrer.run_safety import CallLedger
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.review_decision import (
     ReviewAction,
 )
 from ki_dev.run_store import RunStore
-from tests.test_run_runtime import FakeBuilder, FakeReviewer, _context
-from tests.test_run_safety import USAGE, Executor
+from ki_dev.runner.cli import (
+    RunConfigError,
+    resume_run,
+    start_from_config,
+)
+from ki_dev.runner.runtime import (
+    RunRuntime,
+    StaticEvidenceCollector,
+)
+from ki_dev.runner.safety import CallLedger
+from tests.test_runner_runtime import (
+    FakeBuilder,
+    FakeReviewer,
+    _context,
+)
+from tests.test_runner_safety import USAGE, Executor
 
 BINDING = {
     "bead_id": "ki-dev-ablauf-wu0.3.8",
@@ -77,7 +81,7 @@ def _patch_runtime(monkeypatch, builder, reviewer=None):
         )
 
     monkeypatch.setattr(
-        "ki_dev.ausfuehrer.run_cli._runtime", build_runtime
+        "ki_dev.runner.cli._runtime", build_runtime
     )
 
 
@@ -288,7 +292,7 @@ def test_resume_keeps_revisions_from_manifest(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(
-        "ki_dev.ausfuehrer.run_cli._runtime", build_runtime
+        "ki_dev.runner.cli._runtime", build_runtime
     )
     runs = tmp_path / "runs"
     paused = start_from_config(

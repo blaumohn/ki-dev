@@ -12,9 +12,9 @@
 # passende Wächter gewinnt. Passt keiner, ist das Ereignis dort nicht
 # erlaubt. `eskalation` hält mit dieser Ursache an; Fortsetzungspunkt
 # ist der Quellzustand. `operation` sagt dem Ausführer, was er beim
-# Betreten tut. Format: src/ki_dev/ablauf/format.py.
+# Betreten tut. Format: src/ki_dev/flow/model.py.
 
-name = "bau"
+name = "delivery"
 start = "start"
 ende = ["passed", "error"]
 

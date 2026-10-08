@@ -21,7 +21,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ki_dev.ausfuehrer.machine import (
+from ki_dev.runner.machine import (
     SCHEMA_VERSION,
     AgentEscalation,
     Counters,

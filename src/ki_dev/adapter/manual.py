@@ -1,4 +1,4 @@
-"""Adapter ``manuell``: der Mensch als Bote zwischen ki-dev und einer
+"""Adapter ``manual``: der Mensch als Bote zwischen ki-dev und einer
 Agentensitzung.
 
 Der Bote trägt die Eingabe, die ki-dev sonst selbst an Claude oder
@@ -31,7 +31,7 @@ from ki_dev.adapter.prompts import (
     review_prompt,
 )
 
-NAME = "manuell"
+NAME = "manual"
 
 
 class ManualInputPending(Exception):

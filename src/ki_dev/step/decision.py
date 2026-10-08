@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import BinaryIO
 
-from ki_dev.ablauf.planung import Planungsablauf
+from ki_dev.flow.planning import Planungsablauf
 from ki_dev.preflight_options import (
     ARGS_OPTION,
     SKIP_OPTION,

@@ -36,7 +36,7 @@ class ClaudeCliAdapter(CliAdapter):
 
     Die Kontextvorpruefung selbst ist keine Aufgabe dieses Adapters
     mehr: ``measure_context`` liefert nur den Messwert, Freigabe/Halt
-    entscheidet der Ausführer (``ausfuehrer.run_runtime``,
+    entscheidet der Ausführer (``runner.runtime``,
     ki-dev-ablauf-agu). Ein Adapter darf ueber sein eigenes Ergebnis
     nicht selbst befinden, ob der naechste Aufruf stattfindet.
     """

@@ -1,7 +1,7 @@
 """Generischer Interpreter eines deklarativen Ablaufs.
 
 Der Ausführer kennt keine Topologie. Er bekommt einen geprüften
-:class:`~ki_dev.ablauf.format.Ablauf`, bindet dessen Vokabular an
+:class:`~ki_dev.flow.model.Ablauf`, bindet dessen Vokabular an
 Implementierungen (:class:`Bindung`) und wählt zu (Zustand, Ereignis)
 den ersten Übergang, dessen Wächter gelten. Welche Wirkung eine Aktion
 hat, entscheidet die Bindung; welche Kante gilt, allein der Ablauf.
@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TypeVar
 
-from ki_dev.ablauf.format import (
+from ki_dev.flow.model import (
     Ablauf,
     AblaufError,
     Operation,

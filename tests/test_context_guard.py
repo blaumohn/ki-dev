@@ -26,14 +26,14 @@ from ki_dev.adapter.executors.contract import (
     TurnResult,
     TurnStatus,
 )
-from ki_dev.ausfuehrer.machine import Limits
-from ki_dev.ausfuehrer.run_runtime import (
+from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.run_store import RunStore
+from ki_dev.runner.machine import Limits
+from ki_dev.runner.runtime import (
     RunRuntime,
     StaticEvidenceCollector,
 )
-from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.run_store import RunStore
-from tests.test_run_runtime import _context
+from tests.test_runner_runtime import _context
 
 
 class ControlledExecutor:

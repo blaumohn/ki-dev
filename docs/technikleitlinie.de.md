@@ -57,7 +57,7 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
 ## Abläufe als Daten
 
 - Zustände, Übergänge, Wiederholungsgrenzen und Halt stehen in einem
-  Ablauf unter `src/ki_dev/ablauf/*.toml`, nicht in Verzweigungen des
+  Ablauf unter `src/ki_dev/flow/*.toml`, nicht in Verzweigungen des
   Ausführers. Eine Schleife ist eine Rückkante mit Wächter und zählender
   Aktion, keine eigene Komponente oder Schicht.
 - Der Ausführer implementiert nur benannte Wächter, Aktionen und
@@ -71,7 +71,7 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
   kennen keinen Ablauf (`tests/test_schichten.py`).
 
 **Beispiel:** „Nach fünf CHANGES hält der Lauf an“ ist der Wächter
-`!korrekturrunden_frei` an der Kante `controller_changes` in `bau.toml`,
+`!korrekturrunden_frei` an der Kante `controller_changes` in `delivery.toml`,
 nicht ein `if` in der Laufzeit.
 
 ## Ausnahmen

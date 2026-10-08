@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ki_dev.ablauf.planung import Planungsablauf
 from ki_dev.adapter.executors.session_transcript import (
     SessionTranscript,
 )
 from ki_dev.adapter.executors.transcript import read_session_transcript
 from ki_dev.beads_reader import read_issue
 from ki_dev.beads_source import SourceBead, ensure_source_bead
+from ki_dev.flow.planning import Planungsablauf
 from ki_dev.step.guidelines import GuidelineSection
 from ki_dev.step.handoff import (
     Step,

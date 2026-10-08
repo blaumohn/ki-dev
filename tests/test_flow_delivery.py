@@ -1,4 +1,5 @@
-"""Bauablauf ablauf/bau.toml: Bindung an die Maschine und Begrenztheit.
+"""Lieferablauf flow/delivery.toml: Bindung an die Maschine und
+Begrenztheit.
 
 Die Schleife ist eine Rückkante im Ablauf. Der Strukturtest unten zeigt
 direkt an den Daten, dass jeder Zyklus ohne Menschen über eine Kante
@@ -13,18 +14,18 @@ from dataclasses import replace
 
 import pytest
 
-from ki_dev.ablauf.format import (
+from ki_dev.flow.model import (
     WAIT_KIND,
     AblaufError,
     lade_ablauf,
     lies_rohdaten,
     parse_ablauf,
 )
-from ki_dev.ausfuehrer.interpreter import binde
-from ki_dev.ausfuehrer.machine import BAU_GEBUNDEN, Phase
+from ki_dev.runner.interpreter import binde
+from ki_dev.runner.machine import BAU_GEBUNDEN, Phase
 from tests.readme_diagramme import diagram_edges
 
-BAU = lade_ablauf("bau")
+BAU = lade_ablauf("delivery")
 COUNTING = {
     "task_beginnen",
     "korrektur_beginnen",
@@ -91,7 +92,7 @@ def test_controller_operation_depends_on_reviewed_result():
 
 
 def test_unguarded_candidate_must_come_last():
-    raw = copy.deepcopy(lies_rohdaten("bau"))
+    raw = copy.deepcopy(lies_rohdaten("delivery"))
     index = next(
         i
         for i, t in enumerate(raw["uebergang"])
@@ -107,6 +108,7 @@ def test_unguarded_candidate_must_come_last():
 
 
 def test_readme_diagram_draws_only_edges_of_the_flow():
-    """Die README zeigt den Hauptweg; jede Kante steht in bau.toml."""
+    """Die README zeigt den Hauptweg; jede Kante steht in
+    delivery.toml."""
     table = {(t.von, t.bei, t.nach) for t in BAU.uebergaenge}
-    assert diagram_edges("bau") <= table
+    assert diagram_edges("delivery") <= table

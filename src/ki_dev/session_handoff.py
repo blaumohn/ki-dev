@@ -14,8 +14,8 @@ from __future__ import annotations
 from ki_dev.adapter.contract import (
     RunTask,
 )
-from ki_dev.ausfuehrer.run_safety import recorded_usage
 from ki_dev.run_store import RunStore
+from ki_dev.runner.safety import recorded_usage
 
 
 def build_handoff(

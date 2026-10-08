@@ -3,7 +3,7 @@
 Datenfluss: CLI ruft ``load_preflight_config`` und ``run_preflight``
 (beide mit Schreibwirkung: Prozessaufrufe, Prüfartefakt) auf und erhält
 einen ``PreflightReport``; ``render_review_handoff`` ist reines
-Rendering ohne I/O. Unabhängig von ``ki_dev.ausfuehrer``:
+Rendering ohne I/O. Unabhängig von ``ki_dev.runner``:
 kein Checkpoint, kein Commit, keine Runden-/Sicherheitsgrenzen, keine
 Agentensteuerung. Prozessaufrufe laufen ohne Shell in der
 Projektwurzel; die Umgebung wird nicht eingeschränkt (geerbte
@@ -36,8 +36,8 @@ from jsonschema.exceptions import ValidationError
 from plumbum import ProcessTimedOut, local
 from plumbum.machines.local import LocalCommand
 
-from ki_dev.ablauf.planung import Planungsablauf
 from ki_dev.config_sources import ConfigSource
+from ki_dev.flow.planning import Planungsablauf
 from ki_dev.step.guidelines import GuidelineSection
 from ki_dev.step.handoff import (
     HandoffIssue,
