@@ -9,8 +9,8 @@ Erneute Prüfung nach Korrekturen: Prüfe fachlich, ob die Korrekturen die früh
 Empfänger, Befundkontext und Quellstand verantwortest du; Schließen und weitere Schritte entscheidest du selbst.
 
 Hinweis für den Menschen: Zustand map.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
-- PASS → graph: `ki-dev step x-1 --step graph`
 - fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → map.decision: du entscheidest: accept, correct oder source
+- PASS → graph: `ki-dev step x-1 --step graph`
 --- stderr ---

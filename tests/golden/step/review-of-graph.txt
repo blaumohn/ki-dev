@@ -33,10 +33,10 @@ Quellenreferenzen (unaufgelöst):
 - bd:k
 
 Hinweis für den Menschen: Zustand graph.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
-- PASS → materialize: `ki-dev step x-1 --step materialize`
 - fix → graph.correction: Befunde an den Auflösungsagenten (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → graph.decision: du entscheidest: accept, correct oder source
+- PASS → materialize: `ki-dev step x-1 --step materialize`
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt

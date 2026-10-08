@@ -158,13 +158,16 @@ Rollenübergabe; eine frische Sitzung startest du mit `--step review` ohne
 | Prüfgegenstand | Ergebnis | Empfänger, stdout, Exit |
 | --- | --- | --- |
 | `implement` (Standard) | Vorlauf fehlgeschlagen (Korrektur, Prüfung, Start, Timeout, Artefakt) | Umsetzer: „Bitte die gemeldeten Fehler beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht …“, Befund wie beim Reparaturbefund (ohne Artefaktzeile, wenn kein Artefakt entstand), Grenze für die Rückmeldung; Exit 1 |
-| `implement` | Vorlauf bestanden | bisherige, vom Schreibagenten getrennte Review-Sitzung: Korrekturen und betroffene Kriterien samt Regressionen fachlich erneut prüfen, `PASS \| CHANGES \| NEEDS_DECISION`, Prüfbericht beigefügt; grüne Tests sind kein Review-PASS; Exit 0 |
+| `implement` | Vorlauf bestanden | bisherige, vom Schreibagenten getrennte Review-Sitzung: Korrekturen und betroffene Kriterien samt Regressionen fachlich erneut prüfen, `PASS` oder die stärkste Befundklasse, Prüfbericht beigefügt; grüne Tests sind kein Review-PASS; Exit 0 |
 | `map`, `graph`, `materialize` | ohne Code-Vorlauf | dieselbe Review-Sitzung: erneute, phasengerechte Prüfung; Exit 0 |
 
 Nur der Prüfgegenstand `implement` braucht `tool.ki-dev.handoff.preflight`;
 `--preflight-args`/`--preflight-skip` gelten wie bisher nur dort. Der Fortschritt des Vorlaufs steht auf
-stderr, die Nachricht auf stdout (auch bei Exit 1). Ohne `--next-turn` bleibt
-alles unverändert, insbesondere ist stdout bei einem Vorlauffehler leer.
+stderr, die Nachricht auf stdout (auch bei Exit 1). Das gilt ebenso ohne
+`--next-turn`: Der Vorlauf ist der Zustand `implement.preflight`, und seine
+Kante `checks_failed` führt in beiden Fällen zu `implement.correction` mit
+derselben Reparaturnachricht. `checks_partial` erreicht das Review, aber die
+Kante `PASS` trägt den Wächter `full_checks`.
 
 `--next-turn` gilt nur mit `BEAD_ID` und `--step review`; `--feedback-file`
 nur zusammen mit `--next-turn` (sonst Exit 2 vor jeder `bd`-Anfrage).
@@ -283,7 +286,7 @@ vollständigen Vorlauf ohne diese Optionen. Drei Dinge bleiben getrennt:
 | --- | --- | --- |
 | `valid` | alle gelaufenen Befehle bestanden | sonst Nachricht an den Umsetzer (Exit 1) |
 | `partial` | Zusatzargumente oder Auslassungen | kein PASS |
-| Ausführungsfehler | Vorlauf nicht kontrolliert abgeschlossen | Exit 1, keine Übergabe |
+| Ausführungsfehler | Vorlauf nicht kontrolliert abgeschlossen | Exit 1, Reparaturnachricht statt Übergabe |
 
 Die Angaben bleiben sichtbar: Ergänzte Zeilen tragen `[ergänzt per
 --preflight-args]`, ausgelassene stehen als `SKIPPED` mit Grund im Bericht.
@@ -557,7 +560,7 @@ Vollständig steht sie im Prüfartefakt, auf das genau eine Zeile verweist
 der Übergabe, bei Exit 1 im Reparaturbefund. Eine abschließende Hinweiszeile nennt, dass der
 Zeitpunkt der manuellen Zuordnung dient und kein Beweis eines unveränderten
 Quellstands ist; nach weiteren Änderungen ist der Vorlauf erneut zu starten.
-Prüf- oder Ausführungsfehler (Exit 1) — stdout bleibt leer, stderr listet
+Prüf- oder Ausführungsfehler (Exit 1) — stdout trägt die Reparaturnachricht; ihr Befund listet
 jeden konfigurierten Befehl mit seinem tatsächlichen Status (auch bereits
 erfolgreiche Korrekturen und wegen eines vorherigen Fehlschlags ausgelassene
 Befehle), statt nur die fehlgeschlagenen zu zeigen; volle Prozesslogs

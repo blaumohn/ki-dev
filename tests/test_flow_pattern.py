@@ -1,31 +1,27 @@
-"""Topologie-Muster: Expansion gleicht dem flach ausgeschriebenen
-Ablauf; Tippfehler in Parametern sind sichtbar."""
+"""Topologie-Muster: Phasen expandieren zu ihren Zuständen und
+Kanten; Tippfehler in Parametern sind sichtbar."""
 
 from __future__ import annotations
 
 import copy
 import re
-import tomllib
-from pathlib import Path
 
 import pytest
 
 from ki_dev.flow.model import FlowError, load_flow, parse_flow, read_raw
 
-FLAT = Path(__file__).parent / "fixtures" / "planning_flat.toml"
 
-
-def _flat():
-    return parse_flow(tomllib.loads(FLAT.read_text(encoding="utf-8")))
-
-
-def test_expanded_planning_equals_the_flat_flow():
-    expanded, flat = load_flow("planning"), _flat()
-    assert expanded.states == flat.states
-    assert set(expanded.transitions) == set(flat.transitions)
-    for state in flat.states:
-        assert expanded.outgoing(state) == flat.outgoing(state)
-    assert expanded.finding_classes == flat.finding_classes
+def test_phases_expand_to_their_states_and_edges():
+    flow = load_flow("planning")
+    for phase in ("map", "graph", "materialize", "implement"):
+        for local in ("", ".review", ".correction", ".decision"):
+            assert f"{phase}{local}" in flow.states
+    assert "implement.preflight" in flow.states
+    assert "map.preflight" not in flow.states
+    (pass_edge,) = flow.candidates("implement.review", "PASS")
+    assert pass_edge.cond == ("full_checks",)
+    (map_pass,) = flow.candidates("map.review", "PASS")
+    assert (map_pass.cond, map_pass.target) == ((), "graph")
 
 
 def _mutated(change) -> dict:
@@ -54,8 +50,8 @@ def _mutated(change) -> dict:
             "phase.2 (materialize): @next ohne next",
         ),
         (
-            lambda r: r["pattern"]["write_review"].update(
-                extends="write_review_preflight"
+            lambda r: r["pattern"]["review_core"].update(
+                extends="write_review"
             ),
             "extends-Zyklus",
         ),

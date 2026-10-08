@@ -267,7 +267,7 @@ def test_review_preflight_success_runs_checks_and_appends_report(
     assert json.loads(artifacts[0].read_text())["valid"] is True
 
 
-def test_review_preflight_check_failure_exits_1_without_handoff(
+def test_review_preflight_check_failure_exits_1_with_repair_message(
     bd, tmp_path, monkeypatch
 ):
     fail_code = "import sys; sys.exit(1)"
@@ -277,10 +277,12 @@ def test_review_preflight_check_failure_exits_1_without_handoff(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "Vorlauf ohne Review-Übergabe" in result.stderr
-    assert "fails: FAIL" in result.stderr
-    assert ".local/handoff/preflight" in result.stderr
+    assert result.stdout.startswith(
+        "Empfänger: Umsetzer (Vorlauf fehlgeschlagen)"
+    )
+    assert "Vorlauf ohne Review-Übergabe" in result.stdout
+    assert "fails: FAIL" in result.stdout
+    assert ".local/handoff/preflight" in result.stdout
     assert result.stderr.startswith("Vorlauf: fails läuft")
 
 
@@ -296,10 +298,10 @@ def test_review_preflight_repair_finding_names_artifact_file_once(
     (artifact,) = (tmp_path / ".local" / "handoff" / "preflight").glob(
         "*.json"
     )
-    assert result.stderr.count("Vollständig:") == 1
+    assert result.stdout.count("Vollständig:") == 1
     assert (
         f"Vollständig: .local/handoff/preflight/{artifact.name}"
-        in result.stderr
+        in result.stdout
     )
 
 
@@ -316,8 +318,8 @@ def test_review_preflight_correction_failure_stops_before_checks(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
-    assert "bad-correction: FAIL" in result.stderr
-    assert "never-runs: OMITTED" in result.stderr
+    assert "bad-correction: FAIL" in result.stdout
+    assert "never-runs: OMITTED" in result.stdout
 
 
 def test_review_preflight_reports_passed_correction_after_check_fails(
@@ -334,8 +336,8 @@ def test_review_preflight_reports_passed_correction_after_check_fails(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
-    assert "good-correction: PASS" in result.stderr
-    assert "fails: FAIL" in result.stderr
+    assert "good-correction: PASS" in result.stdout
+    assert "fails: FAIL" in result.stdout
 
 
 def test_review_preflight_repair_hint_covers_fail_not_only_pass(
@@ -351,8 +353,8 @@ def test_review_preflight_repair_hint_covers_fail_not_only_pass(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
-    assert "PASS wie" in result.stderr
-    assert "FAIL" in result.stderr
+    assert "PASS wie" in result.stdout
+    assert "FAIL" in result.stdout
 
 
 def test_review_preflight_without_git_repository_succeeds(
@@ -391,8 +393,10 @@ def test_review_preflight_artifact_failure_without_traceback(
     # keine saubere Reparaturmeldung.
     assert type(result.exception) is SystemExit
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "Vorlauf-Ausführungsfehler" in result.stderr
+    assert result.stdout.startswith(
+        "Empfänger: Umsetzer (Vorlauf fehlgeschlagen)"
+    )
+    assert "Vorlauf-Ausführungsfehler" in result.stdout
 
 
 def test_review_without_preflight_config_exits_2(
@@ -676,10 +680,10 @@ def test_repair_finding_names_config_and_preflight_args_way_out(
     assert result.exit_code == 1
     assert (
         "Konfiguration: pyproject.toml [tool.ki-dev.handoff.preflight]"
-        in result.stderr
+        in result.stdout
     )
     hint = "Einmalig ergänzen: --preflight-args tests=ARGS"
-    assert hint in result.stderr
+    assert hint in result.stdout
 
 
 def test_repair_finding_after_correction_failure_has_no_hint(
@@ -695,8 +699,8 @@ def test_repair_finding_after_correction_failure_has_no_hint(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
-    assert "Konfiguration: pyproject.toml" in result.stderr
-    assert "Einmalig ergänzen" not in result.stderr
+    assert "Konfiguration: pyproject.toml" in result.stdout
+    assert "Einmalig ergänzen" not in result.stdout
 
 
 def test_former_check_args_option_is_gone(bd, tmp_path, monkeypatch):

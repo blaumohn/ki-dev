@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import copy
 import re
-import tomllib
 from functools import partial
-from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -25,7 +23,9 @@ from ki_dev.flow.model import (
     FlowError,
     parse_flow,
     reaching_final,
+    read_raw,
 )
+from ki_dev.flow.pattern import expand
 from ki_dev.flow.planning import (
     PlanningFlow,
     load_planning_flow,
@@ -37,7 +37,6 @@ from ki_dev.step.handoff import (
     render_handoff as _render_handoff,
 )
 
-FLAT = Path(__file__).parent / "fixtures" / "planning_flat.toml"
 FLOW = load_planning_flow()
 A = FLOW.flow
 END = A.final[0]
@@ -45,13 +44,13 @@ render_handoff = partial(_render_handoff, flow=FLOW)
 CLASSES = list(A.priority)
 # Ereignisse, mit denen ein Lauf vorankommt: Review besteht, Schreiber
 # ist fertig, Mensch nimmt an, neue Quelle ist importiert.
-PROGRESS = ("PASS", "done", "accept", "imported")
+PROGRESS = ("PASS", "done", "checks_passed", "accept", "imported")
 
 
 def _raw() -> dict:
-    """Flach ausgeschriebener Planungsablauf (gleich dem expandierten,
-    tests/test_flow_pattern.py): die Mutationen prüfen das Format."""
-    return tomllib.loads(FLAT.read_text(encoding="utf-8"))
+    """Expandierter Planungsablauf als Rohdaten: die Mutationen prüfen
+    das flache Format, das der Lader nach den Mustern prüft."""
+    return expand(read_raw("planning"), "planning.toml")
 
 
 def test_shipped_table_is_valid_and_complete():
@@ -109,6 +108,14 @@ def test_hint_inserts_bead_and_lists_every_transition():
 # --- ungültige Tabellen ---------------------------------------------
 
 
+def _edge(raw, source, event) -> tuple[int, dict]:
+    return next(
+        (index, t)
+        for index, t in enumerate(raw["transition"])
+        if (t["source"], t["event"]) == (source, event)
+    )
+
+
 def _drop_transition(raw, source, event):
     raw["transition"] = [
         t
@@ -149,7 +156,7 @@ def _mutations():
         raw["priority"] = ["fix", "source"]
 
     def duplicate_transition(raw):
-        raw["transition"].append(dict(raw["transition"][0]))
+        raw["transition"].append(dict(_edge(raw, "map", "done")[1]))
 
     def unknown_event(raw):
         raw["transition"][0]["event"] = "vielleicht"
@@ -168,9 +175,11 @@ def _mutations():
         raw["transition"][0]["cond"] = ["irgendwas"]
 
     def unguarded_before_guarded(raw):
-        guarded = dict(raw["transition"][0], cond=["irgendwas"])
-        raw["vocabulary"]["guards"] = ["irgendwas"]
-        raw["transition"].insert(1, guarded)
+        index, edge = _edge(raw, "map", "done")
+        raw["vocabulary"]["guards"].append("irgendwas")
+        raw["transition"].insert(
+            index + 1, dict(edge, cond=["irgendwas"])
+        )
 
     def history_outside_wait(raw):
         raw["transition"][0]["target"] = "@history"
@@ -197,7 +206,7 @@ def _mutations():
         (dead_end, "Sackgasse"),
         (extra_key, "$: additionalProperties"),
         (bad_verdict, "finding_class.fix.verdict: enum"),
-        (duplicate_state, "state.18.id: doppelt"),
+        (duplicate_state, ".id: doppelt (map)"),
         (precedence_mismatch, "priority: muss genau die Befundklassen"),
         (duplicate_transition, "doppelter Übergang map bei done"),
         (unknown_event, "unbekanntes Ereignis vielleicht"),
@@ -277,7 +286,6 @@ def test_unknown_class_or_event_is_visible():
         FLOW.hint_lines("nirgends", "x")
 
 
-
 def test_renderer_uses_the_flow_it_is_given():
     """Die Tabelle ist ausdrückliche Eingabe des Renderers: eine andere
     Tabelle ändert den Hinweis ohne globale Eingriffe."""
@@ -309,9 +317,7 @@ def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
         "read_issue",
         lambda *_: pytest.fail("Bead gelesen trotz ungültiger Tabelle"),
     )
-    monkeypatch.setattr(
-        step_cli, "load_base_max_chars", lambda _: 4000
-    )
+    monkeypatch.setattr(step_cli, "load_base_max_chars", lambda _: 4000)
     result = CliRunner().invoke(
         app, ["step", "x-1", "--step", "implement"]
     )

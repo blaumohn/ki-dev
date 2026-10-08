@@ -23,11 +23,17 @@ final = ["finished"]
 priority = ["decision", "source", "fix"]
 
 [vocabulary]
-kinds = ["write", "review", "correction", "decision", "source", "final"]
+kinds = [
+  "write", "review", "correction", "decision", "source", "machine", "final",
+]
 events = [
   "PASS", "done", "fix", "source", "decision",
-  "accept", "correct", "imported", "preflight_failed",
+  "accept", "correct", "imported",
+  "checks_passed", "checks_partial", "checks_failed",
 ]
+# full_checks: der letzte Vorlauf lief vollständig (kein Teillauf);
+# ohne ihn gibt es kein PASS.
+guards = ["full_checks"]
 
 # Pflichtereignisse je Zustandsart: jeder Zustand dieser Art muss sie
 # behandeln, sonst bleibt ein Ausgang einer Sitzung ohne Folge.
@@ -37,6 +43,7 @@ review = ["PASS", "fix", "source", "decision"]
 correction = ["done"]
 decision = ["accept", "correct", "source"]
 source = ["imported"]
+machine = ["checks_passed", "checks_partial", "checks_failed"]
 
 [finding_class.fix]
 verdict = "CHANGES"
@@ -53,29 +60,73 @@ text = "nur der Mensch kann entscheiden"
 # --- Muster: Schreiben, getrenntes Review, Korrektur, Entscheidung ----
 # Lokale Zustände: write heißt wie die Phase, die übrigen PHASE.LOKAL.
 # Kantenziele: lokaler Zustand, @next (nächste Phase) oder globals.
+# review_core trägt alles außer dem Weg ins Review und dem PASS; die
+# beiden Varianten unterscheiden sich genau darin (Muster statt Schalter).
 
-[pattern.write_review]
+[pattern.review_core]
 globals = ["source"]
 
-[[pattern.write_review.state]]
+[[pattern.review_core.state]]
 local = "write"
 kind = "write"
 
-[[pattern.write_review.state]]
+[[pattern.review_core.state]]
 local = "review"
 kind = "review"
 
-[[pattern.write_review.state]]
+[[pattern.review_core.state]]
 local = "correction"
 kind = "correction"
 
-[[pattern.write_review.state]]
+[[pattern.review_core.state]]
 local = "decision"
 kind = "decision"
 actor = "Mensch"
 
+[[pattern.review_core.transition]]
+source = "review"
+event = "fix"
+target = "correction"
+
+[[pattern.review_core.transition]]
+source = "review"
+event = "source"
+target = "source"
+hint = "offene Fragen in einer Planungssitzung klären"
+
+[[pattern.review_core.transition]]
+source = "review"
+event = "decision"
+target = "decision"
+hint = "du entscheidest: accept, correct oder source"
+
+[[pattern.review_core.transition]]
+source = "decision"
+event = "accept"
+target = "@next"
+
+[[pattern.review_core.transition]]
+source = "decision"
+event = "correct"
+target = "correction"
+
+[[pattern.review_core.transition]]
+source = "decision"
+event = "source"
+target = "source"
+hint = "Entscheidung in einer Planungssitzung festhalten"
+
+# Schreiben und Korrektur gehen direkt ins Review.
+[pattern.write_review]
+extends = "review_core"
+
 [[pattern.write_review.transition]]
 source = "write"
+event = "done"
+target = "review"
+
+[[pattern.write_review.transition]]
+source = "correction"
 event = "done"
 target = "review"
 
@@ -84,52 +135,49 @@ source = "review"
 event = "PASS"
 target = "@next"
 
-[[pattern.write_review.transition]]
-source = "review"
-event = "fix"
-target = "correction"
-
-[[pattern.write_review.transition]]
-source = "review"
-event = "source"
-target = "source"
-hint = "offene Fragen in einer Planungssitzung klären"
-
-[[pattern.write_review.transition]]
-source = "review"
-event = "decision"
-target = "decision"
-hint = "du entscheidest: accept, correct oder source"
-
-[[pattern.write_review.transition]]
-source = "correction"
-event = "done"
-target = "review"
-
-[[pattern.write_review.transition]]
-source = "decision"
-event = "accept"
-target = "@next"
-
-[[pattern.write_review.transition]]
-source = "decision"
-event = "correct"
-target = "correction"
-
-[[pattern.write_review.transition]]
-source = "decision"
-event = "source"
-target = "source"
-hint = "Entscheidung in einer Planungssitzung festhalten"
-
-# Umsetzung: zusätzlich der deterministische Vorlauf vor dem Review.
+# Umsetzung: vor jedem Review ein deterministischer Vorlauf (checks);
+# ein Teillauf erreicht das Review, aber kein PASS.
 [pattern.write_review_preflight]
-extends = "write_review"
+extends = "review_core"
+
+[[pattern.write_review_preflight.state]]
+local = "preflight"
+kind = "machine"
+actor = "ki-dev (Vorlauf: Korrekturen und Prüfungen)"
+
+[[pattern.write_review_preflight.transition]]
+source = "write"
+event = "done"
+target = "preflight"
 
 [[pattern.write_review_preflight.transition]]
 source = "correction"
-event = "preflight_failed"
+event = "done"
+target = "preflight"
+
+[[pattern.write_review_preflight.transition]]
+source = "preflight"
+event = "checks_passed"
+target = "review"
+hint = "Prüfbericht geht mit der Übergabe an das Review"
+
+[[pattern.write_review_preflight.transition]]
+source = "preflight"
+event = "checks_partial"
+target = "review"
+hint = "Teillauf: Review mit Bericht, aber ohne PASS"
+
+[[pattern.write_review_preflight.transition]]
+source = "preflight"
+event = "checks_failed"
 target = "correction"
+hint = "Exit 1: Reparaturnachricht an den Umsetzer (implementer)"
+
+[[pattern.write_review_preflight.transition]]
+source = "review"
+event = "PASS"
+cond = ["full_checks"]
+target = "@next"
 
 # --- Phasen -----------------------------------------------------------
 
@@ -224,7 +272,6 @@ fix = "Befunde an den Umsetzer (implementer) (bisherige Sitzung)"
 
 [phase.hint.correction]
 done = "`ki-dev step {bead} --step review --next-turn` (Vorlauf, optional `--feedback-file DATEI|-`)"
-preflight_failed = "Exit 1 von --next-turn: Nachricht an den Umsetzer (implementer)"
 
 [phase.hint.decision]
 accept = "Entscheidung im Bead festhalten (kein PASS); Schließen entscheidest du"

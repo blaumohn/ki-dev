@@ -30,6 +30,32 @@ class PlanningFlow:
     def outgoing(self, state: str) -> tuple[Transition, ...]:
         return self.flow.outgoing(state)
 
+    def target_after(
+        self,
+        state: str,
+        event: str,
+        facts: frozenset[str] = frozenset(),
+    ) -> str:
+        """Ziel der ersten Kante (state, event), deren Wächter nach
+        ``facts`` gelten (benannte Tatsachen, ``!`` verneint)."""
+        for transition in self.flow.candidates(state, event):
+            if _holds(transition.cond, facts):
+                return transition.target
+        raise FlowError(f"keine Kante {state} --{event}-->")
+
+    def allows(
+        self,
+        state: str,
+        event: str,
+        facts: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Ob ``event`` in ``state`` bei diesen Tatsachen erlaubt
+        ist."""
+        return any(
+            _holds(t.cond, facts)
+            for t in self.flow.candidates(state, event)
+        )
+
     def hint_lines(
         self,
         state: str,
@@ -66,6 +92,13 @@ class PlanningFlow:
             f"stärksten Klasse ({' > '.join(self.flow.priority)}), "
             "ohne Befund PASS.",
         ]
+
+
+def _holds(cond: Iterable[str], facts: frozenset[str]) -> bool:
+    return all(
+        (name.removeprefix("!") in facts) != name.startswith("!")
+        for name in cond
+    )
 
 
 def load_planning_flow() -> PlanningFlow:

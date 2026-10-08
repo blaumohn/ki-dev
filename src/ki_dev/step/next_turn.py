@@ -19,6 +19,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from ki_dev.config_sources import ConfigSource
+from ki_dev.flow.model import PASS
 from ki_dev.flow.planning import NAME, PlanningFlow
 from ki_dev.flow.templates import render, text
 from ki_dev.step.contract import NONEMPTY_TEXT_SCHEMA, ReviewTarget
@@ -220,7 +221,7 @@ def render_review_turn(
             bead=_bead(issue),
             focus=text(NAME, f"again-{target.value}"),
             rules=text(NAME, "review-rules"),
-            verdict=_verdict(report),
+            verdict=_verdict(flow, target, report),
         )
     ]
     if report is not None:
@@ -231,11 +232,24 @@ def render_review_turn(
     return "\n".join(lines) + "\n"
 
 
-def _verdict(report: PreflightReport | None) -> str:
-    """Ein Teillauf trägt keinen PASS (PARTIAL_RUN_NOTE im Bericht)."""
+def checks_facts(report: PreflightReport | None) -> frozenset[str]:
+    """Tatsachen für die Wächter des Planungsablaufs: ``full_checks``,
+    wenn kein Teillauf vorliegt."""
     if report is not None and report.partial:
-        return text(NAME, "verdict-partial")
-    return text(NAME, "verdict")
+        return frozenset()
+    return frozenset({"full_checks"})
+
+
+def _verdict(
+    flow: PlanningFlow,
+    target: ReviewTarget,
+    report: PreflightReport | None,
+) -> str:
+    """Erlaubt der Ablauf hier PASS (Wächter ``full_checks``)?"""
+    state = f"{target.value}.review"
+    if flow.allows(state, PASS, checks_facts(report)):
+        return text(NAME, "verdict")
+    return text(NAME, "verdict-partial")
 
 
 def render_repair_turn(

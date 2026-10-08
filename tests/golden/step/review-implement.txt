@@ -45,10 +45,10 @@ Nenne je Befund seine Klasse; das Urteil folgt der stärksten Klasse (decision >
 requirement_ref: AC1 (nummerierte Zeilen „N.“ in acceptance_criteria; ohne Nummerierung das ganze Feld).
 
 Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
-- PASS → finished: Schließen entscheidest du (`bd close x-1`)
 - fix → implement.correction: Befunde an den Umsetzer (implementer) (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → implement.decision: du entscheidest: accept, correct oder source
+- PASS → finished: Schließen entscheidest du (`bd close x-1`)
 PRUEFBERICHT vorlauf-start=<ZEIT>
 - tests: PASS 1 [argv=<PY> -c 'print(1)']
 Vollständig: .local/handoff/preflight/<STEMPEL>.json

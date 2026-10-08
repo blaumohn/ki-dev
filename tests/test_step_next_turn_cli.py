@@ -268,15 +268,17 @@ def test_explicit_review_of_build_matches_default(
     assert "Reviewziel: implement" in explicit.stdout
 
 
-def test_without_next_turn_failure_keeps_empty_stdout(
+def test_without_next_turn_failure_sends_repair_message(
     bd, tmp_path, monkeypatch
 ):
     _project(tmp_path, monkeypatch, check=_command("tests", FAIL))
     write_guidelines(tmp_path)
     result = runner.invoke(app, ["step", "x-1", "--step", "review"])
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "Vorlauf ohne Review-Übergabe" in result.stderr
+    assert result.stdout.startswith(
+        "Empfänger: Umsetzer (Vorlauf fehlgeschlagen)"
+    )
+    assert "Vorlauf ohne Review-Übergabe" in result.stdout
 
 
 # ---------------------------------------------------------------------

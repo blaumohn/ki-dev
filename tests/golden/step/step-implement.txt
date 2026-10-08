@@ -21,7 +21,7 @@ keine allgemeinen ADR-Sammlungen, um den Auftrag zu
 rekonstruieren; melde konkrete Vertragslücken zurück.
 
 Hinweis für den Menschen: Zustand implement; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
-- done → implement.review: `ki-dev step x-1 --step review` (mit Vorlauf)
+- done → implement.preflight: `ki-dev step x-1 --step review` (mit Vorlauf)
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt

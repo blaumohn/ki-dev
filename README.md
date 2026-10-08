@@ -203,44 +203,47 @@ stateDiagram-v2
     state "implement.review" as implement_review
     state "implement.correction" as implement_correction
     state "implement.decision" as implement_decision
+    state "implement.preflight" as implement_preflight
     [*] --> map
-    map --> map_review: done
-    map_review --> graph: PASS
     map_review --> map_correction: fix
     map_review --> source: source
     map_review --> map_decision: decision
-    map_correction --> map_review: done
     map_decision --> graph: accept
     map_decision --> map_correction: correct
     map_decision --> source: source
-    graph --> graph_review: done
-    graph_review --> materialize: PASS
+    map --> map_review: done
+    map_correction --> map_review: done
+    map_review --> graph: PASS
     graph_review --> graph_correction: fix
     graph_review --> source: source
     graph_review --> graph_decision: decision
-    graph_correction --> graph_review: done
     graph_decision --> materialize: accept
     graph_decision --> graph_correction: correct
     graph_decision --> source: source
-    materialize --> materialize_review: done
-    materialize_review --> implement: PASS
+    graph --> graph_review: done
+    graph_correction --> graph_review: done
+    graph_review --> materialize: PASS
     materialize_review --> materialize_correction: fix
     materialize_review --> source: source
     materialize_review --> materialize_decision: decision
-    materialize_correction --> materialize_review: done
     materialize_decision --> implement: accept
     materialize_decision --> materialize_correction: correct
     materialize_decision --> source: source
-    implement --> implement_review: done
-    implement_review --> finished: PASS
+    materialize --> materialize_review: done
+    materialize_correction --> materialize_review: done
+    materialize_review --> implement: PASS
     implement_review --> implement_correction: fix
     implement_review --> source: source
     implement_review --> implement_decision: decision
-    implement_correction --> implement_review: done
     implement_decision --> finished: accept
     implement_decision --> implement_correction: correct
     implement_decision --> source: source
-    implement_correction --> implement_correction: preflight_failed
+    implement --> implement_preflight: done
+    implement_correction --> implement_preflight: done
+    implement_preflight --> implement_review: checks_passed
+    implement_preflight --> implement_review: checks_partial
+    implement_preflight --> implement_correction: checks_failed
+    implement_review --> finished: PASS [full_checks]
     source --> map: imported
     finished --> [*]
 ```

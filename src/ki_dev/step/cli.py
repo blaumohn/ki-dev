@@ -5,7 +5,7 @@ from __future__ import annotations
 import shlex
 import sys
 from pathlib import Path
-from typing import Annotated, BinaryIO, NamedTuple, NoReturn
+from typing import Annotated, BinaryIO, NamedTuple, NoReturn, cast
 
 import typer
 
@@ -86,6 +86,7 @@ from ki_dev.step.preflight_options import (
 )
 from ki_dev.step.source import HandoffSourceError
 
+_PREFLIGHT_STATE = "implement.preflight"
 MAP_WORD = "map"
 LOCAL_WORD = "local"
 _MAP_KEPT_NOTE = (
@@ -437,10 +438,9 @@ def _bead_output(
     issue = read_issue(bead_id, Path.cwd())
     if step is Step.REVIEW:
         guidelines = _selected_guidelines(step, review_of)
-        text = _review_handoff(
+        return _review_handoff(
             issue, review_of, extra, guidelines, limit, flow
         )
-        return text, 0
     guidelines = _selected_guidelines(step, None)
     text = render_handoff(
         issue,
@@ -551,15 +551,16 @@ def _review_handoff(
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
     flow: PlanningFlow,
-) -> str:
-    """Übergabe für ``--step review``.
+) -> tuple[str, int]:
+    """Übergabe für ``--step review`` und ihr Exitcode.
 
     Nur für den (Standard- oder ausdrücklichen) Prüfgegenstand implement
-    läuft der deterministische Vorlauf aus handoff_preflight: Bead und
-    Konfiguration werden vollständig validiert, bevor der erste
-    Korrekturbefehl läuft (kein Schreibeffekt vor dieser Prüfung); ein
-    Prüf-/Ausführungsfehler bricht mit Exit 1 und einem kurzen
-    Reparaturbefund ab, statt eine Übergabe zu liefern. Für
+    läuft der deterministische Vorlauf (Zustand implement.preflight):
+    Bead und Konfiguration werden vollständig validiert, bevor der
+    erste Korrekturbefehl läuft (kein Schreibeffekt vor dieser
+    Prüfung). Die Kante aus implement.preflight wählt die Nachricht:
+    Review-Übergabe oder, bei checks_failed, die Reparaturnachricht an
+    den Umsetzer (Exit 1). Für
     map/graph/materialize ist das Review eine reine Quellenprüfung:
     kein Vorlauf, keine Vorlauf-Konfiguration, keine Prozessaufrufe.
     Die Basisgrenze wird vor dem Vorlauf geprüft, denn Korrekturen
@@ -573,7 +574,7 @@ def _review_handoff(
             guidelines,
             base_max_chars=base_max_chars,
             flow=flow,
-        )
+        ), 0
     problems = validate_handoff(issue, Step.REVIEW, review_of)
     if problems:
         raise HandoffInvalidError(problems)
@@ -581,11 +582,17 @@ def _review_handoff(
         issue, Step.REVIEW, review_of, base_max_chars, flow=flow
     )
     outcome = _preflight_outcome(extra)
-    if outcome.failure is not None:
-        _fail(outcome.failure, code=1)
+    if _goes_to_correction(flow, outcome):
+        limit = load_feedback_max_chars(Path.cwd())
+        return render_repair_turn(
+            issue, cast(str, outcome.failure), limit, None, flow=flow
+        ), 1
     return render_review_handoff(
-        issue, outcome.report, guidelines, flow=flow
-    )
+        issue,
+        cast(PreflightReport, outcome.report),
+        guidelines,
+        flow=flow,
+    ), 0
 
 
 class _PreflightOutcome(NamedTuple):
@@ -594,6 +601,24 @@ class _PreflightOutcome(NamedTuple):
 
     report: PreflightReport | None
     failure: str | None
+
+    @property
+    def event(self) -> str:
+        """Ereignis des Zustands implement.preflight."""
+        if self.failure is not None:
+            return "checks_failed"
+        if cast(PreflightReport, self.report).partial:
+            return "checks_partial"
+        return "checks_passed"
+
+
+def _goes_to_correction(
+    flow: PlanningFlow, outcome: _PreflightOutcome
+) -> bool:
+    """Die Kante aus implement.preflight entscheidet: Review oder
+    Korrektur (Reparaturnachricht, Exit 1)."""
+    target = flow.target_after(_PREFLIGHT_STATE, outcome.event)
+    return flow.flow.state(target).kind == "correction"
 
 
 def _preflight_outcome(
@@ -649,9 +674,13 @@ def _next_turn_handoff(
         )
         return text, 0
     outcome = _preflight_outcome(extra)
-    if outcome.failure is not None:
+    if _goes_to_correction(flow, outcome):
         return render_repair_turn(
-            issue, outcome.failure, limit, feedback, flow=flow
+            issue,
+            cast(str, outcome.failure),
+            limit,
+            feedback,
+            flow=flow,
         ), 1
     text = render_review_turn(
         issue, target, outcome.report, feedback, flow=flow
