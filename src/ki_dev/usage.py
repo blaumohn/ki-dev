@@ -33,12 +33,7 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from ki_dev.adapter.executors.claude_cli import (
-    CLI_VERSION as _CLAUDE_CLI_VERSION,
-)
-from ki_dev.adapter.executors.codex_cli import (
-    CLI_VERSION as _CODEX_CLI_VERSION,
-)
+from ki_dev.tool_versions import load_tool_versions
 
 
 class UsageStatus(StrEnum):
@@ -243,9 +238,10 @@ def _describe_invalid(value: object) -> str:
 
 # Der gemeinsame Versionsstand begrenzt die unterstuetzten Formate.
 # Andere ausgefuehrte Versionen liefern weiterhin nur PARTIAL.
+_TOOL_VERSIONS = load_tool_versions()
 _KNOWN_SUPPORTED_VERSIONS: dict[str, frozenset[str]] = {
-    "claude": frozenset({_CLAUDE_CLI_VERSION}),
-    "codex": frozenset({_CODEX_CLI_VERSION}),
+    "claude": frozenset({_TOOL_VERSIONS["CLAUDE_VERSION"]}),
+    "codex": frozenset({_TOOL_VERSIONS["CODEX_VERSION"]}),
 }
 
 

@@ -24,14 +24,6 @@ from dataclasses import dataclass, field
 from typing import BinaryIO
 
 from ki_dev.flow.planning import PlanningFlow
-from ki_dev.preflight_options import (
-    ARGS_OPTION,
-    SKIP_OPTION,
-    PreflightOptionError,
-    apply_preflight_options,
-    parse_preflight_args,
-    parse_preflight_skip,
-)
 from ki_dev.review_decision import (
     STEP_ACTIONS,
     ReviewAction,
@@ -41,13 +33,18 @@ from ki_dev.review_decision import (
     load_json_object,
     parse_verdict,
 )
-from ki_dev.step.handoff import (
-    HandoffIssue,
-    criteria_with_refs,
-    one_line,
-)
+from ki_dev.step.contract import one_line
+from ki_dev.step.handoff import HandoffIssue, criteria_with_refs
 from ki_dev.step.next_turn import read_bounded_text
 from ki_dev.step.preflight import PreflightConfig
+from ki_dev.step.preflight_options import (
+    ARGS_OPTION,
+    SKIP_OPTION,
+    PreflightOptionError,
+    apply_preflight_options,
+    parse_preflight_args,
+    parse_preflight_skip,
+)
 
 # Obergrenze der eingelesenen Antwort (Zeichen); nie gekürzt.
 DECISION_MAX_CHARS = 20000

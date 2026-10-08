@@ -11,13 +11,9 @@ import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-if TYPE_CHECKING:
-    # Nur fuer Typpruefung: ``ki_dev.usage`` importiert seinerseits
-    # ueber die Adapter zurueck auf dieses Modul (Versionskonstanten),
-    # ein Modulimport hier wuerde einen Zyklus schliessen.
-    from ki_dev.usage import UsageEvent
+from ki_dev.usage import UsageEvent
 
 
 class Effort(StrEnum):

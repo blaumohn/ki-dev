@@ -3,8 +3,8 @@ import json
 import pytest
 from plumbum import local
 
-from ki_dev import beads_reader
-from ki_dev.beads_reader import (
+from ki_dev.step import beads_reader
+from ki_dev.step.beads_reader import (
     BeadsReadError,
     InvalidBeadIdError,
     read_issue,

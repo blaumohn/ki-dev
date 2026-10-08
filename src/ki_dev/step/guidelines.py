@@ -8,12 +8,18 @@ benannte Referenzprüfung).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from jsonschema import Draft202012Validator, ValidationError
 
-from ki_dev.step.handoff import NONEMPTY_TEXT_SCHEMA, ReviewTarget, Step
+from ki_dev.step.contract import (
+    NONEMPTY_TEXT_SCHEMA,
+    ReviewTarget,
+    Step,
+    one_line,
+)
 
 
 @dataclass(frozen=True)
@@ -278,3 +284,30 @@ def _render_document(document: GuidelineDocument) -> str:
     )
     body = "\n\n".join(text for _, text in document.sections)
     return f"{header}\n{body}\n"
+
+
+def render_guideline_block(
+    guidelines: Sequence[GuidelineSection],
+) -> str:
+    """Gesonderter Kontextblock nach allen Basisteilen; leer ohne
+    Abschnitte. Regeltexte bleiben unverändert (Markdown,
+    Zeilenumbrüche) und werden weder gekürzt noch zur Basis gezählt."""
+    if not guidelines:
+        return ""
+    lines = ["", *_GUIDELINE_INTRO]
+    for section in guidelines:
+        lines += [
+            "",
+            f"--- {one_line(section.source)}#"
+            f"{one_line(section.id)} ---",
+            section.text,
+        ]
+    return "\n".join(lines) + "\n"
+
+
+_GUIDELINE_INTRO = (
+    "LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)",
+    "Diese Regeltexte gelten für diesen Schritt. Wende sie direkt",
+    "an; lies ihre Quelldokumente dafür nicht erneut vollständig.",
+    "Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.",
+)

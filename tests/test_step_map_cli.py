@@ -3,8 +3,8 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from ki_dev import beads_source
 from ki_dev.cli import app
+from ki_dev.step import beads_source
 from tests import claude_session_fixtures as claude
 from tests.codex_session_fixtures import (
     SECRET,

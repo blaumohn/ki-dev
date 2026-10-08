@@ -12,7 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
-from ki_dev.preflight_options import (
+from ki_dev.step.preflight_options import (
     parse_preflight_args,
     parse_preflight_skip,
 )

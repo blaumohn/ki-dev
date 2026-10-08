@@ -6,7 +6,7 @@ from ki_dev.adapter.contract import (
     RunTask,
 )
 from ki_dev.run_store import RunStore
-from ki_dev.session_handoff import build_handoff
+from ki_dev.runner.session_handoff import build_handoff
 
 
 def _task() -> RunTask:

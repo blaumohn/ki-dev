@@ -38,13 +38,12 @@ from plumbum.machines.local import LocalCommand
 
 from ki_dev.config_sources import ConfigSource
 from ki_dev.flow.planning import PlanningFlow
-from ki_dev.step.guidelines import GuidelineSection
-from ki_dev.step.handoff import (
-    HandoffIssue,
-    Step,
-    render_base_handoff,
+from ki_dev.step.contract import Step
+from ki_dev.step.guidelines import (
+    GuidelineSection,
     render_guideline_block,
 )
+from ki_dev.step.handoff import HandoffIssue, render_base_handoff
 
 ARTIFACT_DIR = Path(".local/handoff/preflight")
 

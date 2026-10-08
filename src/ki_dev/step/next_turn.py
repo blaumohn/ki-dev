@@ -20,11 +20,8 @@ from jsonschema.exceptions import ValidationError
 
 from ki_dev.config_sources import ConfigSource
 from ki_dev.flow.planning import PlanningFlow
-from ki_dev.step.handoff import (
-    NONEMPTY_TEXT_SCHEMA,
-    HandoffIssue,
-    ReviewTarget,
-)
+from ki_dev.step.contract import NONEMPTY_TEXT_SCHEMA, ReviewTarget
+from ki_dev.step.handoff import HandoffIssue
 from ki_dev.step.preflight import (
     CONFIG_FILE,
     PreflightConfigError,

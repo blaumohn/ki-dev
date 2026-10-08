@@ -30,12 +30,8 @@ from ki_dev.flow.planning import (
     load_planning_flow,
 )
 from ki_dev.step import cli as step_cli
-from ki_dev.step.handoff import (
-    HandoffIssue,
-    ReviewTarget,
-    Step,
-    flow_state,
-)
+from ki_dev.step.contract import ReviewTarget, Step
+from ki_dev.step.handoff import HandoffIssue, flow_state
 from ki_dev.step.handoff import (
     render_handoff as _render_handoff,
 )

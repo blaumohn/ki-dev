@@ -10,6 +10,11 @@ Umweg über ein Hilfsmodul ist ebenso eine Abhängigkeit.
   transportiert Eingabe und formale Ausgabe, mehr nicht.
 - ``ki_dev.step`` projiziert den Planungsablauf auf einen Übergang und
   nutzt dafür Ablauf und Adapter, aber keinen Ausführer.
+- Kernmodule außerhalb der Schichten (Deltas, Verbrauch, Nachweise)
+  kennen weder Ausführer noch ``step`` noch die Kommandozeile; ein
+  Modul, das nur eine Schicht nutzt, liegt in dieser Schicht.
+- Kein Importzyklus, auch nicht über ``TYPE_CHECKING`` oder lokale
+  Importe (die AST-Analyse sieht beide).
 """
 
 from __future__ import annotations
@@ -111,3 +116,41 @@ def test_parked_packages_are_not_wired_yet(parked):
         and any(target.startswith(parked) for target in _direct(module))
     )
     assert users == []
+
+
+_LAYERS = (
+    "ki_dev.runner",
+    "ki_dev.step",
+    "ki_dev.flow",
+    "ki_dev.adapter",
+    "ki_dev.pilot",
+    "ki_dev.safety_profile",
+    "ki_dev.beads_journal",
+)
+_TOP = {"ki_dev", "ki_dev.cli", "ki_dev.config_cli"}
+_UPPER = (
+    "ki_dev.runner",
+    "ki_dev.step",
+    "ki_dev.cli",
+    "ki_dev.config_cli",
+)
+
+
+def test_core_modules_never_import_runner_step_or_cli():
+    core = [
+        m
+        for m in MODULES
+        if not m.startswith(_LAYERS) and m not in _TOP
+    ]
+    violations = {
+        module: sorted(
+            t for t in _closure(module) if t.startswith(_UPPER)
+        )
+        for module in core
+    }
+    assert {m: v for m, v in violations.items() if v} == {}
+
+
+def test_no_import_cycles():
+    """Ein Modul erreicht sich über seine Importe nie selbst."""
+    assert sorted(m for m in MODULES if m in _closure(m)) == []

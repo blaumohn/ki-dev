@@ -9,6 +9,11 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
+from ki_dev.usage import (
+    normalize_claude_cli_result,
+    normalize_codex_turn_usage,
+)
+
 from .claude_sessions import find_claude_sessions
 from .codex_sessions import find_session_rollout
 from .contract import TurnResult, TurnStatus
@@ -80,11 +85,6 @@ def _claude_usage_event(
 ):
     if usage is None:
         return None
-    # Lokaler Import: ``ki_dev.usage`` importiert ueber die Adapter
-    # zurueck auf dieses Modul (Versionskonstanten); ein Modulimport
-    # auf Dateiebene wuerde einen Ringimport schliessen.
-    from ki_dev.usage import normalize_claude_cli_result
-
     return normalize_claude_cli_result(
         usage, cli_version=cli_version, session_id=session_id
     )
@@ -219,14 +219,10 @@ def _codex_failure_result(
 def _codex_usage_event(
     source, session_id: str | None, cli_version: str | None
 ):
-    # Lokaler Import: ``ki_dev.usage`` importiert ueber die Adapter
-    # zurueck auf dieses Modul (Versionskonstanten); ein Modulimport
-    # auf Dateiebene wuerde einen Ringimport schliessen. Bewusst die
-    # rohe, noch nicht um Cache bereinigte Quelle -- der Messvertrag
-    # erwartet Codex' Rohfeldschema (``input_tokens`` inkl. Cache),
-    # nicht das hiesige, bereits umgerechnete ``usage``-Schema.
-    from ki_dev.usage import normalize_codex_turn_usage
-
+    # Bewusst die rohe, noch nicht um Cache bereinigte Quelle -- der
+    # Messvertrag erwartet Codex' Rohfeldschema (``input_tokens``
+    # inkl. Cache), nicht das hiesige, bereits umgerechnete
+    # ``usage``-Schema.
     return normalize_codex_turn_usage(
         source, cli_version=cli_version, session_id=session_id
     )

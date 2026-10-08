@@ -6,7 +6,8 @@ from functools import partial
 import pytest
 
 from ki_dev.flow.planning import load_planning_flow
-from ki_dev.step.handoff import HandoffIssue, ReviewTarget
+from ki_dev.step.contract import ReviewTarget
+from ki_dev.step.handoff import HandoffIssue
 from ki_dev.step.next_turn import (
     DEFAULT_FEEDBACK_MAX_CHARS as DEFAULT_MAX,
 )

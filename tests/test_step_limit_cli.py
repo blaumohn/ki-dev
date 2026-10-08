@@ -10,9 +10,12 @@ from typer.testing import CliRunner
 
 from ki_dev.cli import app
 from ki_dev.step.cli import HELP
-from ki_dev.step.guidelines import select_guidelines
+from ki_dev.step.contract import Step
+from ki_dev.step.guidelines import (
+    render_guideline_block,
+    select_guidelines,
+)
 from ki_dev.step.guidelines_source import load_guidelines
-from ki_dev.step.handoff import Step, render_guideline_block
 from ki_dev.step.limit import MAX_DIAGNOSIS_CHARS
 from tests.codex_session_fixtures import (
     SECRET,

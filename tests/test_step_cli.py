@@ -7,12 +7,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ki_dev import (
-    beads_reader,
-)
 from ki_dev.cli import app
-from ki_dev.step import preflight
-from ki_dev.step.handoff import Step
+from ki_dev.step import beads_reader, preflight
+from ki_dev.step.contract import Step
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
 

@@ -1,7 +1,7 @@
 import pytest
 
-from ki_dev import beads_source
-from ki_dev.beads_source import (
+from ki_dev.step import beads_source
+from ki_dev.step.beads_source import (
     BeadsSourceError,
     SourceBead,
     ensure_source_bead,

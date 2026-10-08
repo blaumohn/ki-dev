@@ -13,15 +13,15 @@ from ki_dev.adapter.executors.session_transcript import (
     SessionTranscript,
 )
 from ki_dev.adapter.executors.transcript import read_session_transcript
-from ki_dev.beads_reader import read_issue
-from ki_dev.beads_source import SourceBead, ensure_source_bead
 from ki_dev.flow.planning import PlanningFlow
-from ki_dev.step.guidelines import GuidelineSection
-from ki_dev.step.handoff import (
-    Step,
-    render_base_handoff,
+from ki_dev.step.beads_reader import read_issue
+from ki_dev.step.beads_source import SourceBead, ensure_source_bead
+from ki_dev.step.contract import Step
+from ki_dev.step.guidelines import (
+    GuidelineSection,
     render_guideline_block,
 )
+from ki_dev.step.handoff import render_base_handoff
 from ki_dev.step.source import (
     HandoffSourceError,
     accepted_refs,

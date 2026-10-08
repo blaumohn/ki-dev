@@ -14,12 +14,6 @@ from plumbum import local
 from plumbum.machines.local import LocalMachine
 
 from ki_dev.flow.planning import load_planning_flow
-from ki_dev.preflight_options import (
-    PreflightOptionError,
-    apply_preflight_options,
-    parse_preflight_args,
-    parse_preflight_skip,
-)
 from ki_dev.step.handoff import HandoffIssue
 from ki_dev.step.preflight import (
     ADDED_MARKER,
@@ -37,6 +31,12 @@ from ki_dev.step.preflight import (
 )
 from ki_dev.step.preflight import (
     render_review_handoff as _render_review_handoff,
+)
+from ki_dev.step.preflight_options import (
+    PreflightOptionError,
+    apply_preflight_options,
+    parse_preflight_args,
+    parse_preflight_skip,
 )
 
 FLOW = load_planning_flow()

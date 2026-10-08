@@ -99,7 +99,7 @@ from ki_dev.runner.safety import (
     SafetyStop,
     stagnation_reason,
 )
-from ki_dev.session_handoff import build_handoff
+from ki_dev.runner.session_handoff import build_handoff
 from ki_dev.usage import UsageStatus
 from ki_dev.usage_accounting import UsageAttribution, UsagePurpose
 

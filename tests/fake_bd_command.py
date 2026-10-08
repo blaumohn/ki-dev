@@ -98,7 +98,7 @@ class BdScript:
         self.script.write_text("#!/nicht/vorhanden/python\n" + text)
 
     def install(self, monkeypatch) -> None:
-        from ki_dev import beads_reader
+        from ki_dev.step import beads_reader
 
         # Plumbum sucht über sein beim Import erfasstes PATH; darum
         # den Adapter ausdrücklich auf das Skript zeigen lassen.

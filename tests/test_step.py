@@ -3,11 +3,10 @@ from functools import partial
 import pytest
 
 from ki_dev.flow.planning import load_planning_flow
+from ki_dev.step.contract import ReviewTarget, Step
 from ki_dev.step.handoff import (
     HandoffInvalidError,
     HandoffIssue,
-    ReviewTarget,
-    Step,
     validate_handoff,
 )
 from ki_dev.step.handoff import (
@@ -161,7 +160,8 @@ def test_core_imports_no_cli_or_process_modules():
 
     code = (
         "import sys, ki_dev.step.handoff;"
-        "bad = {'typer', 'rich', 'subprocess', 'ki_dev.beads_reader'};"
+        "bad = {'typer', 'rich', 'subprocess',"
+        " 'ki_dev.step.beads_reader'};"
         "sys.exit(int(bool(bad & set(sys.modules))))"
     )
     assert subprocess.run([sys.executable, "-c", code]).returncode == 0

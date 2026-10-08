@@ -14,21 +14,16 @@ from ki_dev.adapter.executors.session_transcript import (
     TranscriptRequestError,
 )
 from ki_dev.adapter.executors.transcript import validate_session_request
-from ki_dev.beads_reader import (
+from ki_dev.flow.model import FlowError
+from ki_dev.flow.planning import PlanningFlow, load_planning_flow
+from ki_dev.session_snapshot import SnapshotTitleError, validate_title
+from ki_dev.step.beads_reader import (
     BeadsReadError,
     InvalidBeadIdError,
     read_issue,
 )
-from ki_dev.beads_source import BeadsSourceError
-from ki_dev.flow.model import FlowError
-from ki_dev.flow.planning import PlanningFlow, load_planning_flow
-from ki_dev.preflight_options import (
-    PreflightOptionError,
-    apply_preflight_options,
-    parse_preflight_args,
-    parse_preflight_skip,
-)
-from ki_dev.session_snapshot import SnapshotTitleError, validate_title
+from ki_dev.step.beads_source import BeadsSourceError
+from ki_dev.step.contract import ReviewTarget, Step
 from ki_dev.step.decision import (
     DecisionInputError,
     parse_step_decision,
@@ -49,8 +44,6 @@ from ki_dev.step.guidelines_source import (
 from ki_dev.step.handoff import (
     HandoffInvalidError,
     HandoffIssue,
-    ReviewTarget,
-    Step,
     ensure_base_fits,
     render_handoff,
     validate_handoff,
@@ -84,6 +77,12 @@ from ki_dev.step.preflight import (
     render_review_handoff,
     report_name,
     run_preflight,
+)
+from ki_dev.step.preflight_options import (
+    PreflightOptionError,
+    apply_preflight_options,
+    parse_preflight_args,
+    parse_preflight_skip,
 )
 from ki_dev.step.source import HandoffSourceError
 

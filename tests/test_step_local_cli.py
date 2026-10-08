@@ -7,11 +7,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ki_dev import beads_reader
 from ki_dev.cli import app
 from ki_dev.flow.planning import load_planning_flow
+from ki_dev.step import beads_reader
+from ki_dev.step.contract import Step
 from ki_dev.step.guidelines import GUIDELINE_SOURCES
-from ki_dev.step.handoff import HandoffIssue, Step
+from ki_dev.step.handoff import HandoffIssue
 from ki_dev.step.handoff import (
     render_base_handoff as _render_base_handoff,
 )

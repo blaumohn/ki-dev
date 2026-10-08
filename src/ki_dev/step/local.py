@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ki_dev.step.guidelines import GuidelineSection
-from ki_dev.step.handoff import render_guideline_block
+from ki_dev.step.guidelines import (
+    GuidelineSection,
+    render_guideline_block,
+)
 from ki_dev.step.limit import check_base_length
 
 _LOCAL_BASE = (

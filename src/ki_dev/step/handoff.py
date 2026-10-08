@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import StrEnum
-from typing import TYPE_CHECKING
 
 from jsonschema import Draft202012Validator
 
@@ -15,32 +13,17 @@ from ki_dev.review_decision import (
     criterion_refs,
     split_acceptance_criteria,
 )
+from ki_dev.step.contract import (
+    NONEMPTY_TEXT_SCHEMA,
+    ReviewTarget,
+    Step,
+    one_line,
+)
+from ki_dev.step.guidelines import (
+    GuidelineSection,
+    render_guideline_block,
+)
 from ki_dev.step.limit import check_base_length
-
-if TYPE_CHECKING:
-    from ki_dev.step.guidelines import GuidelineSection
-
-
-class Step(StrEnum):
-    MAP = "map"
-    GRAPH = "graph"
-    MATERIALIZE = "materialize"
-    IMPLEMENT = "implement"
-    REVIEW = "review"
-
-
-class ReviewTarget(StrEnum):
-    """Prüfgegenstand von ``Step.REVIEW``; nur dieser wertet es aus.
-
-    Fehlt ``review_target`` bei ``Step.REVIEW``, bleibt das
-    Verhalten die bisherige Umsetzungs-Review (Rückwärtskompatibilität
-    von ``--step review`` ohne ``--review-of``).
-    """
-
-    MAP = "map"
-    GRAPH = "graph"
-    MATERIALIZE = "materialize"
-    IMPLEMENT = "implement"
 
 
 @dataclass(frozen=True)
@@ -100,12 +83,6 @@ def _needs_contract(
 # einmal je Regel definiert und wiederverwendet). metadata/handoff
 # bleiben rein deklarativ: source_refs ist eine nichtleere Liste
 # nichtleerer Texte, unabhängig vom internen HandoffIssue-Feldnamen.
-NONEMPTY_TEXT_SCHEMA = {
-    "type": "string",
-    "minLength": 1,
-    "pattern": r"\S",
-}
-
 _SOURCE_REFS_SCHEMA = {
     "type": "array",
     "minItems": 1,
@@ -418,25 +395,6 @@ def _variable_fields(
     return fields
 
 
-def render_guideline_block(
-    guidelines: Sequence[GuidelineSection],
-) -> str:
-    """Gesonderter Kontextblock nach allen Basisteilen; leer ohne
-    Abschnitte. Regeltexte bleiben unverändert (Markdown,
-    Zeilenumbrüche) und werden weder gekürzt noch zur Basis gezählt."""
-    if not guidelines:
-        return ""
-    lines = ["", *_GUIDELINE_INTRO]
-    for section in guidelines:
-        lines += [
-            "",
-            f"--- {one_line(section.source)}#"
-            f"{one_line(section.id)} ---",
-            section.text,
-        ]
-    return "\n".join(lines) + "\n"
-
-
 def _roles(
     step: Step, review_target: ReviewTarget | None, flow: PlanningFlow
 ) -> tuple[str, ...]:
@@ -446,28 +404,11 @@ def _roles(
     return (*role, *flow.class_lines())
 
 
-def one_line(value: object) -> str:
-    """Einzeilig ohne Steuerzeichen (auch ANSI-Escapes)."""
-    text = "".join(
-        " " if ch.isspace() else ch
-        for ch in str(value)
-        if ch.isprintable() or ch.isspace()
-    )
-    return " ".join(text.split())
-
-
 _COMMON = (
     "Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies",
     "den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und",
     "den tatsächlichen Arbeitsstand gezielt. Melde konkrete fehlende",
     "Voraussetzungen, statt zu raten.",
-)
-
-_GUIDELINE_INTRO = (
-    "LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)",
-    "Diese Regeltexte gelten für diesen Schritt. Wende sie direkt",
-    "an; lies ihre Quelldokumente dafür nicht erneut vollständig.",
-    "Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.",
 )
 
 _ROLES = {

@@ -6,12 +6,9 @@ from pathlib import Path
 import pytest
 
 from ki_dev.flow.planning import load_planning_flow
+from ki_dev.step.contract import ReviewTarget, Step
 from ki_dev.step.guidelines import GuidelineSection
-from ki_dev.step.handoff import (
-    HandoffIssue,
-    ReviewTarget,
-    Step,
-)
+from ki_dev.step.handoff import HandoffIssue
 from ki_dev.step.handoff import (
     render_base_handoff as _render_base_handoff,
 )
