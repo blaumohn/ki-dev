@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import uuid
 from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import NotRequired, Protocol, TypedDict, cast
 
@@ -16,6 +17,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
+from ki_dev.adapter import manual, mock
 from ki_dev.adapter.agent import (
     AgentReviewer,
     AgentWorker,
@@ -36,7 +38,7 @@ from ki_dev.deltas import (
     StepDeltaAssessment,
     assess_step_delta,
 )
-from ki_dev.flow.model import FlowError, Verdict
+from ki_dev.flow.model import FlowError, Transition, Verdict
 from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
     DEFAULT_PROJECTION_LIMITS,
@@ -44,6 +46,7 @@ from ki_dev.review_context import (
     project_review_context,
 )
 from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.events import event_record
 from ki_dev.runner.machine import (
     DELIVERY,
     DELIVERY_BOUND,
@@ -75,6 +78,7 @@ from ki_dev.runner.machine import (
     RunStarted,
     RunState,
     StepResultCaptured,
+    TransitionResult,
     WorkerCompleted,
     WorkerInputsPrepared,
     WorkerProcessError,
@@ -1270,7 +1274,34 @@ class RunRuntime:
         facts: frozenset[str] = frozenset(),
     ) -> dict[str, object]:
         result = advance(run.state, event, run.limits, facts=facts)
+        self._log_transition(run, result)
         return self._replace_run(run, result.state, result.escalation)
+
+    def _log_transition(
+        self, run: RunState, result: TransitionResult
+    ) -> None:
+        """Genommene Kante ins Ereignisprotokoll (seq = neue Revision;
+        eine Wiederholung nach Absturz schreibt sie nicht doppelt)."""
+        transition = cast(Transition, result.transition)
+        self.store.append_event(
+            event_record(
+                seq=run.revision + 1,
+                ts=datetime.now(UTC).isoformat(),
+                flow=DELIVERY,
+                run_id=run.run_id,
+                transition=transition,
+                target=result.phase.value,
+                adapter=self._adapter_of(run),
+            )
+        )
+
+    def _adapter_of(self, run: RunState) -> str:
+        """Wer das Ereignis geliefert hat: der Adapter der Agenten-
+        operation des Quellzustands, sonst ki-dev selbst."""
+        kind = operation(run.state, run.limits)
+        if kind not in _AGENT_ROLES:
+            return "ki-dev"
+        return _adapter_name(self._actor({"kind": kind}))
 
     @staticmethod
     def _replace_run(
@@ -1323,6 +1354,18 @@ class RunRuntime:
             "interrupt_payload": None,
             "last_error": None,
         }
+
+
+def _adapter_name(actor: object) -> str:
+    executor = getattr(actor, "executor", None)
+    if executor is not None:
+        return str(executor.name)
+    if isinstance(actor, ManualRelay):
+        return manual.NAME
+    if isinstance(actor, (mock.MockWorker, mock.MockReviewer)):
+        return mock.NAME
+    # Testdoppel und eigene Adapter: ihr Klassenname
+    return type(actor).__name__
 
 
 def _is_relay(actor: object) -> bool:

@@ -309,8 +309,9 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
   allen vier Adaptern (Bauablauf).
 - **Offen:** Der Planungsablauf hat noch keinen gebundenen Ausführer. `step`
   rendert seine Übergaben direkt, `run` fährt bisher nur `delivery.toml`.
-- **Zur Kartierung offen:** Ereignisprotokoll nach IEEE 1849 (XES) als
-  Zustand/Ereignis-Schnittstelle, Sitzungsbindung als Ablaufdatum
+- **Beobachtbar:** `ki-dev run` schreibt je Übergang eine Zeile nach
+  `events.jsonl` ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
+- **Zur Kartierung offen:** Sitzungsbindung als Ablaufdatum
   (`neu | wie:<zustand>`), adaptive Schnitte des Controllers
   ([Zielbild](docs/zielbild.de.md)).
 

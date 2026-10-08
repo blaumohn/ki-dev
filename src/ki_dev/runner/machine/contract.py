@@ -30,6 +30,7 @@ from ki_dev.flow.model import (
     FINAL_KIND,
     WAIT_KIND,
     FlowError,
+    Transition,
     load_flow,
 )
 
@@ -567,10 +568,12 @@ class ResumeRequested(Event):
 
 @dataclass(frozen=True)
 class TransitionResult:
-    """Angenommener Uebergang: Folgezustand und ggf. Eskalation."""
+    """Angenommener Uebergang: Folgezustand, ggf. Eskalation und die
+    genommene Kante des Ablaufs (fuer das Ereignisprotokoll)."""
 
     state: MachineState
     escalation: Escalation | None = None
+    transition: Transition | None = None
 
     @property
     def phase(self) -> Phase:

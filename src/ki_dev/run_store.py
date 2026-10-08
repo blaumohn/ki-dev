@@ -96,6 +96,33 @@ class RunStore:
             messages.append(cast(dict[str, object], value))
         return messages
 
+    def append_event(self, record: dict[str, object]) -> bool:
+        """Zeile an ``events.jsonl`` anhängen, sofern ``seq`` neuer ist
+        als die letzte; ``False`` heißt: schon geschrieben (Wiederholung
+        nach Absturz)."""
+        path = self.run_dir / "events.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a+", encoding="utf-8") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            handle.seek(0)
+            lines = handle.read().splitlines()
+            last = json.loads(lines[-1])["seq"] if lines else 0
+            if cast(int, record["seq"]) <= last:
+                return False
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        return True
+
+    def load_events(self) -> list[dict[str, object]]:
+        path = self.run_dir / "events.jsonl"
+        if not path.exists():
+            return []
+        return [
+            cast(dict[str, object], json.loads(line))
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+
     @contextmanager
     def usage_lock(self):
         """One lock for reservations, results and evidence across

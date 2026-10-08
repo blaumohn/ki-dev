@@ -88,6 +88,7 @@ def advance(
     return TransitionResult(
         state=moved.moved_to(target),
         escalation=_escalation(step, transition.escalation),
+        transition=transition,
     )
 
 

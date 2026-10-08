@@ -186,6 +186,21 @@ WAL-Index; Haupt- und WAL-Datei selbst bleiben dabei byteidentisch.
 Fehlt der Lauf oder ist sein Checkpoint unvollstaendig, meldet das
 Kommando das eindeutig statt eines erfundenen Platzhalterstatus.
 
+## Ereignisprotokoll je Übergang
+
+Jeder genommene Übergang steht als eine Zeile in
+`<runs>/<RUN_ID>/events.jsonl`, mit den Namen des Ablaufs:
+
+```json
+{"seq": 7, "ts": "…", "flow": "delivery", "run": "run-42", "state": "controller_step", "event": "fix", "target": "worker_step_prepare", "cond": ["checked_result"], "actions": ["begin_correction", "drop_result"], "escalation": null, "actor": "Controller (Review-Sitzung)", "adapter": "codex-cli"}
+```
+
+`seq` ist die Laufrevision nach dem Übergang; nach einem Absturz wird
+dieselbe Zeile nicht doppelt geschrieben. `check_conformance`
+(`src/ki_dev/runner/events.py`) gleicht ein Protokoll gegen den Ablauf ab.
+XES (IEEE 1849) ist bewusst nur ein möglicher späterer Export; die Felder
+lassen sich direkt abbilden.
+
 ## Verbrauchsschutz
 
 Ein CLI-Aufruf kann viele interne Modellanfragen enthalten.
