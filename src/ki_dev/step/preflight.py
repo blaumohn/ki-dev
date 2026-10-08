@@ -78,7 +78,7 @@ ADDED_MARKER = "[ergänzt per --preflight-args]"
 PARTIAL_RUN_NOTE = (
     "TEILLAUF: Zusatzargumente oder ausgelassene Prüfungen (siehe "
     "Bericht). Abweichend von der Rolle ist PASS ausgeschlossen; "
-    "Ausgabe: CHANGES | NEEDS_DECISION. PASS erst nach einem "
+    "Ausgabe: die stärkste Befundklasse. PASS erst nach einem "
     "vollständigen Vorlauf ohne --preflight-args/--preflight-skip."
 )
 

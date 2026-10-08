@@ -276,7 +276,7 @@ Name einer Korrektur (stderr nennt die vorhandenen Prüfungen).
 
 Jede Angabe macht den Lauf zum **Teillauf**. Er erlaubt ein Zwischenreview,
 aber keinen PASS: Bericht und Folgerunde enthalten den Absatz `TEILLAUF`, die
-Folgerunde verlangt `CHANGES | NEEDS_DECISION`. Ein PASS braucht einen
+Folgerunde verlangt die stärkste Befundklasse statt `PASS`. Ein PASS braucht einen
 vollständigen Vorlauf ohne diese Optionen. Drei Dinge bleiben getrennt:
 
 | Begriff | Bedeutung | Folge |
