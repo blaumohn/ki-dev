@@ -20,7 +20,8 @@ import json
 import random
 from pathlib import Path
 
-from ki_dev import pilot_search, pilot_workflow, planning
+from ki_dev import planning
+from ki_dev.pilot import search, workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_DIR = ROOT / "docs/architecture/urq6-run"
@@ -167,9 +168,9 @@ SESSION_10 = [
 ]
 
 
-def _units_from_state(state) -> list[pilot_search.Unit]:
+def _units_from_state(state) -> list[search.Unit]:
     return [
-        pilot_search.Unit(
+        search.Unit(
             node["id"],
             node["revision"],
             node["location"],
@@ -201,7 +202,7 @@ def build_context_for_session(
     released_passages = []
     visible_ids: set[str] = set()
     for passage in passages:
-        candidates = pilot_workflow.run_candidate_search(
+        candidates = workflow.run_candidate_search(
             {"id": passage["id_"], "text": passage["text"]},
             existing_units,
             top_k=TOP_K,
@@ -228,13 +229,13 @@ def build_context_for_session(
             "id": passage["id_"], "text": passage["text"],
             "location": passage["location"],
         })
-    context = pilot_workflow.build_context(
+    context = workflow.build_context(
         state, released_passages, visible_node_ids=visible_ids,
     )
     return checkpoints, context
 
 
-def _context_to_json(context: pilot_workflow.FlatteningContext) -> dict:
+def _context_to_json(context: workflow.FlatteningContext) -> dict:
     return {
         "released_passages": list(context.released_passages),
         "localized_nodes": context.localized_nodes,

@@ -6,7 +6,7 @@ Embedding-Modell (deterministisches Hashing-Trigramm-Verfahren, keine
 Netzwerk-/Modell-Downloads, kein Docker) ordnet Kandidaten ueber den
 *gesamten* aktuellen Bestand per Brute-Force-Vergleich, ohne
 Vektordatenbank. Die Suche ist kein Werkzeug des Abflachungsagenten
-(siehe pilot_workflow.py); sie liefert nur die Kandidaten bzw. Befunde,
+(siehe workflow.py); sie liefert nur die Kandidaten bzw. Befunde,
 die dieser dann beurteilt (docs/architecture/
 planning-verarbeitungsvertrag.de.md, Abschnitt "Kandidatensuche,
 Aehnlichkeitswerte und Beziehungen").
@@ -113,7 +113,7 @@ class ReviewCandidate:
     """Was der Review tatsaechlich zu sehen bekommt: bei
     `visible_in_review=False` sind Rang und Rohwert entfernt, nicht
     nur mit einem Flag markiert (urq.5-Umfang: teilweise blinder
-    Review). Das Kontrollprotokoll (pilot_log.py) protokolliert davon
+    Review). Das Kontrollprotokoll (log.py) protokolliert davon
     unabhaengig stets die vollen Werte aus dem zugrunde liegenden
     `Candidate`."""
 

@@ -6,7 +6,7 @@ Haelt Entwuerfe, Reviewbefunde, Korrekturen, Paarurteile, Ablehnungen,
 Anteilslisten-Review als eindeutig unterscheidbare Eintraege fest
 (docs/architecture/planning-verarbeitungsvertrag.de.md: "Ersturteile
 und korrigierte Urteile werden nicht als unabhaengige Beobachtungen
-vermischt"). Aehnlichkeitswerte aus pilot_search.py erscheinen
+vermischt"). Aehnlichkeitswerte aus search.py erscheinen
 ausschliesslich hier, nie als Kantengewicht im Planungsgraphen
 (planning.py).
 

@@ -1,8 +1,8 @@
 """Agenten- und Reviewablauf fuer den begrenzten
 Designnotizen-Versuch (ki-dev-ablauf-urq.5).
 
-Bindet die bereichsuebergreifende Kandidatensuche (pilot_search.py)
-und das Kontrollprotokoll (pilot_log.py) an einen begrenzten Kontext
+Bindet die bereichsuebergreifende Kandidatensuche (search.py)
+und das Kontrollprotokoll (log.py) an einen begrenzten Kontext
 fuer den Abflachungsagenten: dieser sieht ausschliesslich freigegebene
 neue Passagen, bedarfsgerecht lokalisierte Teile des aktuellen
 Bestands und das Typregister -- kein Roharchiv, keine historische
@@ -20,7 +20,7 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 
-from ki_dev import pilot_log, pilot_search
+from ki_dev.pilot import log, search
 
 
 @dataclass(frozen=True)
@@ -63,23 +63,23 @@ def build_context(
 
 
 def run_candidate_search(
-    part: dict, units: list[pilot_search.Unit], *, top_k: int,
+    part: dict, units: list[search.Unit], *, top_k: int,
     sample_size: int, blind_fraction: float, rng: random.Random,
     log_path: Path,
-) -> list[pilot_search.Candidate]:
+) -> list[search.Candidate]:
     """Kontrollschritt: bereichsuebergreifende Suche ueber *alle*
     `units` (kein Bereichsfilter), Blindanteil-Zuweisung, und
     Protokollierung als `search_record`-Eintraege vor Uebergabe an
     den Abflachungsagenten."""
-    candidates = pilot_search.search_candidates(
+    candidates = search.search_candidates(
         part["text"], units, top_k=top_k, sample_size=sample_size,
         rng=rng,
     )
-    candidates = pilot_search.assign_blind_visibility(
+    candidates = search.assign_blind_visibility(
         candidates, blind_fraction=blind_fraction, rng=rng,
     )
     for index, candidate in enumerate(candidates):
-        pilot_log.append(log_path, pilot_log.search_record(
+        log.append(log_path, log.search_record(
             id=f"{part['id']}-search-{index:03d}",
             part_id=part["id"], candidate=candidate,
         ))
@@ -87,8 +87,8 @@ def run_candidate_search(
 
 
 def candidates_for_review(
-    candidates: list[pilot_search.Candidate], *, rng: random.Random,
-) -> list[pilot_search.ReviewCandidate]:
+    candidates: list[search.Candidate], *, rng: random.Random,
+) -> list[search.ReviewCandidate]:
     """Was dem Review tatsaechlich vorgelegt wird: fuer den per
     `assign_blind_visibility` bestimmten Anteil sind Rang und Rohwert
     entfernt (urq.5-Umfang: teilweise blinder Review). Die vollen
@@ -102,19 +102,19 @@ def candidates_for_review(
     unabhaengig vom Suchrang sein (`rng` statt Rangreihenfolge)."""
     order = list(candidates)
     rng.shuffle(order)
-    return [pilot_search.for_review(candidate) for candidate in order]
+    return [search.for_review(candidate) for candidate in order]
 
 
 def check_localization(
-    unit: pilot_search.Unit, units: list[pilot_search.Unit], *,
+    unit: search.Unit, units: list[search.Unit], *,
     log_path: Path,
 ) -> dict | None:
     """Lokalisierungspruefung: Hinweis an den Review, wenn `unit`
     ihren Ortsnachbarn unaehnlicher ist als Einheiten an anderen
     Orten."""
-    warning = pilot_search.localization_check(unit, units)
+    warning = search.localization_check(unit, units)
     if warning is not None:
-        pilot_log.append(log_path, pilot_log.localization_warning(
+        log.append(log_path, log.localization_warning(
             id=f"{unit.unit_id}-localization", part_id=unit.unit_id,
             warning=warning,
         ))
@@ -128,7 +128,7 @@ def review_share_list(
     """Gesonderter Review der Anteilsliste gegen die Passage, VOR der
     inhaltlichen Delta-Pruefung (urq.1: "Zerlegung in
     Bedeutungsanteile")."""
-    return pilot_log.append(log_path, pilot_log.share_list_review(
+    return log.append(log_path, log.share_list_review(
         id=f"{passage_id}-shares", passage_id=passage_id,
         part_ids=part_ids, complete=complete, notes=notes,
     ))
@@ -141,7 +141,7 @@ def record_draft(
     """Erstentwurf: Zuordnung und inhaltliche Operation sind
     getrennte, protokollierte Urteile (urq.1: "Zuordnung und
     inhaltliche Operation")."""
-    return pilot_log.append(log_path, pilot_log.draft(
+    return log.append(log_path, log.draft(
         id=f"{part['id']}-draft", passage_id=passage_id,
         part_id=part["id"], text=part["text"],
         assignment=assignment, operation=operation,
@@ -154,7 +154,7 @@ def record_finding(
 ) -> dict:
     """Reviewbefund zu einem Entwurf -- unterscheidbar vom Entwurf
     selbst."""
-    return pilot_log.append(log_path, pilot_log.finding(
+    return log.append(log_path, log.finding(
         id=f"{draft_record['id']}-finding",
         draft_id=draft_record["id"], verdict=verdict, notes=notes,
     ))
@@ -169,7 +169,7 @@ def record_correction(
     vermischen (urq.1: Korrekturrunden-Regel). Nur der abgenommene
     Entwurf -- der Erstentwurf oder diese Korrektur -- wird spaeter
     per `ki_dev.planning.append` in den Bestand uebernommen."""
-    return pilot_log.append(log_path, pilot_log.correction(
+    return log.append(log_path, log.correction(
         id=f"{draft_record['id']}-correction",
         supersedes=draft_record["id"],
         part_id=draft_record["part_id"], assignment=assignment,
@@ -178,10 +178,10 @@ def record_correction(
 
 
 def record_pair_judgment(
-    part_id: str, candidate: pilot_search.Candidate, *, verdict: str,
+    part_id: str, candidate: search.Candidate, *, verdict: str,
     index: int, log_path: Path,
 ) -> dict:
-    return pilot_log.append(log_path, pilot_log.pair_judgment(
+    return log.append(log_path, log.pair_judgment(
         id=f"{part_id}-pair-{index:03d}", part_id=part_id,
         candidate=candidate, verdict=verdict,
     ))
@@ -191,7 +191,7 @@ def record_rejection(
     part_id: str, *, candidate_id: str | None, reason: str,
     index: int, log_path: Path,
 ) -> dict:
-    return pilot_log.append(log_path, pilot_log.rejection(
+    return log.append(log_path, log.rejection(
         id=f"{part_id}-rejection-{index:03d}", part_id=part_id,
         candidate_id=candidate_id, reason=reason,
     ))
@@ -201,7 +201,7 @@ def record_unclear(
     part_id: str, *, candidate_id: str | None, reason: str,
     index: int, log_path: Path,
 ) -> dict:
-    return pilot_log.append(log_path, pilot_log.unclear(
+    return log.append(log_path, log.unclear(
         id=f"{part_id}-unclear-{index:03d}", part_id=part_id,
         candidate_id=candidate_id, reason=reason,
     ))

@@ -19,7 +19,7 @@ from dataclasses import fields
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from ki_dev.safety_contract import (
+from ki_dev.safety_profile.contract import (
     EvidenceMode,
     QuotaMode,
     ReasonCode,

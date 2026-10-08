@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev import safety_contract
-from ki_dev.safety_contract import (
+from ki_dev.safety_profile import contract as safety_contract
+from ki_dev.safety_profile.contract import (
     EvidenceMode,
     QuotaMode,
     ReasonCode,
     SafetyProfile,
 )
-from ki_dev.safety_profile import (
+from ki_dev.safety_profile.validation import (
     FIELD_NAMES,
     ProfileInvalid,
     parse_profile,
@@ -356,10 +356,9 @@ def test_contract_types_match_stub():
 
 def test_types_import_no_provider_or_executor_modules():
     code = (
-        "import sys, ki_dev.safety_contract, ki_dev.safety_profile\n"
+        "import sys, ki_dev.safety_profile.validation\n"
         "bad = [m for m in sys.modules if m.startswith('ki_dev.') "
-        "and m not in ('ki_dev.safety_contract',"
-        " 'ki_dev.safety_profile')]\n"
+        "and not m.startswith('ki_dev.safety_profile')]\n"
         "bad += [m for m in ('anthropic','openai','claude_agent_sdk')"
         " if m in sys.modules]\n"
         "print(bad)\n"

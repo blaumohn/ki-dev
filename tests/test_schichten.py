@@ -96,3 +96,18 @@ def test_layers_never_import_upwards(layer, forbidden):
 def test_no_module_is_named_after_a_loop():
     """Die Schleife ist eine Rückkante im Ablauf, kein Modul."""
     assert [m for m in MODULES if "loop" in m.rsplit(".", 1)[-1]] == []
+
+
+@pytest.mark.parametrize(
+    "parked", ["ki_dev.pilot", "ki_dev.safety_profile"]
+)
+def test_parked_packages_are_not_wired_yet(parked):
+    """Abgelegte Pakete künftiger Features (urq, wu0.10.5): das übrige
+    Paket nutzt sie noch nicht; die Anbindung ist eigene Arbeit."""
+    users = sorted(
+        module
+        for module in MODULES
+        if not module.startswith(parked)
+        and any(target.startswith(parked) for target in _direct(module))
+    )
+    assert users == []

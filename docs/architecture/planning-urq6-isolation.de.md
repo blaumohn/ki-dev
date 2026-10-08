@@ -9,8 +9,8 @@ Nichtbestehens-/Ungültigkeitskriterien) und
 ## Befund
 
 `urq.6` blieb über mehrere `.loope`-Läufe (0012, 0013, 0014) unerledigt,
-obwohl `urq.5` (Agenten-/Reviewablauf, `src/ki_dev/pilot_workflow.py`,
-`pilot_search.py`, `pilot_log.py`) seit Lauf 0014 vollständig implementiert
+obwohl `urq.5` (Agenten-/Reviewablauf, `src/ki_dev/pilot/workflow.py`,
+`search.py`, `log.py`) seit Lauf 0014 vollständig implementiert
 und getestet ist. Grund ist keine fehlende Infrastruktur, sondern eine
 strukturelle Ungültigkeitsbedingung: `planning-pruefbeispiele.de.md` legt
 fest (Abschnitt „Bestehens- und Nichtbestehenskriterien“, UNGÜLTIG-Fall):
@@ -40,7 +40,7 @@ Repository-Kontext erhält und damit ebenso kontaminiert ist.
 Wissensstand:
 
 1. **Abflachungsagent-Sitzung(en)** — frische Sitzung ohne Vorgeschichte,
-   die ausschließlich den Rückgabewert von `pilot_workflow.build_context()`
+   die ausschließlich den Rückgabewert von `pilot.workflow.build_context()`
    erhält (freigegebene neue Passagen, lokalisierter Bestand, Typregister)
    sowie die *prozeduralen* Regeln aus `planning-verarbeitungsvertrag.de.md`
    (Zuordnung/Operation getrennt, Abdeckungsnachweis-Pflicht, Erhaltungs-
@@ -55,7 +55,7 @@ Wissensstand:
 3. **Unabhängiger Vergleich (Auswertung, nach Laufende)** — wird von einer
    Sitzung mit Kenntnis der eingefrorenen Kriterien durchgeführt (z.B. dieser
    Controller), erst *nachdem* die Einträge aus 1. und 2. bereits
-   unveränderlich im Kontrollprotokoll (`pilot_log.py`, Anhängemodus)
+   unveränderlich im Kontrollprotokoll (`pilot/log.py`, Anhängemodus)
    stehen. Diese Rolle vergleicht Kontrollprotokoll gegen PB-1–PB-7,
    berechnet die Suchtrefferquote und das Ergebnis
    (BESTANDEN/NICHT BESTANDEN/UNGÜLTIG). Sie darf die Einträge aus 1./2.

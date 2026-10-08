@@ -58,7 +58,7 @@ abgezogen. Automatische Ersatzläufe mit frischem Budget sind ausgeschlossen.
 Ein Ersatzlauf hebt keine ungeklärte fortlaufende Wirkung des alten Laufs auf;
 die bestehenden Stop-/Kontrollprüfungen bleiben Voraussetzung.
 
-Zielmodule: safety_contract.py (Datentypen ohne Providerimporte), safety_profile.py,
+Zielmodule: safety_profile/contract.py (Datentypen ohne Providerimporte), safety_profile/validation.py,
 safety_policy.py (reine Funktionen), usage_estimation.py; vorhandene loop_safety.py
 bleibt einziger Ledger, executors/process.py bleibt Prozessmechanik. Anbieterpakete
 executors/providers/claude/ und codex/ besitzen Parser, Versionslisten, Hook-Namen,

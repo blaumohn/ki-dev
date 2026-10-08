@@ -10,7 +10,7 @@ Quellen-Bead ki-dev-ablauf-phdp und Codex-Sitzung 01a09aef bleiben dem Testschri
 NICHT vorweggenommen.
 
 Vor jeder Sitzung wird die bereichsuebergreifende Kandidatensuche
-(pilot_search/pilot_workflow, Kontrollschritt) ueber den bis dahin
+(pilot.search/pilot.workflow, Kontrollschritt) ueber den bis dahin
 vorhandenen Bestand ausgefuehrt und ins Kontrollprotokoll geschrieben --
 das ist die Grundlage der Suchtrefferquoten-Messpunkte nach 3/6
 Sitzungen (docs/architecture/planning-pruefbeispiele.de.md, Abschnitt
@@ -25,7 +25,8 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from ki_dev import pilot_search, pilot_workflow, planning
+from ki_dev import planning
+from ki_dev.pilot import search, workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_DIR = ROOT / "docs/architecture/urq6-run"
@@ -272,9 +273,9 @@ def _write_delta(step, parent, *, types=(), nodes=()):
     return planning.append(STORE, candidate, ROOT)
 
 
-def _units_from_state(state) -> list[pilot_search.Unit]:
+def _units_from_state(state) -> list[search.Unit]:
     return [
-        pilot_search.Unit(
+        search.Unit(
             node["id"],
             node["revision"],
             node["location"],
@@ -301,7 +302,7 @@ def build() -> tuple[dict, list[dict]]:
         existing_units = _units_from_state(state)
         node_ops = []
         for passage in passages:
-            candidates = pilot_workflow.run_candidate_search(
+            candidates = workflow.run_candidate_search(
                 {"id": passage["id_"], "text": passage["text"]},
                 existing_units,
                 top_k=TOP_K,
