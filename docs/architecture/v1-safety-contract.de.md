@@ -59,8 +59,8 @@ Ein Ersatzlauf hebt keine ungeklärte fortlaufende Wirkung des alten Laufs auf;
 die bestehenden Stop-/Kontrollprüfungen bleiben Voraussetzung.
 
 Zielmodule: safety_profile/contract.py (Datentypen ohne Providerimporte), safety_profile/validation.py,
-safety_policy.py (reine Funktionen), usage_estimation.py; vorhandene loop_safety.py
-bleibt einziger Ledger, executors/process.py bleibt Prozessmechanik. Anbieterpakete
+safety_policy.py (reine Funktionen), usage_estimation.py; vorhandene runner/safety.py
+bleibt einziger Ledger, adapter/executors/process.py bleibt Prozessmechanik. Anbieterpakete
 executors/providers/claude/ und codex/ besitzen Parser, Versionslisten, Hook-Namen,
 Konfigurationsprojektion und Nachweisdescriptor. usage.py und executors/metering.py
 behalten delegierende Kompatibilitäts-Reexports; generische Datentypen bleiben
@@ -274,9 +274,9 @@ intervall, akzeptierter Messlücke und Begründung je Parameter ab. Ohne belastb
 Gesamtkostenschranke wird nur begrenztes akzeptiertes Risiko bestätigt.
 Keine zyklische Abhängigkeit von Profilfreigabe und deren Belegen.
 
-## Manueller Entwicklungsablauf bis zum wirksamen ki-dev loop
+## Manueller Entwicklungsablauf ohne ki-dev run
 
-ki-dev loop steht für diesen Entwicklungsablauf noch nicht zur Verfügung.
+ki-dev run wird für diesen Entwicklungsablauf (noch) nicht eingesetzt.
 Ziel ist vollständige, überprüfbare Software mit beherrschbarem Gesamtaufwand.
 Tokenmessung und Stopmechanik sind Mittel dazu; niedriger Verbrauch oder erfolgreiche
 Modellaufrufe allein sind kein Softwareerfolg. Teilumsetzung, Fehler, Nacharbeit,
@@ -287,7 +287,7 @@ wiederholter Kontext und offene Abnahmen bleiben sichtbar.
    ohne den Beads-Status zu ändern. Ein Mensch kann die Auswahl vorgeben. workflow:gate und
    workflow:evidence gehören nicht in diese Umsetzungswarteschlange.
 2. Eine manuell gestartete Sitzung bearbeitet nur dieses Blatt und seine direkten
-   Offline-Tests. Kein ki-dev-loop-Aufruf und keine automatische Sitzungsverkettung.
+   Offline-Tests. Kein ki-dev-run-Aufruf und keine automatische Sitzungsverkettung.
    Fehlende normative Entscheidungen werden als konkrete Vertragslücke gemeldet.
 3. Im gemeinsamen Arbeitsbaum ist die Beads-ID die normale vollständige Übergabe:
    `Setze <id> um.` Der Umsetzer liest AGENTS.md, `bd show <id>`, den dort genannten

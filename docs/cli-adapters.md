@@ -253,7 +253,7 @@ fehlender, veralteter oder zu alter Nachweis hier den naechsten Aufruf
 
 ## Sitzungstranskripte (Adaptergrenze)
 
-`executors/transcript.py` liest die lokale Sitzung eines Anbieters als
+`adapter/executors/transcript.py` liest die lokale Sitzung eines Anbieters als
 neutrales `SessionTranscript` (`agent`, `session_id`, `source_digest`,
 `parser_version`, optional belegte `started_at`/`last_activity_at`,
 Nachrichten mit `position`, `ordinal`, `role`, `text`, `source_line`,

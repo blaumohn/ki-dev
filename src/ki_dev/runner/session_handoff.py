@@ -14,6 +14,7 @@ from __future__ import annotations
 from ki_dev.adapter.contract import (
     RunTask,
 )
+from ki_dev.flow.model import Verdict
 from ki_dev.run_store import RunStore
 from ki_dev.runner.safety import recorded_usage
 
@@ -31,7 +32,7 @@ def build_handoff(
     changes = [
         message
         for message in store.load_messages()
-        if message.get("verdict") == "CHANGES"
+        if message.get("verdict") == Verdict.CHANGES
     ]
     open_ref = changes[-1].get("requirement_ref") if changes else None
     superseded = changes[:-1]

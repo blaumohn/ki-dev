@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
+from ki_dev.flow.model import Verdict
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.usage import CounterScope, UsageEvent
 from ki_dev.usage_accounting import (
@@ -550,12 +551,12 @@ def stagnation_reason(
     Persistierte Nachrichten ueberleben Resume und Sitzungswechsel,
     daher wird die Serie nicht durch einen Neustart zurueckgesetzt.
     """
-    if verdict != "CHANGES" or not requirement_ref:
+    if verdict != Verdict.CHANGES or not requirement_ref:
         return None
     streak = 0
     for message in reversed(store.load_messages()):
         if (
-            message.get("verdict") != "CHANGES"
+            message.get("verdict") != Verdict.CHANGES
             or message.get("requirement_ref") != requirement_ref
         ):
             break

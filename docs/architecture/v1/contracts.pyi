@@ -281,8 +281,8 @@ class LedgerExtension(Protocol):
         self, charge: ConservativeCharge) -> BudgetState: ...
     def recover_safety(self) -> BudgetState: ...
 
-# Erweiterung executors/process.py, bestehende Rückgabe TurnResult
-# erhalten.
+# Erweiterung adapter/executors/process.py, bestehende Rückgabe
+# TurnResult erhalten.
 # TurnResult erhält zusätzlich stop_result: StopResult | None = None,
 # process_elapsed_s: Decimal | None = None und
 # process_end_confirmed: bool = False.

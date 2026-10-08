@@ -213,13 +213,13 @@ und wird anschließend gegen wirklichen Verbrauch kalibriert.
 
 Vorhanden sind bereits:
 
-- `src/ki_dev/executors/metering.py`: strukturierte CLI-Verbrauchsergebnisse,
+- `src/ki_dev/adapter/executors/metering.py`: strukturierte CLI-Verbrauchsergebnisse,
   Claude-Kontextmessung und lokale Codex-Kontingentmessung.
 - `scripts/analyze_claude_usage.py`: deterministische Auswertung eines
   vorhandenen Claude-Laufs, einschließlich Deduplizierung von Modellantworten.
-- `CallLedger` und `QuotaBaseline` in `src/ki_dev/loop_safety.py`: persistierte
+- `CallLedger` und `QuotaBaseline` in `src/ki_dev/runner/safety.py`: persistierte
   Laufbilanz, Aufrufreservierungen und Kontingentbasislinien.
-- Guards in `src/ki_dev/loop_runtime.py`: technische Freigabe/Pause, getrennte
+- Guards in `src/ki_dev/runner/runtime.py`: technische Freigabe/Pause, getrennte
   Aufgabenbudgets und Kontingentreserve sowie Kontextprüfung.
 
 Diese Grundlagen werden erweitert. Der vorhandene Analyseskript ist eine
@@ -252,11 +252,11 @@ Komplexität. Es entstehen kein zusätzlicher Dienst und keine zweite Safety-Bil
 
 | Modul | Verantwortung und Grenze | Anschluss im Repository |
 | --- | --- | --- |
-| Tokenmessung / Anbieterpakete | CLI-Versionen, Quellenparser, Normalisierung, Hooks und Stop-Anbindung je Anbieter; keine eigene Budgetregel | Bestehende `executors/metering.py`-/`usage.py`-Reader gezielt in Anbieterpakete verlagern; gemeinsame Datentypen anbieterneutral |
+| Tokenmessung / Anbieterpakete | CLI-Versionen, Quellenparser, Normalisierung, Hooks und Stop-Anbindung je Anbieter; keine eigene Budgetregel | Bestehende `adapter/executors/metering.py`-/`usage.py`-Reader gezielt in Anbieterpakete verlagern; gemeinsame Datentypen anbieterneutral |
 | Verbrauchsbilanz | Ereignisse genau einmal einem Auftrag/Aufruf zurechnen, Gesamtsummen abgleichen, Sitzungswechsel und Teilaufgaben zusammenführen | `CallLedger`/`RunStore` erweitern |
 | Estimatoren | Aufgabengröße, Unsicherheit, Kontextbedarf, Schnittvorschläge und Verbrauchsintervalle beurteilen | vorgeschlagenes `estimation.py`; bestehende Executor-Verträge und Materialisierung nutzen |
 | Kalibrierung | Schätzfehler und Token-Kontingent-Beziehung getrennt lernen, Modellstände und Gültigkeit versionieren | vorgeschlagenes `calibration.py`; rein datenbasierte Auswertung ohne Modellpflicht |
-| Budgetsteuerung | Prognose und Messung gegen wirksame Grenzen prüfen, Reservierungen koordinieren, Pause/Handoff begründen | vorhandene `loop_safety.py`/`loop_runtime.py` |
+| Budgetsteuerung | Prognose und Messung gegen wirksame Grenzen prüfen, Reservierungen koordinieren, Pause/Handoff begründen | vorhandene `runner/safety.py`/`runner/runtime.py` |
 
 Beads bleibt die Wahrheit für Aufgaben, Abhängigkeiten und Zustand. Messreihen,
 Schätzungen und Kalibrierungsstände sind strukturierte versionierte Artefakte
