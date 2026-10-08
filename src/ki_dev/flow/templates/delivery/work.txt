@@ -1,0 +1,21 @@
+Bauauftrag fuer Lauf ${run_id}, Runde ${round_id}.
+Arbeitsverzeichnis: ${workdir}
+Zugriffsprofil: ${access_profile}
+Diese Angaben beschreiben den erlaubten Lauf.
+Der Prompt ist keine technische Zugriffssperre.
+
+Gesamtauftrag:
+${task}
+
+Abnahmekriterien:
+${criteria}
+
+Massgebliche Quellen:
+${sources}
+
+Offene Beanstandung: ${objection}
+Bearbeite den Auftrag und pruefe seine Wirkung.
+Arbeite innerhalb der Aufrufgrenzen. Bei fehlendem Zugriff oder
+anderem Blocker beende die Arbeit mit einer konkreten Begruendung;
+versuche nicht wiederholt, denselben Blocker zu umgehen.
+Berichte knapp, was getan und geprueft wurde.

@@ -13,7 +13,6 @@ from ki_dev.adapter.contract import (
 )
 from ki_dev.adapter.executors import Effort, Executor, TurnRequest
 from ki_dev.adapter.executors.contract import TurnBudget, TurnResult
-from ki_dev.adapter.prompts import review_prompt, work_prompt
 
 
 @dataclass
@@ -32,7 +31,7 @@ class AgentWorker:
                 session_id=self.session_id,
                 model=self.model,
                 effort=self.effort,
-                message=work_prompt(request),
+                message=request.prompt,
                 workdir=request.task.workdir,
                 env=request.task.env,
                 budget=self.budget,
@@ -60,7 +59,7 @@ class AgentReviewer:
                 session_id=self.session_id,
                 model=self.model,
                 effort=self.effort,
-                message=review_prompt(request),
+                message=request.prompt,
                 workdir=request.task.workdir,
                 env=request.task.env,
                 budget=self.budget,

@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Protocol
 
 from ki_dev.adapter.executors.contract import TurnResult
-from ki_dev.review_context import ReviewProjection
 
 
 class AgentTurnError(RuntimeError):
@@ -105,9 +104,12 @@ class RunTask:
 
 @dataclass(frozen=True)
 class WorkRequest:
+    """Auftrag an die Worker-Rolle; ``prompt`` hat der Ausführer aus
+    der Vorlage des Ablaufs gebildet, der Adapter transportiert ihn."""
+
     task: RunTask
     round_id: int
-    objection: str | None = None
+    prompt: str
 
 
 @dataclass(frozen=True)
@@ -136,10 +138,12 @@ class ReviewVocabulary:
 
 @dataclass(frozen=True)
 class ReviewRequest:
+    """Auftrag an die Review-Rolle; ``prompt`` wie bei WorkRequest,
+    ``vocabulary`` für Adapter, die selbst antworten (mock)."""
+
     task: RunTask
     round_id: int
-    work_report: WorkReport
-    evidence: ReviewProjection
+    prompt: str
     vocabulary: ReviewVocabulary
 
 

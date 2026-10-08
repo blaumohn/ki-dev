@@ -34,6 +34,7 @@ from ki_dev.deltas import (
     VcsRef,
 )
 from ki_dev.review_context import project_review_context
+from ki_dev.runner.prompts import review_prompt, work_prompt
 from ki_dev.runner.review_output import (
     REVIEW_VOCABULARY,
     AgentProtocolError,
@@ -111,17 +112,18 @@ def test_formal_review_output_becomes_typed_decision(action):
         "write",
         acceptance_criteria=("Kriterium 1",),
     )
-    request = ReviewRequest(
+    prompt = review_prompt(
         task,
         1,
-        WorkReport("Implementiert"),
+        "Implementiert",
         project_review_context(_context()),
         REVIEW_VOCABULARY,
     )
+    request = ReviewRequest(task, 1, prompt, REVIEW_VOCABULARY)
     raw = reviewer.review(request)
     decision = parse_review_decision(raw, run_id="run-1", round_id=1)
     assert bind_review_decision(decision, task).event == action
-    assert "result = 1" in reviewer.requests[0].evidence.text
+    assert "result = 1" in reviewer.requests[0].prompt
 
 
 @pytest.mark.parametrize(
@@ -308,7 +310,7 @@ def test_build_prompt_includes_acceptance_criteria():
             "Kein Netzwerkzugriff",
         ),
     )
-    build.work(WorkRequest(task, 1))
+    build.work(WorkRequest(task, 1, work_prompt(task, 1, None)))
     message = executor.requests[0].message
     assert "AC1: Ausgabe ist deterministisch" in message
     assert "AC2: Kein Netzwerkzugriff" in message

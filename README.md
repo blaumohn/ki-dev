@@ -293,9 +293,10 @@ src/ki_dev/
                (Mermaid), templates/ (Rollentexte), delivery.toml, planning.toml
   runner/      interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Wächter,
                Aktionen, advance), runtime.py (LangGraph-Graph aus delivery.toml),
-               planning.py (Planungsschleife), events.py (Protokoll), cli.py,
+               planning.py (Planungsschleife), events.py (Protokoll), prompts.py
+               (Vorlagen füllen), cli.py,
                safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
-  adapter/     contract.py, prompts.py, agent.py, manual.py, mock.py,
+  adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),
                executors/ (Claude- und Codex-CLI, Transkripte, Messung)
   step/        Adapter manual für den Planungsablauf: Übergaben, Vorlauf,
                Leitlinien, Laufzustand je Bead

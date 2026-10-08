@@ -93,6 +93,7 @@ from ki_dev.runner.machine import (
     encode_run_state,
     operation,
 )
+from ki_dev.runner.prompts import review_prompt, work_prompt
 from ki_dev.runner.review_output import (
     REVIEW_VOCABULARY,
     AgentProtocolError,
@@ -984,7 +985,13 @@ class RunRuntime:
         round_id = state["round_id"]
         if kind == "work":
             report = self.worker.work(
-                WorkRequest(task, round_id, state["open_objection"])
+                WorkRequest(
+                    task,
+                    round_id,
+                    work_prompt(
+                        task, round_id, state["open_objection"]
+                    ),
+                )
             )
             return {"summary": report.summary}
         if kind == "evidence":
@@ -1033,8 +1040,13 @@ class RunRuntime:
                 ReviewRequest(
                     task,
                     round_id,
-                    WorkReport(summary),
-                    projection,
+                    review_prompt(
+                        task,
+                        round_id,
+                        summary,
+                        projection,
+                        REVIEW_VOCABULARY,
+                    ),
                     REVIEW_VOCABULARY,
                 )
             )

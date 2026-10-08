@@ -26,10 +26,6 @@ from ki_dev.adapter.contract import (
     WorkReport,
     WorkRequest,
 )
-from ki_dev.adapter.prompts import (
-    review_prompt,
-    work_prompt,
-)
 
 NAME = "manual"
 
@@ -54,14 +50,13 @@ class ManualRelay:
     role: str
 
     def work(self, request: WorkRequest) -> WorkReport:
-        return WorkReport(self._relay(request, work_prompt(request)))
+        return WorkReport(self._relay(request))
 
     def review(self, request: ReviewRequest) -> str:
-        return self._relay(request, review_prompt(request))
+        return self._relay(request)
 
-    def _relay(
-        self, request: WorkRequest | ReviewRequest, prompt: str
-    ) -> str:
+    def _relay(self, request: WorkRequest | ReviewRequest) -> str:
+        prompt = request.prompt
         digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
         key = f"r{request.round_id:04d}-{self.role}-{digest}"
         ask = self.inbox / f"{key}.input.md"
