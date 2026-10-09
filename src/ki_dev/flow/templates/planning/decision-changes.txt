@@ -1,2 +1,5 @@
-Review-Befund (${event}, ${verdict}, ${ref}): ${detail}
+Empfänger: Umsetzer (bisherige Sitzung)
+Bead: ${bead}
+
+Review-Befund (${event}, ${judgement}, ${ref}): ${detail}
 Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.

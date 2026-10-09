@@ -10,13 +10,16 @@ Die KI schreibt Code und urteilt über Ergebnisse. Was danach gilt (noch eine
 Korrekturrunde, Halt für eine Entscheidung, geprüfte Integration), steht nicht
 im Prompt und nicht im Python-Code, sondern im Ablauf.
 
-```text
- flow/delivery.toml · planning.toml     WAS   Zustände, Übergänge, Wächter, Aktionen     Daten
-        │ wird gelesen von
-  runner/           ki-dev run      WIE   formale Antwort → Ereignis → Wächter       LangGraph:
-        │ ruft                            → Kantenaktion → nächste Eingabe           Checkpoint, Halt
- adapter/  claude · codex · manual · mock                                           WER
-```
+Die drei Bausteine teilen sich die Verantwortung:
+
+| Baustein | Legt fest | Inhalt / Aufgabe |
+| --- | --- | --- |
+| `flow/delivery.toml`, `flow/planning.toml` | **Was** passieren darf | Daten: Zustände, Übergänge, Wächter und Aktionen |
+| `runner/` | **Wie** der Ablauf ausgeführt wird | Formale Antwort → Ereignis → Wächter prüfen → Kantenaktion ausführen → nächste Eingabe; LangGraph verwaltet Checkpoints und Halte |
+| `adapter/` | **Wer** die Eingabe bearbeitet | Anbindung von Claude, Codex, einem Menschen (`manual`) oder einer Simulation (`mock`) |
+
+Der Ausführer (`runner/`) liest die Ablaufdatei und ruft den jeweiligen
+Adapter auf. Bei `ki-dev run` geschieht das automatisch.
 
 `ki-dev step` ist dieselbe Idee von Hand: genau ein Übergang des
 Planungsablaufs, die Übergabe trägt der Mensch als Bote weiter.
@@ -253,7 +256,8 @@ stateDiagram-v2
     implement_preflight --> implement_review: checks_passed
     implement_preflight --> implement_review: checks_partial
     implement_preflight --> implement_correction: checks_failed
-    implement_review --> finished: PASS [full_checks]
+    implement_review --> finished: PASS [full_checks, unchanged]
+    implement_review --> implement_preflight: PASS [full_checks, !unchanged]
     source --> map: imported
     finished --> [*]
 ```
@@ -304,13 +308,16 @@ src/ki_dev/
   runner/      interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Wächter,
                Aktionen, advance), runtime.py (LangGraph-Graph aus delivery.toml),
                planning.py (Planungs-Thread je Bead), graph.py (Ablauf → Graph,
-               für run und step), events.py (Protokoll), prompts.py
-               (Vorlagen füllen), cli.py,
+               für run und step), turns.py (jede Übergabe aus ihrer
+               Deklaration), delivery_turns.py (Felder des Lieferablaufs),
+               events.py (Protokoll), cli.py,
                safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
+  ops/         checks/ (Vorlauf), context/ (Bead-Eingabe, Leitlinien,
+               Grenzen, Kontextbausteine); kennt weder runner noch adapter
   adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),
                executors/ (Claude- und Codex-CLI, Transkripte, Messung)
-  step/        Adapter manual für den Planungsablauf: Übergaben, Vorlauf,
-               Leitlinien, Laufzustand je Bead
+  step/        Adapter manual für den Planungsablauf: Bedienung,
+               Laufzustand je Bead, Quellenimport
   pilot/, safety_profile/   abgelegt, noch nicht angebunden (urq, wu0.10.5)
 ```
 
@@ -336,6 +343,16 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
   Zeile in `events.jsonl`.
 - **Beobachtbar:** `ki-dev run` schreibt je Übergang eine Zeile nach
   `events.jsonl` ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
+- **Geprüfter Stand bei step:** Ein PASS gilt nur, wenn Arbeitsbaum und
+  Bead seit dem Vorlauf unverändert sind; sonst läuft der Vorlauf erneut
+  (Wächter `unchanged`, wie `freeze` bei `run`).
+- **Grenzen, genau genommen:** `runner/safety.py` prüft Aufruf-, Token- und
+  Kostengrenzen *vor dem nächsten* Aufruf; ein einzelner Aufruf kann
+  `max_total_tokens` überschreiten, Cache-Lesen zählt voll. Innerhalb eines
+  Aufrufs begrenzt nur Claude (`--max-budget-usd`, `--max-turns`), Codex
+  nicht. `step` (Adapter manual) misst keine Token. Das Zugriffsprofil im
+  Auftrag ist Prompttext, keine Sperre; isoliert wird im
+  [Agent-Container](docker/agent/README.md).
 - **Zur Kartierung offen:** Sitzungsbindung als Ablaufdatum
   (`neu | wie:<zustand>`), adaptive Schnitte des Controllers
   ([Zielbild](docs/zielbild.de.md)).

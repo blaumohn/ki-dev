@@ -33,16 +33,20 @@ def transcript_agents() -> tuple[str, ...]:
     return tuple(_READERS)
 
 
-def validate_session_request(agent: str, session_id: str) -> None:
-    """Prueft Anbieter und ID ohne Datei- oder Umgebungszugriff."""
-    validator = _VALIDATORS.get(agent)
-    if validator is None:
+def validate_agent(agent: str) -> None:
+    """Prueft den Anbieter ohne Datei- oder Umgebungszugriff."""
+    if agent not in _READERS:
         raise TranscriptRequestError(
             f"Transkriptanbieter {agent!r} wird nicht unterstuetzt; "
             f"unterstuetzt: {', '.join(transcript_agents())}"
         )
+
+
+def validate_session_request(agent: str, session_id: str) -> None:
+    """Prueft Anbieter und ID ohne Datei- oder Umgebungszugriff."""
+    validate_agent(agent)
     try:
-        validator(session_id)
+        _VALIDATORS[agent](session_id)
     except ValueError as exc:
         raise TranscriptRequestError(str(exc)) from None
 

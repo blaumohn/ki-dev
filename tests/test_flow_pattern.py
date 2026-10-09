@@ -18,8 +18,15 @@ def test_phases_expand_to_their_states_and_edges():
             assert f"{phase}{local}" in flow.states
     assert "implement.preflight" in flow.states
     assert "map.preflight" not in flow.states
-    (pass_edge,) = flow.candidates("implement.review", "PASS")
-    assert pass_edge.cond == ("full_checks",)
+    unchanged, changed = flow.candidates("implement.review", "PASS")
+    assert (unchanged.cond, unchanged.target) == (
+        ("full_checks", "unchanged"),
+        "finished",
+    )
+    assert (changed.cond, changed.target) == (
+        ("full_checks", "!unchanged"),
+        "implement.preflight",
+    )
     (map_pass,) = flow.candidates("map.review", "PASS")
     assert (map_pass.cond, map_pass.target) == ((), "graph")
 

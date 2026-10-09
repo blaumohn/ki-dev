@@ -9,14 +9,14 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
-from ki_dev.step.cli import HELP
-from ki_dev.step.contract import Step
-from ki_dev.step.guidelines import (
+from ki_dev.ops.context.contract import Step
+from ki_dev.ops.context.guidelines import (
     render_guideline_block,
     select_guidelines,
 )
-from ki_dev.step.guidelines_source import load_guidelines
-from ki_dev.step.limit import MAX_DIAGNOSIS_CHARS
+from ki_dev.ops.context.guidelines_source import load_guidelines
+from ki_dev.ops.context.limit import MAX_DIAGNOSIS_CHARS
+from ki_dev.step.help import HELP
 from tests.codex_session_fixtures import (
     SECRET,
     dialog,
@@ -26,6 +26,7 @@ from tests.codex_session_fixtures import (
 from tests.fake_bd import FakeBd
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
+from tests.turn_helpers import without_attempt
 
 runner = CliRunner()
 ROOT = Path(__file__).resolve().parent.parent
@@ -275,13 +276,14 @@ def test_review_base_at_limit_keeps_large_report_and_guidelines(
         "PRUEFBERICHT vorlauf-start=",
         "- marker: PASS",
         "Vollständig: .local/handoff/preflight/",
-        "Hinweis: Der Zeitpunkt dient",
+        "Hinweis: PASS gilt nur, wenn Arbeitsbaum",
     ):
         assert line in out[4000:]
     sections = select_guidelines(
         load_guidelines(project), Step.REVIEW, None
     )
-    assert out.endswith(render_guideline_block(sections))
+    block = render_guideline_block(sections)
+    assert without_attempt(out).endswith(block)
     assert out.count(filler) == len(sections)
     assert all(section.text in out for section in sections)
     assert sum(len(section.text) for section in sections) >= 17000

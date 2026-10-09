@@ -46,6 +46,14 @@ bd-Hooks on_create, on_update und on_close. `issues/<ID>.json` enthält
 die letzte Hook-Nutzlast des Vorgangs. Löschungen und Kommentartexte
 fehlen.
 
+Sitzungsangaben in lesbaren Quellen-Beads sind interne Hinweise,
+z. B. `Claude-Sitzung …b1d0d`. Neue Quellen-Beads verwenden einen unter
+den vorhandenen Quellen-Sitzungen eindeutigen UUID-Suffix ab fünf
+Hex-Zeichen. Die Transkripte sind dadurch nicht öffentlich archiviert.
+Technische `source_key`-Werte und konkrete Dateipfade behalten ihre
+vollständige ID. Vor Veröffentlichung auch die Journal-Historie prüfen:
+ältere Revisionen können vollständige IDs enthalten.
+
 Commit-Nachricht: `<Ereignis> <ID>: <Titel> [<Status>]`; ` (verspätet)`
 markiert eine ältere Nutzlast, die die Datei nicht überschrieben hat.
 Zeilenumbrüche in Titel und Status werden im Betreff zu Leerzeichen;

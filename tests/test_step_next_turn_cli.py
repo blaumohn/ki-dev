@@ -12,13 +12,14 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
-from ki_dev.step.preflight_options import (
+from ki_dev.ops.checks.options import (
     parse_preflight_args,
     parse_preflight_skip,
 )
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
 from tests.test_step_cli import FULL, _command, _preflight_project
+from tests.turn_helpers import without_attempt
 
 runner = CliRunner()
 
@@ -51,6 +52,7 @@ def assert_follow_up_message(text: str) -> None:
 def assert_flow_hint_closes(text: str) -> None:
     """Der Hinweisblock des Planungsablaufs schließt die Nachricht ab:
     eine Kopfzeile, danach nur Folgeschritte."""
+    text = without_attempt(text)
     assert text.count("Hinweis für den Menschen:") == 1
     head, _, tail = text.rstrip().partition("Hinweis für den Menschen:")
     steps = tail.splitlines()[1:]
@@ -361,7 +363,9 @@ def test_feedback_from_stdin_equals_file(bd, tmp_path, monkeypatch):
         app, [*args, "--feedback-file", "-"], input=text.encode()
     )
     assert from_file.exit_code == from_stdin.exit_code == 0
-    assert from_file.stdout == from_stdin.stdout
+    assert without_attempt(from_file.stdout) == without_attempt(
+        from_stdin.stdout
+    )
     assert "| Ünïcode ✓\n| zweite Zeile\n" in from_file.stdout + "\n"
 
 
@@ -371,7 +375,7 @@ def test_without_feedback_option_stdin_is_not_read(
     def tripwire():
         raise AssertionError("stdin wurde angefordert")
 
-    monkeypatch.setattr("ki_dev.step.cli._stdin_binary", tripwire)
+    monkeypatch.setattr("ki_dev.step.boundary.stdin_binary", tripwire)
     monkeypatch.chdir(tmp_path)
     write_guidelines(tmp_path)
     for args in (
@@ -554,15 +558,40 @@ def test_notes_and_comments_are_never_read_or_written(
 # ---------------------------------------------------------------------
 
 
+def _reviewed(tmp_path: Path, monkeypatch) -> None:
+    """Eine Antwort gilt nur am wartenden Review: erst der Vorlauf."""
+    _project(tmp_path, monkeypatch)
+    _review_first()
+
+
+def _review_first() -> None:
+    write_guidelines(Path.cwd())
+    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    assert result.exit_code == 0, result.stderr
+    assert f"Versuch: {ATTEMPT} " in result.stdout
+
+
+# Kennung des ersten wartenden Reviews eines frischen Beads.
+ATTEMPT = "x-1:1"
+
+
 def _decision(tmp_path: Path, **fields) -> str:
-    value = {"event": "PASS", "detail": "", "requirement_ref": None}
+    value = {
+        "event": "PASS",
+        "detail": "",
+        "requirement_ref": None,
+        "attempt": ATTEMPT,
+    }
     value.update(fields)
     path = tmp_path / "antwort.json"
     path.write_text(json.dumps(value))
     return str(path)
 
 
-def test_changes_bound_to_criterion_goes_to_builder(bd, tmp_path):
+def test_changes_bound_to_criterion_goes_to_builder(
+    bd, tmp_path, monkeypatch
+):
+    _reviewed(tmp_path, monkeypatch)
     source = _decision(
         tmp_path,
         event="fix",
@@ -580,7 +609,10 @@ def test_changes_bound_to_criterion_goes_to_builder(bd, tmp_path):
     assert "Vorlauf:" not in result.stderr
 
 
-def test_unbound_changes_becomes_decision_for_human(bd, tmp_path):
+def test_unbound_changes_becomes_decision_for_human(
+    bd, tmp_path, monkeypatch
+):
+    _reviewed(tmp_path, monkeypatch)
     source = _decision(
         tmp_path, event="fix", detail="x", requirement_ref="AC7"
     )
@@ -596,7 +628,8 @@ def test_unbound_changes_becomes_decision_for_human(bd, tmp_path):
     assert "- source → source:" not in result.stdout
 
 
-def test_pass_goes_to_human_with_close_hint(bd, tmp_path):
+def test_pass_goes_to_human_with_close_hint(bd, tmp_path, monkeypatch):
+    _reviewed(tmp_path, monkeypatch)
     result = runner.invoke(
         app, [*BASE, "--decision-file", _decision(tmp_path)]
     )
@@ -605,12 +638,14 @@ def test_pass_goes_to_human_with_close_hint(bd, tmp_path):
     assert "`bd close x-1`" in result.stdout
 
 
-def test_decision_from_stdin(bd):
+def test_decision_from_stdin(bd, tmp_path, monkeypatch):
+    _reviewed(tmp_path, monkeypatch)
     payload = json.dumps(
         {
             "event": "decision",
             "detail": "Umfang?",
             "requirement_ref": None,
+            "attempt": ATTEMPT,
         }
     )
     result = runner.invoke(
@@ -690,6 +725,7 @@ def _with_control(**fields) -> str:
         "event": "fix",
         "detail": "Test fehlt",
         "requirement_ref": "AC1",
+        "attempt": ATTEMPT,
     }
     value.update(fields)
     return json.dumps(value)
@@ -697,6 +733,7 @@ def _with_control(**fields) -> str:
 
 def test_control_becomes_command_for_human(bd, tmp_path, monkeypatch):
     _control_project(tmp_path, monkeypatch)
+    _review_first()
     payload = _with_control(
         preflight_args={"tests": "-k 'neu or alt'"},
         preflight_skip={"lint": "nur Doku"},
@@ -705,7 +742,7 @@ def test_control_becomes_command_for_human(bd, tmp_path, monkeypatch):
         app, [*BASE, "--decision-file", "-"], input=payload
     )
     assert result.exit_code == 0, result.stderr
-    command = result.stdout.rstrip().splitlines()[-1]
+    command = without_attempt(result.stdout).rstrip().splitlines()[-1]
     argv = shlex.split(command)
     assert argv[:6] == [
         "ki-dev", "step", "x-1", "--step", "review", "--next-turn",
@@ -724,11 +761,13 @@ def test_printed_command_runs_as_partial_review(
     """Der ausgegebene Befehl ist echt: ausgeführt ergibt er einen
     Teillauf ohne PASS."""
     _control_project(tmp_path, monkeypatch)
+    _review_first()
     payload = _with_control(preflight_skip={"lint": "nur Doku"})
     routed = runner.invoke(
         app, [*BASE, "--decision-file", "-"], input=payload
     )
-    argv = shlex.split(routed.stdout.rstrip().splitlines()[-1])
+    last = without_attempt(routed.stdout).rstrip().splitlines()[-1]
+    argv = shlex.split(last)
     result = runner.invoke(app, argv[1:])
     assert result.exit_code == 0, result.stderr
     assert "- lint: SKIPPED" in result.stdout
@@ -744,6 +783,7 @@ def test_without_control_no_command_is_printed(
     bd, tmp_path, monkeypatch
 ):
     _control_project(tmp_path, monkeypatch)
+    _review_first()
     result = runner.invoke(
         app, [*BASE, "--decision-file", "-"], input=_with_control()
     )

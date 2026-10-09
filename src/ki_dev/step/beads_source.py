@@ -7,6 +7,7 @@ DB-/Exportzugriffe. Fehlertexte enthalten nie bd-Ausgabe.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from plumbum.commands.processes import ProcessTimedOut
 
 BD_PROGRAM = "bd"
 BD_TIMEOUT_S = 10
+_UUID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.I)
 
 
 class BeadsSourceError(RuntimeError):
@@ -77,6 +79,44 @@ def find_source_bead(key: str, workdir: Path) -> str | None:
             f"{len(ids)} Quellen-Beads zum selben Schluessel"
         )
     return ids[0] if ids else None
+
+
+def short_session_reference(session_id: str, workdir: Path) -> str:
+    """Kuerzester eindeutiger UUID-Suffix fuer lesbare Quellenangaben.
+
+    Die vollstaendige ID bleibt im source_key und im Snapshot-Pfad.
+    """
+    if _UUID.fullmatch(session_id) is None:
+        raise BeadsSourceError("ungueltige Sitzungs-ID")
+    stdout = _run_bd(
+        [
+            "list",
+            "--all",
+            "--has-metadata-key",
+            "handoff",
+            "--json",
+            "-n",
+            "0",
+        ],
+        workdir,
+    )
+    others = set()
+    for row in _rows(stdout):
+        key = _source_key_of(row)
+        if not isinstance(key, str):
+            continue
+        parts = key.split(":", 2)
+        if len(parts) >= 2 and _UUID.fullmatch(parts[1]):
+            others.add(parts[1].replace("-", "").lower())
+    compact = session_id.replace("-", "").lower()
+    for length in range(5, len(compact) + 1):
+        suffix = compact[-length:]
+        if all(
+            other == compact or not other.endswith(suffix)
+            for other in others
+        ):
+            return f"…{suffix}"
+    raise BeadsSourceError("Sitzungs-ID nicht eindeutig")
 
 
 def _create_argv(source: SourceBead) -> list[str]:

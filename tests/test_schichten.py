@@ -11,6 +11,10 @@ Umweg über ein Hilfsmodul ist ebenso eine Abhängigkeit.
 - ``ki_dev.step`` ist die Projektion des Ausführers mit dem Adapter
   manual: es nutzt ``ki_dev.runner`` (Planungsschleife), der Ausführer
   kennt step nie; Maschinenoperationen reicht step als Bindung herein.
+- ``ki_dev.ops`` setzt deklarierte Operationen um (``checks``) und
+  liefert Kontextquellen (``context``: Bead-Eingabe, Leitlinien,
+  Grenzen, Beads-Leser); es kennt weder Ausführer noch Adapter noch
+  step: eingesteckt wird es von außen.
 - Kernmodule außerhalb der Schichten (Deltas, Verbrauch, Nachweise)
   kennen weder Ausführer noch ``step`` noch die Kommandozeile; ein
   Modul, das nur eine Schicht nutzt, liegt in dieser Schicht.
@@ -84,7 +88,11 @@ def _layer(prefix: str) -> list[str]:
     [
         ("ki_dev.flow", ("ki_dev.runner", "ki_dev.adapter")),
         ("ki_dev.adapter", ("ki_dev.runner", "ki_dev.flow")),
-        ("ki_dev.runner", ("ki_dev.step",)),
+        ("ki_dev.runner", ("ki_dev.step", "ki_dev.ops")),
+        (
+            "ki_dev.ops",
+            ("ki_dev.runner", "ki_dev.adapter", "ki_dev.step"),
+        ),
     ],
 )
 def test_layers_never_import_upwards(layer, forbidden):

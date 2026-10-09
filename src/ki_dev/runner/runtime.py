@@ -50,6 +50,7 @@ from ki_dev.review_context import (
     project_review_context,
 )
 from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.delivery_turns import review_prompt, work_prompt
 from ki_dev.runner.events import event_record
 from ki_dev.runner.graph import END_ROUTE, compile_flow
 from ki_dev.runner.machine import (
@@ -92,7 +93,6 @@ from ki_dev.runner.machine import (
     encode_run_state,
     operation,
 )
-from ki_dev.runner.prompts import review_prompt, work_prompt
 from ki_dev.runner.review_output import (
     REVIEW_VOCABULARY,
     AgentProtocolError,

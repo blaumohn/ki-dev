@@ -9,14 +9,14 @@ from typer.testing import CliRunner
 
 from ki_dev.cli import app
 from ki_dev.flow.planning import load_planning_flow
-from ki_dev.step import beads_reader
-from ki_dev.step.contract import Step
-from ki_dev.step.guidelines import GUIDELINE_SOURCES
-from ki_dev.step.handoff import HandoffIssue
-from ki_dev.step.handoff import (
+from ki_dev.ops.context import beads_reader
+from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.contract import Step
+from ki_dev.ops.context.guidelines import GUIDELINE_SOURCES
+from tests.guideline_fixtures import write_guidelines
+from tests.turn_helpers import (
     render_base_handoff as _render_base_handoff,
 )
-from tests.guideline_fixtures import write_guidelines
 
 FLOW = load_planning_flow()
 render_base_handoff = partial(_render_base_handoff, flow=FLOW)
@@ -158,7 +158,7 @@ def test_invalid_limit_config_is_exit_2(offline):
 
 
 def test_bead_handoff_no_longer_points_to_agents_md():
-    issue = HandoffIssue(
+    issue = BeadInput(
         id="x-1",
         title="T",
         description="D",

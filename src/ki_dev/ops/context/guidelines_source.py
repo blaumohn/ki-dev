@@ -1,6 +1,6 @@
 """Leitlinienquellen lesen (UTF-8/YAML) und Markdown-Seiten abgleichen.
 
-Ein-/Ausgabegrenze zu ``handoff_guidelines``: liest die festen YAML-
+Ein-/Ausgabegrenze zu ``guidelines``: liest die festen YAML-
 Dateien relativ zur Projektwurzel, ohne Ersatzquelle, und übersetzt
 Lese- und Parsefehler in bereinigte Diagnosen ohne Rohinhalte.
 """
@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-from ki_dev.step.guidelines import (
+from ki_dev.ops.context.guidelines import (
     GUIDELINE_SOURCES,
     GuidelineContractError,
     GuidelineDocument,

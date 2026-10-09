@@ -3,15 +3,13 @@ from functools import partial
 import pytest
 
 from ki_dev.flow.planning import load_planning_flow
-from ki_dev.step.contract import ReviewTarget, Step
-from ki_dev.step.handoff import (
-    HandoffInvalidError,
-    HandoffIssue,
-    validate_handoff,
+from ki_dev.ops.context.bead_input import (
+    BeadInput,
+    BeadInputInvalidError,
+    validate_bead_input,
 )
-from ki_dev.step.handoff import (
-    render_handoff as _render_handoff,
-)
+from ki_dev.ops.context.contract import ReviewTarget, Step
+from tests.turn_helpers import render_handoff as _render_handoff
 
 FLOW = load_planning_flow()
 render_handoff = partial(_render_handoff, flow=FLOW)
@@ -28,19 +26,19 @@ def _issue(**changes):
         "acceptance_criteria": "AC-Text",
         "source_refs": REFS,
     }
-    return HandoffIssue(**(values | changes))
+    return BeadInput(**(values | changes))
 
 
 @pytest.mark.parametrize("step", list(Step))
 def test_complete_issue_is_valid_for_every_step(step):
-    assert validate_handoff(_issue(), step) == ()
+    assert validate_bead_input(_issue(), step) == ()
 
 
 @pytest.mark.parametrize("step", list(Step))
 @pytest.mark.parametrize("field", ["id", "title", "description"])
 @pytest.mark.parametrize("bad", [None, "", "  ", 3, ["x"]])
 def test_common_fields_must_be_nonempty_strings(step, field, bad):
-    assert validate_handoff(_issue(**{field: bad}), step) == (field,)
+    assert validate_bead_input(_issue(**{field: bad}), step) == (field,)
 
 
 @pytest.mark.parametrize(
@@ -48,12 +46,12 @@ def test_common_fields_must_be_nonempty_strings(step, field, bad):
 )
 @pytest.mark.parametrize("bad", [None, [], "a.md", [""], {"a": 1}])
 def test_source_refs_required_for_map_graph_materialize(step, bad):
-    problems = validate_handoff(_issue(source_refs=bad), step)
+    problems = validate_bead_input(_issue(source_refs=bad), step)
     assert problems[0].startswith("metadata.handoff.source_refs")
 
 
 def test_source_ref_problem_names_the_index():
-    problems = validate_handoff(
+    problems = validate_bead_input(
         _issue(source_refs=["ok", " ", 7]), Step.MAP
     )
     assert problems == (
@@ -64,14 +62,14 @@ def test_source_ref_problem_names_the_index():
 
 @pytest.mark.parametrize("step", [Step.IMPLEMENT, Step.REVIEW])
 def test_build_review_need_no_metadata(step):
-    assert validate_handoff(_issue(source_refs=None), step) == ()
+    assert validate_bead_input(_issue(source_refs=None), step) == ()
 
 
 @pytest.mark.parametrize("step", [Step.IMPLEMENT, Step.REVIEW])
 @pytest.mark.parametrize("field", ["acceptance_criteria", "design"])
 @pytest.mark.parametrize("bad", [None, "", 5])
 def test_build_review_require_contract_fields(step, field, bad):
-    assert validate_handoff(_issue(**{field: bad}), step) == (field,)
+    assert validate_bead_input(_issue(**{field: bad}), step) == (field,)
 
 
 @pytest.mark.parametrize(
@@ -79,12 +77,12 @@ def test_build_review_require_contract_fields(step, field, bad):
 )
 def test_map_graph_materialize_need_no_design_or_ac(step):
     issue = _issue(design=None, acceptance_criteria=None)
-    assert validate_handoff(issue, step) == ()
+    assert validate_bead_input(issue, step) == ()
 
 
 def test_all_problems_are_reported_together():
-    issue = HandoffIssue()
-    assert validate_handoff(issue, Step.IMPLEMENT) == (
+    issue = BeadInput()
+    assert validate_bead_input(issue, Step.IMPLEMENT) == (
         "id",
         "title",
         "description",
@@ -149,7 +147,7 @@ def test_title_control_characters_and_newlines_are_flattened():
 
 
 def test_render_refuses_invalid_issue():
-    with pytest.raises(HandoffInvalidError) as info:
+    with pytest.raises(BeadInputInvalidError) as info:
         render_handoff(_issue(design=None), Step.IMPLEMENT)
     assert info.value.problems == ("design",)
 
@@ -159,9 +157,10 @@ def test_core_imports_no_cli_or_process_modules():
     import sys
 
     code = (
-        "import sys, ki_dev.step.handoff;"
+        "import sys, ki_dev.runner.turns,"
+        " ki_dev.ops.context.bead_input;"
         "bad = {'typer', 'rich', 'subprocess',"
-        " 'ki_dev.step.beads_reader'};"
+        " 'ki_dev.ops.context.beads_reader'};"
         "sys.exit(int(bool(bad & set(sys.modules))))"
     )
     assert subprocess.run([sys.executable, "-c", code]).returncode == 0
@@ -241,14 +240,16 @@ def test_review_without_target_equals_build_target():
     assert render_handoff(_issue(), Step.REVIEW) == render_handoff(
         _issue(), Step.REVIEW, ReviewTarget.IMPLEMENT
     )
-    assert validate_handoff(
+    assert validate_bead_input(
         _issue(), Step.REVIEW
-    ) == validate_handoff(_issue(), Step.REVIEW, ReviewTarget.IMPLEMENT)
+    ) == validate_bead_input(
+        _issue(), Step.REVIEW, ReviewTarget.IMPLEMENT
+    )
 
 
 @pytest.mark.parametrize("target", SOURCE_TARGETS)
 def test_source_review_targets_require_source_refs(target):
-    problems = validate_handoff(
+    problems = validate_bead_input(
         _issue(source_refs=None), Step.REVIEW, target
     )
     assert problems[0].startswith("metadata.handoff.source_refs")
@@ -259,19 +260,19 @@ def test_source_review_targets_require_source_refs(target):
 )
 def test_map_graph_review_need_no_design_or_ac(target):
     issue = _issue(design=None, acceptance_criteria=None)
-    assert validate_handoff(issue, Step.REVIEW, target) == ()
+    assert validate_bead_input(issue, Step.REVIEW, target) == ()
 
 
 def test_materialize_review_needs_refs_and_contract_fields():
     target = ReviewTarget.MATERIALIZE
-    assert validate_handoff(_issue(), Step.REVIEW, target) == ()
+    assert validate_bead_input(_issue(), Step.REVIEW, target) == ()
 
-    missing_refs = validate_handoff(
+    missing_refs = validate_bead_input(
         _issue(source_refs=None), Step.REVIEW, target
     )
     assert missing_refs[0].startswith("metadata.handoff.source_refs")
 
-    missing_design = validate_handoff(
+    missing_design = validate_bead_input(
         _issue(design=None), Step.REVIEW, target
     )
     assert missing_design == ("design",)
@@ -279,7 +280,7 @@ def test_materialize_review_needs_refs_and_contract_fields():
 
 def test_build_review_target_needs_no_source_refs():
     issue = _issue(source_refs=None)
-    problems = validate_handoff(
+    problems = validate_bead_input(
         issue, Step.REVIEW, ReviewTarget.IMPLEMENT
     )
     assert problems == ()
@@ -449,7 +450,7 @@ def test_build_review_lists_criterion_refs_without_text():
 
 
 def test_build_review_rejects_gapped_criterion_numbering():
-    with pytest.raises(HandoffInvalidError, match="fortlaufend"):
+    with pytest.raises(BeadInputInvalidError, match="fortlaufend"):
         render_handoff(
             _issue(acceptance_criteria="1. a\n3. b"), Step.REVIEW
         )
@@ -464,6 +465,8 @@ def test_build_review_states_requirement_ref_is_always_present():
 @pytest.mark.parametrize("target", [None, ReviewTarget.IMPLEMENT])
 def test_validate_reports_gapped_criteria_for_build_review(target):
     issue = _issue(acceptance_criteria="1. a\n3. b")
-    (problem,) = validate_handoff(issue, Step.REVIEW, target)
+    (problem,) = validate_bead_input(issue, Step.REVIEW, target)
     assert problem.startswith("acceptance_criteria:")
-    assert validate_handoff(issue, Step.REVIEW, ReviewTarget.MAP) == ()
+    assert (
+        validate_bead_input(issue, Step.REVIEW, ReviewTarget.MAP) == ()
+    )

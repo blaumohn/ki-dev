@@ -7,4 +7,5 @@ Review-Urteil NEEDS_DECISION (source): Umfang?
 
 Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
 - source → source: offene Fragen in einer Planungssitzung klären
+Versuch: x-1:2 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

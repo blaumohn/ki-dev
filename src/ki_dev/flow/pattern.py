@@ -12,8 +12,18 @@ Namensregeln, ohne Ausdrücke in Strings:
   Zustand ``PHASE.LOKAL`` (``map.review``).
 - Ein Kantenziel ist ein lokaler Zustand, ``@next`` (der Parameter
   ``next`` der Phase) oder ein Name aus ``globals`` des Musters.
-- ``actor`` und ``hint`` der Phase ergänzen oder ersetzen die Vorgaben
-  des Musters je lokalem Zustand bzw. je (lokalem Zustand, Ereignis).
+- ``actor`` der Phase ergänzt oder ersetzt die Vorgabe des Musters je
+  lokalem Zustand; ``hint`` der Phase gilt je (lokalem Zustand,
+  Ereignis) für die Kanten ohne eigenen Hinweis im Muster (so behält
+  eine zweite Kante desselben Ereignisses, etwa PASS bei geändertem
+  Stand, ihren Hinweis).
+- ``template`` und ``context`` der Phase setzen je lokalem Zustand
+  Rollenvorlage und Kontextbausteine seiner einzigen Operation (der
+  Übergabe); so trägt jede Phase ihre Übergabe als Daten.
+- Eine Kante des Musters kann die Übergabe selbst bestimmen
+  (``template``, ``context``: Nachricht am Übergang). ``@NAME`` als
+  Vorlage nennt den Eintrag ``template.NAME`` der Phase, so wie
+  ``@next`` den Parameter ``next``.
 - ``extends`` übernimmt Zustände und Kanten eines anderen Musters und
   hängt eigene an. Ein neuer Schalter wird ein neues Muster, kein
   Bedingungsfeld (Leitlinie).
@@ -27,6 +37,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 NEXT = "@next"
+REFERENCE = "@"
 WRITE = "write"
 
 
@@ -98,9 +109,26 @@ def _instantiate(
         local: dict(events)
         for local, events in phase.get("hint", {}).items()
     }
+    turns = _turns(phase)
     _check_overrides(locals_, actors, hints, pattern, label)
+    referenced = {
+        str(item["template"]).removeprefix(REFERENCE)
+        for item in pattern["transition"]
+        if str(item.get("template", "")).startswith(REFERENCE)
+    }
+    for local in turns:
+        if local not in locals_ and local not in referenced:
+            raise PatternError(
+                f"{label}: template/context.{local}: unbekannt"
+            )
     states = [
-        _state(state, phase_id, actors.get(state["local"]))
+        _state(
+            state,
+            phase_id,
+            actors.get(state["local"]),
+            turns.get(str(state["local"]), {}),
+            label,
+        )
         for state in pattern["state"]
     ]
     transitions = [
@@ -116,13 +144,38 @@ def _state_id(phase_id: str, local: str) -> str:
     return phase_id if local == WRITE else f"{phase_id}.{local}"
 
 
-def _state(item: Mapping, phase_id: str, actor: object) -> dict:
+def _turns(
+    phase: Mapping[str, object],
+) -> dict[str, dict[str, object]]:
+    """Übergabe-Parameter je lokalem Zustand (template, context)."""
+    turns: dict[str, dict[str, object]] = {}
+    for key in ("template", "context"):
+        for local, value in dict(phase.get(key, {})).items():
+            turns.setdefault(local, {})[key] = value
+    return turns
+
+
+def _state(
+    item: Mapping,
+    phase_id: str,
+    actor: object,
+    turn: Mapping[str, object],
+    label: str,
+) -> dict:
     state = {
         key: value for key, value in item.items() if key != "local"
     }
     state["id"] = _state_id(phase_id, str(item["local"]))
     if actor is not None:
         state["actor"] = actor
+    if turn:
+        operations = list(state.get("operation", ()))
+        if len(operations) != 1:
+            raise PatternError(
+                f"{label}: template/context.{item['local']}: braucht "
+                "genau eine Operation"
+            )
+        state["operation"] = [{**operations[0], **turn}]
     return state
 
 
@@ -146,8 +199,15 @@ def _transition(
         phase, target, locals_, globals_, label
     )
     hint = hints.get(source, {}).get(str(item["event"]))
-    if hint is not None:
+    if hint is not None and "hint" not in item:
         transition["hint"] = hint
+    template = str(item.get("template", ""))
+    if template.startswith(REFERENCE):
+        name = template.removeprefix(REFERENCE)
+        named = dict(phase.get("template", {}))
+        if name not in named:
+            raise PatternError(f"{label}: template.{name} fehlt")
+        transition["template"] = named[name]
     return transition
 
 

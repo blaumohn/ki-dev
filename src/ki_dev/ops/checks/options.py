@@ -10,17 +10,20 @@ Teillauf (``PreflightReport.partial``), der keinen PASS trägt.
 from __future__ import annotations
 
 import shlex
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from typing import cast
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.step.preflight import (
+from ki_dev.flow.model import PASS
+from ki_dev.ops.checks.preflight import (
     ARGV_SCHEMA,
     PreflightConfig,
     argv_character_problem,
     report_name,
 )
+from ki_dev.review_decision import ReviewContractError, ReviewVerdict
 
 ARGS_OPTION = "--preflight-args"
 SKIP_OPTION = "--preflight-skip"
@@ -145,3 +148,55 @@ def _extra_args(text: str, label: str) -> tuple[str, ...]:
     if problem:
         raise PreflightOptionError(f"{label}: ARGS {problem}")
     return tuple(args)
+
+
+# --- Steuerfelder der Review-Antwort (5we) ---------------------------
+
+_TEXT_MAP = {
+    "type": "object",
+    "additionalProperties": {"type": "string"},
+}
+CONTROL_SCHEMA = {
+    "preflight_args": _TEXT_MAP,
+    "preflight_skip": _TEXT_MAP,
+}
+"""Optionale Felder der Review-Antwort; ihre Werte prüft
+:func:`check_control` wie die CLI-Optionen."""
+
+
+def control_from(
+    extras: Mapping[str, object],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Vorgeschlagene Prüfsteuerung (Zusatzargumente, Auslassungen)."""
+    args = cast(Mapping[str, str], extras.get("preflight_args", {}))
+    skip = cast(Mapping[str, str], extras.get("preflight_skip", {}))
+    return dict(args), dict(skip)
+
+
+def check_control(
+    verdict: ReviewVerdict,
+    extras: Mapping[str, object],
+    load_config: Callable[[], PreflightConfig],
+) -> None:
+    """Steuerfelder gegen die Vorlauf-Konfiguration prüfen: nie bei
+    PASS, Werte wie die CLI-Optionen. ``load_config`` läuft nur bei
+    Steuerfeldern; seine Fehler gibt es unverändert weiter."""
+    args, skip = control_from(extras)
+    if not (args or skip):
+        return
+    if verdict.event == PASS:
+        raise ReviewContractError(
+            "preflight_args/preflight_skip: bei PASS nicht erlaubt"
+        )
+    try:
+        apply_preflight_options(
+            load_config(),
+            parse_preflight_args(_as_pairs(args)),
+            parse_preflight_skip(_as_pairs(skip)),
+        )
+    except PreflightOptionError as exc:
+        raise ReviewContractError(str(exc)) from exc
+
+
+def _as_pairs(values: Mapping[str, str]) -> list[str]:
+    return [f"{name}={text}" for name, text in values.items()]

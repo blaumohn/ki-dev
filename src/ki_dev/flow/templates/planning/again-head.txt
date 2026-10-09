@@ -1,5 +1,0 @@
-Empfänger: Review-Agent (bisherige, vom Schreibagenten getrennte Sitzung)
-Reviewziel: ${target}
-Bead: ${bead}
-
-Erneute Prüfung nach Korrekturen: ${focus} ${rules} ${verdict}

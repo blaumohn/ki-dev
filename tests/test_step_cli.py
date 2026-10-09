@@ -8,10 +8,12 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
-from ki_dev.step import beads_reader, preflight
-from ki_dev.step.contract import Step
+from ki_dev.ops.checks import preflight
+from ki_dev.ops.context import beads_reader
+from ki_dev.ops.context.contract import Step
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
+from tests.turn_helpers import without_attempt
 
 runner = CliRunner()
 
@@ -64,10 +66,9 @@ def test_same_input_gives_same_output(bd):
     # Nicht review: dessen Bericht trägt einen Zeitstempel, und ohne
     # eigenes Projekt liefe der Vorlauf dieses Repos (pytest) rekursiv.
     args = ["step", "x-1", "--step", "implement"]
-    assert (
+    assert without_attempt(
         runner.invoke(app, args).stdout
-        == runner.invoke(app, args).stdout
-    )
+    ) == without_attempt(runner.invoke(app, args).stdout)
 
 
 def test_missing_bead_names_id_on_stderr(bd):
@@ -543,7 +544,9 @@ def test_review_of_build_matches_plain_review(
         ["step", "x-1", "--step", "review", "--review-of", "implement"],
     )
     assert plain.exit_code == explicit.exit_code == 0
-    assert plain.stdout == explicit.stdout
+    assert without_attempt(plain.stdout) == without_attempt(
+        explicit.stdout
+    )
 
 
 def test_review_validates_bead_before_preflight_config(

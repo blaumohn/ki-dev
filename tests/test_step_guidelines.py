@@ -9,8 +9,12 @@ from pathlib import Path
 import pytest
 
 from ki_dev.flow.planning import load_planning_flow
-from ki_dev.step.contract import ReviewTarget, Step
-from ki_dev.step.guidelines import (
+from ki_dev.ops.checks.preflight import (
+    PreflightReport,
+)
+from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.contract import ReviewTarget, Step
+from ki_dev.ops.context.guidelines import (
     GUIDELINE_SOURCES,
     GuidelineContractError,
     GuidelineSection,
@@ -19,25 +23,19 @@ from ki_dev.step.guidelines import (
     select_common_guidelines,
     select_guidelines,
 )
-from ki_dev.step.guidelines_source import (
+from ki_dev.ops.context.guidelines_source import (
     GuidelineSourceError,
     load_guidelines,
     sync_guideline_documents,
 )
-from ki_dev.step.handoff import HandoffIssue
-from ki_dev.step.handoff import (
+from tests.guideline_fixtures import guideline_data, write_guidelines
+from tests.turn_helpers import (
     render_base_handoff as _render_base_handoff,
 )
-from ki_dev.step.handoff import (
-    render_handoff as _render_handoff,
-)
-from ki_dev.step.preflight import (
-    PreflightReport,
-)
-from ki_dev.step.preflight import (
+from tests.turn_helpers import render_handoff as _render_handoff
+from tests.turn_helpers import (
     render_review_handoff as _render_review_handoff,
 )
-from tests.guideline_fixtures import guideline_data, write_guidelines
 
 FLOW = load_planning_flow()
 render_base_handoff = partial(_render_base_handoff, flow=FLOW)
@@ -61,7 +59,7 @@ def _ids(sections, source=SOURCE):
 
 
 def _issue():
-    return HandoffIssue(
+    return BeadInput(
         id="x-1",
         title="Titel",
         description="Beschreibung",

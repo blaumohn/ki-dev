@@ -72,12 +72,42 @@ def test_map_call_writes_source_bead_and_prints_short_task(env):
     assert len(messages(artifact)) == 4
     [bead] = env.bd.rows
     rel = artifact.relative_to(env.work).as_posix()
+    assert bead["title"] == "Quelle: codex-Sitzung …f0001"
+    assert "Sitzung …f0001" in bead["description"]
+    assert SID not in bead["title"] + bead["description"]
+    assert SID in bead["metadata"]["handoff"]["source_key"]
     assert bead["metadata"]["handoff"]["source_refs"] == [rel]
     assert "Schritt: map" in result.stdout
     assert f"Bead: {bead['id']}" in result.stdout
     assert rel in result.stdout
     assert "abschnittsweise" in result.stdout
     assert "Frage 0" not in result.stdout
+
+
+def test_map_extends_session_suffix_on_collision(env):
+    other = "0199bbbb-bbbb-cccc-dddd-1234567f0001"
+    env.bd.set(
+        rows=[
+            {
+                "id": "t-existing",
+                "title": "Quelle: codex-Sitzung …f0001",
+                "metadata": {
+                    "handoff": {
+                        "source_key": f"codex:{other}:digest:v1"
+                    }
+                },
+            }
+        ]
+    )
+    write_session(env.sessions, SID, dialog(1))
+    result = runner.invoke(app, MAP)
+    assert result.exit_code == 0, result.stderr
+    created = next(
+        row for row in env.bd.rows if row["id"] != "t-existing"
+    )
+    assert created["title"] == "Quelle: codex-Sitzung …ff0001"
+    assert "Sitzung …ff0001" in created["description"]
+    assert SID in created["metadata"]["handoff"]["source_key"]
 
 
 def test_no_transcript_text_on_stdout_or_in_beads(env):

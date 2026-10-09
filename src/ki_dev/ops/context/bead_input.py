@@ -1,36 +1,33 @@
-"""Reiner Kern für geprüfte Arbeitsübergaben (ki-dev step)."""
+"""Bead-Eingabe der Übergaben: Typ, formale Prüfung je Schritt,
+Abnahmekriterien mit Referenz.
+
+Die Prüfung kennt nur Schritt und Prüfgegenstand; Rendering und
+Ablauf liegen bei den Aufrufern.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.flow.planning import NAME, PlanningFlow
-from ki_dev.flow.templates import lines as lines_of
+from ki_dev.flow.planning import NAME
 from ki_dev.flow.templates import render
+from ki_dev.ops.context.contract import (
+    NONEMPTY_TEXT_SCHEMA,
+    ReviewTarget,
+    Step,
+)
 from ki_dev.review_decision import (
     ReviewContractError,
     criterion_refs,
     split_acceptance_criteria,
 )
-from ki_dev.step.contract import (
-    NONEMPTY_TEXT_SCHEMA,
-    ReviewTarget,
-    Step,
-    one_line,
-)
-from ki_dev.step.guidelines import (
-    GuidelineSection,
-    render_guideline_block,
-)
-from ki_dev.step.limit import check_base_length
 
 
 @dataclass(frozen=True)
-class HandoffIssue:
-    """Normalisierte Bead-Rohwerte; Typen prüft validate_handoff."""
+class BeadInput:
+    """Normalisierte Bead-Rohwerte; Typen prüft validate_bead_input."""
 
     id: object = None
     title: object = None
@@ -41,7 +38,7 @@ class HandoffIssue:
     epic_context: tuple[tuple[str, str], ...] = ()
 
 
-class HandoffInvalidError(ValueError):
+class BeadInputInvalidError(ValueError):
     """Bead erfüllt die formalen Pflichtfelder des Schritts nicht."""
 
     def __init__(self, problems: tuple[str, ...]) -> None:
@@ -84,7 +81,7 @@ def _needs_contract(
 # Gemeinsame Schema-Bausteine (Technikleitlinie: Draft202012Validator,
 # einmal je Regel definiert und wiederverwendet). metadata/handoff
 # bleiben rein deklarativ: source_refs ist eine nichtleere Liste
-# nichtleerer Texte, unabhängig vom internen HandoffIssue-Feldnamen.
+# nichtleerer Texte, unabhängig vom internen BeadInput-Feldnamen.
 _SOURCE_REFS_SCHEMA = {
     "type": "array",
     "minItems": 1,
@@ -161,8 +158,8 @@ _FIELD_RANK = {
 }
 
 
-def validate_handoff(
-    issue: HandoffIssue,
+def validate_bead_input(
+    issue: BeadInput,
     step: Step,
     review_target: ReviewTarget | None = None,
 ) -> tuple[str, ...]:
@@ -187,7 +184,7 @@ def validate_handoff(
     return problems
 
 
-def _criterion_problems(issue: HandoffIssue) -> tuple[str, ...]:
+def _criterion_problems(issue: BeadInput) -> tuple[str, ...]:
     """AC-Zerlegung der Umsetzungs-Review vor jedem Vorlauf
     prüfen (Erst-Review, --next-turn und --decision-file teilen
     diese Grenze)."""
@@ -198,8 +195,8 @@ def _criterion_problems(issue: HandoffIssue) -> tuple[str, ...]:
     return ()
 
 
-def _issue_payload(issue: HandoffIssue) -> dict:
-    """HandoffIssue als Schema-Instanz; nur zur Validierung gebildet."""
+def _issue_payload(issue: BeadInput) -> dict:
+    """BeadInput als Schema-Instanz; nur zur Validierung gebildet."""
     return {
         "id": issue.id,
         "title": issue.title,
@@ -227,95 +224,6 @@ def _field_path(path: tuple) -> str:
     return str(path[0])
 
 
-def render_handoff(
-    issue: HandoffIssue,
-    step: Step,
-    review_target: ReviewTarget | None = None,
-    guidelines: Sequence[GuidelineSection] = (),
-    base_max_chars: int | None = None,
-    *,
-    flow: PlanningFlow,
-) -> str:
-    """Basisübergabe, danach der gesonderte Leitlinienblock; die Grenze
-    gilt nur für die Basis (``None``: ungeprüft). ``flow`` ist die an
-    der I/O-Grenze geladene Zustandstabelle."""
-    base = render_base_handoff(
-        issue, step, review_target, flow=flow, max_chars=base_max_chars
-    )
-    return base + render_guideline_block(guidelines)
-
-
-def render_base_handoff(
-    issue: HandoffIssue,
-    step: Step,
-    review_target: ReviewTarget | None = None,
-    *,
-    flow: PlanningFlow,
-    reading_hint: str | None = None,
-    max_chars: int | None = None,
-) -> str:
-    """Kopierbarer Klartext ohne Leitlinien; lehnt formal
-    unvollständige Beads ab.
-
-    ``reading_hint`` (Sitzungsimport) gehört zur Basis. Mit
-    ``max_chars`` wird der gerenderte Text einschließlich Hinweis und
-    abschließendem Zeilenumbruch gezählt; Übergröße wird abgelehnt,
-    nie gekürzt.
-    """
-    problems = validate_handoff(issue, step, review_target)
-    if problems:
-        raise HandoffInvalidError(problems)
-    lines = _base_lines(issue, step, review_target, flow)
-    text = "\n".join(lines) + "\n"
-    if reading_hint is not None:
-        text += f"\n{reading_hint}\n"
-    if max_chars is not None:
-        fields = _variable_fields(
-            issue, step, review_target, reading_hint
-        )
-        check_base_length(text, max_chars, fields)
-    return text
-
-
-def _base_lines(
-    issue: HandoffIssue,
-    step: Step,
-    review_target: ReviewTarget | None,
-    flow: PlanningFlow,
-) -> list[str]:
-    lines = [f"Schritt: {step.value}"]
-    if step is Step.REVIEW:
-        effective_target = review_target or ReviewTarget.IMPLEMENT
-        lines.append(f"Reviewziel: {effective_target.value}")
-    lines += [
-        f"Bead: {one_line(issue.id)} - {one_line(issue.title)}",
-        "",
-        *lines_of(NAME, "common"),
-        "",
-        *_roles(step, review_target, flow),
-    ]
-    if issue.epic_context:
-        lines += ["", *lines_of(NAME, "epic-intro")]
-    for epic_id, epic_context in issue.epic_context:
-        lines += [
-            "",
-            render(
-                NAME,
-                "epic-hint",
-                id=one_line(epic_id),
-                context=one_line(epic_context),
-            ),
-        ]
-    if _needs_refs(step, review_target):
-        lines += ["", "Quellenreferenzen (unaufgelöst):"]
-        lines += [f"- {one_line(ref)}" for ref in issue.source_refs]
-    if _is_build_review(step, review_target):
-        lines += ["", _criterion_line(issue)]
-    state = flow_state(step, review_target)
-    lines += ["", *flow.hint_lines(state, one_line(issue.id))]
-    return lines
-
-
 def _is_build_review(
     step: Step, review_target: ReviewTarget | None
 ) -> bool:
@@ -325,80 +233,18 @@ def _is_build_review(
     )
 
 
-def _criterion_line(issue: HandoffIssue) -> str:
+def criterion_line(issue: BeadInput) -> str:
     """Nur die Referenzen; den Text liest der Reviewer im Bead."""
     refs = ", ".join(ref for ref, _ in criteria_with_refs(issue))
     return render(NAME, "criterion-line", refs=refs)
 
 
-def criteria_with_refs(issue: HandoffIssue) -> list[tuple[str, str]]:
+def criteria_with_refs(issue: BeadInput) -> list[tuple[str, str]]:
     """Abnahmekriterien des Beads mit Referenz; ungültige Nummerierung
     ist ein formaler Mangel (Exit 2), kein stiller Ersatz."""
     text = str(issue.acceptance_criteria)
     try:
         criteria = split_acceptance_criteria(text)
     except ReviewContractError as exc:
-        raise HandoffInvalidError((str(exc),)) from exc
+        raise BeadInputInvalidError((str(exc),)) from exc
     return list(zip(criterion_refs(criteria), criteria, strict=True))
-
-
-def flow_state(step: Step, review_target: ReviewTarget | None) -> str:
-    """Zustand der Tabelle flow/planning.toml, in dem diese Übergabe
-    entsteht (Schreibschritt oder Review der jeweiligen Phase)."""
-    if step is Step.REVIEW:
-        return (
-            f"{(review_target or ReviewTarget.IMPLEMENT).value}.review"
-        )
-    return step.value
-
-
-def ensure_base_fits(
-    issue: HandoffIssue,
-    step: Step,
-    review_target: ReviewTarget | None,
-    max_chars: int,
-    *,
-    flow: PlanningFlow,
-) -> None:
-    """Basisgrenze prüfen, ohne den Text zu verwenden (vor einem
-    Vorlauf, der Dateien ändern kann)."""
-    render_base_handoff(
-        issue, step, review_target, flow=flow, max_chars=max_chars
-    )
-
-
-def _variable_fields(
-    issue: HandoffIssue,
-    step: Step,
-    review_target: ReviewTarget | None,
-    reading_hint: str | None,
-) -> list[tuple[str, int]]:
-    """Zeichenanteile der veränderlichen Basisteile, ohne Rohwerte."""
-    fields = [
-        ("id", len(one_line(issue.id))),
-        ("title", len(one_line(issue.title))),
-    ]
-    for index, (epic_id, context) in enumerate(issue.epic_context):
-        size = len(one_line(epic_id)) + len(one_line(context))
-        fields.append((f"epic_context[{index}]", size))
-    if _needs_refs(step, review_target):
-        for index, ref in enumerate(issue.source_refs):
-            fields.append((f"source_refs[{index}]", len(one_line(ref))))
-    if _is_build_review(step, review_target):
-        size = len(_criterion_line(issue))
-        fields.append(("acceptance_criteria", size))
-    if reading_hint is not None:
-        fields.append(("Lesehinweis", len(reading_hint)))
-    return fields
-
-
-def _roles(
-    step: Step, review_target: ReviewTarget | None, flow: PlanningFlow
-) -> tuple[str, ...]:
-    if step is not Step.REVIEW:
-        return lines_of(NAME, f"role-{step.value}")
-    target = review_target or ReviewTarget.IMPLEMENT
-    return (
-        *lines_of(NAME, f"review-{target.value}"),
-        *flow.class_lines(),
-    )

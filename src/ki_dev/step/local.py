@@ -12,11 +12,11 @@ from collections.abc import Sequence
 
 from ki_dev.flow.planning import NAME
 from ki_dev.flow.templates import text
-from ki_dev.step.guidelines import (
+from ki_dev.ops.context.guidelines import (
     GuidelineSection,
     render_guideline_block,
 )
-from ki_dev.step.limit import check_base_length
+from ki_dev.ops.context.limit import check_base_length
 
 
 def render_local_handoff(

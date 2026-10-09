@@ -17,6 +17,10 @@ CODEX_HOME_ENV = "CODEX_HOME"
 # Codex-Sitzungs-IDs sind UUIDs; die Positivliste schliesst
 # Pfadseparatoren, ``..`` und Glob-Metazeichen sicher aus.
 _SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+_ROLLOUT_NAME = re.compile(
+    r"rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-"
+    r"(?P<id>[A-Za-z0-9][A-Za-z0-9_-]{0,127})\.jsonl"
+)
 
 
 def validate_codex_session_id(session_id: str) -> None:
@@ -55,3 +59,14 @@ def find_session_rollout(root: Path, session_id: str) -> Path:
     if len(found) != 1:
         raise ValueError("Codex-Rollout fehlt oder ist mehrdeutig")
     return found[0]
+
+
+def list_session_rollouts(root: Path) -> list[tuple[str, Path]]:
+    """Alle Rollout-Dateien als ``(session_id, Pfad)``; Dateien ohne
+    erkennbaren Rollout-Namen sind keine Sitzungen."""
+    found = []
+    for path in sorted(root.glob("*/*/*/rollout-*.jsonl")):
+        match = _ROLLOUT_NAME.fullmatch(path.name)
+        if match:
+            found.append((match["id"], path))
+    return found

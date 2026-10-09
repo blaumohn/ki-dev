@@ -99,7 +99,7 @@ actor = "Controller (Review-Sitzung)"
 # Ohne geprüftes Ergebnis gibt es nichts zu beurteilen: der erste
 # Auftrag kommt aus der Laufkonfiguration, nicht von einem Agenten.
 operation = [
-  { do = "review", cond = ["checked_result"] },
+  { do = "review", cond = ["checked_result"], template = "review" },
   { do = "task" },
 ]
 
@@ -112,7 +112,7 @@ operation = [{ do = "prepare" }]
 id = "worker_step"
 kind = "agent"
 actor = "Worker (Bau-Sitzung)"
-operation = [{ do = "work" }]
+operation = [{ do = "work", template = "work" }]
 
 [[state]]
 id = "capture_step_result"

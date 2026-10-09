@@ -1,7 +1,7 @@
 """Leitlinien als Daten: Vertrag, feste Auswahl je Schritt, Rendering.
 
 Reiner Kern ohne Dateizugriff. Lesen und YAML-Parsing liegen in
-``handoff_guidelines_source``; dieses Modul erhält bereits geparste
+``guidelines_source``; dieses Modul erhält bereits geparste
 Daten und prüft sie gegen den Vertrag (Draft202012Validator plus
 benannte Referenzprüfung).
 """
@@ -16,7 +16,7 @@ from jsonschema import Draft202012Validator, ValidationError
 
 from ki_dev.flow.planning import NAME
 from ki_dev.flow.templates import lines as lines_of
-from ki_dev.step.contract import (
+from ki_dev.ops.context.contract import (
     NONEMPTY_TEXT_SCHEMA,
     ReviewTarget,
     Step,
@@ -296,14 +296,14 @@ def _render_document(document: GuidelineDocument) -> str:
     return f"{header}\n{body}\n"
 
 
-def render_guideline_block(
+def guideline_lines(
     guidelines: Sequence[GuidelineSection],
-) -> str:
-    """Gesonderter Kontextblock nach allen Basisteilen; leer ohne
-    Abschnitte. Regeltexte bleiben unverändert (Markdown,
+) -> list[str]:
+    """Zeilen des gesonderten Kontextblocks nach allen Basisteilen;
+    leer ohne Abschnitte. Regeltexte bleiben unverändert (Markdown,
     Zeilenumbrüche) und werden weder gekürzt noch zur Basis gezählt."""
     if not guidelines:
-        return ""
+        return []
     lines = ["", *lines_of(NAME, "guideline-intro")]
     for section in guidelines:
         lines += [
@@ -312,4 +312,12 @@ def render_guideline_block(
             f"{one_line(section.id)} ---",
             section.text,
         ]
-    return "\n".join(lines) + "\n"
+    return lines
+
+
+def render_guideline_block(
+    guidelines: Sequence[GuidelineSection],
+) -> str:
+    """Der Kontextblock als Text (leer ohne Abschnitte)."""
+    lines = guideline_lines(guidelines)
+    return "\n".join(lines) + "\n" if lines else ""

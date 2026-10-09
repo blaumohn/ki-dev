@@ -1,4 +1,4 @@
 Empfänger: Umsetzer (Vorlauf fehlgeschlagen)
 Bead: ${bead}
 
-${request} Die Rückmeldung darf höchstens ${limit} Zeichen lang sein.
+Bitte die gemeldeten Fehler beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse. Die Rückmeldung darf höchstens ${limit} Zeichen lang sein.

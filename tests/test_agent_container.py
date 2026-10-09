@@ -704,6 +704,39 @@ def test_beads_path_extends_image_path():
     ]
 
 
+def test_login_shell_keeps_container_path():
+    dockerfile = (ROOT / "docker/agent/Dockerfile").read_text()
+    assert (
+        "COPY docker/agent/profile-path.sh /etc/profile.d/"
+        in dockerfile
+    )
+    assert (
+        'export KI_DEV_AGENT_PATH="$PATH"'
+        in (ROOT / "docker/agent/entrypoint.sh").read_text()
+    )
+    saved = "/beads/.build/linux:/usr/bin"
+    _, out, err = source_profile_path(
+        "KI_DEV_AGENT_CONTAINER=1", f"KI_DEV_AGENT_PATH={saved}"
+    )
+    assert (out, err) == (saved, "")
+
+
+def test_login_shell_without_saved_path_warns():
+    _, out, err = source_profile_path("KI_DEV_AGENT_CONTAINER=1")
+    assert out == "/reset"
+    assert "KI_DEV_AGENT_PATH missing" in err
+
+
+def source_profile_path(*assignments):
+    probe = 'PATH=/reset; . "$1"; printf %s "$PATH"'
+    script = str(ROOT / "docker/agent/profile-path.sh")
+    return local["/usr/bin/env"].run(
+        args=["-i", *assignments, "/bin/sh", "-c", probe, "sh", script],
+        retcode=0,
+        timeout=10,
+    )
+
+
 @pytest.mark.parametrize(
     "args", [[], ["shell"], ["shell", "-lc", "pwd"]]
 )

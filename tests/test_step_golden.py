@@ -19,7 +19,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
-from ki_dev.step import preflight
+from ki_dev.ops.checks import preflight
 from tests import codex_session_fixtures as codex
 from tests.fake_bd import FakeBd
 from tests.fake_bd_command import BdScript
@@ -35,8 +35,13 @@ FAIL = "import sys; sys.exit(1)"
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
 
 
-def _decision(tmp_path: Path, **fields) -> str:
-    value = {"event": "PASS", "detail": "", "requirement_ref": None}
+def _decision(tmp_path: Path, attempt: str, **fields) -> str:
+    value = {
+        "event": "PASS",
+        "detail": "",
+        "requirement_ref": None,
+        "attempt": attempt,
+    }
     value.update(fields)
     path = tmp_path / "antwort.json"
     path.write_text(json.dumps(value))
@@ -66,11 +71,11 @@ CASES = [
         [*NEXT, "--preflight-skip", "tests=nur Doku"],
     ),
     ("next-turn-of-map", None, [*NEXT, "--review-of", "map"]),
-    ("decision-pass", None, "PASS"),
-    ("decision-fix-bound", None, "fix-AC1"),
-    ("decision-fix-unbound", None, "fix-AC9"),
-    ("decision-source", None, "source"),
-    ("decision-decision", None, "decision"),
+    ("decision-pass", "print(1)", "PASS"),
+    ("decision-fix-bound", "print(1)", "fix-AC1"),
+    ("decision-fix-unbound", "print(1)", "fix-AC9"),
+    ("decision-source", "print(1)", "source"),
+    ("decision-decision", "print(1)", "decision"),
 ]
 
 
@@ -103,22 +108,29 @@ def test_step_output_matches_golden(
     write_guidelines(tmp_path)
     monkeypatch.chdir(tmp_path)
     if isinstance(args, str):
-        args = [*NEXT, "--decision-file", _answer(tmp_path, args)]
+        # Eine Antwort gilt nur am wartenden Review: erst der Vorlauf.
+        first = runner.invoke(app, REVIEW)
+        assert first.exit_code == 0
+        attempt = re.search(r"^Versuch: (\S+)", first.stdout, re.M)
+        assert attempt, first.stdout
+        answer = _answer(tmp_path, attempt.group(1), args)
+        args = [*NEXT, "--decision-file", answer]
     result = runner.invoke(app, args)
     _compare(name, result, tmp_path)
 
 
-def _answer(tmp_path: Path, spec: str) -> str:
+def _answer(tmp_path: Path, attempt: str, spec: str) -> str:
     if spec == "PASS":
-        return _decision(tmp_path)
+        return _decision(tmp_path, attempt)
     if spec.startswith("fix-"):
         return _decision(
             tmp_path,
+            attempt,
             event="fix",
             detail="Test fehlt",
             requirement_ref=spec.removeprefix("fix-"),
         )
-    return _decision(tmp_path, event=spec, detail="Umfang?")
+    return _decision(tmp_path, attempt, event=spec, detail="Umfang?")
 
 
 def test_local_matches_golden(tmp_path, monkeypatch):

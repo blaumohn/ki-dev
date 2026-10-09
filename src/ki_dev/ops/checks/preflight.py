@@ -1,19 +1,23 @@
-"""Deterministischer Vorlauf für die manuelle Review-Übergabe.
+"""Operation ``checks``: deterministischer Vorlauf eines Projekts.
 
-Datenfluss: CLI ruft ``load_preflight_config`` und ``run_preflight``
-(beide mit Schreibwirkung: Prozessaufrufe, Prüfartefakt) auf und erhält
-einen ``PreflightReport``; ``render_review_handoff`` ist reines
-Rendering ohne I/O. Unabhängig von ``ki_dev.runner``:
-kein Checkpoint, kein Commit, keine Runden-/Sicherheitsgrenzen, keine
-Agentensteuerung. Prozessaufrufe laufen ohne Shell in der
-Projektwurzel; die Umgebung wird nicht eingeschränkt (geerbte
-Umgebung des Aufrufers), das ist keine Vorgabe dieses Auftrags.
+Umsetzung der im Ablauf deklarierten Operation (``planning.toml``,
+Zustand ``implement.preflight``); der Aufrufer steckt sie beim Start in
+den Ausführer (``MachineOperation``). Datenfluss:
+``load_preflight_config`` und ``run_preflight`` (Schreibwirkung:
+Prozessaufrufe, Prüfartefakt) liefern einen ``PreflightReport``;
+``format_command_result`` und ``artifact_line`` formatieren ihn.
+Die Übergabe rendert der Ausführer (``ki_dev.runner.turns``, Baustein
+``report`` in ``ki_dev.ops.context.blocks``).
+Unabhängig von Ausführer und Adapter: kein Checkpoint, kein Commit,
+keine Runden-/Sicherheitsgrenzen, keine Agentensteuerung.
+Prozessaufrufe laufen ohne Shell in der Projektwurzel; die Umgebung
+wird nicht eingeschränkt (geerbte Umgebung des Aufrufers).
 
-Der Vorlauf bindet den Bericht nicht an einen Quellstand: kein
-Fingerprint, kein Git-Aufruf, keine Drifterkennung zwischen den
-Prüfungen. Der Bericht nennt nur den Zeitpunkt; Bericht und
-Arbeitsstand ordnet der Mensch einander zu und startet den Vorlauf
-nach weiteren Änderungen erneut (docs/step.de.md).
+Der Vorlauf selbst ruft kein Git auf und braucht kein Repository. Den
+geprüften Stand (Arbeitsbaum, Bead) hält der Planungsablauf nach dem
+Vorlauf fest (``ki_dev.ops.checks.stand``): Eine PASS-Antwort gilt
+nur, wenn er sich seither nicht geändert hat; sonst läuft der Vorlauf
+erneut (docs/step.de.md).
 """
 
 from __future__ import annotations
@@ -37,14 +41,6 @@ from plumbum import ProcessTimedOut, local
 from plumbum.machines.local import LocalCommand
 
 from ki_dev.config_sources import ConfigSource
-from ki_dev.flow.planning import NAME, PlanningFlow
-from ki_dev.flow.templates import text
-from ki_dev.step.contract import Step
-from ki_dev.step.guidelines import (
-    GuidelineSection,
-    render_guideline_block,
-)
-from ki_dev.step.handoff import HandoffIssue, render_base_handoff
 
 ARTIFACT_DIR = Path(".local/handoff/preflight")
 
@@ -144,11 +140,9 @@ class CommandResult:
 class PreflightReport:
     """``valid`` heißt: Grundlage für eine erfolgreiche Review-Übergabe.
 
-    ``started_at`` nennt den Beginn des Vorlaufs zur manuellen
-    Zuordnung. Es ist keine Bindung an einen Quellstand: Der Vorlauf
-    erfasst weder Fingerprints noch Git-Stände und erkennt keine
-    Änderungen zwischen Prüfungen. Diese Zuordnung verantwortet der
-    Mensch, der den Vorlauf nach weiteren Änderungen erneut startet.
+    ``started_at`` nennt den Beginn des Vorlaufs. Der Bericht selbst
+    enthält keinen Stand; den hält der Planungsablauf neben ihm fest
+    und vergleicht ihn beim Eingang einer PASS-Antwort.
     """
 
     started_at: str
@@ -180,7 +174,7 @@ def is_partial(commands: Iterable[CommandResult]) -> bool:
 # darf zusätzliche Projektangaben nicht zum Konfigurationsfehler
 # machen.
 # Gemeinsame Regel für argv aus der Konfiguration und für per
-# --preflight-args ergänzte Argumente (preflight_options).
+# --preflight-args ergänzte Argumente (ki_dev.ops.checks.options).
 ARGV_SCHEMA = {
     "type": "array",
     "minItems": 1,
@@ -379,10 +373,9 @@ def run_preflight(
     Bricht bei der ersten fehlgeschlagenen Korrektur ab; bereits
     erfolgte Änderungen bleiben stehen (kein automatischer Rückbau).
     Restliche Korrekturen gelten dann als ausgelassen, Prüfungen
-    laufen in diesem Fall nicht. Der Vorlauf vergleicht keinen
-    Quellstand vor und nach den Prüfungen: Dass der Arbeitsstand
-    währenddessen unverändert bleibt, hält der Mensch ein, der den
-    Vorlauf nach weiteren Änderungen erneut startet.
+    laufen in diesem Fall nicht. Den Stand nach dem Vorlauf hält der
+    Planungsablauf fest; Änderungen danach führen vor einem PASS zu
+    einem neuen Vorlauf.
     """
     started_at = _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     results: list[CommandResult] = []
@@ -680,8 +673,9 @@ def _write_artifact(
 def format_command_result(item: CommandResult) -> str:
     """Eine Zeile je Befehl: Name, Status, gekürztes Detail, argv.
 
-    Gemeinsam für die Erfolgsübergabe (``render_review_handoff``) und
-    den Reparaturbefund bei Fehlschlag genutzt, damit beide Pfade
+    Gemeinsam für die Erfolgsübergabe (Baustein ``report`` in
+    ``ki_dev.ops.context.blocks``) und den Reparaturbefund bei
+    Fehlschlag genutzt, damit beide Pfade
     dieselben Angaben (einschließlich ausgelassener Befehle und der
     tatsächlichen argv) zeigen. name stammt aus der Konfiguration,
     nicht aus Prozessausgabe, wird über ``report_name`` aber ebenso
@@ -704,40 +698,6 @@ def format_command_result(item: CommandResult) -> str:
     if item.added:
         parts.append(ADDED_MARKER)
     return " ".join(parts)
-
-
-def render_review_handoff(
-    issue: HandoffIssue,
-    report: PreflightReport,
-    guidelines: Sequence[GuidelineSection] = (),
-    *,
-    flow: PlanningFlow,
-) -> str:
-    """Reines Rendering: Basis-Review-Übergabe, kompakter
-    Vorlaufbericht, danach der gesonderte Leitlinienblock."""
-    lines = render_report_lines(report)
-    return (
-        render_base_handoff(issue, Step.REVIEW, flow=flow)
-        + "\n".join(lines)
-        + "\n"
-        + render_guideline_block(guidelines)
-    )
-
-
-def render_report_lines(report: PreflightReport) -> list[str]:
-    """Kompakter Vorlaufbericht (``PRUEFBERICHT …``) als Zeilen;
-    gemeinsam für Review-Übergabe und ``--next-turn``."""
-    lines = [f"PRUEFBERICHT vorlauf-start={report.started_at}"]
-    lines += [format_command_result(item) for item in report.commands]
-    lines.append(artifact_line(report))
-    if report.partial:
-        lines.append(text(NAME, "partial-run-note"))
-    lines.append(
-        "Hinweis: Der Zeitpunkt dient der manuellen Zuordnung, nicht "
-        "als Beweis eines unveränderten Quellstands; nach weiteren "
-        "Änderungen den Vorlauf erneut starten."
-    )
-    return lines
 
 
 def artifact_line(report: PreflightReport) -> str:

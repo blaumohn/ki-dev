@@ -9,13 +9,16 @@ The AI writes code and judges results. What happens next (another
 correction round, a halt for a decision, a verified integration) is neither
 in the prompt nor in Python code; it is in the workflow.
 
-```text
- flow/delivery.toml · planning.toml     WHAT  states, transitions, guards, actions      data
-        │ read by
-  runner/           ki-dev run      HOW   formal answer → event → guard              LangGraph:
-        │ calls                           → edge action → next input                 checkpoint, halt
- adapter/  claude · codex · manual · mock                                           WHO
-```
+The three components divide responsibility:
+
+| Component | Defines | Contents / role |
+| --- | --- | --- |
+| `flow/delivery.toml`, `flow/planning.toml` | **What** may happen | Data: states, transitions, guards and actions |
+| `runner/` | **How** the workflow executes | Formal answer → event → check guard → execute edge action → next input; LangGraph manages checkpoints and halts |
+| `adapter/` | **Who** handles the input | Connects Claude, Codex, a human (`manual`) or a simulation (`mock`) |
+
+The executor (`runner/`) reads the workflow file and calls the appropriate
+adapter. With `ki-dev run`, this happens automatically.
 
 `ki-dev step` is the same idea by hand: exactly one transition of the
 planning workflow, carried on by a human as messenger.
@@ -113,6 +116,18 @@ The human thus has two separate roles: messenger (adapter) and decider
 | `PASSED` only via verified integration | `tests/machine/test_reachability.py` |
 | layers never import upwards | `tests/test_schichten.py` (transitive, AST) |
 | README diagrams match the workflows | `tests/test_flow_delivery.py`, `tests/test_flow_planning.py` |
+
+## Limits, precisely
+
+- `runner/safety.py` checks call, token and cost limits *before the next*
+  call; a single call can exceed `max_total_tokens`, cache reads count in
+  full. Only Claude is bounded within a call (`--max-budget-usd`,
+  `--max-turns`), Codex is not. `step` (adapter manual) measures no tokens.
+- The access profile in a task is prompt text, not a lock; isolation comes
+  from the [agent container](docker/agent/README.md).
+- With `step`, a PASS only counts if working tree and bead are unchanged
+  since the preflight; otherwise the preflight runs again (guard
+  `unchanged`, like `freeze` in `run`).
 
 ## Installation
 

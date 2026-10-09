@@ -44,3 +44,17 @@ def find_claude_sessions(root: Path, session_id: str) -> list[Path]:
     """Sitzungsdateien ``<projekt>/<session_id>.jsonl`` in ``root``."""
     validate_claude_session_id(session_id)
     return sorted(root.glob(f"*/{session_id}.jsonl"))
+
+
+def list_claude_sessions(root: Path) -> list[tuple[str, Path]]:
+    """Alle Hauptsitzungen ``<projekt>/<session_id>.jsonl`` als
+    ``(session_id, Pfad)``.
+
+    Unterordner (Subagenten) liegen tiefer und zaehlen nicht mit;
+    Dateien ohne gueltigen ID-Namen sind keine Sitzungen.
+    """
+    return [
+        (path.stem, path)
+        for path in sorted(root.glob("*/*.jsonl"))
+        if _SESSION_ID.fullmatch(path.stem)
+    ]

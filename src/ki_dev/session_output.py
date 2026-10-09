@@ -13,7 +13,9 @@ import re
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import NoReturn
 
+import typer
 from rich.console import Console, RenderableType
 
 _LESS_RAW = re.compile(r"(?:^|\s)-\S*[rR]")
@@ -41,6 +43,12 @@ def print_rich(renderable: RenderableType, *, pager: bool) -> None:
             console.print(renderable)
     except BrokenPipeError:
         silence_stdout()
+
+
+def fail(message: str, *, code: int) -> NoReturn:
+    """Diagnose nach stderr, dann Exit mit ``code``."""
+    typer.echo(message, err=True)
+    raise typer.Exit(code=code)
 
 
 def write_bytes(data: bytes, output: Path | None) -> None:

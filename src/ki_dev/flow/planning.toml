@@ -32,12 +32,36 @@ events = [
   "checks_passed", "checks_partial", "checks_failed",
 ]
 # full_checks: der letzte Vorlauf lief vollständig (kein Teillauf);
-# ohne ihn gibt es kein PASS.
-guards = ["full_checks"]
+# ohne ihn gibt es kein PASS. unchanged: Arbeitsbaum und Bead sind
+# seit dem Vorlauf unverändert (synchron verglichen, wie freeze bei run).
+guards = ["full_checks", "unchanged"]
 # Was der Ausführer beim Betreten tut: turn = Übergabe an eine Sitzung
 # (Adapter manual: Ausgabe für den Menschen als Boten), ask = der Mensch
 # entscheidet, checks = deterministischer Vorlauf (läuft automatisch).
+# Vorlage und Kontext einer Übergabe stehen an der Operation des
+# Zustands oder, wenn die Kante sie bestimmt (Nachricht am Übergang),
+# an der Kante; gilt die letzte Kante des Weges mit Vorlage, sonst die
+# Operation des Haltezustands.
 operations = ["turn", "ask", "checks"]
+# Kontextbausteine einer Übergabe (turn), in der deklarierten
+# Reihenfolge nach der Rollenvorlage: finding_classes = Befundklassen
+# für Review-Rollen, epic_sections = Hinweise der Eltern-Epics,
+# source_refs = Quellenreferenzen (unaufgelöst), criteria = Referenzen
+# der Abnahmekriterien, next_steps = Folgeschritte laut Kanten dieses
+# Ablaufs, reading_hint = Lesehinweis des Sitzungsimports, report =
+# Vorlaufbericht (report_followup: mit Leerzeile davor), guidelines =
+# Leitlinien (docs/policies, je Phase), feedback_review/feedback_repair
+# = Rückmeldung des Schreibagenten, human_note = Hinweis an den
+# Menschen, finding = Befund des Vorlaufs, control = vorgeschlagene
+# Prüfsteuerung. Was ein Baustein liefert, steckt der Aufrufer ein
+# (ki-dev step: ki_dev.ops.context.blocks). Die Kopfzeilen und gemeinsamen
+# Regeln stehen in der Vorlage.
+context = [
+  "finding_classes", "epic_sections", "source_refs", "criteria",
+  "next_steps", "attempt", "reading_hint", "report", "report_followup",
+  "guidelines", "feedback_review", "feedback_repair", "human_note",
+  "finding", "control",
+]
 
 # Pflichtereignisse je Zustandsart: jeder Zustand dieser Art muss sie
 # behandeln, sonst bleibt ein Ausgang einer Sitzung ohne Folge.
@@ -80,16 +104,26 @@ local = "review"
 kind = "review"
 operation = [{ do = "turn" }]
 
+# Befund des Reviews an den Schreibagenten (Nachricht der Kante
+# review --fix--> correction); der Vorlauf überschreibt sie am Übergang.
 [[pattern.review_core.state]]
 local = "correction"
 kind = "correction"
-operation = [{ do = "turn" }]
+operation = [
+  { do = "turn", template = "decision-changes", context = [
+    { use = "next_steps" }, { use = "control" }, { use = "attempt" },
+  ] },
+]
 
 [[pattern.review_core.state]]
 local = "decision"
 kind = "decision"
 actor = "Mensch"
-operation = [{ do = "ask" }]
+operation = [
+  { do = "ask", template = "decision-other", context = [
+    { use = "next_steps" }, { use = "control" }, { use = "attempt" },
+  ] },
+]
 
 [[pattern.review_core.transition]]
 source = "review"
@@ -137,11 +171,18 @@ target = "review"
 source = "correction"
 event = "done"
 target = "review"
+template = "@again"
+context = [
+  { use = "report_followup" }, { use = "feedback_review" },
+  { use = "human_note" }, { use = "next_steps" }, { use = "attempt" },
+]
 
 [[pattern.write_review.transition]]
 source = "review"
 event = "PASS"
 target = "@next"
+template = "decision-other"
+context = [{ use = "next_steps" }, { use = "control" }, { use = "attempt" }]
 
 # Umsetzung: vor jedem Review ein deterministischer Vorlauf (checks);
 # ein Teillauf erreicht das Review, aber kein PASS.
@@ -163,6 +204,11 @@ target = "preflight"
 source = "correction"
 event = "done"
 target = "preflight"
+template = "@again"
+context = [
+  { use = "report_followup" }, { use = "feedback_review" },
+  { use = "human_note" }, { use = "next_steps" }, { use = "attempt" },
+]
 
 [[pattern.write_review_preflight.transition]]
 source = "preflight"
@@ -181,12 +227,31 @@ source = "preflight"
 event = "checks_failed"
 target = "correction"
 hint = "Exit 1: Reparaturnachricht an den Umsetzer (implementer)"
+template = "repair-head"
+context = [
+  { use = "finding" }, { use = "feedback_repair" },
+  { use = "next_steps" }, { use = "attempt" },
+]
 
 [[pattern.write_review_preflight.transition]]
 source = "review"
 event = "PASS"
-cond = ["full_checks"]
+cond = ["full_checks", "unchanged"]
 target = "@next"
+template = "decision-other"
+context = [{ use = "next_steps" }, { use = "control" }, { use = "attempt" }]
+
+[[pattern.write_review_preflight.transition]]
+source = "review"
+event = "PASS"
+cond = ["full_checks", "!unchanged"]
+target = "preflight"
+hint = "Stand seit dem Vorlauf geändert: neuer Vorlauf, dann neues Review"
+template = "@again"
+context = [
+  { use = "report_followup" }, { use = "feedback_review" },
+  { use = "human_note" }, { use = "next_steps" }, { use = "attempt" },
+]
 
 # --- Phasen -----------------------------------------------------------
 
@@ -194,6 +259,25 @@ target = "@next"
 id = "map"
 use = "write_review"
 next = "graph"
+
+[phase.template]
+write = "role-map"
+review = "review-map"
+again = "again-map"
+
+[phase.context]
+write = [
+  { use = "epic_sections" }, { use = "source_refs" },
+  { use = "next_steps" }, { use = "reading_hint" },
+  { use = "guidelines" }, { use = "attempt" },
+]
+review = [
+  { use = "finding_classes" },
+  { use = "epic_sections" },
+  { use = "source_refs" },
+  { use = "next_steps" },
+  { use = "guidelines" }, { use = "attempt" },
+]
 
 [phase.actor]
 write = "Kartierungsagent"
@@ -219,6 +303,24 @@ id = "graph"
 use = "write_review"
 next = "materialize"
 
+[phase.template]
+write = "role-graph"
+review = "review-graph"
+again = "again-graph"
+
+[phase.context]
+write = [
+  { use = "epic_sections" }, { use = "source_refs" },
+  { use = "next_steps" }, { use = "guidelines" }, { use = "attempt" },
+]
+review = [
+  { use = "finding_classes" },
+  { use = "epic_sections" },
+  { use = "source_refs" },
+  { use = "next_steps" },
+  { use = "guidelines" }, { use = "attempt" },
+]
+
 [phase.actor]
 write = "Auflösungsagent"
 review = "Review-Agent (Graphprüfung)"
@@ -243,6 +345,24 @@ id = "materialize"
 use = "write_review"
 next = "implement"
 
+[phase.template]
+write = "role-materialize"
+review = "review-materialize"
+again = "again-materialize"
+
+[phase.context]
+write = [
+  { use = "epic_sections" }, { use = "source_refs" },
+  { use = "next_steps" }, { use = "guidelines" }, { use = "attempt" },
+]
+review = [
+  { use = "finding_classes" },
+  { use = "epic_sections" },
+  { use = "source_refs" },
+  { use = "next_steps" },
+  { use = "guidelines" }, { use = "attempt" },
+]
+
 [phase.actor]
 write = "Materialisierungsagent"
 review = "Review-Agent (Materialisierungsprüfung)"
@@ -266,6 +386,25 @@ correct = "Entscheidung an den Materialisierungsagenten (bisherige Sitzung)"
 id = "implement"
 use = "write_review_preflight"
 next = "finished"
+
+[phase.template]
+write = "role-implement"
+review = "review-implement"
+again = "again-implement"
+
+[phase.context]
+write = [
+  { use = "epic_sections" }, { use = "next_steps" },
+  { use = "guidelines" }, { use = "attempt" },
+]
+review = [
+  { use = "finding_classes" },
+  { use = "epic_sections" },
+  { use = "criteria" },
+  { use = "next_steps" },
+  { use = "report" },
+  { use = "guidelines" }, { use = "attempt" },
+]
 
 [phase.actor]
 write = "Umsetzer (implementer)"
@@ -292,7 +431,11 @@ correct = "Entscheidung an den Umsetzer (implementer) (bisherige Sitzung)"
 id = "source"
 kind = "source"
 actor = "Mensch (Planungssitzung)"
-operation = [{ do = "ask" }]
+operation = [
+  { do = "ask", template = "decision-other", context = [
+    { use = "next_steps" }, { use = "control" }, { use = "attempt" },
+  ] },
+]
 
 [[state]]
 id = "finished"

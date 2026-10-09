@@ -1,3 +1,8 @@
+Schritt: map
+Bead: ${bead}
+
+${common}
+
 Rolle: Kartierungsagent.
 Lies die referenzierten Rohnotizen abschnittsweise und
 erstelle Quellenkarten-Beads mit Themen und genauen

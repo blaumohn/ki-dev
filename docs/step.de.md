@@ -14,10 +14,14 @@ ausführungsreife Aufträge bleiben auf einen kleinen Umsetzungsschnitt
 begrenzt: notwendige Anforderungen, Schnittstellen und Prüfnachweise; bei
 fachlicher Übergröße teilen statt immer mehr Details anzuhäufen.
 
-Die Zuordnung von Auftrag, Arbeitsstand und Prüfbericht verantwortest du als
-Mensch. `step` garantiert keine Bindung an den Quellstand. Halte den
-Arbeitsstand während Vorlauf und Review passend; nach weiteren Änderungen
-starte den Vorlauf erneut.
+**Geprüfter Stand.** Nach dem Vorlauf hält step den Stand fest: den
+Git-Tree des Arbeitsbaums (mit uncommitteten und neuen Dateien, ohne `.local/`)
+und einen Fingerabdruck des Beads. Eine PASS-Antwort gilt nur, wenn beides
+seither unverändert ist (Wächter `unchanged`, wie `freeze` bei `ki-dev run`).
+Sonst nimmt der Ablauf die Kante `implement.review --PASS--> implement.preflight`:
+Der Vorlauf läuft erneut, die nächste Nachricht geht an das Review. Der Vorlauf
+selbst braucht kein Git; ohne Git-Arbeitsverzeichnis gibt es keinen Stand und
+damit kein PASS. Eine Antwortdatei im Projekt zählt nicht zum Stand.
 
 **Laufzustand je Bead.** Jeder Aufruf endet in einem Halt des Ablaufs; step
 speichert ihn als Checkpoint unter `.local/handoff/steps/<BEAD_ID>/checkpoints.sqlite`
@@ -31,6 +35,15 @@ Folgeschritte. Ein ausdrückliches `--step` beginnt dort; weicht das vom
 letzten Halt ab, steht ein Hinweis auf stderr und im Protokoll die Zeile
 `letzter Halt --@jump--> Start`, die `check_conformance` meldet.
 Der Zustand ist lokaler Arbeitsstand, nicht Teil von bd/Dolt.
+
+**Transport.** step und `ki-dev run` übergeben an den Boten über dieselbe
+Funktion des Adapters `manual` (`ki_dev.adapter.manual.send`); nur die
+Transportart unterscheidet sich: `run` legt die Eingabe im Posteingang ab
+(`ki-dev run resume`), step gibt sie auf stdout aus und liest die Antwort aus
+`--decision-file DATEI|-`. Gerendert wird jede Übergabe vom Ausführer
+(`ki_dev.runner.turns`) aus der Deklaration in `planning.toml`: Vorlage und
+Kontextbausteine je Zustand oder, wenn die Kante sie bestimmt, je Übergang.
+Jede Übergabe nennt am Ende ihre Versuchskennung (`Versuch: …`).
 
 `ki-dev step BEAD_ID --step STEP` prüft einen Bead formal und gibt eine
 kurze, kopierbare Arbeitsübergabe aus. Du startest die passende Agentensitzung
@@ -216,8 +229,14 @@ Die Build-Review endet mit genau einem JSON-Objekt im gemeinsamen Vertrag
 von step und `ki-dev run` (`src/ki_dev/review_decision.py`):
 
 ```json
-{"event": "fix", "detail": "Test für leere Eingabe fehlt", "requirement_ref": "AC2"}
+{"event": "fix", "detail": "Test für leere Eingabe fehlt", "requirement_ref": "AC2", "attempt": "projekt-42:2"}
 ```
+
+`attempt` ist die Kennung des Versuchs, für den die Übergabe ausgegeben wurde
+(Zeile `Versuch:` am Ende jeder Übergabe). Eine Antwort gilt nur für ihren
+Versuch, wie `run_id` und `round_id` bei `ki-dev run`: fehlt `attempt` oder
+gehört es zu einem früheren Versuch (etwa nach einem neuen Vorlauf oder einer
+Korrekturrunde), ist das Exit 2 und der Lauf bleibt unverändert.
 
 `event` ist ein Review-Ereignis von `planning.toml`: `PASS` oder eine
 Befundklasse (`fix`, `source`, `decision`); das Urteil (`CHANGES`,
@@ -245,8 +264,9 @@ Kriterium und gibt die Nachricht für genau die Kante dieses Ereignisses aus:
 | `decision` | Mensch | `decision → implement.decision` |
 | `PASS` | Mensch | `PASS → finished` (Schließen entscheidest du) |
 
-Kein `run_id`/`round_id` in step: Es gibt keinen Laufspeicher; `ki-dev run` legt
-diese Hülle um denselben Kern. Höchstens 20000 Zeichen, nie gekürzt.
+Statt `run_id`/`round_id` trägt die Hülle von step die Versuchskennung;
+`ki-dev run` legt seine Hülle um denselben Kern
+(`src/ki_dev/runner/review_output.py`). Höchstens 20000 Zeichen, nie gekürzt.
 Ungültiges JSON, fremde Felder, `escalate` oder verletzte Feldregeln: Exit 2
 mit Feldpfad, ohne Rohwerte. Nur mit `--next-turn`, nur Prüfgegenstand
 `implement`, nicht mit `--feedback-file` oder `--preflight-*`.
@@ -257,6 +277,7 @@ Runde vorschlagen:
 
 ```json
 {"event": "fix", "detail": "…", "requirement_ref": "AC2",
+ "attempt": "projekt-42:2",
  "preflight_args": {"tests": "-k test_review"},
  "preflight_skip": {"lint": "nur Doku geändert"}}
 ```
@@ -324,7 +345,7 @@ Modell kann dieselben Lücken übersehen.
 
 Nur `--review-of implement` führt den
 [deterministischen Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe---step-review)
-aus `step/preflight.py` aus; `map`, `graph` und `materialize` sind reine,
+aus `ops/checks/preflight.py` aus (Operation `checks`, von step eingesteckt); `map`, `graph` und `materialize` sind reine,
 lesende Quellenprüfungen ohne Prozessaufrufe und ohne `pyproject.toml`. Für
 `materialize` gilt zusätzlich: Es reicht nicht, den fertig materialisierten
 Auftrag gegen sich selbst zu prüfen – das Review vergleicht ihn gegen die
@@ -573,9 +594,9 @@ bereinigt und begrenzt. `argv` wird nicht maskiert; über 100 Zeichen wird sie
 einzeilig mit sichtbarer Restlänge gekürzt (`pytest --desel…(+87)…test_y`).
 Vollständig steht sie im Prüfartefakt, auf das genau eine Zeile verweist
 (`Vollständig: .local/handoff/preflight/<Zeitstempel>.json`) — bei Erfolg in
-der Übergabe, bei Exit 1 im Reparaturbefund. Eine abschließende Hinweiszeile nennt, dass der
-Zeitpunkt der manuellen Zuordnung dient und kein Beweis eines unveränderten
-Quellstands ist; nach weiteren Änderungen ist der Vorlauf erneut zu starten.
+der Übergabe, bei Exit 1 im Reparaturbefund. Eine abschließende Hinweiszeile nennt, dass PASS nur bei
+unverändertem Arbeitsbaum und Bead gilt und ki-dev das beim Eingang der Antwort
+prüft.
 Prüf- oder Ausführungsfehler (Exit 1) — stdout trägt die Reparaturnachricht; ihr Befund listet
 jeden konfigurierten Befehl mit seinem tatsächlichen Status (auch bereits
 erfolgreiche Korrekturen und wegen eines vorherigen Fehlschlags ausgelassene

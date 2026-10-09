@@ -1,3 +1,8 @@
+Schritt: graph
+Bead: ${bead}
+
+${common}
+
 Rolle: Auflösungsagent.
 Nutze die Karte und lies gezielt Originalstellen nach.
 Materialisiere dünne Vorgänge mit Ergebnis, Schnittstellen,

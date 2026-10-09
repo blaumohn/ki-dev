@@ -77,7 +77,8 @@ class FakeBd:
         ]
 
     def install(self, monkeypatch) -> None:
-        from ki_dev.step import beads_reader, beads_source
+        from ki_dev.ops.context import beads_reader
+        from ki_dev.step import beads_source
 
         # Plumbum sucht ueber sein beim Import erfasstes PATH; darum
         # beide Adapter ausdruecklich auf das Skript zeigen lassen.

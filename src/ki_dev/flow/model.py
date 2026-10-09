@@ -45,6 +45,7 @@ from typing import cast
 from jsonschema import Draft202012Validator
 
 from ki_dev.flow.pattern import PatternError, expand
+from ki_dev.flow.templates import text
 
 HISTORY = "@history"
 PASS = "PASS"
@@ -71,11 +72,35 @@ class FlowError(ValueError):
 
 
 @dataclass(frozen=True)
+class Turn:
+    """Was eine Übergabe ausmacht: Vorlage unter
+    ``flow/templates/<ABLAUF>/`` und die Kontextbausteine in ihrer
+    Reihenfolge."""
+
+    template: str
+    context: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Operation:
-    """Was der Ausführer beim Betreten eines Zustands tut (Moore)."""
+    """Was der Ausführer beim Betreten eines Zustands tut (Moore).
+
+    ``template`` und ``context`` beschreiben eine Übergabe (``turn``):
+    Rollenvorlage unter ``flow/templates/<ABLAUF>/`` und die
+    Kontextbausteine in ihrer Reihenfolge; was ein Baustein liefert,
+    steckt der Aufrufer unter dem Namen ein."""
 
     do: str
     cond: tuple[str, ...] = ()
+    template: str | None = None
+    context: tuple[str, ...] = ()
+
+    @property
+    def turn(self) -> Turn | None:
+        """Die Übergabe dieser Operation (``None`` ohne Vorlage)."""
+        if self.template is None:
+            return None
+        return Turn(self.template, self.context)
 
 
 @dataclass(frozen=True)
@@ -95,6 +120,9 @@ class Transition:
     actions: tuple[str, ...] = ()
     escalation: str | None = None
     hint: str | None = None
+    turn: Turn | None = None
+    """Nachricht am Übergang: Vorlage und Kontext, wenn diese Kante die
+    Übergabe bestimmt (statt der Operation des Zielzustands)."""
 
 
 @dataclass(frozen=True)
@@ -105,6 +133,7 @@ class Vocabulary:
     actions: tuple[str, ...] = ()
     escalations: tuple[str, ...] = ()
     operations: tuple[str, ...] = ()
+    context: tuple[str, ...] = ()
     required: Mapping[str, tuple[str, ...]] = ()  # type: ignore[assignment]
 
 
@@ -256,6 +285,7 @@ def _vocabulary(item: dict, required: dict) -> Vocabulary:
         actions=tuple(item.get("actions", ())),
         escalations=tuple(item.get("escalations", ())),
         operations=tuple(item.get("operations", ())),
+        context=tuple(item.get("context", ())),
         required={
             kind: tuple(events) for kind, events in required.items()
         },
@@ -274,11 +304,19 @@ def _states(items: list[dict], where: str) -> dict[str, State]:
             kind=item["kind"],
             actor=item.get("actor"),
             operations=tuple(
-                Operation(op["do"], tuple(op.get("cond", ())))
-                for op in item.get("operation", ())
+                _operation(op) for op in item.get("operation", ())
             ),
         )
     return states
+
+
+def _operation(item: dict) -> Operation:
+    return Operation(
+        item["do"],
+        tuple(item.get("cond", ())),
+        item.get("template"),
+        tuple(use["use"] for use in item.get("context", ())),
+    )
 
 
 def _transitions(item: dict) -> tuple[Transition, ...]:
@@ -301,6 +339,16 @@ def _transition(item: dict, source: str) -> Transition:
         actions=tuple(item.get("actions", ())),
         escalation=item.get("escalation"),
         hint=item.get("hint"),
+        turn=_edge_turn(item),
+    )
+
+
+def _edge_turn(item: dict) -> Turn | None:
+    if "template" not in item:
+        return None
+    return Turn(
+        item["template"],
+        tuple(use["use"] for use in item.get("context", ())),
     )
 
 
@@ -310,6 +358,17 @@ _TEXT = {"type": "string", "minLength": 1, "pattern": r"\S"}
 _ID = {"type": "string", "pattern": r"^[a-z_]+(\.[a-z_]+)?$"}
 _NAME = {"type": "string", "pattern": r"^[A-Za-z_]+$"}
 _NAMES = {"type": "array", "uniqueItems": True, "items": _NAME}
+_TEMPLATE = {"type": "string", "pattern": r"^[a-z]+(-[a-z]+)*$"}
+_CONTEXT = {
+    "type": "array",
+    "minItems": 1,
+    "items": {
+        "type": "object",
+        "required": ["use"],
+        "additionalProperties": False,
+        "properties": {"use": _NAME},
+    },
+}
 _GUARDS = {
     "type": "array",
     "minItems": 1,
@@ -351,6 +410,7 @@ _SCHEMA = {
                 "actions": _NAMES,
                 "escalations": _NAMES,
                 "operations": _NAMES,
+                "context": _NAMES,
             },
         },
         "required": {
@@ -403,6 +463,8 @@ _SCHEMA = {
                             "properties": {
                                 "do": _NAME,
                                 "cond": _GUARDS,
+                                "template": _TEMPLATE,
+                                "context": _CONTEXT,
                             },
                         },
                     },
@@ -436,7 +498,10 @@ _SCHEMA = {
                     "actions": {**_NAMES, "minItems": 1},
                     "escalation": _NAME,
                     "hint": _TEXT,
+                    "template": _TEMPLATE,
+                    "context": _CONTEXT,
                 },
+                "dependentRequired": {"context": ["template"]},
             },
         },
     },
@@ -466,6 +531,10 @@ _PATTERN_TRANSITION = {
         **_TRANSITION_ITEM["properties"],
         "source": _NAME,
         "target": {"type": "string", "pattern": r"^@?[a-z_]+$"},
+        "template": {
+            "type": "string",
+            "pattern": r"^@?[a-z]+(-[a-z]+)*$",
+        },
     },
 }
 _PATTERN_SCHEMA = {
@@ -501,6 +570,14 @@ _PATTERN_SCHEMA = {
                     "actor": {
                         "type": "object",
                         "additionalProperties": _TEXT,
+                    },
+                    "template": {
+                        "type": "object",
+                        "additionalProperties": _TEMPLATE,
+                    },
+                    "context": {
+                        "type": "object",
+                        "additionalProperties": _CONTEXT,
                     },
                     "hint": {
                         "type": "object",
@@ -594,6 +671,16 @@ def _names(guards: Iterable[str]) -> set[str]:
     return {guard.removeprefix("!") for guard in guards}
 
 
+def _require_template(flow: str, name: str, label: str) -> None:
+    """Die Rollenvorlage muss als Datei vorliegen (Ladefehler früh)."""
+    try:
+        text(flow, name)
+    except FileNotFoundError as exc:
+        raise FlowError(
+            f"{label}.template: Vorlage {flow}/{name}.txt fehlt"
+        ) from exc
+
+
 def _check_operations(flow: Flow, where: str) -> None:
     vocabulary = flow.vocabulary
     for state in flow.states.values():
@@ -609,6 +696,14 @@ def _check_operations(flow: Flow, where: str) -> None:
                 f"{label}.cond",
                 "Wächter",
             )
+            _require_known(
+                set(op.context),
+                vocabulary.context,
+                f"{label}.context",
+                "Kontextbausteine",
+            )
+            if op.template is not None:
+                _require_template(flow.name, op.template, label)
             last = index == len(state.operations) - 1
             if not op.cond and not last:
                 raise FlowError(
@@ -653,6 +748,14 @@ def _check_transitions(flow: Flow, where: str) -> None:
                 f"{label}.escalation",
                 "Eskalation",
             )
+        if t.turn is not None:
+            _require_known(
+                set(t.turn.context),
+                vocabulary.context,
+                f"{label}.context",
+                "Kontextbausteine",
+            )
+            _require_template(flow.name, t.turn.template, label)
 
 
 def _require_state(flow: Flow, state: str, label: str) -> None:

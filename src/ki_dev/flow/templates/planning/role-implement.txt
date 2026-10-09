@@ -1,3 +1,8 @@
+Schritt: implement
+Bead: ${bead}
+
+${common}
+
 Rolle: Umsetzer.
 Setze genau diesen materialisierten Bead um (description,
 design, acceptance_criteria), führe gezielte

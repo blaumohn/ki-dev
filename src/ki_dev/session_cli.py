@@ -1,7 +1,9 @@
-"""Kommandozeile ``ki-dev session``: ablegen, anzeigen, exportieren.
+"""Kommandozeile ``ki-dev session``: auflisten, ablegen, anzeigen,
+exportieren.
 
-Auswahl nur per expliziter ID und Anbieter oder ausdruecklichem
-Snapshot; Suche und Katalog gehoeren zu 70u.3. Nur ``transcript``
+Auswahl per expliziter ID und Anbieter, Nummer der Liste (``-n``)
+oder ausdruecklichem Snapshot; Suche und Katalog gehoeren zu 70u.3.
+Nur ``transcript``
 schreibt ins Archiv. Diagnosen gehen ausschliesslich nach stderr und
 nennen nie Inhalte.
 """
@@ -10,7 +12,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated
 
 import typer
 
@@ -23,8 +25,10 @@ from ki_dev.adapter.executors.transcript import (
     read_session_transcript,
     validate_session_request,
 )
+from ki_dev.session_list import NR_OPTION, list_sessions, pick_ref
 from ki_dev.session_output import (
     OutputExistsError,
+    fail,
     print_rich,
     write_bytes,
 )
@@ -49,7 +53,7 @@ class ExportFormat(StrEnum):
 
 
 app = typer.Typer(
-    help="Sitzungen per ID ablegen, anzeigen oder exportieren.",
+    help="Sitzungen auflisten, ablegen, anzeigen oder exportieren.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -94,6 +98,9 @@ SNAPSHOT_OPTION = Annotated[
 ]
 
 
+app.command("list")(list_sessions)
+
+
 @app.command("transcript")
 def transcript(
     session_id: SESSION_ARG,
@@ -127,7 +134,7 @@ def transcript(
     try:
         path = store_snapshot(loaded, title, directory)
     except SnapshotError as exc:
-        _fail(f"Snapshot fehlgeschlagen: {exc}", code=1)
+        fail(f"Snapshot fehlgeschlagen: {exc}", code=1)
     typer.echo(path.as_posix())
 
 
@@ -135,14 +142,14 @@ def _check_request(agent: str, session_id: str) -> None:
     try:
         validate_session_request(agent, session_id)
     except TranscriptRequestError as exc:
-        _fail(str(exc), code=2)
+        fail(str(exc), code=2)
 
 
 def _check_title(title: str) -> None:
     try:
         validate_title(title)
     except SnapshotTitleError as exc:
-        _fail(str(exc), code=2)
+        fail(str(exc), code=2)
 
 
 def _read(agent: str, session_id: str):
@@ -150,12 +157,7 @@ def _read(agent: str, session_id: str):
         return read_session_transcript(agent, session_id)
     except TranscriptError as exc:
         details = "\n".join(f"  {problem}" for problem in exc.problems)
-        _fail(f"Sitzung nicht verwendbar:\n{details}", code=1)
-
-
-def _fail(message: str, *, code: int) -> NoReturn:
-    typer.echo(message, err=True)
-    raise typer.Exit(code=code)
+        fail(f"Sitzung nicht verwendbar:\n{details}", code=1)
 
 
 @app.command("show")
@@ -163,6 +165,7 @@ def show(
     session_id: OPTIONAL_SESSION_ARG = None,
     agent: OPTIONAL_AGENT_OPTION = None,
     snapshot: SNAPSHOT_OPTION = None,
+    nr: NR_OPTION = None,
     pager: Annotated[
         bool,
         typer.Option(
@@ -177,7 +180,7 @@ def show(
     Markdown-Beiträge. Umgeleitete Ausgabe ist ungekürzt und ohne
     Farbcodes; --pager wirkt nur am Terminal.
     """
-    loaded, title = _select(session_id, agent, snapshot)
+    loaded, title = _select(session_id, agent, snapshot, nr)
     print_rich(transcript_renderable(loaded, title), pager=pager)
 
 
@@ -190,6 +193,7 @@ def export(
     session_id: OPTIONAL_SESSION_ARG = None,
     agent: OPTIONAL_AGENT_OPTION = None,
     snapshot: SNAPSHOT_OPTION = None,
+    nr: NR_OPTION = None,
     title: Annotated[
         str | None,
         typer.Option(
@@ -216,11 +220,11 @@ def export(
     """
     if title is not None:
         _check_title(title)
-    loaded, stored_title = _select(session_id, agent, snapshot)
+    loaded, stored_title = _select(session_id, agent, snapshot, nr)
     chosen = title or stored_title
     if output_format is ExportFormat.JSONL:
         if chosen is None:
-            _fail(
+            fail(
                 "--title ist für jsonl erforderlich (Kopfzeile)", code=2
             )
         data = _serialized(loaded, chosen)
@@ -229,31 +233,42 @@ def export(
     try:
         write_bytes(data, output)
     except OutputExistsError as exc:
-        _fail(str(exc), code=1)
+        fail(str(exc), code=1)
     except OSError as exc:
-        _fail(
+        fail(
             f"Ausgabe nicht schreibbar ({type(exc).__name__})", code=1
         )
 
 
 def _select(
-    session_id: str | None, agent: str | None, snapshot: Path | None
+    session_id: str | None,
+    agent: str | None,
+    snapshot: Path | None,
+    nr: int | None,
 ) -> tuple[SessionTranscript, str | None]:
-    """Genau eine Auswahl: ID mit Anbieter oder ein Snapshot."""
+    """Genau eine Auswahl: ID mit Anbieter, Nummer oder Snapshot."""
+    if nr is not None:
+        if session_id is not None or snapshot is not None:
+            fail(
+                "-n nicht mit SESSION_ID/--snapshot mischen", code=2
+            )
+        ref = pick_ref(agent, nr)
+        return _read(ref.agent, ref.session_id), None
     if snapshot is not None:
         if session_id is not None or agent is not None:
-            _fail(
+            fail(
                 "--snapshot nicht mit SESSION_ID/--agent mischen",
                 code=2,
             )
         try:
             stored = read_snapshot(snapshot)
         except SnapshotError as exc:
-            _fail(f"Snapshot nicht verwendbar: {exc}", code=1)
+            fail(f"Snapshot nicht verwendbar: {exc}", code=1)
         return stored.transcript, stored.title
     if session_id is None or agent is None:
-        _fail(
-            "SESSION_ID mit --agent oder --snapshot DATEI angeben",
+        fail(
+            "SESSION_ID mit --agent, -n NR oder --snapshot DATEI "
+            "angeben",
             code=2,
         )
     _check_request(agent, session_id)
@@ -264,4 +279,4 @@ def _serialized(loaded: SessionTranscript, title: str) -> bytes:
     try:
         return serialize_snapshot(loaded, title)
     except SnapshotError as exc:
-        _fail(f"Export fehlgeschlagen: {exc}", code=1)
+        fail(f"Export fehlgeschlagen: {exc}", code=1)

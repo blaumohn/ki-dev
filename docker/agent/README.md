@@ -78,7 +78,10 @@ Der Dev-Build liegt im beads-Checkout unter `.build/linux/bd`, nicht im
 Home. `compose.beads.yaml` setzt `/beads/.build/linux` im PATH direkt hinter
 `/opt/agent-bin`, also vor `/usr/local/bin` und `~/go/bin`; Agenten und
 Skripte verwenden damit den lokalen Build als `bd`. Der PATH wiederholt
-sonst den Image-PATH aus dem Dockerfile; ein Test hält beide gleich. Das
+sonst den Image-PATH aus dem Dockerfile; ein Test hält beide gleich. Login-
+Shells (`bash -lc`, so ruft Codex Befehle auf) setzt `/etc/profile` den PATH
+zurück; der Entrypoint sichert ihn daher als `KI_DEV_AGENT_PATH`, und
+`/etc/profile.d/ki-dev-agent-path.sh` stellt ihn wieder her. Das
 Startskript trägt `.build/` in die `info/exclude` des beads-Checkouts ein
 (auch bei einem Worktree), damit `git status` dort sauber bleibt. Compose
 bindet nur die Quellen ein und baut beim Start nichts. Änderungen im

@@ -1,0 +1,210 @@
+"""Übergaben aus der Deklaration (ki-dev-ablauf-qu7.2).
+
+Der Ausführer rendert jede Übergabe aus Vorlage und Kontext des
+Ablaufs; run und step nutzen dieselbe Funktion. ``runner/turns.py``
+kennt keinen Ablauf.
+"""
+
+from __future__ import annotations
+
+import ast
+import copy
+from pathlib import Path
+
+import pytest
+
+from ki_dev.adapter.contract import ReviewVocabulary, RunTask
+from ki_dev.flow.model import FlowError, load_flow, parse_flow, read_raw
+from ki_dev.flow.planning import load_planning_flow
+from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.blocks import TurnInput, flow_state, state_turn
+from ki_dev.ops.context.contract import Step
+from ki_dev.review_context import ReviewProjection
+from ki_dev.runner import delivery_turns, turns
+from ki_dev.runner.machine import DELIVERY
+from ki_dev.runner.turns import Plug, bind_turns
+from ki_dev.step import turn as step_turn
+from tests.turn_helpers import render_handoff
+
+TURNS = Path(turns.__file__)
+FLOW = load_planning_flow()
+
+
+def _issue() -> BeadInput:
+    return BeadInput(
+        id="x-1",
+        title="Titel",
+        description="Beschreibung",
+        design="Design",
+        acceptance_criteria="1. a",
+        source_refs=["a.md"],
+    )
+
+
+def _task() -> RunTask:
+    return RunTask(
+        "run-1",
+        "Auftrag",
+        (),
+        Path("/w"),
+        "write",
+        acceptance_criteria=("K",),
+    )
+
+
+def _vocabulary() -> ReviewVocabulary:
+    return ReviewVocabulary(
+        events=("PASS", "fix"),
+        texts={"fix": "korrigierbar"},
+        changes="fix",
+        unbound="decision",
+    )
+
+
+def test_run_and_step_bind_the_very_same_render_function():
+    assert (
+        step_turn.render_turn
+        is turns.render_turn
+        is delivery_turns.render_turn
+    )
+
+
+def test_run_and_step_render_through_the_same_function(monkeypatch):
+    """Eine Übergabe je Ablauf geht durch ``render_turn``."""
+    seen: list[str] = []
+    original = turns.render_turn
+
+    def spy(flow, turn, subject, plug):
+        seen.append(flow.name)
+        return original(flow, turn, subject, plug)
+
+    monkeypatch.setattr(turns, "render_turn", spy)
+    monkeypatch.setattr(step_turn, "render_turn", spy)
+    monkeypatch.setattr(delivery_turns, "render_turn", spy)
+
+    assert delivery_turns.work_prompt(_task(), 1, None)
+    delivery_turns.review_prompt(
+        _task(),
+        1,
+        "Bericht",
+        ReviewProjection(text="Nachweis", omissions=()),
+        _vocabulary(),
+    )
+    assert render_handoff(_issue(), Step.IMPLEMENT, flow=FLOW)
+    assert seen == ["delivery", "delivery", "planning"]
+
+
+def test_every_turn_operation_names_a_template():
+    for flow in (FLOW.flow, DELIVERY):
+        names = {"turn", "ask", "work", "review"}
+        for state in flow.states.values():
+            for operation in state.operations:
+                if operation.do in names:
+                    assert operation.template, (flow.name, state.id)
+
+
+def test_operation_without_template_is_rejected_at_bind():
+    raw = copy.deepcopy(read_raw("delivery"))
+    for state in raw["state"]:
+        if state["id"] == "worker_step":
+            state["operation"] = [{"do": "work"}]
+    flow = parse_flow(raw)
+    with pytest.raises(FlowError, match="work ohne Vorlage"):
+        bind_turns(flow, delivery_turns.PLUG, ("work", "review"))
+
+
+def test_missing_and_foreign_fields_are_named():
+    fields = dict(delivery_turns.FIELDS)
+    del fields["objection"]
+    fields["orakel"] = lambda _turn: ""
+    with pytest.raises(FlowError) as error:
+        bind_turns(
+            load_flow("delivery"), Plug(fields, {}), ("work", "review")
+        )
+    assert "fehlt: objection" in str(error.value)
+    assert "nicht deklariert: orakel" in str(error.value)
+
+
+def test_foreign_block_is_named():
+    blocks = {"orakel": lambda _turn: []}
+    with pytest.raises(FlowError, match="nicht deklariert: orakel"):
+        bind_turns(
+            load_flow("delivery"),
+            Plug(delivery_turns.FIELDS, blocks),
+            ("work", "review"),
+        )
+
+
+def test_declared_blocks_and_fields_match_for_both_flows():
+    step_turn.bind_flow(FLOW)
+    bind_turns(DELIVERY, delivery_turns.PLUG, ("work", "review"))
+
+
+def test_turns_knows_no_flow():
+    """Keine Zustands-, Phasen-, Ereignis- oder Vorlagennamen und
+    kein Import des Planungsablaufs im Ausführer der Übergaben."""
+    tree = ast.parse(TURNS.read_text(encoding="utf-8"))
+    imports = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
+    assert "ki_dev.flow.planning" not in imports
+    assert not {
+        name
+        for name in imports
+        if name.startswith(("ki_dev.step", "ki_dev.ops"))
+    }
+    names: set[str] = set()
+    for flow in (FLOW.flow, DELIVERY):
+        names |= set(flow.states)
+        names |= set(flow.vocabulary.events)
+        names |= set(flow.vocabulary.operations)
+        names |= {s.partition(".")[0] for s in flow.states}
+        names |= {
+            operation.template
+            for state in flow.states.values()
+            for operation in state.operations
+            if operation.template
+        }
+        names |= {t.turn.template for t in flow.transitions if t.turn}
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(
+            node, ast.Module | ast.ClassDef | ast.FunctionDef
+        )
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+    }
+    literals = {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    }
+    assert literals & names == set()
+
+
+def test_declared_edge_turn_wins_over_the_state_operation():
+    """Die Kante nach einer Korrektur bestimmt die Folgenachricht."""
+    edge = FLOW.flow.candidates("map.correction", "done")[0]
+    assert edge.turn is not None
+    assert edge.turn.template == "again-map"
+    assert state_turn(FLOW, flow_state(Step.REVIEW, None)).template == (
+        "review-implement"
+    )
+
+
+def test_blocks_render_in_declared_order_and_parts_stay_apart():
+    subject = TurnInput(_issue(), FLOW, "implement")
+    rendered = turns.render_turn(
+        FLOW.flow,
+        state_turn(FLOW, "implement"),
+        subject,
+        step_turn.PLUG,
+    )
+    names = [name for name, _ in rendered.parts]
+    assert names == list(state_turn(FLOW, "implement").context)
+    assert rendered.text(skip=names) == rendered.head + "\n"

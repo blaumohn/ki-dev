@@ -1,1 +1,1 @@
-Quelle: ${agent}-Sitzung ${session_id}
+Quelle: ${agent}-Sitzung ${session_ref}

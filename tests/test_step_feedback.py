@@ -5,30 +5,26 @@ from functools import partial
 
 import pytest
 
+from ki_dev.adapter.manual import Console, TransportReadError
 from ki_dev.flow.planning import load_planning_flow
-from ki_dev.step.contract import ReviewTarget
-from ki_dev.step.handoff import HandoffIssue
-from ki_dev.step.next_turn import (
+from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.contract import ReviewTarget
+from ki_dev.step.feedback import (
     DEFAULT_FEEDBACK_MAX_CHARS as DEFAULT_MAX,
 )
-from ki_dev.step.next_turn import (
-    FeedbackReadError,
+from ki_dev.step.feedback import (
     NextTurnInputError,
     load_feedback_max_chars,
     read_feedback,
 )
-from ki_dev.step.next_turn import (
-    render_repair_turn as _render_repair_turn,
-)
-from ki_dev.step.next_turn import (
-    render_review_turn as _render_review_turn,
-)
+from tests.turn_helpers import render_repair_turn as _render_repair_turn
+from tests.turn_helpers import render_review_turn as _render_review_turn
 
 FLOW = load_planning_flow()
 render_repair_turn = partial(_render_repair_turn, flow=FLOW)
 render_review_turn = partial(_render_review_turn, flow=FLOW)
 
-ISSUE = HandoffIssue(
+ISSUE = BeadInput(
     id="x-1",
     title="Titel",
     description="d",
@@ -40,6 +36,13 @@ ISSUE = HandoffIssue(
 
 def _no_stdin() -> io.BytesIO:
     raise AssertionError("stdin wurde angefordert")
+
+
+def _console(stdin) -> Console:
+    return Console(lambda _text: None, stdin)
+
+
+_CONSOLE = _console(_no_stdin)
 
 
 def _write(path, text):
@@ -112,14 +115,14 @@ def test_wrong_table_type_is_rejected_with_field_path(
 
 def test_reads_file_exactly_and_never_truncates(tmp_path):
     path = _write(tmp_path / "f.txt", "ä😀 \r\nx")
-    assert read_feedback(str(path), 6, _no_stdin) == "ä😀 \r\nx"
+    assert read_feedback(str(path), 6, _CONSOLE) == "ä😀 \r\nx"
     with pytest.raises(NextTurnInputError, match="5 Zeichen"):
-        read_feedback(str(path), 5, _no_stdin)
+        read_feedback(str(path), 5, _CONSOLE)
 
 
 def test_reads_stdin_through_the_same_path(tmp_path):
     data = io.BytesIO("ä😀 \r\nx".encode())
-    assert read_feedback("-", 6, lambda: data) == "ä😀 \r\nx"
+    assert read_feedback("-", 6, _console(lambda: data)) == "ä😀 \r\nx"
     # Der Strom bleibt offen: stdin wird nicht geschlossen.
     assert not data.closed
 
@@ -144,7 +147,7 @@ class _CountingStream(io.BytesIO):
 def test_reads_no_byte_beyond_limit_plus_one_characters(char, width):
     stream = _CountingStream((char * 200_000).encode())
     with pytest.raises(NextTurnInputError, match="10 Zeichen"):
-        read_feedback("-", 10, lambda: stream)
+        read_feedback("-", 10, _console(lambda: stream))
     assert stream.delivered == 11 * width
 
 
@@ -152,45 +155,45 @@ def test_reads_no_byte_beyond_limit_plus_one_characters(char, width):
 def test_invalid_utf8_behind_limit_is_overlength_not_read_error(char):
     data = (char * 11).encode() + b"\xff\xfe" + b"x" * 50
     with pytest.raises(NextTurnInputError, match="10 Zeichen"):
-        read_feedback("-", 10, lambda: _CountingStream(data))
+        read_feedback("-", 10, _console(lambda: _CountingStream(data)))
 
 
 def test_invalid_utf8_within_limit_is_read_error():
     data = b"a" * 5 + b"\xff" + b"a" * 3
-    with pytest.raises(FeedbackReadError, match="UTF-8"):
-        read_feedback("-", 10, lambda: io.BytesIO(data))
+    with pytest.raises(TransportReadError, match="UTF-8"):
+        read_feedback("-", 10, _console(lambda: io.BytesIO(data)))
 
 
 def test_truncated_utf8_at_end_is_read_error():
     data = b"ab" + "ä".encode()[:1]
-    with pytest.raises(FeedbackReadError, match="UTF-8"):
-        read_feedback("-", 10, lambda: io.BytesIO(data))
+    with pytest.raises(TransportReadError, match="UTF-8"):
+        read_feedback("-", 10, _console(lambda: io.BytesIO(data)))
 
 
 def test_file_is_read_without_overlength_decoding(tmp_path):
     path = tmp_path / "f.txt"
     path.write_bytes(b"a" * 11 + b"\xff" * 100_000)
     with pytest.raises(NextTurnInputError, match="10 Zeichen"):
-        read_feedback(str(path), 10, _no_stdin)
+        read_feedback(str(path), 10, _CONSOLE)
 
 
 @pytest.mark.parametrize("text", ["", " ", "\n\n", " \t"])
 def test_blank_feedback_is_rejected(tmp_path, text):
     path = _write(tmp_path / "f.txt", text)
     with pytest.raises(NextTurnInputError, match="leer"):
-        read_feedback(str(path), 10, _no_stdin)
+        read_feedback(str(path), 10, _CONSOLE)
 
 
 def test_read_errors_name_no_content(tmp_path):
     bad = tmp_path / "f.txt"
     bad.write_bytes(b"GEHEIM\xff")
-    with pytest.raises(FeedbackReadError, match="UTF-8") as utf8:
-        read_feedback(str(bad), 100, _no_stdin)
+    with pytest.raises(TransportReadError, match="UTF-8") as utf8:
+        read_feedback(str(bad), 100, _CONSOLE)
     assert "GEHEIM" not in str(utf8.value)
-    with pytest.raises(FeedbackReadError, match="nicht lesbar"):
-        read_feedback(str(tmp_path / "fehlt"), 100, _no_stdin)
-    with pytest.raises(FeedbackReadError, match="nicht lesbar"):
-        read_feedback(str(tmp_path), 100, _no_stdin)
+    with pytest.raises(TransportReadError, match="nicht lesbar"):
+        read_feedback(str(tmp_path / "fehlt"), 100, _CONSOLE)
+    with pytest.raises(TransportReadError, match="nicht lesbar"):
+        read_feedback(str(tmp_path), 100, _CONSOLE)
 
 
 def test_repair_turn_names_recipient_request_limit_and_finding():
@@ -228,3 +231,10 @@ def test_feedback_block_is_single_line_quoted_and_sanitized():
     assert "\n| a\n| [1mb[0m\n|\n| c\n" in text
     assert "\x1b" not in text
     assert "\x00" not in text
+
+
+def test_feedback_quote_keeps_inner_spacing_and_drops_controls():
+    """Nutzertext bleibt erkennbar: innere Leerzeichen bleiben, nur
+    Steuerzeichen (auch ANSI-Escapes) und Ränder entfallen."""
+    text = render_repair_turn(ISSUE, "x", 600, "  a  b\x1b[31m  \n\tc")
+    assert "\n| a  b[31m\n| c\n" in text

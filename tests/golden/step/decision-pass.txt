@@ -7,4 +7,5 @@ Review-Urteil PASS (PASS): ohne Begründung
 
 Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
 - PASS → finished: Schließen entscheidest du (`bd close x-1`)
+- PASS → implement.preflight: Stand seit dem Vorlauf geändert: neuer Vorlauf, dann neues Review
 --- stderr ---

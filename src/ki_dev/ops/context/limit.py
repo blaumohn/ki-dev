@@ -3,7 +3,7 @@
 Zählt Unicode-Zeichen (``len``) des tatsächlich gerenderten Basistexts
 einschließlich Leerzeichen und Zeilenumbrüchen und rendert die
 Diagnose. Keine Ein-/Ausgabe: Grenze und Anteile bekommt der Kern als
-Daten; die Konfiguration liest ``handoff_limit_config``. Leitlinien- und
+Daten; die Konfiguration liest ``limit_config``. Leitlinien- und
 Prüfberichtsblock gehören nicht zur Basis und werden hier nie gesehen.
 """
 

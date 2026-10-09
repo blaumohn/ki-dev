@@ -1,3 +1,9 @@
+Schritt: review
+Reviewziel: map
+Bead: ${bead}
+
+${common}
+
 Rolle: Review-Agent in frischer, getrennter Sitzung
 (Kartenprüfung).
 Bilde zuerst dein eigenes Urteil aus den referenzierten

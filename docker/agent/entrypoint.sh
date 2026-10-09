@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
+# /etc/profile resets PATH in login shells; profile-path.sh restores this one.
+export KI_DEV_AGENT_PATH="$PATH"
 # Seed Claude onboarding state once; keep atomic config writes inside the volume.
 if [ ! -f "$HOME/.claude.json" ] && [ -s /run/claude-host.json ]; then
     cp /run/claude-host.json "$HOME/.claude.json"

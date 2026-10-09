@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 Schritt: map
-Bead: t-1 - Quelle: codex-Sitzung 0199aaaa-bbbb-cccc-dddd-eeeeffff0001
+Bead: t-1 - Quelle: codex-Sitzung …f0001
 
 Die Beads-ID ist im gemeinsamen Arbeitsbaum die Übergabe. Lies
 den Bead selbst (`bd show BEAD_ID`), den geltenden Auftrag und

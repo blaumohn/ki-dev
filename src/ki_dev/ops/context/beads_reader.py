@@ -10,8 +10,8 @@ from jsonschema import Draft202012Validator
 from plumbum import CommandNotFound, local
 from plumbum.commands.processes import ProcessTimedOut, run_proc
 
-from ki_dev.step.contract import NONEMPTY_TEXT_SCHEMA
-from ki_dev.step.handoff import HandoffIssue
+from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.contract import NONEMPTY_TEXT_SCHEMA
 
 BD_PROGRAM = "bd"
 BD_TIMEOUT_S = 10
@@ -21,7 +21,7 @@ _BD_NOT_FOUND = "no issues found matching the provided IDs"
 
 # Metadaten-Vertrag (Technikleitlinie): ``metadata`` und ``handoff``
 # dürfen fehlen, vorhanden müssen es Objekte sein. ``source_refs``
-# prüft der Kern (validate_handoff); unbekannte Felder bleiben erlaubt.
+# prüft validate_bead_input; unbekannte Felder bleiben erlaubt.
 # Die Epic-Leitlinie gilt nur für Epics.
 _METADATA_SCHEMA = {
     "type": "object",
@@ -61,7 +61,7 @@ class InvalidBeadIdError(BeadsReadError):
     """Bead-ID ist leer oder sieht wie eine Option aus."""
 
 
-def read_issue(bead_id: str, workdir: Path) -> HandoffIssue:
+def read_issue(bead_id: str, workdir: Path) -> BeadInput:
     """Einen Bead lesen und zu normalisierten Rohwerten machen."""
     raw = _read_raw(bead_id, workdir)
     _check_metadata(raw, _METADATA_SCHEMA)
@@ -216,8 +216,8 @@ def _single_object(stdout: str, bead_id: str) -> dict:
     return data[0]
 
 
-def _normalize(raw: dict) -> HandoffIssue:
-    return HandoffIssue(
+def _normalize(raw: dict) -> BeadInput:
+    return BeadInput(
         id=raw.get("id"),
         title=raw.get("title"),
         description=raw.get("description"),

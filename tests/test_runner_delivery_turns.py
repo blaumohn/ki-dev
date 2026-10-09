@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ki_dev.adapter.contract import RunTask
-from ki_dev.runner.prompts import work_prompt
+from ki_dev.runner.delivery_turns import work_prompt
 
 ADAPTER = Path(__file__).parent.parent / "src" / "ki_dev" / "adapter"
 

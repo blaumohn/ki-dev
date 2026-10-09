@@ -6,27 +6,25 @@ from pathlib import Path
 import pytest
 
 from ki_dev.flow.planning import load_planning_flow
-from ki_dev.step.contract import ReviewTarget, Step
-from ki_dev.step.guidelines import GuidelineSection
-from ki_dev.step.handoff import HandoffIssue
-from ki_dev.step.handoff import (
-    render_base_handoff as _render_base_handoff,
-)
-from ki_dev.step.handoff import (
-    render_handoff as _render_handoff,
-)
-from ki_dev.step.limit import (
+from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.contract import ReviewTarget, Step
+from ki_dev.ops.context.guidelines import GuidelineSection
+from ki_dev.ops.context.limit import (
     DEFAULT_BASE_MAX_CHARS,
     MAX_DIAGNOSIS_CHARS,
     HandoffBaseTooLongError,
     check_base_length,
 )
-from ki_dev.step.limit_config import (
+from ki_dev.ops.context.limit_config import (
     LimitConfigInvalidError,
     LimitConfigReadError,
     base_max_chars_from,
     load_base_max_chars,
 )
+from tests.turn_helpers import (
+    render_base_handoff as _render_base_handoff,
+)
+from tests.turn_helpers import render_handoff as _render_handoff
 
 FLOW = load_planning_flow()
 render_handoff = partial(_render_handoff, flow=FLOW)
@@ -48,8 +46,8 @@ COMBINATIONS = [
 ]
 
 
-def _issue(title="Titel", epic=(), refs=("a.md#L1",)) -> HandoffIssue:
-    return HandoffIssue(
+def _issue(title="Titel", epic=(), refs=("a.md#L1",)) -> BeadInput:
+    return BeadInput(
         id="x-1",
         title=title,
         description="Beschreibung",

@@ -3,9 +3,9 @@
 Liest ``[tool.ki-dev.handoff] base_max_chars`` aus ``pyproject.toml``
 und prüft den Vertrag deklarativ (``Draft202012Validator``, auch für
 Dictionaries im Speicher). Eigener Leser statt ``read_toml`` aus
-``handoff_preflight``: dessen Fehlervertrag unterscheidet Lese- und
-Inhaltsfehler nicht, hier ist ein Lesefehler Exit 1, ein Inhaltsfehler
-Exit 2.
+``ki_dev.ops.checks.preflight``: dessen Fehlervertrag unterscheidet
+Lese- und Inhaltsfehler nicht, hier ist ein Lesefehler Exit 1, ein
+Inhaltsfehler Exit 2.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from ki_dev.config_sources import ConfigSource
-from ki_dev.step.limit import (
+from ki_dev.ops.context.limit import (
     CONFIG_KEY,
     CONFIG_TABLE,
     DEFAULT_BASE_MAX_CHARS,

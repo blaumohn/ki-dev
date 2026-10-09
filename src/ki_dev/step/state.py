@@ -27,7 +27,6 @@ from ki_dev.runner.events import event_record
 from ki_dev.runner.planning import (
     CHECKPOINT_FILE,
     Halt,
-    PlanningContext,
     planning_runtime,
 )
 
@@ -44,9 +43,6 @@ class StepStateError(ValueError):
 class SavedState:
     state: str
     facts: frozenset[str]
-
-    def context(self) -> PlanningContext:
-        return PlanningContext(facts=self.facts)
 
 
 def state_root() -> Path:

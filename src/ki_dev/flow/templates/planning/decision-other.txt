@@ -1,1 +1,4 @@
-Review-Urteil ${verdict} (${event}): ${detail}
+Empfänger: Mensch
+Bead: ${bead}
+
+Review-Urteil ${judgement} (${event}): ${reason}

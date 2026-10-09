@@ -6,11 +6,12 @@ Bead: x-1 - Titel [red]rot[/red]
 
 Erneute Prüfung nach Korrekturen: Prüfe fachlich, ob die Korrekturen die früheren Befunde beheben und bei Quellenabdeckung, Fundstellen und bewahrten Einschränkungen keine neuen Abweichungen entstanden sind. Starte selbst keine Prüfwerkzeuge oder Folgemodelle; du hast keine automatische Autorität gegenüber dem Schreibagenten und schließt nichts automatisch. Ausgabe: PASS oder die stärkste Befundklasse.
 
-Empfänger, Befundkontext und Quellstand verantwortest du; Schließen und weitere Schritte entscheidest du selbst.
+Empfänger und Befundkontext verantwortest du (den Stand seit dem Vorlauf prüft ki-dev beim PASS); Schließen und weitere Schritte entscheidest du selbst.
 
 Hinweis für den Menschen: Zustand map.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
 - fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → map.decision: du entscheidest: accept, correct oder source
 - PASS → graph: `ki-dev step x-1 --step graph`
+Versuch: x-1:1 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

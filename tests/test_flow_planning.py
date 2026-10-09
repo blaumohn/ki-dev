@@ -30,12 +30,11 @@ from ki_dev.flow.planning import (
     PlanningFlow,
     load_planning_flow,
 )
-from ki_dev.step import cli as step_cli
-from ki_dev.step.contract import ReviewTarget, Step
-from ki_dev.step.handoff import HandoffIssue, flow_state
-from ki_dev.step.handoff import (
-    render_handoff as _render_handoff,
-)
+from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.blocks import flow_state
+from ki_dev.ops.context.contract import ReviewTarget, Step
+from ki_dev.step import boundary, projection
+from tests.turn_helpers import render_handoff as _render_handoff
 
 FLOW = load_planning_flow()
 A = FLOW.flow
@@ -75,7 +74,7 @@ def test_new_source_always_returns_through_the_existing_map():
 
 @pytest.mark.parametrize("step", list(Step))
 def test_every_handoff_ends_with_its_flow_hint(step):
-    issue = HandoffIssue(
+    issue = BeadInput(
         id="x-1",
         title="T",
         description="D",
@@ -270,7 +269,12 @@ def test_random_walk_ends_once_agents_make_progress(choices):
 
 
 def _progress(state: str) -> str:
-    events = {t.event: t.target for t in FLOW.outgoing(state)}
+    """Fortschritt: je Ereignis die erste Kante (Dateireihenfolge), also
+    die mit erfüllten Wächtern (vollständiger Vorlauf, Stand
+    unverändert)."""
+    events: dict[str, str] = {}
+    for t in FLOW.outgoing(state):
+        events.setdefault(t.event, t.target)
     for event in PROGRESS:
         if event in events:
             return events[event]
@@ -294,7 +298,7 @@ def test_renderer_uses_the_flow_it_is_given():
         if transition["source"] == "implement":
             transition["hint"] = "EIGENER-BEFEHL {bead}"
     other = PlanningFlow(parse_flow(raw))
-    issue = HandoffIssue(
+    issue = BeadInput(
         id="x-1",
         title="T",
         description="D",
@@ -311,13 +315,15 @@ def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
     def broken():
         raise FlowError("planning.toml: $: additionalProperties")
 
-    monkeypatch.setattr(step_cli, "load_planning_flow", broken)
+    monkeypatch.setattr(boundary, "load_planning_flow", broken)
     monkeypatch.setattr(
-        step_cli,
+        projection,
         "read_issue",
         lambda *_: pytest.fail("Bead gelesen trotz ungültiger Tabelle"),
     )
-    monkeypatch.setattr(step_cli, "load_base_max_chars", lambda _: 4000)
+    monkeypatch.setattr(
+        projection, "load_base_max_chars", lambda _: 4000
+    )
     result = CliRunner().invoke(
         app, ["step", "x-1", "--step", "implement"]
     )

@@ -2,8 +2,9 @@
 
 `ki-dev session` liest eine lokale Codex- oder Claude-Sitzung per
 **expliziter ID und Anbieter** und legt sie als datierten JSONL-Snapshot ab.
-Die Suche nach Sitzungen und Listen zuletzt angesehener Sitzungen sind noch
-nicht enthalten.
+`session list` zeigt die neuesten Sitzungen beider Anbieter nummeriert; die
+Nummer wählt eine Sitzung für `show` und `export`. Die Suche nach Inhalten und
+Listen zuletzt angesehener Sitzungen sind noch nicht enthalten.
 
 ```bash
 ki-dev session transcript 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --title 'Zustandstabelle'
@@ -81,6 +82,9 @@ gültig, solange die Datei vorhanden ist.
 | Aufruf | Wirkung |
 |---|---|
 | `session transcript ID --agent A --title T [--dir D]` | schreibt einen Snapshot und gibt seinen Pfad aus |
+| `session list [ANZAHL] [--agent A]` | listet die neuesten Sitzungen nummeriert mit Vorschau und schreibt nichts |
+| `session show -n NR [--agent A] [--pager]` | zeigt Eintrag NR der Liste an |
+| `session export -n NR [--agent A] --format …` | dasselbe als Export |
 | `session show ID --agent A [--pager]` | zeigt die Rohsitzung an und schreibt nichts |
 | `session show --snapshot DATEI [--pager]` | zeigt einen gespeicherten Snapshot an (auch `handoff-v0`) |
 | `session export ID --agent A --format markdown\|jsonl [--title T] [--output DATEI]` | Ausgabe auf stdout oder in eine **neue** Datei; kein Archiv |
@@ -90,6 +94,31 @@ gültig, solange die Datei vorhanden ist.
 ki-dev session show 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --pager
 ki-dev session export --snapshot .local/var/transcripts/261005T22_zustandstabelle_0de11ef0.jsonl --format markdown > zustandstabelle.md
 ```
+
+**Liste:** `list` führt ohne `--agent` alle Anbieter zusammen (Standard:
+10 Einträge, `ANZAHL` ändert das). Je Eintrag stehen Nummer, Anbieter, letzte
+Aktivität (lokale Zeit, aus dem Transkript; fehlt sie, `—`), die ganze
+Sitzungs-ID und eine Vorschau: je der Anfang (60 Zeichen, einzeilig) des
+ersten Mensch- und des ersten Agent-Beitrags. Die Reihenfolge folgt der
+Änderungszeit der Sitzungsdatei, bei Gleichstand Anbieter und ID. Unterordner
+(Subagenten) und Dateien ohne erkennbaren Sitzungsnamen zählen nicht. Eine
+nicht lesbare Sitzung erscheint als Zeile `nicht verwendbar: …` mit Prüfcodes,
+nie mit Inhalt.
+
+Die Ordner sind dieselben wie bei `show`: `KI_DEV_CODEX_SESSIONS_DIR`, sonst
+`CODEX_HOME/sessions`, sonst `~/.codex/sessions`; `KI_DEV_CLAUDE_SESSIONS_DIR`,
+sonst `~/.claude/projects`. Fehlt ein Ordner, meldet `list` das als Hinweis auf
+stderr; mit ausdrücklichem `--agent` ist es ein Fehler (Exit 1).
+
+```bash
+ki-dev session list 5
+ki-dev session show -n 2 --pager
+```
+
+`-n NR` gilt für die Liste zum Zeitpunkt des Aufrufs, mit demselben `--agent`
+wie bei `list`. Neue Sitzungen verschieben die Nummern; die ID in der Liste
+bleibt stabil. `-n` lässt sich nicht mit `SESSION_ID` oder `--snapshot`
+mischen (Exit 2); eine zu große Nummer ist Exit 1.
 
 **Anzeige:** `show` gibt Titel, Anbieter, Sitzung und Zeiten einmal aus
 (fehlende Zeiten als `—`). Danach folgt je Beitrag eine Linie mit Position,

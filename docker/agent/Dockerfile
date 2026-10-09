@@ -106,6 +106,7 @@ RUN for slot in 0 1 2 3 4 5 6 7; do mkdir -p "/opt/agent-volume-seed/$slot"; don
     && chown -R ${AGENT_UID}:${AGENT_GID} /opt/agent-volume-seed
 COPY docker/agent/agent_cli.py /opt/agent-bin/agent_cli.py
 COPY docker/agent/entrypoint.sh /usr/local/bin/agent-entrypoint
+COPY docker/agent/profile-path.sh /etc/profile.d/ki-dev-agent-path.sh
 RUN chmod +x /usr/local/bin/agent-entrypoint /opt/agent-bin/agent_cli.py \
     && ln -s agent_cli.py /opt/agent-bin/codex \
     && ln -s agent_cli.py /opt/agent-bin/claude

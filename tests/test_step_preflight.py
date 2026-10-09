@@ -15,8 +15,13 @@ from plumbum.machines.local import LocalMachine
 
 from ki_dev.flow import templates
 from ki_dev.flow.planning import load_planning_flow
-from ki_dev.step.handoff import HandoffIssue
-from ki_dev.step.preflight import (
+from ki_dev.ops.checks.options import (
+    PreflightOptionError,
+    apply_preflight_options,
+    parse_preflight_args,
+    parse_preflight_skip,
+)
+from ki_dev.ops.checks.preflight import (
     ADDED_MARKER,
     ARTIFACT_DIR,
     CommandResult,
@@ -29,14 +34,9 @@ from ki_dev.step.preflight import (
     progress_line,
     run_preflight,
 )
-from ki_dev.step.preflight import (
+from ki_dev.ops.context.bead_input import BeadInput
+from tests.turn_helpers import (
     render_review_handoff as _render_review_handoff,
-)
-from ki_dev.step.preflight_options import (
-    PreflightOptionError,
-    apply_preflight_options,
-    parse_preflight_args,
-    parse_preflight_skip,
 )
 
 FLOW = load_planning_flow()
@@ -729,8 +729,8 @@ def test_format_command_result_quotes_argv_unambiguously():
 # ---------------------------------------------------------------------
 
 
-def _issue() -> HandoffIssue:
-    return HandoffIssue(
+def _issue() -> BeadInput:
+    return BeadInput(
         id="x-1",
         title="Titel",
         description="Beschreibung",
@@ -751,15 +751,15 @@ def test_render_review_handoff_appends_compact_report(tmp_path: Path):
     assert "[argv=" in text
 
 
-def test_render_review_handoff_names_human_responsibility(
+def test_render_review_handoff_names_the_stand_check(
     tmp_path: Path,
 ):
-    """Der Bericht darf nicht als Quellstandbeweis gelesen werden; der
-    Hinweis benennt die menschliche Zuordnung ausdruecklich (AC1)."""
+    """Der Hinweis nennt, dass PASS nur bei unverändertem Stand gilt
+    und ki-dev das prüft (ki-dev-ablauf-nyk)."""
     report = run_preflight(_ok_config(), _repo(tmp_path))
     text = render_review_handoff(_issue(), report)
-    assert "nicht als Beweis eines unveränderten Quellstands" in text
-    assert "Vorlauf erneut starten" in text
+    assert "PASS gilt nur, wenn Arbeitsbaum und Bead" in text
+    assert "startet sonst den Vorlauf erneut" in text
 
 
 def test_format_command_result_includes_argv_and_detail():
