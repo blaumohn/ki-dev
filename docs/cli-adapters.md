@@ -155,7 +155,7 @@ mit `rate_limit_info.unifiedWindows.five_hour.utilization` (Anteil
 ihn nach jedem Turn unter `~/.cache/ki-dev/claude-quota/<session_id>.json`.
 Vor dem ersten Turn und nach einem Fensterwechsel gilt `PENDING`: Der
 Aufruf laeuft ungemessen, ab dem naechsten greifen Reserve und
-Delta-Budget. Ein Turn ohne `rate_limit_event` ergibt `UNAVAILABLE`
+Delta-Budget. Ein Turn ohne `rate_limit_event` (Abbruch, Fehler) laesst den letzten Wert stehen
 (siehe
 [ausfuehrer.de.md](ausfuehrer.de.md#fuenfstundenkontingent-vorpruefung)).
 

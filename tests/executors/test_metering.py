@@ -692,12 +692,24 @@ def test_claude_stream_turn_stores_five_hour_quota():
     assert measurement.resets_at == 9_999_999_999
 
 
-def test_claude_turn_without_rate_limit_event_is_unavailable():
+def test_claude_turn_without_rate_limit_event_keeps_last_value():
+    """Abbruch oder Fehler ohne Ereignis darf den Messwert nicht
+    verlieren und nichts dauerhaft blockieren."""
+    first = "\n".join([_rate_limit_event(), _claude()])
+    adapter = ClaudeCliAdapter(runner=FakeRunner(_result(first)))
+    adapter.send_turn(_request())
     adapter = ClaudeCliAdapter(runner=FakeRunner(_result(_claude())))
     assert adapter.send_turn(_request()).ok
     measurement = adapter.measure_quota(_request().session_id)
-    assert measurement.status is QuotaStatus.UNAVAILABLE
-    assert "rate_limit_event" in measurement.detail
+    assert measurement.status is QuotaStatus.MEASURED
+    assert measurement.used_percent == pytest.approx(14.0)
+
+
+def test_claude_first_turn_without_event_stays_pending():
+    adapter = ClaudeCliAdapter(runner=FakeRunner(_result(_claude())))
+    assert adapter.send_turn(_request()).ok
+    status = adapter.measure_quota(_request().session_id).status
+    assert status is QuotaStatus.PENDING
 
 
 def test_claude_expired_quota_window_is_pending_again():

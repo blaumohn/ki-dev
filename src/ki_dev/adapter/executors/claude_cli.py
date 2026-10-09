@@ -81,7 +81,7 @@ class ClaudeCliAdapter(CliAdapter):
         Claude liefert den Wert verbrauchsfrei nur mit einer Antwort
         (``rate_limit_event`` in ``stream-json``), nie vorab. Darum
         ``PENDING`` vor dem ersten Turn und nach einem Fensterwechsel;
-        ein Turn ohne Messwert ergibt ``UNAVAILABLE``.
+        ein Turn ohne Messwert laesst den letzten Wert stehen.
         """
         try:
             value = json.loads(
@@ -111,9 +111,9 @@ class ClaudeCliAdapter(CliAdapter):
         self, session_id: str, quota: tuple[float, int] | None
     ) -> None:
         if quota is None:
-            value = {"missing": "Turn ohne rate_limit_event"}
-        else:
-            value = {"used_percent": quota[0], "resets_at": quota[1]}
+            # Turn ohne Ereignis (Abbruch, Fehler): letzter Wert gilt.
+            return
+        value = {"used_percent": quota[0], "resets_at": quota[1]}
         path = self._quota_path(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value), encoding="utf-8")
@@ -164,10 +164,6 @@ class ClaudeCliAdapter(CliAdapter):
 
 
 def _stored_quota(value: dict) -> QuotaMeasurement:
-    if value.get("missing"):
-        return QuotaMeasurement(
-            QuotaStatus.UNAVAILABLE, detail=str(value["missing"])
-        )
     if value["resets_at"] <= time.time():
         return QuotaMeasurement(
             QuotaStatus.PENDING,
