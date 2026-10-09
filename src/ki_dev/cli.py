@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
@@ -67,8 +68,18 @@ def run(
     runs_dir: Annotated[Path, typer.Option("--runs-dir")] = Path(
         ".ki-dev/runs"
     ),
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Zustandswechsel und Agentenaufrufe live nach stderr.",
+        ),
+    ] = False,
 ) -> None:
     """Einen neuen ki-dev-Lauf starten."""
+    if verbose:
+        _log_progress()
     if ctx.invoked_subcommand is None:
         if config is None:
             _abort("--config ist fuer einen neuen Lauf erforderlich")
@@ -77,6 +88,16 @@ def run(
                 config, run_id=run_id, runs_dir=runs_dir
             )
         )
+
+
+def _log_progress() -> None:
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S")
+    )
+    logger = logging.getLogger("ki_dev.run")
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 @run_app.command()

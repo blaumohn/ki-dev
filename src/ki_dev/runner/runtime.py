@@ -4,6 +4,7 @@ Halt."""
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import tempfile
 import uuid
@@ -115,6 +116,9 @@ from ki_dev.usage_accounting import UsageAttribution, UsagePurpose
 # (``_tick``) und persistierte externe Wirkungen
 # (``_execute_operation``). Beide Mengen zusammen müssen genau das
 # Vokabular des Ablaufs sein.
+# Fortschritt fuer ``ki-dev run --verbose``.
+_log = logging.getLogger("ki_dev.run")
+
 _IMMEDIATE_OPERATIONS = frozenset(
     {"start", "task", "prepare", "checkpoint"}
 )
@@ -1321,6 +1325,12 @@ class RunRuntime:
         """Genommene Kante ins Ereignisprotokoll (seq = neue Revision;
         eine Wiederholung nach Absturz schreibt sie nicht doppelt)."""
         transition = cast(Transition, result.transition)
+        _log.info(
+            "%s --%s--> %s",
+            transition.source,
+            transition.event,
+            result.phase.value,
+        )
         self.store.append_event(
             event_record(
                 seq=run.revision + 1,

@@ -93,6 +93,7 @@ fast-forwards it into `main`.
 ```bash
 ki-dev run --config lauf.json      # drive the build workflow to the next halt
 ki-dev run resume RUN_ID           # continue after a halt
+ki-dev run -v resume RUN_ID        # show transitions and calls live
 ki-dev step BEAD --step review     # one planning transition by hand
 ```
 

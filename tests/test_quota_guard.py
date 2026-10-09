@@ -358,3 +358,21 @@ def test_usage_delta_budget_is_per_role_not_shared(tmp_path):
     assert result.status == "passed"
     assert build_executor.calls == 1
     assert review_executor.calls == 1
+
+
+def test_progress_log_names_transitions_and_calls(tmp_path, caplog):
+    """``ki-dev run --verbose`` zeigt diese Zeilen live an."""
+    build_executor = ControlledExecutor("claude-cli", "Bau erledigt")
+    build_executor.quota = QuotaMeasurement(QuotaStatus.PENDING)
+    review_executor = ControlledExecutor(
+        "claude-cli", _review_json("run-progress", 1, "PASS")
+    )
+    build, review = _agents(build_executor, review_executor)
+
+    with caplog.at_level("INFO", logger="ki_dev.run"), _runtime(
+        tmp_path, "run-progress", build, review
+    ) as runtime:
+        runtime.start(_task("run-progress"), Limits())
+
+    assert "start --run_started--> controller_step" in caplog.text
+    assert "startet (claude-cli)" in caplog.text

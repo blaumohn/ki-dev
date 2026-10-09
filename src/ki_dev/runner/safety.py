@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import math
 import os
 import tempfile
@@ -21,6 +22,9 @@ from ki_dev.usage_accounting import (
     observation,
     reconcile_call,
 )
+
+# Fortschritt fuer ``ki-dev run --verbose``.
+_log = logging.getLogger("ki_dev.run")
 
 
 @dataclass(frozen=True)
@@ -116,6 +120,9 @@ class CallLedger:
         attribution: UsageAttribution | None = None,
     ) -> None:
         limits = self.limits()
+        _log.info(
+            "Aufruf %s startet (%s)", operation, provider or "lokal"
+        )
         directory = self.store.run_dir / "calls"
         directory.mkdir(parents=True, exist_ok=True)
         with self.store.usage_lock():
@@ -220,6 +227,19 @@ class CallLedger:
     ) -> None:
         if result is not None and result.usage is not None:
             validate_usage(result.usage)
+        if result is not None:
+            usage = result.usage or {}
+            _log.info(
+                "Aufruf %s: %s, %.0f s, Runden %s, %s USD%s",
+                call_id.split("-")[1],
+                result.status.value,
+                result.duration_s,
+                usage.get("num_turns", "?"),
+                usage.get("cost_usd", "?"),
+                f", {(error or result.error)[:200]}"
+                if error or result.error
+                else "",
+            )
         with self.store.usage_lock():
             self._write(call_id, "result", {
                 "status": result.status.value if result else "local",

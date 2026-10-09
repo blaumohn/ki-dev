@@ -104,6 +104,7 @@ Konfiguration schreibt das Demo-Skript nach `lauf.json`.
 ```bash
 ki-dev run --config lauf.json       # neuer Lauf
 ki-dev run resume RUN_ID            # nach Halt (Antwort, Bote, Pause)
+ki-dev run -v resume RUN_ID         # Zustandswechsel und Aufrufe live
 ki-dev run status RUN_ID            # nur lesen
 ```
 
