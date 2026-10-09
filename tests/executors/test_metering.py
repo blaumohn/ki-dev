@@ -652,13 +652,60 @@ def test_codex_measure_quota_reports_unavailable_explicitly(
     assert "Kontingentmessung" in measurement.detail
 
 
-def test_claude_measure_quota_is_explicitly_unsupported():
-    """Kein verbrauchsfreier, nicht-interaktiver Messweg bei Claude
-    verifiziert (ki-dev-ablauf-hju); anders als bei ``measure_context``
-    blockiert das den naechsten Aufruf (siehe ``_quota_guard``)."""
+def test_claude_measure_quota_is_pending_before_first_turn():
+    """Claude misst nur mit einer Antwort; vor dem ersten Turn gibt
+    es keinen Wert, der erste Aufruf laeuft ungemessen."""
     measurement = ClaudeCliAdapter().measure_quota("session")
-    assert measurement.status is QuotaStatus.UNSUPPORTED
+    assert measurement.status is QuotaStatus.PENDING
     assert measurement.used_percent is None
+
+
+def _rate_limit_event(utilization=0.14, resets_at=9_999_999_999):
+    return json.dumps(
+        {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "rateLimitType": "five_hour",
+                "unifiedWindows": {
+                    "five_hour": {
+                        "utilization": utilization,
+                        "resetsAt": resets_at,
+                    },
+                    "seven_day": {"utilization": 0.59, "resetsAt": 1},
+                },
+            },
+        }
+    )
+
+
+def test_claude_stream_turn_stores_five_hour_quota():
+    stdout = "\n".join(
+        [json.dumps({"type": "system"}), _rate_limit_event(), _claude()]
+    )
+    adapter = ClaudeCliAdapter(runner=FakeRunner(_result(stdout)))
+    result = adapter.send_turn(_request())
+    assert result.ok
+    assert result.stdout == "fertig"
+    measurement = adapter.measure_quota(_request().session_id)
+    assert measurement.status is QuotaStatus.MEASURED
+    assert measurement.used_percent == pytest.approx(14.0)
+    assert measurement.resets_at == 9_999_999_999
+
+
+def test_claude_turn_without_rate_limit_event_is_unavailable():
+    adapter = ClaudeCliAdapter(runner=FakeRunner(_result(_claude())))
+    assert adapter.send_turn(_request()).ok
+    measurement = adapter.measure_quota(_request().session_id)
+    assert measurement.status is QuotaStatus.UNAVAILABLE
+    assert "rate_limit_event" in measurement.detail
+
+
+def test_claude_expired_quota_window_is_pending_again():
+    stdout = "\n".join([_rate_limit_event(resets_at=1), _claude()])
+    adapter = ClaudeCliAdapter(runner=FakeRunner(_result(stdout)))
+    adapter.send_turn(_request())
+    measurement = adapter.measure_quota(_request().session_id)
+    assert measurement.status is QuotaStatus.PENDING
 
 
 def test_bounded_claude_uses_native_limits_and_timeout():
@@ -669,7 +716,8 @@ def test_bounded_claude_uses_native_limits_and_timeout():
     runner = FakeRunner(_result(_claude()))
     result = ClaudeCliAdapter(runner=runner).send_turn(_request())
     assert result.ok
-    assert runner.value_after("--output-format") == "json"
+    assert runner.value_after("--output-format") == "stream-json"
+    assert "--verbose" in runner.calls[-1][0]
     assert runner.value_after("--max-turns") == "12"
     assert runner.value_after("--max-budget-usd") == "1.0"
     assert 179 < runner.calls[-1][2] <= 180

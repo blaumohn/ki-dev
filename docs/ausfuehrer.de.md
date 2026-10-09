@@ -334,7 +334,8 @@ Kontokontingent gibt es keine sichere Annahme "kein Nachweis = ok":
 | Herkunft (`QuotaStatus`) | Bedeutung | Wirkung |
 | --- | --- | --- |
 | `measured` | echter, vom Executor gemeldeter Prozentwert | Delta- und Reserve-Pruefung wie oben |
-| `unsupported` | dieser Adapter liefert (noch) keinen verbrauchsfreien, nicht-interaktiven Nachweis (aktuell `claude-cli`, siehe [cli-adapters.md](cli-adapters.md)) | haelt an, als eigene Ursache "Messwert fehlt" gemeldet -- kein unbedenklicher Adaptergrenzfall wie bei der Kontextvorpruefung |
+| `pending` | der Adapter misst erst mit der Antwort und hat fuer diese Sitzung noch keinen Wert (`claude-cli` vor dem ersten Turn oder nach Fensterwechsel, siehe [cli-adapters.md](cli-adapters.md)) | laesst den Aufruf zu; Reserve und Delta greifen ab dem naechsten |
+| `unsupported` | dieser Adapter liefert keinen verbrauchsfreien, nicht-interaktiven Nachweis | haelt an, als eigene Ursache "Messwert fehlt" gemeldet -- kein unbedenklicher Adaptergrenzfall wie bei der Kontextvorpruefung |
 | `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (z. B. Codex-Rollout fehlt/mehrdeutig oder Messwert abgelaufen) | haelt an, ebenfalls als "Messwert fehlt" gemeldet, nie vermischt mit "Budget/Reserve erreicht" |
 
 `codex-cli` liest dazu verbrauchsfrei die lokale Rollout-Ablage unter
@@ -373,8 +374,7 @@ Ereignis-Zeitstempel als hinreichend aktuell -- ein noch nicht
 abgelaufenes Fenster allein beweist keine Aktualitaet, ein Messwert
 kann Stunden alt und trotzdem technisch "im Fenster" sein. Diese
 Altersschwelle begrenzt Unsicherheit, garantiert aber keinen
-tatsaechlich aktuellen Kontostand; ohne live abfragbaren Kontostand
-(siehe oben, `claude-cli`) ist mehr lokal nicht beweisbar. Die
+tatsaechlich aktuellen Kontostand; ohne live abfragbaren Kontostand ist mehr lokal nicht beweisbar. Die
 Kontozuordnung der durchsuchten lokalen Ablage (`CODEX_HOME` bildet
 durchgehend genau ein Konto ab) ist eine dokumentierte, technisch
 nicht pruefbare Betriebsvoraussetzung -- weder `session_meta` noch
@@ -393,16 +393,13 @@ Fenstergrenzen hinweg. Ein `resets_at`, das gegenueber der Basislinie
 ein widerspruechlicher Messwert und wird als eigener Pausengrund
 gemeldet, nicht als stiller Reset uebernommen.
 
-`claude-cli` hat aktuell keinen verifizierten, verbrauchsfreien,
-nicht-interaktiven Messweg: Claude Code liefert den Prozentwert nur an
-ein interaktives `statusLine`-Skript und `/usage`; die lokale
-Sitzungsablage traegt das Feld auch bei Erfolg nicht, sondern nur
-reaktiv im Fehlerfall (`quotaLimits` bei HTTP 429) -- zu spaet fuer
-eine Vorabpruefung. Ein Bau- oder Review-Lauf mit `claude-cli` haelt
-deshalb bereits vor dem ersten Aufruf an, bis ein solcher Messweg
-existiert und getestet ist. **Ein `claude-cli`-Lauf gilt bis dahin
-nicht als gegen das Fuenfstundenkontingent abgesichert**, unabhaengig
-von `max_total_tokens` (ki-dev-ablauf-hju, ueberarbeitet in dqv).
+`claude-cli` hat keinen Messweg vor einem Aufruf: Claude Code liefert
+den 5h-Anteil verbrauchsfrei nur mit einer Antwort (`rate_limit_event`
+in `stream-json --verbose`). Der Adapter legt ihn nach jedem Turn ab
+und meldet vor dem ersten Turn `pending`. **Der erste Aufruf einer
+Sitzung ist darum ungemessen** und nur durch den reaktiven Halt
+(`rate_limit`/HTTP 429) geschuetzt; die Delta-Basislinie entsteht mit
+dem Wert nach diesem Aufruf.
 
 `calls/` enthaelt unveraenderliche Start- und Ergebnisbelege mit
 Verbrauch, Dauer und Fehlergrund. Die Reservierung vor einem Aufruf

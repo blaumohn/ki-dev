@@ -12,3 +12,13 @@ def step_state_root(tmp_path_factory, monkeypatch):
     root = tmp_path_factory.mktemp("step-state")
     monkeypatch.setattr("ki_dev.step.state.state_root", lambda: root)
     return root
+
+
+@pytest.fixture(autouse=True)
+def claude_quota_dir(tmp_path_factory, monkeypatch):
+    """5h-Messwerte des Claude-Adapters nie unter ``~/.cache``."""
+    root = tmp_path_factory.mktemp("claude-quota")
+    monkeypatch.setattr(
+        "ki_dev.adapter.executors.claude_cli.DEFAULT_QUOTA_DIR", root
+    )
+    return root

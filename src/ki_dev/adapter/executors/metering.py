@@ -80,6 +80,54 @@ def claude_result(
         return missing_result(result, str(exc))
 
 
+def claude_stream(
+    stdout: str,
+) -> tuple[str, tuple[float, int] | None]:
+    """Zerlegt ``--output-format stream-json --verbose``.
+
+    Liefert die rohe ``result``-Zeile (fuer ``claude_result``) und den
+    5h-Kontingentwert aus dem letzten ``rate_limit_event`` als
+    ``(used_percent, resets_at)``. ``utilization`` ist ein Anteil
+    (0..1), beobachtet mit Claude Code 2.1.272. Ohne ``result``-Zeile
+    bleibt ``stdout`` unveraendert, damit ``claude_result`` den
+    Fehler meldet.
+    """
+    result_line = stdout
+    quota = None
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "result":
+            result_line = line
+        elif event.get("type") == "rate_limit_event":
+            quota = _claude_five_hour(event) or quota
+    return result_line, quota
+
+
+def _claude_five_hour(event: dict) -> tuple[float, int] | None:
+    window = event.get("rate_limit_info")
+    for key in ("unifiedWindows", "five_hour"):
+        if not isinstance(window, dict):
+            return None
+        window = window.get(key)
+    if not isinstance(window, dict):
+        return None
+    share = window.get("utilization")
+    resets_at = window.get("resetsAt")
+    if (
+        type(share) not in (int, float)
+        or not math.isfinite(share)
+        or share < 0
+        or type(resets_at) is not int
+    ):
+        return None
+    return float(share) * 100, resets_at
+
+
 def _claude_usage_event(
     usage, session_id: str | None, cli_version: str | None
 ):

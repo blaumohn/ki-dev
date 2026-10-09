@@ -132,8 +132,10 @@ claude --print --output-format text \
   `max`). Die drei Vertragsstufen werden unveraendert durchgereicht.
 
 Mit `TurnBudget` (immer in `ki-dev run`) verwendet der Adapter stattdessen
-`--output-format json --max-turns 12 --max-budget-usd 1.0`, mit den
-jeweils konfigurierten Grenzwerten.
+`--output-format stream-json --verbose --max-turns 12
+--max-budget-usd 1.0`, mit den jeweils konfigurierten Grenzwerten.
+Die Antwort steht im `result`-Ereignis, der 5h-Wert im
+`rate_limit_event` (siehe `measure_quota`).
 
 `measure_context(session_id)` liest die lokale vorbereitete Sitzung
 unter `~/.claude/projects/*/<session_id>.jsonl` und liefert den
@@ -145,17 +147,16 @@ ob das den naechsten Aufruf verhindert, entscheidet ausschliesslich
 die Orchestrierung (siehe oben), nicht dieser Adapter. Das Lesen
 selbst startet keinen Prozess und ist verbrauchsfrei.
 
-`measure_quota(session_id)` liefert unveraendert den `UNSUPPORTED`-
-Standard aus `CliAdapter`: Claude Code meldet den 5h-Kontingentanteil
-(`rate_limits.five_hour.used_percentage`) nachweislich nur an ein
-interaktives `statusLine`-Skript und `/usage` (Claude-Code-Changelog
-2.1.80); die lokale Sitzungsablage traegt das Feld auch bei Erfolg
-nicht, sondern nur reaktiv im Fehlerfall (`quotaLimits` bei HTTP 429,
-also erst nachdem das Kontingent bereits erreicht ist). Ohne
-verifizierten, verbrauchsfreien, nicht-interaktiven Messweg bleibt
-dieser Adapter bei `UNSUPPORTED`, statt eine ungeprüfte Messquelle zu
-erfinden. Anders als bei `measure_context` blockiert das hier jeden
-weiteren Aufruf (siehe
+`measure_quota(session_id)` liest den Wert, den der vorige Turn
+abgelegt hat. Claude liefert den 5h-Anteil verbrauchsfrei nur mit
+einer Antwort: `stream-json --verbose` enthaelt ein `rate_limit_event`
+mit `rate_limit_info.unifiedWindows.five_hour.utilization` (Anteil
+0..1) und `resetsAt` (verifiziert mit 2.1.272). Der Adapter speichert
+ihn nach jedem Turn unter `~/.cache/ki-dev/claude-quota/<session_id>.json`.
+Vor dem ersten Turn und nach einem Fensterwechsel gilt `PENDING`: Der
+Aufruf laeuft ungemessen, ab dem naechsten greifen Reserve und
+Delta-Budget. Ein Turn ohne `rate_limit_event` ergibt `UNAVAILABLE`
+(siehe
 [ausfuehrer.de.md](ausfuehrer.de.md#fuenfstundenkontingent-vorpruefung)).
 
 Das JSON-Resultat liefert Antworttext und `usage` getrennt. Auch bei

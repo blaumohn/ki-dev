@@ -747,6 +747,8 @@ class RunRuntime:
             f"{role} (executor={actor.executor.name}, "
             f"session={actor.session_id})"
         )
+        if measurement.status is QuotaStatus.PENDING:
+            return None
         if measurement.status is not QuotaStatus.MEASURED:
             return _quota_missing_reason(origin, measurement)
         reasons = [

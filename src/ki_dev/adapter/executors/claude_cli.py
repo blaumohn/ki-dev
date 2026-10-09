@@ -7,7 +7,10 @@ installierte, bereits angemeldete ``claude``-CLI.
 
 from __future__ import annotations
 
+import json
 import re
+import time
+from dataclasses import replace
 from pathlib import Path
 
 from ki_dev.tool_versions import load_tool_versions
@@ -21,7 +24,11 @@ from .contract import (
     TurnRequest,
     TurnResult,
 )
-from .metering import claude_context_tokens, claude_result
+from .metering import (
+    claude_context_tokens,
+    claude_result,
+    claude_stream,
+)
 
 # Gemeinsamer Versionsstand fuer Build und Laufzeit.
 CLI_VERSION = load_tool_versions()["CLAUDE_VERSION"]
@@ -29,6 +36,9 @@ CLI_VERSION = load_tool_versions()["CLAUDE_VERSION"]
 # Beobachtetes Format von ``claude --version``, z. B.
 # "2.1.272 (Claude Code)".
 _VERSION_OUTPUT = re.compile(r"^(\S+)\s+\(Claude Code\)")
+
+# Letzter 5h-Messwert je Sitzung, geschrieben nach jedem Turn.
+DEFAULT_QUOTA_DIR = Path.home() / ".cache/ki-dev/claude-quota"
 
 
 class ClaudeCliAdapter(CliAdapter):
@@ -59,29 +69,54 @@ class ClaudeCliAdapter(CliAdapter):
             )
         return ContextMeasurement(ContextStatus.MEASURED, tokens=tokens)
 
-    def measure_quota(self, session_id: str) -> QuotaMeasurement:
-        """Kein verbrauchsfreier, nicht-interaktiver Nachweis bekannt.
+    def __init__(
+        self, *, quota_dir: Path | None = None, **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.quota_dir = quota_dir or DEFAULT_QUOTA_DIR
 
-        Claude Code liefert ``rate_limits.five_hour.used_percentage``
-        nachweislich nur an ein interaktives ``statusLine``-Skript und
-        ``/usage`` (Claude-Code-Changelog 2.1.80); die lokale
-        Sitzungsablage (``~/.claude/projects/*/<session_id>.jsonl``)
-        traegt dieses Feld auch bei Erfolg nicht, sondern nur reaktiv
-        im Fehlerfall (``quotaLimits`` bei HTTP 429) -- zu spaet fuer
-        eine Vorabpruefung. Solange kein verbrauchsfreier,
-        nicht-interaktiver Messweg verifiziert ist, bleibt dieser
-        Executor ``UNSUPPORTED``; anders als bei ``measure_context``
-        blockiert das hier jeden weiteren Aufruf, siehe
-        ``QuotaStatus`` (ki-dev-ablauf-hju).
+    def measure_quota(self, session_id: str) -> QuotaMeasurement:
+        """Letzter 5h-Wert aus der Antwort des vorigen Turns.
+
+        Claude liefert den Wert verbrauchsfrei nur mit einer Antwort
+        (``rate_limit_event`` in ``stream-json``), nie vorab. Darum
+        ``PENDING`` vor dem ersten Turn und nach einem Fensterwechsel;
+        ein Turn ohne Messwert ergibt ``UNAVAILABLE``.
         """
-        del session_id
-        return QuotaMeasurement(
-            QuotaStatus.UNSUPPORTED,
-            detail=(
-                "claude-cli liefert keinen verbrauchsfreien, "
-                "nicht-interaktiven 5h-Kontingentmesswert"
-            ),
-        )
+        try:
+            value = json.loads(
+                self._quota_path(session_id).read_text(encoding="utf-8")
+            )
+        except FileNotFoundError:
+            return QuotaMeasurement(
+                QuotaStatus.PENDING,
+                detail="noch kein Turn; Messung nach dem ersten",
+            )
+        except (OSError, ValueError) as exc:
+            return QuotaMeasurement(
+                QuotaStatus.UNAVAILABLE, detail=str(exc)
+            )
+        try:
+            return _stored_quota(value)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            return QuotaMeasurement(
+                QuotaStatus.UNAVAILABLE,
+                detail=f"Messwertdatei ungueltig: {exc!r}",
+            )
+
+    def _quota_path(self, session_id: str) -> Path:
+        return self.quota_dir / f"{session_id}.json"
+
+    def _store_quota(
+        self, session_id: str, quota: tuple[float, int] | None
+    ) -> None:
+        if quota is None:
+            value = {"missing": "Turn ohne rate_limit_event"}
+        else:
+            value = {"used_percent": quota[0], "resets_at": quota[1]}
+        path = self._quota_path(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(value), encoding="utf-8")
 
     def parse_version(self, raw: str) -> str | None:
         match = _VERSION_OUTPUT.match(raw.strip())
@@ -93,8 +128,10 @@ class ClaudeCliAdapter(CliAdapter):
         cli_version, result, turn_ran = self.send_metered_turn(request)
         if not turn_ran:
             return result
+        result_line, quota = claude_stream(result.stdout)
+        self._store_quota(request.session_id, quota)
         return claude_result(
-            result,
+            replace(result, stdout=result_line),
             session_id=request.session_id,
             cli_version=cli_version,
         )
@@ -107,7 +144,7 @@ class ClaudeCliAdapter(CliAdapter):
         argv = [
             "--print",
             "--output-format",
-            "json" if request.budget else "text",
+            "stream-json" if request.budget else "text",
             "--model",
             request.model,
             "--resume",
@@ -117,9 +154,27 @@ class ClaudeCliAdapter(CliAdapter):
         ]
         if request.budget:
             argv += [
+                "--verbose",
                 "--max-turns",
                 str(request.budget.max_turns),
                 "--max-budget-usd",
                 str(request.budget.max_budget_usd),
             ]
         return argv
+
+
+def _stored_quota(value: dict) -> QuotaMeasurement:
+    if value.get("missing"):
+        return QuotaMeasurement(
+            QuotaStatus.UNAVAILABLE, detail=str(value["missing"])
+        )
+    if value["resets_at"] <= time.time():
+        return QuotaMeasurement(
+            QuotaStatus.PENDING,
+            detail="5h-Fenster abgelaufen; Messung nach dem Turn",
+        )
+    return QuotaMeasurement(
+        QuotaStatus.MEASURED,
+        used_percent=value["used_percent"],
+        resets_at=value["resets_at"],
+    )

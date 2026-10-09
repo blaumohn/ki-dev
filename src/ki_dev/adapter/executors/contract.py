@@ -189,9 +189,16 @@ class QuotaStatus(StrEnum):
     "dieser Executor liefert (noch) keinen Nachweis" -- die
     Orchestrierung haelt in beiden Nicht-MEASURED-Faellen an
     (ki-dev-ablauf-hju).
+
+    Einzige Ausnahme ist ``PENDING``: Der Adapter misst erst mit der
+    Antwort eines Aufrufs (claude-cli: ``rate_limit_event``) und hat
+    fuer diese Sitzung noch keinen Wert. Der erste Aufruf laeuft
+    ungemessen; ab dem zweiten gilt wieder ``MEASURED``. Ein Adapter
+    ohne diese Faehigkeit liefert ``PENDING`` nie.
     """
 
     MEASURED = "measured"
+    PENDING = "pending"
     UNSUPPORTED = "unsupported"
     UNAVAILABLE = "unavailable"
 

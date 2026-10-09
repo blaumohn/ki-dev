@@ -17,7 +17,8 @@ Anders als die Kontextvorpruefung (``test_context_guard.py``) gibt es
 hier keinen Status, der einen Aufruf freigibt, ausser einem
 tatsaechlichen Messwert: ``UNSUPPORTED`` blockiert hier ebenso wie
 ``UNAVAILABLE``, weil es fuer das Kontokontingent keine sichere
-Annahme "kein Nachweis = ok" gibt.
+Annahme "kein Nachweis = ok" gibt. Einzige Ausnahme ist ``PENDING``
+(Messung erst mit der ersten Antwort, claude-cli).
 """
 
 from __future__ import annotations
@@ -219,7 +220,7 @@ def test_unavailable_quota_measurement_blocks_with_own_reason(
 def test_unsupported_quota_measurement_also_blocks(tmp_path):
     """Anders als bei der Kontextvorpruefung ist ``UNSUPPORTED`` hier
     kein bekannter, unbedenklicher Adaptergrenzfall, sondern ein
-    Blocker: ohne verifizierten Messweg (aktuell claude-cli) gilt der
+    Blocker: ohne verifizierten Messweg gilt der
     Echtlauf nicht als gegen das Fuenfstundenkontingent abgesichert."""
     build_executor = ControlledExecutor("claude-cli", "Bau erledigt")
     build_executor.quota = QuotaMeasurement(QuotaStatus.UNSUPPORTED)
@@ -237,6 +238,25 @@ def test_unsupported_quota_measurement_also_blocks(tmp_path):
     assert "Fuenfstundenkontingent-Messwert" in result.detail
     assert "unsupported" in result.detail
     assert build_executor.calls == 0
+
+
+def test_pending_quota_measurement_allows_the_call(tmp_path):
+    """``PENDING``: Der Adapter misst erst mit der Antwort (claude-cli);
+    der erste Aufruf laeuft ungemessen statt zu blockieren."""
+    build_executor = ControlledExecutor("claude-cli", "Bau erledigt")
+    build_executor.quota = QuotaMeasurement(QuotaStatus.PENDING)
+    review_executor = ControlledExecutor(
+        "claude-cli", _review_json("run-quota-pending", 1, "PASS")
+    )
+    build, review = _agents(build_executor, review_executor)
+
+    with _runtime(
+        tmp_path, "run-quota-pending", build, review
+    ) as runtime:
+        result = runtime.start(_task("run-quota-pending"), Limits())
+
+    assert "Fuenfstundenkontingent" not in (result.detail or "")
+    assert build_executor.calls == 1
 
 
 def test_quota_guard_reports_incomplete_legacy_manifest_as_blocker(
