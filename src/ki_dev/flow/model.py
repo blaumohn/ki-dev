@@ -40,6 +40,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib.resources import files
+from pathlib import Path
 from typing import cast
 
 from jsonschema import Draft202012Validator
@@ -153,6 +154,9 @@ class Flow:
     transitions: tuple[Transition, ...]
     finding_classes: Mapping[str, FindingClass]
     priority: tuple[str, ...]
+    # Modul, das die Operationen dieses Ablaufs umsetzt (Ops des
+    # Pakets); fehlt es, ist der Ablauf nur Daten (z. B. Diagramm).
+    ops: str | None = None
 
     def outgoing(self, state: str) -> tuple[Transition, ...]:
         self.state(state)
@@ -230,11 +234,29 @@ def load_flow(name: str) -> Flow:
     ausdrücklich weiter."""
     resource = files("ki_dev.flow").joinpath(f"{name}.toml")
     try:
-        raw = tomllib.loads(resource.read_text(encoding="utf-8"))
-    except (tomllib.TOMLDecodeError, UnicodeError) as exc:
-        raise FlowError(f"{name}.toml: kein gültiges TOML") from exc
+        text = resource.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise FlowError(f"unbekannter Ablauf: {name}") from exc
+    return _parse_text(text, f"{name}.toml")
+
+
+def load_flow_file(path: Path) -> Flow:
+    """Ablauf aus einer gefundenen Datei laden (``ki-dev -f``)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise FlowError(
+            f"{path}: nicht lesbar "
+            f"({exc.strerror or type(exc).__name__})"
+        ) from exc
+    return _parse_text(text, str(path))
+
+
+def _parse_text(text: str, where: str) -> Flow:
+    try:
+        raw = tomllib.loads(text)
+    except (tomllib.TOMLDecodeError, UnicodeError) as exc:
+        raise FlowError(f"{where}: kein gültiges TOML") from exc
     return parse_flow(raw)
 
 
@@ -272,6 +294,7 @@ def parse_flow(raw: object) -> Flow:
             for name, item in table.get("finding_class", {}).items()
         },
         priority=tuple(table.get("priority", ())),
+        ops=table.get("ops"),
     )
     _check_relations(flow, where)
     return flow
@@ -392,6 +415,7 @@ _SCHEMA = {
     },
     "properties": {
         "name": _ID,
+        "ops": {"type": "string", "pattern": r"^[a-z_]+(\.[a-z_]+)*$"},
         "start": _ID,
         "final": {
             "type": "array",

@@ -1,4 +1,4 @@
-"""Antworthülle des Planungsablaufs neben der des Lieferablaufs
+"""Antworthülle des Planungsablaufs neben der des Umsetzungsablaufs
 (ki-dev-ablauf-qu7.3): beide umhüllen denselben Urteilskern."""
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ def test_control_with_pass_is_refused_without_reading_the_config():
 def test_both_wrappers_check_through_the_same_core_functions(
     monkeypatch, tmp_path
 ):
-    """Lieferablauf und Planungsablauf prüfen und binden Antworten über
+    """Umsetzungs- und Planungsablauf prüfen und binden Antworten über
     dieselben Funktionen des gemeinsamen Kerns."""
     seen = []
     for name in ("parse_verdict", "bind_requirement"):
@@ -153,7 +153,7 @@ def test_both_wrappers_check_through_the_same_core_functions(
     )
     decision = parse_review_decision(raw, run_id="r", round_id=1)
     bind_review_decision(decision, task)
-    delivery = list(seen)
+    implement = list(seen)
     seen.clear()
     _parse(_raw(event="fix", detail="d", requirement_ref="AC1"))
-    assert delivery == seen == ["parse_verdict", "bind_requirement"]
+    assert implement == seen == ["parse_verdict", "bind_requirement"]

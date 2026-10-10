@@ -1,4 +1,4 @@
-"""Prompts des Lieferablaufs kommen aus Vorlagen; Adapter enthalten
+"""Prompts des Umsetzungsablaufs kommen aus Vorlagen; Adapter enthalten
 keine Rollentexte."""
 
 from __future__ import annotations
@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ki_dev.adapter.contract import RunTask
-from ki_dev.runner.delivery_turns import work_prompt
+from ki_dev.runner.implement_turns import work_prompt
 
 ADAPTER = Path(__file__).parent.parent / "src" / "ki_dev" / "adapter"
 

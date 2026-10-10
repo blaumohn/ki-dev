@@ -21,7 +21,7 @@ from ki_dev.review_decision import (
 )
 
 PLANNING = load_flow("planning")
-DELIVERY = load_flow("delivery")
+IMPLEMENT = load_flow("implement")
 
 
 def _core(event="fix", detail="x", ref="AC1") -> dict:
@@ -31,16 +31,16 @@ def _core(event="fix", detail="x", ref="AC1") -> dict:
 def test_allowed_events_come_from_the_flow():
     """Ein Vokabular: das event-enum ist PASS plus die Befundklassen
     des jeweiligen Ablaufs, keine Code-Konstante."""
-    for flow in (PLANNING, DELIVERY):
+    for flow in (PLANNING, IMPLEMENT):
         enum = review_schema(flow)["properties"]["event"]["enum"]
         assert enum == ["PASS", *flow.priority]
 
 
-def test_planning_rejects_escalate_but_delivery_accepts_it():
+def test_planning_rejects_escalate_but_implement_accepts_it():
     value = _core("escalate", "Grenze", None)
-    verdict = parse_verdict(value, DELIVERY)
+    verdict = parse_verdict(value, IMPLEMENT)
     assert verdict.event == "escalate"
-    assert DELIVERY.verdict(verdict.event) == "ESCALATE"
+    assert IMPLEMENT.verdict(verdict.event) == "ESCALATE"
     with pytest.raises(ReviewContractError, match="event: ungültiger"):
         parse_verdict(value, PLANNING)
 

@@ -2,9 +2,9 @@
 
 Diese Seite sammelt Begründung und **Zielbild** von ki-dev. Was heute
 läuft, beschreibt die [README](../README.md): Abläufe als Daten
-(`src/ki_dev/flow/`), ein Ausführer ohne eigene Topologie (`ki-dev run`)
+(`src/ki_dev/flow/`), ein Ausführer ohne eigene Topologie (`ki-dev -f implement`)
 und Adapter (`claude`, `codex`, `manual`, `mock`). Alles hier, was über
-`delivery.toml` und `planning.toml` hinausgeht (adaptive Schnitte mit `PASS_STEP`,
+`implement.toml` und `planning.toml` hinausgeht (adaptive Schnitte mit `PASS_STEP`,
 Größen-Gate, Vorgangsauswahl aus bd, Messprofile), ist Entwurf. Wo es
 umgesetzt wird, dann als weitere Zustände und Kanten eines Ablaufs, nicht als
 eigene Schleifen-Schicht.
@@ -108,10 +108,10 @@ KI         Wie setze ich das um? · Ist diese Umsetzung richtig?
 ## Zielbild eines Laufs mit adaptiven Schnitten
 
 Zwei vorbereitete Agentensitzungen, ein Befehl. `PASS_STEP` und das
-Größen-Gate stehen noch nicht in `delivery.toml`:
+Größen-Gate stehen noch nicht in `implement.toml`:
 
 ```bash
-ki-dev run --config lauf.json
+ki-dev -f implement bd-b200
 ```
 
 ```text
@@ -202,7 +202,7 @@ Was sich unterscheidet, sind Ablauf und Besetzung, nicht der Ausführer:
 
 ```mermaid
 flowchart TB
-    L["<b>Ausführer (ki-dev run)</b><br/>Zustand · Checkpoint · Halt<br/>Deltas · Protokoll"]
+    L["<b>Ausführer (ki-dev -f implement)</b><br/>Zustand · Checkpoint · Halt<br/>Deltas · Protokoll"]
 
     subgraph M["Materialisierungsablauf"]
         direction LR
@@ -357,7 +357,7 @@ Nur Sonderfälle meldet der Worker selbst: `NEEDS_DECISION` und `ESCALATE`.
 ### Jede Rückkante hat eine Obergrenze
 
 Korrekturrunden, Protokollfehler, Prozess-Retries: jede Rückkante in
-`delivery.toml` trägt eine zählende Aktion und einen Wächter. Ist der Zähler
+`implement.toml` trägt eine zählende Aktion und einen Wächter. Ist der Zähler
 erschöpft, führt die nächste Kante zu `paused_interactive`.
 
 ---
@@ -367,7 +367,7 @@ erschöpft, führt die nächste Kante zu `paused_interactive`.
 **Entscheidung: die Ablauf-Laufzeit ist LangGraph.** `ki-dev` baut dafür keine
 eigene persistente Agentenlaufzeit.
 
-Es gibt genau ein Graphmodell: Der LangGraph-Graph wird aus `delivery.toml`
+Es gibt genau ein Graphmodell: Der LangGraph-Graph wird aus `implement.toml`
 übersetzt. Jeder Zustand ist ein Knoten, jede Kante eine mögliche Verbindung
 (`@history` aufgelöst). Ein Knoten fährt die Operation, die der Ablauf für
 seinen Zustand nennt; wartende Zustände halten mit `interrupt`. Welche Kante
@@ -384,7 +384,7 @@ LangGraph liefert            ki-dev liefert
 ─────────────────────────    ─────────────────────────────────
 Graphzustand                 Controller-/Worker-Vertrag
 Knoten und Übergänge         adaptive Worker-Schnitte
-Rückkanten (aus delivery.toml)   Größen-Gates
+Rückkanten (aus implement.toml)   Größen-Gates
 Checkpoints                  Git-/bd-Wirkungsnachweis
 Unterbrechung / Resume       PASS_STEP vs. PASS
                              Zähler und Eskalationsregeln
@@ -528,8 +528,8 @@ bd-b200  P2  CSV-Import: fehlerhafte Zeile überspringen
 ```
 
 ```bash
-ki-dev run bd-b200      # ein Vorgang
-ki-dev run --alle-bereit # bis nichts mehr ready ist oder ein Gate stoppt
+ki-dev -f implement bd-b200# ein Vorgang
+ki-dev -f implement --alle-bereit # bis nichts mehr ready ist oder ein Gate stoppt
 ki-dev status           # aktive Phase, Bead, Branch, nächste Aktion
 ki-dev resume bd-b200   # nach Abbruch oder Eskalation
 ```

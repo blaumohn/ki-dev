@@ -28,5 +28,5 @@ make demo
 #
 # Der Mock-Reviewer antwortet erst `fix` (Urteil `CHANGES`), dann `PASS`.
 # Der Lauf nimmt also die Rückkante einmal (`round_id: 2`), friert das
-# geprüfte Ergebnis ein und integriert es per Fast-forward. Die
-# Konfiguration schreibt das Demo-Skript nach `lauf.json`.
+# geprüfte Ergebnis ein und integriert es per Fast-forward. Bead und
+# Profil (`profil.toml`) legt das Demo-Skript selbst an.

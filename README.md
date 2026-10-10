@@ -14,12 +14,12 @@ Die drei Bausteine teilen sich die Verantwortung:
 
 | Baustein | Legt fest | Inhalt / Aufgabe |
 | --- | --- | --- |
-| `flow/delivery.toml`, `flow/planning.toml` | **Was** passieren darf | Daten: Zustände, Übergänge, Wächter und Aktionen |
+| `flow/implement.toml`, `flow/planning.toml` | **Was** passieren darf | Daten: Zustände, Übergänge, Wächter und Aktionen |
 | `runner/` | **Wie** der Ablauf ausgeführt wird | Formale Antwort → Ereignis → Wächter prüfen → Kantenaktion ausführen → nächste Eingabe; LangGraph verwaltet Checkpoints und Halte |
 | `adapter/` | **Wer** die Eingabe bearbeitet | Anbindung von Claude, Codex, einem Menschen (`manual`) oder einer Simulation (`mock`) |
 
 Der Ausführer (`runner/`) liest die Ablaufdatei und ruft den jeweiligen
-Adapter auf. Bei `ki-dev run` geschieht das automatisch.
+Adapter auf. Bei `ki-dev -f implement BEAD` geschieht das automatisch.
 
 `ki-dev step` ist dieselbe Idee von Hand: genau ein Übergang des
 Planungsablaufs, die Übergabe trägt der Mensch als Bote weiter.
@@ -31,7 +31,7 @@ Planungsablaufs, die Übergabe trägt der Mensch als Bote weiter.
 Bau, Review, Korrektur, erneutes Review: das ist keine eigene „Loop“-Schicht,
 sondern eine Rückkante im Ablauf. Wann sie endet, entscheiden Wächter, und
 jede Rückkante verbraucht einen Zähler. Auszug aus
-[`src/ki_dev/flow/delivery.toml`](src/ki_dev/flow/delivery.toml):
+[`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
 # controller_step --fix [cond] / actions--> target   (UML-Kante)
@@ -91,36 +91,42 @@ make demo
 
 Der Mock-Reviewer antwortet erst `fix` (Urteil `CHANGES`), dann `PASS`.
 Der Lauf nimmt also die Rückkante einmal (`round_id: 2`), friert das
-geprüfte Ergebnis ein und integriert es per Fast-forward. Die
-Konfiguration schreibt das Demo-Skript nach `lauf.json`.
+geprüfte Ergebnis ein und integriert es per Fast-forward. Bead und
+Profil (`profil.toml`) legt das Demo-Skript selbst an.
 <!-- /readme-script -->
 
 ---
 
 ## Zwei Befehle
 
-### `ki-dev run`: den Bauablauf bis zum nächsten Halt fahren
+### `ki-dev -f implement`: einen Bead bis zum nächsten Halt fahren
 
 ```bash
-ki-dev run --config lauf.json       # neuer Lauf
-ki-dev run resume RUN_ID            # nach Halt (Antwort, Bote, Pause)
-ki-dev run -v resume RUN_ID         # Zustandswechsel und Aufrufe live
-ki-dev run status RUN_ID            # nur lesen
+ki-dev -f implement BEAD                     # Profil .ki-dev/profiles/default.toml
+ki-dev -f implement BEAD --profile lokal     # anderes Profil
+ki-dev -f implement BEAD --adapter manual    # beide Rollen von Hand
+ki-dev -f implement resume -v RUN_ID         # nach Halt; Zustandswechsel live
+ki-dev -f implement status RUN_ID            # nur lesen
 ```
 
-Je Rolle wählt die Konfiguration einen Adapter:
+`-f NAME` sucht wie `make -f`: `./NAME.toml`, `$KI_DEV_FLOW_PATH`, dann das
+mitgelieferte Paket. Die Ablaufdatei nennt in `ops` das Modul mit ihren
+Befehlen. Den Auftrag liefert der Bead, Rollen, Prüfungen und Grenzen das
+Profil ([Ausführer](docs/ausfuehrer.de.md)).
 
-| Adapter | Konfiguration | Wer antwortet |
+Je Rolle wählt das Profil einen Adapter, `--adapter` ersetzt ihn für
+`manual` oder `mock`:
+
+| Adapter | Profil | Wer antwortet |
 | --- | --- | --- |
-| `claude`, `codex` | `{"executor": "codex", "session_id": "…", "model": "…", "effort": "high"}` | vorbereitete Agentensitzung |
-| `manual` | `{"executor": "manual"}` | du trägst die Eingabe in eine Sitzung deiner Wahl |
-| `mock` | `{"executor": "mock", "answers": ["fix", "PASS"]}` | vorgegebene Antworten |
+| `claude`, `codex` | `executor = "codex"`, `session_id`, `model`, `effort` | vorbereitete Agentensitzung |
+| `manual` | `executor = "manual"` | du: Eingabe auf stdout, Antwort auf stdin |
+| `mock` | `executor = "mock"`, `answers = ["fix", "PASS"]` | vorgegebene Antworten |
 
-Beim Adapter `manual` hält der **Ausführer**, nicht der Ablauf. Der Lauf
-bleibt in `worker_step` und meldet `awaiting_input`. Die Eingabe liegt in
-`<runs>/<RUN_ID>/inbox/…input.md`. Die Antwort kommt als `…answer.md`
-daneben, dann `ki-dev run resume`. Sie durchläuft dieselbe Prüfung wie bei
-einem Agenten.
+Beim Adapter `manual` antwortest du im selben Prozess; eine leere Antwort
+(Strg-D) hält den **Ausführer**, nicht den Ablauf (`awaiting_input`), und
+`ki-dev -f implement resume` fragt erneut. Die Antwort durchläuft dieselbe
+Prüfung wie bei einem Agenten.
 
 Der Mensch hat damit zwei getrennte Rollen: **Bote** (Adapter `manual`) und
 **Entscheider** (Zustände der Art `wait`, z. B. nach `NEEDS_DECISION`).
@@ -156,12 +162,12 @@ Kante:
 ## Die zwei Abläufe
 
 Jeder Ablauf lässt sich als Diagramm ausgeben:
-`ki-dev flow show delivery --without-escalations` (Mermaid).
+`ki-dev flow show implement --without-escalations` (Mermaid).
 
-**Lieferablauf** ([`delivery.toml`](src/ki_dev/flow/delivery.toml), ohne
+**Umsetzungsablauf** ([`implement.toml`](src/ki_dev/flow/implement.toml), ohne
 Grenz- und Schutzhalte, also ohne Kanten mit `escalation`):
 
-<!-- ki-dev flow show delivery --without-escalations -->
+<!-- ki-dev flow show implement --without-escalations -->
 ```mermaid
 stateDiagram-v2
     direction LR
@@ -273,9 +279,9 @@ Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
 | Behauptung | Nachweis |
 | --- | --- |
 | Kein Zyklus ohne Mensch läuft unbegrenzt | `tests/machine/test_reachability.py` zählt den ganzen Zustandsraum auf |
-| … und das schon an den Daten | `tests/test_flow_delivery.py`: jeder Zyklus hat eine zählende Kante |
+| … und das schon an den Daten | `tests/test_flow_implement.py`: jeder Zyklus hat eine zählende Kante |
 | `PASSED` nur über die geprüfte Integration | `tests/machine/test_reachability.py` |
-| Ablauf und Ausführer sprechen dasselbe Vokabular | `bind()` prüft beim Import; `tests/test_flow_delivery.py` |
+| Ablauf und Ausführer sprechen dasselbe Vokabular | `bind()` prüft beim Import; `tests/test_flow_implement.py` |
 | Schichten importieren nie rückwärts | `tests/test_schichten.py` (transitiv, per AST) |
 | Der Bote hält den Ausführer, nicht den Ablauf | `tests/test_runner_runtime.py`, `tests/test_runner_cli.py` |
 
@@ -305,12 +311,12 @@ Oder der Agent-Container mit bd, Codex und Claude Code:
 ```text
 src/ki_dev/
   flow/        model.py (Schema, Prüfung), pattern.py (Muster), diagram.py
-               (Mermaid), templates/ (Rollentexte), delivery.toml, planning.toml
+               (Mermaid), templates/ (Rollentexte), implement.toml, planning.toml
   runner/      interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Wächter,
-               Aktionen, advance), runtime.py (LangGraph-Graph aus delivery.toml),
+               Aktionen, advance), runtime.py (LangGraph-Graph aus implement.toml),
                planning.py (Planungs-Thread je Bead), graph.py (Ablauf → Graph,
                für run und step), turns.py (jede Übergabe aus ihrer
-               Deklaration), delivery_turns.py (Felder des Lieferablaufs),
+               Deklaration), implement_turns.py (Felder des Umsetzungsablaufs),
                events.py (Protokoll), cli.py,
                safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
   ops/         checks/ (Vorlauf), context/ (Bead-Eingabe, Leitlinien,
@@ -332,7 +338,7 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 
 ## Stand und offene Punkte
 
-- **Benutzbar:** `ki-dev step` (Planungsablauf von Hand), `ki-dev run` mit
+- **Benutzbar:** `ki-dev step` (Planungsablauf von Hand), `ki-dev -f implement` mit
   allen vier Adaptern (Bauablauf).
 - **Planungsablauf:** `step` fährt `planning.toml` als LangGraph-Thread je
   Bead (`runner/planning.py`, derselbe Graph-Übersetzer wie `run`) bis zum
@@ -342,7 +348,7 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 - **Laufzustand je Bead:** `ki-dev step BEAD_ID` ohne `--step` setzt den
   gespeicherten Halt fort (`.local/handoff/steps/`), je Übergang steht eine
   Zeile in `events.jsonl`.
-- **Beobachtbar:** `ki-dev run` schreibt je Übergang eine Zeile nach
+- **Beobachtbar:** `ki-dev -f implement` schreibt je Übergang eine Zeile nach
   `events.jsonl` ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
 - **Geprüfter Stand bei step:** Ein PASS gilt nur, wenn Arbeitsbaum und
   Bead seit dem Vorlauf unverändert sind; sonst läuft der Vorlauf erneut

@@ -5,8 +5,9 @@ Der Zustand ist der LangGraph-Thread des Planungsablaufs
 ``.local/handoff/steps/<BEAD>/checkpoints.sqlite``: wartender Zustand
 und Tatsachen für Wächter (z. B. kein PASS nach Teillauf). Daneben
 steht ``events.jsonl``, dasselbe Ereignisprotokoll wie bei
-``ki-dev run``. Beads bleiben Auftrag und PM-Sicht; der Laufzustand ist
-Arbeitsstand dieses Arbeitsbaums wie die Vorlaufartefakte.
+``ki-dev -f implement``. Beads bleiben Auftrag und PM-Sicht; der
+Laufzustand ist Arbeitsstand dieses Arbeitsbaums wie die
+Vorlaufartefakte.
 
 Ein ausdrückliches ``--step`` beginnt dort, ohne ``--step`` setzt step
 den wartenden Zustand fort. Beginnt ein Aufruf woanders, als der letzte

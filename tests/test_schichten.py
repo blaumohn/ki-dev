@@ -15,6 +15,9 @@ Umweg über ein Hilfsmodul ist ebenso eine Abhängigkeit.
   liefert Kontextquellen (``context``: Bead-Eingabe, Leitlinien,
   Grenzen, Beads-Leser); es kennt weder Ausführer noch Adapter noch
   step: eingesteckt wird es von außen.
+- ``ki_dev.flow_ops`` setzt die Ablaufpakete zusammen (``ops`` eines
+  Ablaufs): es nutzt Ausführer, Ops-Bausteine und Adapter; keine
+  andere Schicht und kein Kernmodul kennt es.
 - Kernmodule außerhalb der Schichten (Deltas, Verbrauch, Nachweise)
   kennen weder Ausführer noch ``step`` noch die Kommandozeile; ein
   Modul, das nur eine Schicht nutzt, liegt in dieser Schicht.
@@ -79,8 +82,19 @@ def _closure(module: str) -> set[str]:
     return seen
 
 
+def _within(module: str, packages: str | tuple[str, ...]) -> bool:
+    """Modul gehört zu einem der Pakete (``ki_dev.flow_ops`` gehört
+    nicht zu ``ki_dev.flow``)."""
+    if isinstance(packages, str):
+        packages = (packages,)
+    return any(
+        module == package or module.startswith(f"{package}.")
+        for package in packages
+    )
+
+
 def _layer(prefix: str) -> list[str]:
-    return sorted(m for m in MODULES if m.startswith(prefix))
+    return sorted(m for m in MODULES if _within(m, prefix))
 
 
 @pytest.mark.parametrize(
@@ -100,7 +114,7 @@ def test_layers_never_import_upwards(layer, forbidden):
         module: sorted(
             target
             for target in _closure(module)
-            if target.startswith(forbidden)
+            if _within(target, forbidden)
         )
         for module in _layer(layer)
     }
@@ -121,13 +135,14 @@ def test_parked_packages_are_not_wired_yet(parked):
     users = sorted(
         module
         for module in MODULES
-        if not module.startswith(parked)
-        and any(target.startswith(parked) for target in _direct(module))
+        if not _within(module, parked)
+        and any(_within(target, parked) for target in _direct(module))
     )
     assert users == []
 
 
 _LAYERS = (
+    "ki_dev.flow_ops",
     "ki_dev.runner",
     "ki_dev.step",
     "ki_dev.flow",
@@ -138,6 +153,7 @@ _LAYERS = (
 )
 _TOP = {"ki_dev", "ki_dev.cli", "ki_dev.config_cli"}
 _UPPER = (
+    "ki_dev.flow_ops",
     "ki_dev.runner",
     "ki_dev.step",
     "ki_dev.cli",
@@ -149,11 +165,11 @@ def test_core_modules_never_import_runner_step_or_cli():
     core = [
         m
         for m in MODULES
-        if not m.startswith(_LAYERS) and m not in _TOP
+        if not _within(m, _LAYERS) and m not in _TOP
     ]
     violations = {
         module: sorted(
-            t for t in _closure(module) if t.startswith(_UPPER)
+            t for t in _closure(module) if _within(t, _UPPER)
         )
         for module in core
     }

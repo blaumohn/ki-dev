@@ -49,7 +49,7 @@ def test_run_and_step_hand_over_through_the_same_function(
         "run-1", "Auftrag", (), tmp_path, "write",
         acceptance_criteria=("K",),
     )
-    relay = ManualRelay(tmp_path / "inbox", "worker")
+    relay = ManualRelay(Inbox(tmp_path / "inbox"), "worker")
     with pytest.raises(ManualInputPending):
         relay.work(WorkRequest(task, 1, "Bauauftrag", "a-1"))
 
@@ -84,6 +84,40 @@ def test_console_read_errors_name_the_input_not_its_text(tmp_path):
         console.receive("-", 10, "Antwort")
     with pytest.raises(TransportReadError, match="nicht lesbar"):
         console.receive(str(tmp_path / "fehlt"), 10, "Antwort")
+
+
+def _request(tmp_path):
+    task = RunTask(
+        "run-1", "Auftrag", (), tmp_path, "write",
+        acceptance_criteria=("K",),
+    )
+    return WorkRequest(task, 1, "Bauauftrag", "a-1")
+
+
+def test_console_relay_writes_prompt_and_reads_stdin(tmp_path):
+    """Adapter manual mit Konsole: Eingabe auf stdout, Rahmen für den
+    Menschen getrennt (stderr), Antwort von stdin."""
+    written, notes = [], []
+    console = Console(
+        written.append, lambda: io.BytesIO(b"Gebaut."), notes.append
+    )
+    report = ManualRelay(console, "worker").work(_request(tmp_path))
+    assert report.summary == "Gebaut."
+    assert written == ["Bauauftrag"]
+    assert "Strg-D" in notes[-1]
+
+
+def test_console_relay_halts_on_empty_answer(tmp_path):
+    console = Console(print, lambda: io.BytesIO(b"  \n"))
+    with pytest.raises(ManualInputPending, match="resume"):
+        ManualRelay(console, "worker").work(_request(tmp_path))
+
+
+def test_console_relay_rejects_overlong_answer(monkeypatch, tmp_path):
+    monkeypatch.setattr(manual, "ANSWER_MAX_CHARS", 3)
+    console = Console(print, lambda: io.BytesIO(b"abcdef"))
+    with pytest.raises(TransportReadError, match="länger"):
+        ManualRelay(console, "worker").work(_request(tmp_path))
 
 
 def test_inbox_answer_counts_only_when_not_blank(tmp_path):

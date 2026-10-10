@@ -1,4 +1,4 @@
-"""LangGraph-Laufzeit des Ausführers: fährt delivery.toml bis zum
+"""LangGraph-Laufzeit des Ausführers: fährt implement.toml bis zum
 Halt."""
 
 from __future__ import annotations
@@ -51,13 +51,13 @@ from ki_dev.review_context import (
     project_review_context,
 )
 from ki_dev.run_store import RunStore, RunStoreError
-from ki_dev.runner.delivery_turns import review_prompt, work_prompt
 from ki_dev.runner.events import event_record
 from ki_dev.runner.graph import END_ROUTE, compile_flow
+from ki_dev.runner.implement_turns import review_prompt, work_prompt
 from ki_dev.runner.machine import (
-    DELIVERY,
-    DELIVERY_BOUND,
     FINALIZATION_PHASES,
+    IMPLEMENT,
+    IMPLEMENT_BOUND,
     WAITING_PHASES,
     AgentEscalation,
     CheckpointRecorded,
@@ -112,11 +112,11 @@ from ki_dev.runner.session_handoff import build_handoff
 from ki_dev.usage import UsageStatus
 from ki_dev.usage_accounting import UsageAttribution, UsagePurpose
 
-# Operationen aus ``delivery.toml``: sofort erzeugte Ereignisse
+# Operationen aus ``implement.toml``: sofort erzeugte Ereignisse
 # (``_tick``) und persistierte externe Wirkungen
 # (``_execute_operation``). Beide Mengen zusammen müssen genau das
 # Vokabular des Ablaufs sein.
-# Fortschritt fuer ``ki-dev run --verbose``.
+# Fortschritt fuer ``ki-dev -f implement --verbose``.
 _log = logging.getLogger("ki_dev.run")
 
 _IMMEDIATE_OPERATIONS = frozenset(
@@ -134,10 +134,10 @@ _EXTERNAL_OPERATIONS = frozenset(
     }
 )
 if set(
-    DELIVERY_BOUND.flow.vocabulary.operations
+    IMPLEMENT_BOUND.flow.vocabulary.operations
 ) != _IMMEDIATE_OPERATIONS | _EXTERNAL_OPERATIONS:
     raise FlowError(
-        "delivery.toml: Operationen passen nicht zur Laufzeit"
+        "implement.toml: Operationen passen nicht zur Laufzeit"
     )
 
 
@@ -151,8 +151,8 @@ _HALT_STATUSES = frozenset(
         "passed",
     }
 )
-# Agentenoperationen des Lieferablaufs und die Rolle, die sie ausführt
-# (Konfigurationsschlüssel, Verbrauchsbuch, Budget).
+# Agentenoperationen des Umsetzungsablaufs und die Rolle, die sie
+# ausführt (Konfigurationsschlüssel, Verbrauchsbuch, Budget).
 _AGENT_ROLES = {"work": "worker", "review": "review"}
 
 
@@ -277,7 +277,7 @@ class RunRuntime:
                 RunState(
                     task.run_id,
                     0,
-                    MachineState(Phase(DELIVERY.start)),
+                    MachineState(Phase(IMPLEMENT.start)),
                     limits,
                 )
             ),
@@ -413,10 +413,10 @@ class RunRuntime:
 
     def _compile_graph(self):
         """Ein Graphmodell: der gemeinsame Übersetzer macht aus
-        ``delivery.toml`` den Graphen (ein Knoten je Zustand); welche
+        ``implement.toml`` den Graphen (ein Knoten je Zustand); welche
         Kante gilt, wählt weiterhin der Ablauf (``advance``)."""
         return compile_flow(
-            DELIVERY,
+            IMPLEMENT,
             RunGraphState,
             lambda state: (
                 self._wait_node
@@ -452,7 +452,7 @@ class RunRuntime:
         """Einen Schritt fahren: was zu tun ist, sagt der Ablauf.
 
         Halt- und Endzustände melden nur ihren Status; sonst liefert
-        ``delivery.toml`` die Operation des Zustands (Moore-Ausgabe).
+        ``implement.toml`` die Operation des Zustands (Moore-Ausgabe).
         Sofort erzeugte Ereignisse laufen direkt durch ``advance``,
         externe Wirkungen über eine persistierte Operation."""
         pending = state["pending_operation"]
@@ -1161,7 +1161,7 @@ class RunRuntime:
         run: RunState,
         decision: ReviewDecision,
     ) -> dict[str, object]:
-        verdict = DELIVERY.verdict(decision.event)
+        verdict = IMPLEMENT.verdict(decision.event)
         if verdict is Verdict.CHANGES:
             facts, guard_detail = self._changes_facts(
                 run, decision
@@ -1229,7 +1229,7 @@ class RunRuntime:
         """Fakten aus Laufdaten außerhalb des Maschinenzustands
         (Verbrauchsbuch, Beanstandungsverlauf) für die Wächter
         ``changes_refused`` und ``stagnation`` von
-        ``delivery.toml``.
+        ``implement.toml``.
 
         Der Ablauf prüft ``changes_refused`` vor ``stagnation``;
         der zurückgegebene Text beschreibt den ersten zutreffenden."""
@@ -1244,7 +1244,7 @@ class RunRuntime:
             )
         reason = stagnation_reason(
             self.store,
-            verdict=DELIVERY.verdict(decision.event),
+            verdict=IMPLEMENT.verdict(decision.event),
             requirement_ref=decision.requirement_ref,
             limit=limits.max_stagnant_changes,
         )
@@ -1335,7 +1335,7 @@ class RunRuntime:
             event_record(
                 seq=run.revision + 1,
                 ts=datetime.now(UTC).isoformat(),
-                flow=DELIVERY,
+                flow=IMPLEMENT,
                 run_id=run.run_id,
                 transition=transition,
                 target=result.phase.value,
@@ -1638,7 +1638,7 @@ def _decision_document(decision: ReviewDecision) -> dict[str, object]:
         "run_id": decision.run_id,
         "round_id": decision.round_id,
         "event": decision.event,
-        "verdict": DELIVERY.verdict(decision.event).value,
+        "verdict": IMPLEMENT.verdict(decision.event).value,
         "detail": decision.detail,
         "requirement_ref": decision.requirement_ref,
     }

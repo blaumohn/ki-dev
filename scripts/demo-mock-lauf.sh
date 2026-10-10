@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Offline-Vorführung von `ki-dev run`: Bauablauf mit Mock-Adaptern.
+# Offline-Vorführung von `ki-dev -f implement`: Umsetzung mit Mock-Adaptern.
 #
 # Legt in einem Wegwerfverzeichnis ein Git-Repo (Ziel-Worktree `main`,
-# Arbeits-Worktree `arbeit`) mit Beads-Projekt an und fährt einen Lauf:
+# Arbeits-Worktree `arbeit`) mit Beads-Projekt und Profil an und fährt
+# einen Lauf für einen Bead:
 # Bau → Review CHANGES → Bau → Review PASS → geprüfte Integration.
 # Kein Anbieterzugang nötig; braucht git, bd und das Projekt-venv.
 #
@@ -24,27 +25,32 @@ git -C "$DEMO/ziel" worktree add -q -b arbeit "$DEMO/arbeit"
 (cd "$DEMO/arbeit" && bd init --prefix demo --skip-agents --skip-hooks \
   --stealth >/dev/null)
 
-cat >"$DEMO/lauf.json" <<EOF
-{
-  "task": "MOCK.md um eine Zeile je Runde ergänzen",
-  "acceptance_criteria": ["MOCK.md existiert"],
-  "sources": [],
-  "workdir": "$DEMO/arbeit",
-  "access_profile": "write",
-  "finalization": {
-    "target_workdir": "$DEMO/ziel",
-    "target_ref": "refs/heads/main",
-    "commit_message": "Geprüfter Abschluss (Demo)",
-    "data_mode": "file_proposal"
-  },
-  "worker": {"executor": "mock"},
-  "review": {"executor": "mock", "answers": ["fix", "PASS"]},
-  "tests": []
-}
+BEAD="$(cd "$DEMO/arbeit" && bd create "MOCK.md je Runde ergänzen" \
+  --description "MOCK.md um eine Zeile je Runde ergänzen" \
+  --design "Mock-Adapter schreiben die Zeile" \
+  --acceptance "MOCK.md existiert" --silent)"
+
+cat >"$DEMO/profil.toml" <<EOF
+workdir = "$DEMO/arbeit"
+access_profile = "write"
+tests = []
+
+[finalization]
+target_workdir = "$DEMO/ziel"
+target_ref = "refs/heads/main"
+commit_message = "Geprüfter Abschluss (Demo)"
+data_mode = "file_proposal"
+
+[worker]
+executor = "mock"
+
+[review]
+executor = "mock"
+answers = ["fix", "PASS"]
 EOF
 
-"$KI_DEV" run --config "$DEMO/lauf.json" --run-id demo \
-  --runs-dir "$DEMO/runs"
+(cd "$DEMO/arbeit" && "$KI_DEV" -f implement "$BEAD" \
+  --profile "$DEMO/profil.toml" --run-id demo --runs-dir "$DEMO/runs")
 echo
 git -C "$DEMO/ziel" log --oneline
 echo "Laufverzeichnis: $DEMO/runs/demo"

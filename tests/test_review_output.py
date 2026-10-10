@@ -34,7 +34,7 @@ from ki_dev.deltas import (
     VcsRef,
 )
 from ki_dev.review_context import project_review_context
-from ki_dev.runner.delivery_turns import review_prompt, work_prompt
+from ki_dev.runner.implement_turns import review_prompt, work_prompt
 from ki_dev.runner.review_output import (
     REVIEW_VOCABULARY,
     AgentProtocolError,

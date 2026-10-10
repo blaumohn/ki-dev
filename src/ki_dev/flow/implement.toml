@@ -1,5 +1,9 @@
-# Lieferablauf: ein begrenzter Auftrag von der ersten Beauftragung bis zur
-# geprüften Integration.
+# Umsetzungsablauf (`ki-dev -f implement BEAD`): ein begrenzter Auftrag
+# von der ersten Beauftragung bis zur geprüften Integration.
+#
+# Hauptdeklaration des Ablaufpakets: `ops` nennt das Modul, das die
+# Operationen dieses Ablaufs umsetzt (Start, Fortsetzung, Status);
+# Rollen und Adapter wählt das Profil (`--profile`), nicht diese Datei.
 #
 # Die frühere „loop“ ist hier keine eigene Ebene, sondern eine
 # Rückkante: controller_step --fix--> worker_step_prepare
@@ -15,7 +19,8 @@
 # ist der Quellzustand. `operation` sagt dem Ausführer, was er beim
 # Betreten tut. Format: src/ki_dev/flow/model.py.
 
-name = "delivery"
+name = "implement"
+ops = "ki_dev.flow_ops.implement"
 start = "start"
 final = ["passed", "error"]
 # Review-Antworten des Controllers: PASS oder eine Befundklasse; das

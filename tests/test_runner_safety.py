@@ -28,7 +28,7 @@ from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.cli import (
     RunConfigError,
     _role,
-    start_from_config,
+    start_run,
 )
 from ki_dev.runner.machine import Limits
 from ki_dev.runner.runtime import (
@@ -649,19 +649,14 @@ def test_permission_error_is_not_retried(tmp_path):
 
 
 def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
-    path = tmp_path / "loop.json"
-    path.write_text(
-        json.dumps(
-            {
-                "task": "Auftrag",
-                "acceptance_criteria": ["Kriterium 1"],
-                "workdir": str(tmp_path),
-                "access_profile": "write",
-                "worker": {},
-                "review": {},
-            }
-        )
-    )
+    config = {
+        "task": "Auftrag",
+        "acceptance_criteria": ["Kriterium 1"],
+        "workdir": str(tmp_path),
+        "access_profile": "write",
+        "worker": {},
+        "review": {},
+    }
     seen = {}
 
     class Runtime:
@@ -678,7 +673,7 @@ def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "ki_dev.runner.cli._runtime", lambda *_: Runtime()
     )
-    start_from_config(path, run_id="pin", runs_dir=tmp_path)
+    start_run(config, run_id="pin", runs_dir=tmp_path)
     for role in ("worker", "review"):
         assert seen["configuration"][role]["budget"] == {
             "max_turns": 12,

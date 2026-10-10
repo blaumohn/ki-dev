@@ -5,7 +5,8 @@ hat: ``state --event [cond] / actions--> target``. ``seq`` ist die
 Laufrevision nach dem Übergang; eine Wiederholung nach einem Absturz
 schreibt dieselbe Zeile nicht ein zweites Mal. :func:`check_conformance`
 gleicht ein Protokoll gegen den deklarierten Ablauf ab: nützlich, wo
-ein Mensch abweichen kann; für ``ki-dev run`` gilt es per Bauweise.
+ein Mensch abweichen kann; für ``ki-dev -f implement`` gilt es per
+Bauweise.
 
 XES (IEEE 1849) wäre nur ein späterer Export; die Felder lassen sich
 1:1 abbilden (``state`` → ``concept:name``, ``actor`` → ``org:role``,

@@ -7,9 +7,9 @@ in der deklarierten Reihenfolge. Welche Vorlage und welche Bausteine
 gelten, steht im Ablauf (:class:`~ki_dev.flow.model.Turn`); der
 Ausführer kennt weder Zustände noch Phasen noch Befehle. Felder und
 Bausteine steckt der Aufrufer ein (:class:`Plug`), wie eine
-Maschinenoperation: ``ki-dev run`` und ``ki-dev step`` rendern über
-dieselbe Funktion, Claude, Codex und der Mensch als Bote erhalten
-denselben Wortlaut.
+Maschinenoperation: ``ki-dev -f implement`` und ``ki-dev step``
+rendern über dieselbe Funktion, Claude, Codex und der Mensch als Bote
+erhalten denselben Wortlaut.
 
 Das Ergebnis behält die Teile der Bausteine, damit der Aufrufer Teile
 von einer Grenze ausnehmen kann (:meth:`Rendered.text`).

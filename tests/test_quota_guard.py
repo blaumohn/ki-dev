@@ -361,7 +361,7 @@ def test_usage_delta_budget_is_per_role_not_shared(tmp_path):
 
 
 def test_progress_log_names_transitions_and_calls(tmp_path, caplog):
-    """``ki-dev run --verbose`` zeigt diese Zeilen live an."""
+    """``ki-dev -f implement --verbose`` zeigt diese Zeilen live an."""
     build_executor = ControlledExecutor("claude-cli", "Bau erledigt")
     build_executor.quota = QuotaMeasurement(QuotaStatus.PENDING)
     review_executor = ControlledExecutor(

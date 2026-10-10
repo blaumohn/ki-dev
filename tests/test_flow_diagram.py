@@ -16,7 +16,7 @@ from ki_dev.flow.diagram import (
 from ki_dev.flow.model import load_flow
 
 ROOT = Path(__file__).parent.parent
-DELIVERY = load_flow("delivery")
+IMPLEMENT = load_flow("implement")
 PLANNING = load_flow("planning")
 
 
@@ -29,11 +29,11 @@ def test_every_transition_is_an_edge_with_its_label():
 
 
 def test_without_escalations_hides_exactly_the_escalation_edges():
-    full = render_mermaid(DELIVERY).splitlines()
+    full = render_mermaid(IMPLEMENT).splitlines()
     main = render_mermaid(
-        DELIVERY, without_escalations=True
+        IMPLEMENT, without_escalations=True
     ).splitlines()
-    hidden = sum(1 for t in DELIVERY.transitions if t.escalation)
+    hidden = sum(1 for t in IMPLEMENT.transitions if t.escalation)
     assert hidden > 0
     edges = [
         line for line in full if " --> " in line and "[*]" not in line
@@ -45,7 +45,7 @@ def test_without_escalations_hides_exactly_the_escalation_edges():
 
 
 def test_history_is_a_pseudo_state_not_a_guess():
-    text = render_mermaid(DELIVERY)
+    text = render_mermaid(IMPLEMENT)
     assert 'state "@history" as paused_interactive_history' in text
     assert "paused_interactive --> paused_interactive_history" in text
 
@@ -58,17 +58,17 @@ def test_output_is_deterministic():
 
 def test_readme_diagrams_equal_generated_output():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert diagram_markers(text) == ["delivery", "planning"]
+    assert diagram_markers(text) == ["implement", "planning"]
     assert sync_diagrams(text, load_flow) == text
 
 
 def test_cli_prints_the_diagram():
     result = CliRunner().invoke(
-        app, ["flow", "show", "delivery", "--without-escalations"]
+        app, ["flow", "show", "implement", "--without-escalations"]
     )
     assert result.exit_code == 0
     assert result.output == render_mermaid(
-        DELIVERY, without_escalations=True
+        IMPLEMENT, without_escalations=True
     )
 
 

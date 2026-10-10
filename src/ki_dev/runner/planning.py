@@ -2,10 +2,11 @@
 
 ``ki-dev step`` ist eine Projektion dieses Ausführers mit dem Adapter
 ``manual``. Der Graph entsteht mit demselben Übersetzer wie bei
-``ki-dev run`` (:func:`~ki_dev.runner.graph.compile_flow`): ein Knoten
-je Zustand von ``planning.toml``. Maschinenzustände (``checks``) führt
-der Ausführer selbst aus; bei ``turn`` (Übergabe an eine Sitzung) und
-``ask`` (der Mensch entscheidet) hält er mit ``interrupt``. Der
+``ki-dev -f implement`` (:func:`~ki_dev.runner.graph.compile_flow`):
+ein Knoten je Zustand von ``planning.toml``. Maschinenzustände
+(``checks``) führt der Ausführer selbst aus; bei ``turn`` (Übergabe
+an eine Sitzung) und ``ask`` (der Mensch entscheidet) hält er mit
+``interrupt``. Der
 Checkpoint je Bead hält Zustand und Tatsachen für Wächter (z. B. kein
 PASS nach Teillauf) sowie den Stand, den die Maschinenoperation geprüft
 hat; eine Antwort gilt nur dort, wo der Thread wartet, und bringt den

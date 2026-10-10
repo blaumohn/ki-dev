@@ -1,125 +1,162 @@
 from pathlib import Path
 
-from hypothesis import assume, given
-from hypothesis import strategies as st
+import pytest
 from typer.testing import CliRunner
 
-import ki_dev.cli
-from ki_dev.cli import app
+import ki_dev.flow_ops.implement as implement_ops
+from ki_dev.cli import app, main
 from ki_dev.runner.machine import Phase
 from ki_dev.runner.runtime import RunResult
 
 runner = CliRunner()
 
-_lowercase = st.text(
-    alphabet=st.characters(min_codepoint=97, max_codepoint=122),
-    min_size=1,
-    max_size=8,
-)
+
+def _main(capsys, *args):
+    with pytest.raises(SystemExit) as raised:
+        main(list(args))
+    out, err = capsys.readouterr()
+    return raised.value.code, out, err
 
 
-def test_root_help_lists_run():
+def test_root_help_names_flow_option_and_no_run_command():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "│ run " in result.output
+    assert "ki-dev -f NAME" in result.output
+    assert "│ run " not in result.output
     assert "loop" not in result.output
 
 
-def test_run_help_lists_resume():
-    result = runner.invoke(app, ["run", "--help"])
-    assert result.exit_code == 0
-    assert "resume" in result.output
+def test_flow_help_lists_package_commands(capsys):
+    code, out, err = _main(capsys, "-f", "implement", "--help")
+    assert code == 0
+    for command in ("start", "resume", "status"):
+        assert command in out
+    assert "implement.toml" in err
 
 
-def test_run_resume_help_runs():
-    result = runner.invoke(app, ["run", "resume", "--help"])
-    assert result.exit_code == 0
+def test_flow_option_needs_a_name(capsys):
+    code, _, err = _main(capsys, "-f")
+    assert code == 2
+    assert "Namen" in err
 
 
-def test_run_without_config_fails_visibly():
-    result = runner.invoke(app, ["run"])
-    assert result.exit_code == 2
-    assert "--config" in result.output
+def test_unknown_flow_names_every_place_searched(
+    capsys, monkeypatch, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("KI_DEV_FLOW_PATH", "/nirgends")
+    code, _, err = _main(capsys, "-f", "nix")
+    assert code == 2
+    assert "nix.toml" in err and "/nirgends" in err
 
 
-def test_resume_requires_run_id():
-    result = runner.invoke(app, ["run", "resume"])
-    assert result.exit_code != 0
-    assert "run_id" in result.output
+def test_flow_without_ops_is_data_only(capsys):
+    code, _, err = _main(capsys, "-f", "planning", "x")
+    assert code == 2
+    assert "kein ops-Modul" in err
 
 
-def test_run_cli_starts_configured_run(monkeypatch, tmp_path):
-    config = tmp_path / "run.json"
-    config.write_text("{}")
-    seen = {}
+def test_flow_file_in_cwd_wins_and_must_match_bound_flow(
+    capsys, monkeypatch, tmp_path
+):
+    shipped = Path(implement_ops.__file__).parent.parent / "flow"
+    text = (shipped / "implement.toml").read_text(encoding="utf-8")
+    (tmp_path / "implement.toml").write_text(
+        text.replace("nur der Mensch kann entscheiden", "anders"),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    code, _, err = _main(capsys, "-f", "implement", "--help")
+    assert code == 2
+    assert str(tmp_path / "implement.toml") in err
+    assert "weicht vom mitgelieferten" in err
 
-    def fake_start(path, *, run_id, runs_dir):
-        seen.update(path=path, run_id=run_id, runs_dir=runs_dir)
-        return RunResult(
-            "run-1",
-            "ready_to_finalize",
-            2,
-            Phase.FREEZE_REVIEWED_RESULT,
-        )
 
-    monkeypatch.setattr(ki_dev.cli, "start_from_config", fake_start)
-    result = runner.invoke(
-        app,
-        [
-            "run",
-            "--config",
-            str(config),
-            "--run-id",
-            "run-1",
-            "--runs-dir",
-            str(tmp_path / "runs"),
-        ],
+def _fake_start(monkeypatch, seen):
+    def fake(config, *, run_id, runs_dir, wrap):
+        seen.update(config=config, run_id=run_id, runs_dir=runs_dir)
+        return RunResult("run-1", "passed", 1, Phase.PASSED)
+
+    monkeypatch.setattr(implement_ops, "start_run", fake)
+    monkeypatch.setattr(
+        implement_ops,
+        "_bead_task",
+        lambda bead, _cwd: {"task": f"Auftrag {bead}"},
     )
 
-    assert result.exit_code == 0
-    assert '"status": "ready_to_finalize"' in result.output
-    assert seen == {
-        "path": config,
-        "run_id": "run-1",
-        "runs_dir": Path(tmp_path / "runs"),
+
+def test_bead_starts_run_with_profile_and_adapter_override(
+    capsys, monkeypatch, tmp_path
+):
+    profile = tmp_path / ".ki-dev" / "profiles" / "default.toml"
+    profile.parent.mkdir(parents=True)
+    profile.write_text(
+        '[worker]\nexecutor = "claude"\n[review]\nexecutor = "codex"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    seen: dict = {}
+    _fake_start(monkeypatch, seen)
+
+    code, out, _ = _main(
+        capsys, "-f", "implement", "p-1", "--adapter", "review=manual"
+    )
+
+    assert code == 0
+    assert '"status": "passed"' in out
+    assert seen["config"] == {
+        "worker": {"executor": "claude"},
+        "review": {"executor": "manual"},
+        "task": "Auftrag p-1",
     }
+    assert seen["runs_dir"] == Path(".ki-dev/runs")
 
 
-def test_resume_cli_passes_bound_answer(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [("claude", "im Profil"), ("planner=manual", "Rolle")],
+)
+def test_adapter_argument_rejects_session_adapters_and_roles(
+    capsys, monkeypatch, tmp_path, value, message
+):
+    (tmp_path / "p.toml").write_text("", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    _fake_start(monkeypatch, {})
+    code, _, err = _main(
+        capsys,
+        "-f", "implement", "p-1", "--profile", "p.toml",
+        "--adapter", value,
+    )
+    assert code == 2
+    assert message in err
+
+
+def test_profile_must_not_carry_the_task(capsys, monkeypatch, tmp_path):
+    (tmp_path / "p.toml").write_text('task = "x"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    code, _, err = _main(
+        capsys, "-f", "implement", "p-1", "--profile", "p.toml"
+    )
+    assert code == 2
+    assert "aus dem Bead" in err
+
+
+def test_resume_passes_bound_answer(capsys, monkeypatch, tmp_path):
     seen = {}
 
-    def fake_resume(run_id, *, runs_dir, answer, reconcile_result):
-        seen.update(
-            run_id=run_id,
-            runs_dir=runs_dir,
-            answer=answer,
-            reconcile_result=reconcile_result,
-        )
+    def fake_resume(
+        run_id, *, runs_dir, answer, reconcile_result, wrap
+    ):
+        seen.update(run_id=run_id, answer=answer)
         return RunResult(
             run_id, "waiting_decision", 1, Phase.WAITING_DECISION
         )
 
-    monkeypatch.setattr(ki_dev.cli, "resume_run", fake_resume)
-    result = runner.invoke(
-        app,
-        [
-            "run",
-            "resume",
-            "run-1",
-            "--answer",
-            "ja",
-            "--runs-dir",
-            str(tmp_path),
-        ],
+    monkeypatch.setattr(implement_ops, "resume_run", fake_resume)
+    code, _, _ = _main(
+        capsys,
+        "-f", "implement", "resume", "run-1",
+        "--answer", "ja", "--runs-dir", str(tmp_path),
     )
-
-    assert result.exit_code == 0
-    assert seen["answer"] == "ja"
-    assert seen["run_id"] == "run-1"
-
-
-@given(name=_lowercase)
-def test_unknown_run_subcommand_always_fails(name):
-    assume(name != "resume")
-    result = runner.invoke(app, ["run", name])
-    assert result.exit_code != 0
+    assert code == 0
+    assert seen == {"run_id": "run-1", "answer": "ja"}

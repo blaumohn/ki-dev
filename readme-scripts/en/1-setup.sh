@@ -28,4 +28,5 @@ make demo
 #
 # The mock reviewer answers `fix` (verdict `CHANGES`), then `PASS`: the run
 # takes the back edge once (`round_id: 2`), freezes the reviewed result and
-# fast-forwards it into `main`.
+# fast-forwards it into `main`. The demo script creates the bead and the
+# profile (`profil.toml`) itself.

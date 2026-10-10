@@ -1,8 +1,8 @@
-"""Eingaben an die Sitzungen des Lieferablaufs, aus Vorlagen.
+"""Eingaben an die Sitzungen des Umsetzungsablaufs, aus Vorlagen.
 
-``delivery.toml`` deklariert Vorlage und Kontext der Operationen
+``implement.toml`` deklariert Vorlage und Kontext der Operationen
 ``work`` und ``review``; die Rollentexte stehen unter
-``flow/templates/delivery/``. Der Ausführer rendert sie über
+``flow/templates/implement/``. Der Ausführer rendert sie über
 dieselbe Funktion wie der Planungsablauf (:mod:`ki_dev.runner.turns`)
 und gibt den fertigen Prompt im Auftrag an den Adapter. Claude, Codex
 und der Mensch als Bote erhalten denselben Wortlaut; Adapter kennen
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from ki_dev.adapter.contract import ReviewVocabulary, RunTask
 from ki_dev.flow.model import FlowError, Turn
 from ki_dev.review_context import ReviewProjection
-from ki_dev.runner.machine import DELIVERY
+from ki_dev.runner.machine import IMPLEMENT
 from ki_dev.runner.turns import Plug, bind_turns, render_turn
 
 WORK = "work"
@@ -25,8 +25,8 @@ REVIEW = "review"
 
 
 @dataclass(frozen=True)
-class DeliveryTurn:
-    """Eingabe der Felder einer Übergabe des Lieferablaufs."""
+class ImplementTurn:
+    """Eingabe der Felder einer Übergabe des Umsetzungsablaufs."""
 
     task: RunTask
     round_id: int
@@ -36,13 +36,13 @@ class DeliveryTurn:
     vocabulary: ReviewVocabulary | None = None
 
 
-def _vocabulary(turn: DeliveryTurn) -> ReviewVocabulary:
+def _vocabulary(turn: ImplementTurn) -> ReviewVocabulary:
     if turn.vocabulary is None:
         raise FlowError("Review-Übergabe braucht das Vokabular")
     return turn.vocabulary
 
 
-def _criteria(turn: DeliveryTurn) -> str:
+def _criteria(turn: ImplementTurn) -> str:
     task = turn.task
     return "\n".join(
         f"- {ref}: {text}"
@@ -54,20 +54,20 @@ def _criteria(turn: DeliveryTurn) -> str:
     )
 
 
-def _classes(turn: DeliveryTurn) -> str:
+def _classes(turn: ImplementTurn) -> str:
     texts = _vocabulary(turn).texts
     return "\n".join(
         f"- {name}: {text}" for name, text in texts.items()
     )
 
 
-def _evidence(turn: DeliveryTurn) -> str:
+def _evidence(turn: ImplementTurn) -> str:
     if turn.evidence is None:
         raise FlowError("Review-Übergabe braucht die Nachweise")
     return turn.evidence.text
 
 
-FIELDS: dict[str, Callable[[DeliveryTurn], object]] = {
+FIELDS: dict[str, Callable[[ImplementTurn], object]] = {
     "run_id": lambda turn: turn.task.run_id,
     "round_id": lambda turn: turn.round_id,
     "workdir": lambda turn: turn.task.workdir,
@@ -86,13 +86,13 @@ FIELDS: dict[str, Callable[[DeliveryTurn], object]] = {
     "changes": lambda turn: _vocabulary(turn).changes,
     "unbound": lambda turn: _vocabulary(turn).unbound,
 }
-PLUG: Plug[DeliveryTurn] = Plug(FIELDS, {})
-bind_turns(DELIVERY, PLUG, (WORK, REVIEW))
+PLUG: Plug[ImplementTurn] = Plug(FIELDS, {})
+bind_turns(IMPLEMENT, PLUG, (WORK, REVIEW))
 
 
 def _declared(operation: str) -> Turn:
-    """Die Übergabe der Operation laut ``delivery.toml``."""
-    for state in DELIVERY.states.values():
+    """Die Übergabe der Operation laut ``implement.toml``."""
+    for state in IMPLEMENT.states.values():
         for candidate in state.operations:
             if candidate.do == operation and candidate.turn:
                 return candidate.turn
@@ -102,9 +102,9 @@ def _declared(operation: str) -> Turn:
 def work_prompt(
     task: RunTask, round_id: int, objection: str | None
 ) -> str:
-    subject = DeliveryTurn(task, round_id, objection)
+    subject = ImplementTurn(task, round_id, objection)
     turn = _declared(WORK)
-    return render_turn(DELIVERY, turn, subject, PLUG).text()
+    return render_turn(IMPLEMENT, turn, subject, PLUG).text()
 
 
 def review_prompt(
@@ -114,8 +114,8 @@ def review_prompt(
     evidence: ReviewProjection,
     vocabulary: ReviewVocabulary,
 ) -> str:
-    subject = DeliveryTurn(
+    subject = ImplementTurn(
         task, round_id, None, report, evidence, vocabulary
     )
     turn = _declared(REVIEW)
-    return render_turn(DELIVERY, turn, subject, PLUG).text()
+    return render_turn(IMPLEMENT, turn, subject, PLUG).text()

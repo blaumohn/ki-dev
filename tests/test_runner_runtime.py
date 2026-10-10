@@ -9,7 +9,7 @@ from ki_dev.adapter.contract import (
     RunTask,
     WorkReport,
 )
-from ki_dev.adapter.manual import ManualRelay
+from ki_dev.adapter.manual import Inbox, ManualRelay
 from ki_dev.deltas import (
     BeadsDelta,
     ChangeMedium,
@@ -25,7 +25,7 @@ from ki_dev.deltas import (
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
 from ki_dev.runner import runtime
-from ki_dev.runner.machine import DELIVERY, Limits, Phase
+from ki_dev.runner.machine import IMPLEMENT, Limits, Phase
 from ki_dev.runner.review_output import AgentProtocolError
 from ki_dev.runner.runtime import (
     RunResumeError,
@@ -63,7 +63,7 @@ class FakeReviewer:
         self.calls += 1
         if isinstance(item, Exception):
             raise item
-        if item not in DELIVERY.review_events() and isinstance(
+        if item not in IMPLEMENT.review_events() and isinstance(
             item, str
         ):
             return item  # Rohtext, z. B. Protokollfehler
@@ -633,7 +633,7 @@ def test_manual_relay_halts_executor_not_flow_and_continues(tmp_path):
     with _runtime(
         tmp_path,
         "run-relay",
-        ManualRelay(inbox, "worker"),
+        ManualRelay(Inbox(inbox), "worker"),
         reviewer,
         [_context(1)],
     ) as runtime:
@@ -673,16 +673,16 @@ def test_evidence_of_a_foreign_task_is_a_protocol_error():
 
 
 def test_graph_nodes_are_exactly_the_flow_states(tmp_path):
-    """Ein Graphmodell: der StateGraph wird aus delivery.toml
+    """Ein Graphmodell: der StateGraph wird aus implement.toml
     übersetzt."""
     with _runtime(
         tmp_path, "run-graph", FakeWorker(), FakeReviewer([]), []
     ) as runtime:
         graph = runtime._graph.get_graph()
     nodes = set(graph.nodes) - {"__start__", "__end__"}
-    assert nodes == set(DELIVERY.states)
+    assert nodes == set(IMPLEMENT.states)
     edges = {(e.source, e.target) for e in graph.edges}
-    for transition in DELIVERY.transitions:
+    for transition in IMPLEMENT.transitions:
         if transition.target != "@history":
             assert (transition.source, transition.target) in edges
 
@@ -698,7 +698,7 @@ def test_manual_review_waits_for_a_new_answer_after_protocol_error(
         tmp_path,
         "run-relay-review",
         FakeWorker(),
-        ManualRelay(inbox, "review"),
+        ManualRelay(Inbox(inbox), "review"),
         [_context(1)],
     ) as runtime:
         halted = runtime.start(_task("run-relay-review"), Limits())

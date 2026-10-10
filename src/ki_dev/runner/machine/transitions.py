@@ -1,4 +1,5 @@
-"""Reine Übergangsentscheidung: Interpreter über ``flow/delivery.toml``.
+"""Reine Übergangsentscheidung: Interpreter über
+``flow/implement.toml``.
 
 :func:`advance` ist die einzige öffentliche Entscheidung. Sie bildet
 ``(Zustand, Ereignis)`` deterministisch auf einen Folgezustand ab oder
@@ -40,7 +41,7 @@ from ki_dev.runner.interpreter import (
 
 from .contract import (
     DEFAULT_LIMITS,
-    DELIVERY,
+    IMPLEMENT,
     AgentEscalation,
     Counters,
     Event,
@@ -74,9 +75,9 @@ def advance(
 ) -> TransitionResult:
     """Entscheide den Folgezustand oder weise den Übergang ab."""
     step = _Step(state=state, event=event, limits=limits, facts=facts)
-    if state.phase.value not in DELIVERY.states:
+    if state.phase.value not in IMPLEMENT.states:
         raise InvalidTransition(state, event)
-    transition = DELIVERY_BOUND.select(
+    transition = IMPLEMENT_BOUND.select(
         state.phase.value, event.flow_event, step
     )
     if transition is None:
@@ -181,10 +182,10 @@ _ESKALATIONEN = frozenset(
 
 # Operationen führt die Laufzeit aus; hier nur ihre Namen, damit der
 # Ablauf auch ohne Laufzeit vollständig gebunden und geprüft ist.
-OPERATIONEN = frozenset(DELIVERY.vocabulary.operations)
+OPERATIONEN = frozenset(IMPLEMENT.vocabulary.operations)
 
-DELIVERY_BOUND: BoundFlow[_Step] = bind(
-    DELIVERY,
+IMPLEMENT_BOUND: BoundFlow[_Step] = bind(
+    IMPLEMENT,
     Binding(
         guards=_GUARDS,
         actions=_ACTIONS,
@@ -207,15 +208,15 @@ def _event_types() -> dict[str, type[Event]]:
 EVENT_TYPES = _event_types()
 """Ereignisname im Ablauf → typisierte Ereignisklasse."""
 
-if set(EVENT_TYPES) != set(DELIVERY.vocabulary.events):
+if set(EVENT_TYPES) != set(IMPLEMENT.vocabulary.events):
     raise FlowError(
-        "delivery.toml: Ereignisse passen nicht zu machine.Event"
+        "implement.toml: Ereignisse passen nicht zu machine.Event"
     )
 
 _TRANSITIONS: dict[Phase, dict[type[Event], tuple[str, ...]]] = {}
 """Abgeleitete Sicht für Tests: welche Ereignistypen je Zustand
 überhaupt eine Kante haben (Ziele der Kandidaten in Prüfreihenfolge)."""
-for _t in DELIVERY.transitions:
+for _t in IMPLEMENT.transitions:
     _row = _TRANSITIONS.setdefault(Phase(_t.source), {})
     _type = EVENT_TYPES[_t.event]
     _row[_type] = (*_row.get(_type, ()), _t.target)
@@ -227,5 +228,5 @@ def operation(
     """Operation, die der Ausführer in ``state`` auszuführen hat
     (Moore-Ausgabe des Ablaufs); ``None`` für Halt und Ende."""
     step = _Step(state=state, event=Event(), limits=limits)
-    chosen = DELIVERY_BOUND.operation(state.phase.value, step)
+    chosen = IMPLEMENT_BOUND.operation(state.phase.value, step)
     return None if chosen is None else chosen.do

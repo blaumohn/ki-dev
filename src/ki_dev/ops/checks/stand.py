@@ -1,9 +1,9 @@
 """Geprüfter Stand des Vorlaufs: Arbeitsbaum und Bead.
 
-Wie ``freeze`` bei ``ki-dev run`` vergleicht step synchron: Der Vorlauf
-merkt sich den Stand, eine Review-Antwort bringt den aktuellen mit;
-weichen sie ab, nimmt der Planungsablauf die Kante zurück in den
-Vorlauf (Wächter ``unchanged``).
+Wie ``freeze`` bei ``ki-dev -f implement`` vergleicht step synchron:
+Der Vorlauf merkt sich den Stand, eine Review-Antwort bringt den
+aktuellen mit; weichen sie ab, nimmt der Planungsablauf die Kante
+zurück in den Vorlauf (Wächter ``unchanged``).
 
 - ``tree``: Git-Tree des Arbeitsbaums einschließlich uncommitteter und
   neuer Dateien. Ein temporärer Index lässt den echten Index unberührt;

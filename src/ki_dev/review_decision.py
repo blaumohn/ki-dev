@@ -8,10 +8,10 @@ der Antwort. So gibt es genau ein Vokabular: das des Ablaufs.
 
 Alle Feldregeln stehen im JSON Schema (Draft202012Validator), auch die
 zwei Regeln zwischen den Feldern (``if``/``then``); das erlaubte
-``event``-enum entsteht aus dem Ablauf. ``ki-dev run`` legt eine
-Identitätshülle (run_id, round_id) um denselben Kern; step hat keine
-(kein Laufspeicher) und bindet die Antwort über die Abnahmekriterien
-des Beads (AC1..ACn).
+``event``-enum entsteht aus dem Ablauf. ``ki-dev -f implement`` legt
+eine Identitätshülle (run_id, round_id) um denselben Kern; step hat
+keine (kein Laufspeicher) und bindet die Antwort über die
+Abnahmekriterien des Beads (AC1..ACn).
 """
 
 from __future__ import annotations

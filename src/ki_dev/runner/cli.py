@@ -1,15 +1,20 @@
-"""Konfiguration und Befehle von ``ki-dev run``.
+"""Lauf-Konfiguration und Befehle des Ausführers für ``implement``.
 
-Eine JSON-Konfiguration beschreibt Auftrag, Grenzen und je Rolle den
-Adapter: ``claude`` oder ``codex`` (vorbereitete Agentensitzung),
-``manual`` (Mensch als Bote, Posteingang im Laufverzeichnis) oder
-``mock`` (vorgegebene Antworten, ohne Anbieterzugang).
+Ein Profil (TOML) beschreibt Grenzen, Prüfungen, Finalisierung und je
+Rolle den Adapter: ``claude`` oder ``codex`` (vorbereitete
+Agentensitzung), ``manual`` (Mensch als Bote) oder ``mock``
+(vorgegebene Antworten, ohne Anbieterzugang). Den Auftrag (``task``,
+``acceptance_criteria``, ``sources``) setzt der Aufrufer aus dem Bead
+ein; das Profil darf ihn nicht enthalten.
 """
 
 from __future__ import annotations
 
 import json
+import sys
+import tomllib
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import cast
@@ -22,7 +27,7 @@ from ki_dev.adapter.agent import (
 from ki_dev.adapter.contract import (
     RunTask,
 )
-from ki_dev.adapter.executors import Effort, build_executor
+from ki_dev.adapter.executors import Effort, Executor, build_executor
 from ki_dev.adapter.executors.contract import TurnBudget
 from ki_dev.config_sources import ConfigSource
 from ki_dev.repository_evidence import (
@@ -32,7 +37,7 @@ from ki_dev.repository_evidence import (
 from ki_dev.repository_finalization import RepositoryFinalizer
 from ki_dev.review_context import ProjectionLimits
 from ki_dev.run_store import RunStore
-from ki_dev.runner.machine import DELIVERY, Limits
+from ki_dev.runner.machine import IMPLEMENT, Limits
 from ki_dev.runner.runtime import (
     RunResult,
     RunRuntime,
@@ -41,23 +46,72 @@ from ki_dev.runner.runtime import (
 from ki_dev.runner.safety import SafetyLimits
 from ki_dev.usage_accounting import metadata
 
-# Neue Läufe lesen ihre JSON-Konfiguration aus der hier benannten
-# Option; der Ort wird je Aufruf angegeben.
-CONFIG_OPTION = "--config"
-CONFIG_SOURCE = ConfigSource("run", f"{CONFIG_OPTION} DATEI")
+# Profile liegen je Projekt unter .ki-dev/profiles/NAME.toml; ohne
+# --profile gilt NAME = default.
+PROFILE_DIR = Path(".ki-dev/profiles")
+DEFAULT_PROFILE = "default"
+CONFIG_SOURCE = ConfigSource(
+    "-f implement",
+    "--profile NAME → .ki-dev/profiles/NAME.toml",
+    path=PROFILE_DIR / f"{DEFAULT_PROFILE}.toml",
+)
+# Felder des Auftrags: kommen vom Aufrufer (Bead), nie aus dem Profil.
+TASK_FIELDS = frozenset({"task", "acceptance_criteria", "sources"})
 
 
 class RunConfigError(ValueError):
-    """Die explizite Laufkonfiguration ist ungültig."""
+    """Die Laufkonfiguration ist ungültig."""
 
 
-def start_from_config(
-    path: Path,
+# Hülle um den Executor einer Rolle (z. B. Live-Ansicht); der Aufrufer
+# steckt sie ein, der Ausführer kennt keine Anzeige.
+ExecutorWrap = Callable[[Executor, str], Executor]
+
+
+def _unwrapped(executor: Executor, role: str) -> Executor:
+    del role
+    return executor
+
+
+def profile_path(name: str, cwd: Path) -> Path:
+    """``NAME`` → ``.ki-dev/profiles/NAME.toml``; ein Wert mit ``/``
+    oder Endung ``.toml`` ist der Pfad selbst."""
+    if "/" in name or name.endswith(".toml"):
+        return cwd / name
+    return cwd / PROFILE_DIR / f"{name}.toml"
+
+
+def load_profile(path: Path) -> dict[str, object]:
+    """Profil lesen; Auftragsfelder darin sind ein Fehler."""
+    try:
+        profile = tomllib.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise RunConfigError(
+            f"Profil {path} nicht lesbar: "
+            f"{exc.strerror or type(exc).__name__}"
+        ) from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise RunConfigError(
+            f"Profil {path}: kein gültiges TOML ({exc})"
+        ) from exc
+    task_fields = sorted(TASK_FIELDS & set(profile))
+    if task_fields:
+        raise RunConfigError(
+            f"Profil {path}: Auftragsfelder {task_fields} kommen aus "
+            "dem Bead, nicht aus dem Profil"
+        )
+    return profile
+
+
+def start_run(
+    config: dict[str, object],
     *,
     run_id: str | None,
     runs_dir: Path,
+    wrap: ExecutorWrap = _unwrapped,
 ) -> RunResult:
-    config = _load_object(path)
+    """Neuen Lauf aus Profil und Auftrag (ein Objekt) starten."""
+    config = dict(config)
     # Effektive Defaults bleiben ueber Upgrades nachvollziehbar.
     for role in ("worker", "review"):
         values = _required_object(config, role)
@@ -73,7 +127,7 @@ def start_from_config(
     limits = _limits(config.get("limits", {}))
     projection = _projection(config.get("projection_limits", {}))
     with _runtime(
-        config, RunStore(runs_dir, actual_run_id), projection
+        config, RunStore(runs_dir, actual_run_id), projection, wrap
     ) as runtime:
         return runtime.start(
             task,
@@ -98,12 +152,13 @@ def resume_run(
     runs_dir: Path,
     answer: str | None,
     reconcile_result: Path | None = None,
+    wrap: ExecutorWrap = _unwrapped,
 ) -> RunResult:
     store = RunStore(runs_dir, run_id)
     manifest = store.load_manifest()
     config = _required_object(manifest, "configuration")
     projection = _projection(config.get("projection_limits", {}))
-    with _runtime(config, store, projection) as runtime:
+    with _runtime(config, store, projection, wrap) as runtime:
         if reconcile_result is not None:
             if answer is not None:
                 raise RunConfigError(
@@ -143,6 +198,7 @@ def _runtime(
     config: dict[str, object],
     store: RunStore,
     projection: ProjectionLimits,
+    wrap: ExecutorWrap,
 ) -> RunRuntime:
     build = _required_object(config, "worker")
     review = _required_object(config, "review")
@@ -158,8 +214,8 @@ def _runtime(
     finalizer = _finalizer(_required_object(config, "finalization"))
     return RunRuntime(
         store=store,
-        worker=_adapter(build, "worker", store),
-        reviewer=_adapter(review, "review", store),
+        worker=_adapter(build, "worker", store, wrap),
+        reviewer=_adapter(review, "review", store, wrap),
         evidence_collector=RepositoryEvidenceCollector(
             checks=checks,
             round_limit=limits.changes_rounds + 1,
@@ -291,19 +347,52 @@ _LOCAL_ADAPTERS = (manual.NAME, mock.NAME)
 
 
 def _adapter(
-    value: dict[str, object], role: str, store: RunStore
+    value: dict[str, object],
+    role: str,
+    store: RunStore,
+    wrap: ExecutorWrap,
 ) -> object:
     """Adapter einer Rolle aus ihrer Konfiguration bauen."""
     kind = value.get("executor")
     if kind == manual.NAME:
-        _exact_fields(value, {"executor"}, set(), "Rolle")
-        return manual.ManualRelay(store.run_dir / "inbox", role)
+        _exact_fields(value, {"executor"}, {"transport"}, "Rolle")
+        return manual.ManualRelay(_transport(value, store), role)
     if kind == mock.NAME:
         return _mock(value, role)
     agent = _role(value)
+    agent["executor"] = wrap(cast(Executor, agent["executor"]), role)
     if role == "worker":
         return AgentWorker(**agent)
     return AgentReviewer(**agent)
+
+
+# Transport des Adapters manual; ohne Angabe die Konsole.
+CONSOLE = "console"
+INBOX = "inbox"
+
+
+def _transport(
+    value: dict[str, object], store: RunStore
+) -> manual.Transport:
+    kind = value.get("transport", CONSOLE)
+    if kind == CONSOLE:
+        return manual.Console(
+            write=_stdout,
+            stdin=lambda: sys.stdin.buffer,
+            notice=_stderr,
+        )
+    if kind == INBOX:
+        return manual.Inbox(store.run_dir / "inbox")
+    raise RunConfigError(f"transport: {CONSOLE} oder {INBOX}")
+
+
+def _stdout(text: str) -> None:
+    sys.stdout.write(text if text.endswith("\n") else f"{text}\n")
+    sys.stdout.flush()
+
+
+def _stderr(text: str) -> None:
+    print(text, file=sys.stderr, flush=True)
 
 
 def _mock(value: dict[str, object], role: str) -> object:
@@ -314,11 +403,11 @@ def _mock(value: dict[str, object], role: str) -> object:
         return mock.MockWorker()
     answers = value.get("answers", ["PASS"])
     if not isinstance(answers, list) or not all(
-        item in DELIVERY.review_events() for item in answers
+        item in IMPLEMENT.review_events() for item in answers
     ):
         raise RunConfigError(
             "answers: Liste aus "
-            + ", ".join(DELIVERY.review_events())
+            + ", ".join(IMPLEMENT.review_events())
         )
     return mock.MockReviewer(list(answers))
 
@@ -430,13 +519,6 @@ def _projection(value: object) -> ProjectionLimits:
         return ProjectionLimits(**fields)
     except (TypeError, ValueError) as exc:
         raise RunConfigError(str(exc)) from exc
-
-
-def _load_object(path: Path) -> dict[str, object]:
-    value = _load_json(path)
-    if not isinstance(value, dict):
-        raise RunConfigError("Konfiguration muss ein JSON-Objekt sein")
-    return value
 
 
 def _load_json(path: Path) -> object:

@@ -98,7 +98,7 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
 
 **Beispiel:** „Nach fünf CHANGES hält der Lauf an“ ist der Wächter
 `!changes_rounds_left` an der Kante `controller_step --fix-->` in
-`delivery.toml`, nicht ein `if` in der Laufzeit.
+`implement.toml`, nicht ein `if` in der Laufzeit.
 
 ## Ausnahmen
 

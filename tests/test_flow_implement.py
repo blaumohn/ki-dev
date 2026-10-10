@@ -1,4 +1,4 @@
-"""Lieferablauf flow/delivery.toml: Bindung an die Maschine und
+"""Umsetzungsablauf flow/implement.toml: Bindung an die Maschine und
 Begrenztheit.
 
 Die Schleife ist eine Rückkante im Ablauf. Der Strukturtest unten zeigt
@@ -22,9 +22,9 @@ from ki_dev.flow.model import (
     read_raw,
 )
 from ki_dev.runner.interpreter import bind
-from ki_dev.runner.machine import DELIVERY_BOUND, Phase
+from ki_dev.runner.machine import IMPLEMENT_BOUND, Phase
 
-DELIVERY = load_flow("delivery")
+IMPLEMENT = load_flow("implement")
 COUNTING = {
     "begin_task",
     "begin_correction",
@@ -34,16 +34,16 @@ COUNTING = {
 
 
 def test_phase_names_exactly_the_states_of_the_flow():
-    assert {phase.value for phase in Phase} == set(DELIVERY.states)
+    assert {phase.value for phase in Phase} == set(IMPLEMENT.states)
 
 
 def test_every_cycle_without_a_human_consumes_a_counter():
     """Kanten ohne zählende Aktion und Halt bilden keinen Zyklus."""
     free = {
         (t.source, t.target)
-        for t in DELIVERY.transitions
+        for t in IMPLEMENT.transitions
         if not COUNTING & set(t.actions)
-        and DELIVERY.state(t.source).kind != WAIT_KIND
+        and IMPLEMENT.state(t.source).kind != WAIT_KIND
     }
     assert not _has_cycle(free)
 
@@ -69,20 +69,20 @@ def _has_cycle(edges: set[tuple[str, str]]) -> bool:
 
 
 def test_executor_must_speak_the_declared_vocabulary():
-    binding = DELIVERY_BOUND.binding
+    binding = IMPLEMENT_BOUND.binding
     missing = dict(binding.guards)
     missing.pop("stagnation")
     with pytest.raises(FlowError, match="fehlt: stagnation"):
-        bind(DELIVERY, replace(binding, guards=missing))
+        bind(IMPLEMENT, replace(binding, guards=missing))
     extra = {**binding.actions, "zaubern": lambda state: state}
     with pytest.raises(FlowError, match="nicht deklariert: zaubern"):
-        bind(DELIVERY, replace(binding, actions=extra))
+        bind(IMPLEMENT, replace(binding, actions=extra))
 
 
 def test_controller_operation_depends_on_reviewed_result():
     """Moore-Ausgabe: ohne geprüftes Ergebnis beauftragt die Maschine,
     mit Ergebnis urteilt der Controller."""
-    (review, task) = DELIVERY.state("controller_step").operations
+    (review, task) = IMPLEMENT.state("controller_step").operations
     assert (review.do, review.cond) == (
         "review",
         ("checked_result",),
@@ -91,7 +91,7 @@ def test_controller_operation_depends_on_reviewed_result():
 
 
 def test_unguarded_candidate_must_come_last():
-    raw = copy.deepcopy(read_raw("delivery"))
+    raw = copy.deepcopy(read_raw("implement"))
     index = next(
         i
         for i, t in enumerate(raw["transition"])

@@ -80,7 +80,7 @@ Modul: `ki_dev.executors.process` (`run_cli_turn`)
 
 Der Standard-Timeout ist `DEFAULT_TIMEOUT_S = 900` Sekunden und pro
 Adapterinstanz ueberschreibbar.
-`ki-dev run` uebergibt immer ein `TurnBudget`; dessen Standardtimeout
+`ki-dev -f implement` uebergibt immer ein `TurnBudget`; dessen Standardtimeout
 betraegt 180 Sekunden und begrenzt den Adaptertimeout zusaetzlich.
 Alle Zeit- und Kostengrenzen muessen positiv und endlich sein.
 
@@ -131,7 +131,7 @@ claude --print --output-format text \
   (gueltige Werte in 2.1.272: `low`, `medium`, `high`, `xhigh`,
   `max`). Die drei Vertragsstufen werden unveraendert durchgereicht.
 
-Mit `TurnBudget` (immer in `ki-dev run`) verwendet der Adapter stattdessen
+Mit `TurnBudget` (immer in `ki-dev -f implement`) verwendet der Adapter stattdessen
 `--output-format stream-json --verbose --max-turns 12
 --max-budget-usd 1.0`, mit den jeweils konfigurierten Grenzwerten.
 Die Antwort steht im `result`-Ereignis, der 5h-Wert im

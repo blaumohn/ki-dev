@@ -13,12 +13,12 @@ The three components divide responsibility:
 
 | Component | Defines | Contents / role |
 | --- | --- | --- |
-| `flow/delivery.toml`, `flow/planning.toml` | **What** may happen | Data: states, transitions, guards and actions |
+| `flow/implement.toml`, `flow/planning.toml` | **What** may happen | Data: states, transitions, guards and actions |
 | `runner/` | **How** the workflow executes | Formal answer → event → check guard → execute edge action → next input; LangGraph manages checkpoints and halts |
 | `adapter/` | **Who** handles the input | Connects Claude, Codex, a human (`manual`) or a simulation (`mock`) |
 
 The executor (`runner/`) reads the workflow file and calls the appropriate
-adapter. With `ki-dev run`, this happens automatically.
+adapter. With `ki-dev -f implement BEAD`, this happens automatically.
 
 `ki-dev step` is the same idea by hand: exactly one transition of the
 planning workflow, carried on by a human as messenger.
@@ -27,7 +27,7 @@ planning workflow, carried on by a human as messenger.
 
 Build, review, fix, review again is not a "loop" layer but a back edge in
 the workflow. Guards decide when it ends; every back edge consumes a counter.
-From [`src/ki_dev/flow/delivery.toml`](src/ki_dev/flow/delivery.toml):
+From [`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
 # controller_step --fix [cond] / actions--> target   (UML edge)
@@ -85,38 +85,42 @@ make demo
 
 The mock reviewer answers `fix` (verdict `CHANGES`), then `PASS`: the run
 takes the back edge once (`round_id: 2`), freezes the reviewed result and
-fast-forwards it into `main`.
+fast-forwards it into `main`. The demo script creates the bead and the
+profile (`profil.toml`) itself.
 <!-- /readme-script -->
 
 ## Two commands
 
 ```bash
-ki-dev run --config lauf.json      # drive the build workflow to the next halt
-ki-dev run resume RUN_ID           # continue after a halt
-ki-dev run -v resume RUN_ID        # show transitions and calls live
-ki-dev step BEAD --step review     # one planning transition by hand
+ki-dev -f implement BEAD                   # drive a bead to the next halt
+ki-dev -f implement BEAD --adapter manual  # you relay prompts via stdout/stdin
+ki-dev -f implement resume -v RUN_ID       # continue; transitions live
+ki-dev step BEAD --step review             # one planning transition by hand
 ```
 
-| Adapter | Config per role | Who answers |
-| --- | --- | --- |
-| `claude`, `codex` | `{"executor": "codex", "session_id": "…", "model": "…", "effort": "high"}` | prepared agent session |
-| `manual` | `{"executor": "manual"}` | you carry the input into a session |
-| `mock` | `{"executor": "mock", "answers": ["fix", "PASS"]}` | scripted answers |
+`-f NAME` searches like `make -f`: `./NAME.toml`, `$KI_DEV_FLOW_PATH`, then
+the bundled package. The bead supplies the task, the profile
+(`.ki-dev/profiles/default.toml`, `--profile NAME`) roles, checks and limits.
 
-With `manual` the **executor** halts (`awaiting_input`), not the workflow:
-the run stays in its state and continues after the answer file appears.
-The human thus has two separate roles: messenger (adapter) and decider
-(states of kind `wait`).
+| Adapter | Profile per role | Who answers |
+| --- | --- | --- |
+| `claude`, `codex` | `executor = "codex"`, `session_id`, `model`, `effort` | prepared agent session |
+| `manual` | `executor = "manual"` | you: prompt on stdout, answer on stdin |
+| `mock` | `executor = "mock"`, `answers = ["fix", "PASS"]` | scripted answers |
+
+With `manual` an empty answer halts the **executor** (`awaiting_input`), not
+the workflow; `resume` asks again. The human thus has two separate roles:
+messenger (adapter) and decider (states of kind `wait`).
 
 ## What the tests prove
 
 | Claim | Evidence |
 | --- | --- |
 | no unbounded cycle without a human | `tests/machine/test_reachability.py` enumerates the state space |
-| … visible in the data itself | `tests/test_flow_delivery.py`: every cycle has a counting edge |
+| … visible in the data itself | `tests/test_flow_implement.py`: every cycle has a counting edge |
 | `PASSED` only via verified integration | `tests/machine/test_reachability.py` |
 | layers never import upwards | `tests/test_schichten.py` (transitive, AST) |
-| README diagrams match the workflows | `tests/test_flow_delivery.py`, `tests/test_flow_planning.py` |
+| README diagrams match the workflows | `tests/test_flow_implement.py`, `tests/test_flow_planning.py` |
 
 ## Limits, precisely
 

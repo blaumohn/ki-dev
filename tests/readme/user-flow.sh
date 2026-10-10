@@ -111,7 +111,7 @@ stop_git_server() {
   fi
 }
 
-# `ki-dev run` gibt den Endzustand als JSON-Objekt ab einer Zeile "{" aus.
+# `ki-dev -f implement` gibt den Endzustand als JSON-Objekt ab einer Zeile "{" aus.
 check_demo_result() {
   python3 - "$1" <<'PY'
 import json, re, sys

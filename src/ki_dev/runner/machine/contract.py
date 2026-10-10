@@ -36,7 +36,7 @@ from ki_dev.flow.model import (
 
 
 class Phase(StrEnum):
-    """Bezeichner der Zustände von ``flow/delivery.toml``.
+    """Bezeichner der Zustände von ``flow/implement.toml``.
 
     Nur Namen, keine Topologie: welche Kante von wo nach wo führt, steht
     allein im Ablauf. Beim Import wird geprüft, dass Enum und Ablauf
@@ -59,16 +59,16 @@ class Phase(StrEnum):
     ERROR = "error"
 
 
-DELIVERY = load_flow("delivery")
+IMPLEMENT = load_flow("implement")
 
-if {phase.value for phase in Phase} != set(DELIVERY.states):
-    raise FlowError("delivery.toml: Zustände passen nicht zu Phase")
+if {phase.value for phase in Phase} != set(IMPLEMENT.states):
+    raise FlowError("implement.toml: Zustände passen nicht zu Phase")
 
 
 def _phases_of(kind: str) -> tuple[Phase, ...]:
     return tuple(
         Phase(state.id)
-        for state in DELIVERY.states.values()
+        for state in IMPLEMENT.states.values()
         if state.kind == kind
     )
 
@@ -318,7 +318,7 @@ class RunState:
 class Event:
     """Basis aller typisierten Ereignisse der V0-Maschine.
 
-    ``flow_event`` ist der Name im Ablauf (``delivery.toml``),
+    ``flow_event`` ist der Name im Ablauf (``implement.toml``),
     abgeleitet aus dem Klassennamen: ``ControllerTask`` →
     ``controller_task``. Review-Urteile des Controllers tragen
     stattdessen das Review-Ereignis des Ablaufs (``PASS`` oder eine

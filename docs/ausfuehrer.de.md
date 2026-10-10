@@ -1,7 +1,7 @@
-# Ausführer: `ki-dev run`
+# Ausführer: `ki-dev -f implement`
 
 Der Ausführer fährt einen deklarativen Ablauf
-([`src/ki_dev/flow/delivery.toml`](../src/ki_dev/flow/delivery.toml)) bis zum
+([`src/ki_dev/flow/implement.toml`](../src/ki_dev/flow/implement.toml)) bis zum
 nächsten Halt. Er liest die formale Antwort eines Adapters, macht daraus
 ein Ereignis, wählt mit den Wächtern des Ablaufs die Kante, führt deren
 Aktion aus und gibt die nächste Eingabe aus. Eine eigene Topologie hat er
@@ -9,77 +9,111 @@ nicht: Welche Operation in welchem Zustand läuft (`operation`), welche
 Korrekturrunde noch erlaubt ist und wohin ein Schutzhalt führt, steht im
 Ablauf. LangGraph liefert Checkpoint, Halt und Fortsetzung.
 
-Ein neuer Lauf wird mit einer expliziten JSON-Konfiguration gestartet:
+Ein neuer Lauf nimmt den Auftrag aus einem Bead und Rollen, Prüfungen
+und Grenzen aus einem Profil:
 
 ```bash
-ki-dev run --config lauf.json --run-id run-42
+ki-dev -f implement proj-42                      # Profil .ki-dev/profiles/default.toml
+ki-dev -f implement proj-42 --profile lokal      # .ki-dev/profiles/lokal.toml
+ki-dev -f implement proj-42 --adapter review=manual   # Review von Hand
 ```
 
-```json
-{
-  "task": "Den beschriebenen Auftrag umsetzen",
-  "acceptance_criteria": [
-    "Konkretes, pruefbares Kriterium 1",
-    "Konkretes, pruefbares Kriterium 2"
-  ],
-  "sources": ["bd:projekt-42", "docs/vertrag.md"],
-  "workdir": "/absoluter/pfad/zum/repository",
-  "access_profile": "write",
-  "env": {
-    "PYTHONPATH": "/absoluter/pfad/zum/repository/src"
-  },
-  "finalization": {
-    "target_workdir": "/absoluter/pfad/zum/sauberen-ziel-worktree",
-    "target_ref": "refs/heads/main",
-    "commit_message": "Geprüfter Abschluss (projekt-42)",
-    "data_mode": "file_proposal"
-  },
-  "worker": {
-    "executor": "codex",
-    "session_id": "build-session",
-    "model": "gpt-5.6-terra",
-    "effort": "high",
-    "timeout_s": 180
-  },
-  "review": {
-    "executor": "claude",
-    "session_id": "review-session",
-    "model": "sonnet",
-    "effort": "high",
-    "timeout_s": 180
-  },
-  "tests": [
-    {
-      "name": "pytest",
-      "argv": [".venv/bin/python", "-m", "pytest", "-q"],
-      "timeout_s": 900
-    }
-  ],
-  "limits": {
-    "protocol_attempts": 3,
-    "worker_attempts": 12,
-    "changes_rounds": 5,
-    "process_retries": 3
-  },
-  "projection_limits": {
-    "max_file_bytes": 16384,
-    "max_file_lines": 200,
-    "max_total_bytes": 65536
-  }
-}
+`-f NAME` sucht wie `make -f`: `./NAME.toml`, dann die Verzeichnisse aus
+`KI_DEV_FLOW_PATH`, dann das mitgelieferte Paket (`ki_dev/flow/`); die
+gefundene Datei steht auf stderr. Die Ablaufdatei nennt in `ops` das
+Modul, das ihre Befehle umsetzt (`ki_dev.flow_ops.implement`: `start`,
+`resume`, `status`). Der Ausführer bindet bisher nur das mitgelieferte
+`implement.toml`; eine abweichende Datei wird abgewiesen.
+
+Aus dem Bead (Pflichtfelder wie bei `ki-dev step --step implement`):
+Titel, Beschreibung, Design und die Übersicht der Eltern-Epics werden
+`task`, `acceptance_criteria` (nummeriert `1.`, `2.` …) werden `AC1`,
+`AC2` …, `sources` ist `bd:BEAD` plus `metadata.handoff.source_refs`.
+
+Das Profil (TOML) enthält alles andere; Auftragsfelder darin sind ein
+Fehler:
+
+```toml
+workdir = "/absoluter/pfad/zum/repository"
+access_profile = "write"
+
+[env]
+PYTHONPATH = "/absoluter/pfad/zum/repository/src"
+
+[finalization]
+target_workdir = "/absoluter/pfad/zum/sauberen-ziel-worktree"
+target_ref = "refs/heads/main"
+commit_message = "Geprüfter Abschluss (projekt-42)"
+data_mode = "file_proposal"
+
+[worker]
+executor = "codex"
+session_id = "build-session"
+model = "gpt-5.6-terra"
+effort = "high"
+timeout_s = 180
+
+[review]
+executor = "claude"
+session_id = "review-session"
+model = "sonnet"
+effort = "high"
+timeout_s = 180
+
+[[tests]]
+name = "pytest"
+argv = [".venv/bin/python", "-m", "pytest", "-q"]
+timeout_s = 900
+
+[limits]
+protocol_attempts = 3
+worker_attempts = 12
+changes_rounds = 5
+process_retries = 3
+
+[projection_limits]
+max_file_bytes = 16384
+max_file_lines = 200
+max_total_bytes = 65536
 ```
 
 `worker` und `review` müssen verschiedene vorbereitete Sitzungen benutzen.
 Optionale Felder dürfen entfallen; für Grenzen gelten dann die eingebauten
 Werte. Unbekannte Felder werden abgewiesen.
 
+## ki-dev getrennt vom Ziel-Repository installieren
+
+`ki-dev` braucht eine eigene Python-Umgebung und muss im `PATH` liegen;
+Ablaufpakete sucht es im aktuellen Verzeichnis (wie `make`, `bd`).
+
+```bash
+# B: ohne Container
+pipx install /pfad/zu/ki-dev          # eigenes venv, ki-dev im PATH
+cd ~/ziel-repo && ki-dev -f implement BEAD
+
+# A: Ziel-Repository im eigenen Container; den ki-dev-Quellbaum als
+#    Volume einbinden (agent-container: Referenzordner), darin
+pipx install /references/ki-dev
+```
+
+Eine geerbte `PYTHONPATH` (etwa `/workspace/src` im ki-dev-Container)
+geht jeder Installation vor: dann läuft der Quellbaum statt der
+pipx-Kopie. Die Zeile `Ablauf: …/site-packages/ki_dev/flow/implement.toml`
+auf stderr zeigt, welche greift; sonst `env -u PYTHONPATH ki-dev …`.
+
 ## Adapter je Rolle
 
 | `executor` | Felder | Halt |
 | --- | --- | --- |
 | `claude`, `codex` | `session_id`, `model`, `effort`, optional `timeout_s`, `budget` | Schutzhalt (`execution_stopped`) bei Kontext-/Kontingentgrenze |
-| `manual` | keine | `awaiting_input`: Eingabe in `<runs>/<RUN_ID>/inbox/*.input.md`, Antwort als `*.answer.md` daneben, dann `ki-dev run resume RUN_ID` |
+| `manual` | optional `transport`: `console` (Standard) oder `inbox` | `console`: Eingabe auf stdout, formale Antwort von stdin (Ende mit Strg-D); leere Antwort → `awaiting_input`. `inbox`: Eingabe in `<runs>/<RUN_ID>/inbox/*.input.md`, Antwort als `*.answer.md` daneben. Danach `ki-dev -f implement resume RUN_ID` |
 | `mock` | Worker: optional `file`; Review: `answers` (Review-Ereignisse: `PASS`, `fix`, `decision`, `escalate`) | erschöpfte Antwortliste ist ein Prozessfehler |
+
+`--adapter [ROLLE=]NAME` ersetzt beim Start den Adapter einer Rolle
+(`worker`, `review`) oder beider durch `manual` (Konsole) oder `mock`;
+`claude` und `codex` brauchen Sitzung und Modell und stehen deshalb im
+Profil. Damit ist der frühere `ki-dev step` für diesen Ablauf nur ein
+Adapter, kein eigener Befehl.
 
 `awaiting_input` ist ein Halt des Ausführers, kein Zustand des Ablaufs:
 Der Lauf bleibt im aktuellen Zustand (`worker_step` bzw.
@@ -87,8 +121,8 @@ Der Lauf bleibt im aktuellen Zustand (`worker_step` bzw.
 erneut. Der Bote verbraucht kein Agentenbudget von ki-dev.
 
 Halt mit Zustand des Ablaufs (`waiting_decision`, `paused_interactive`)
-setzt dagegen `ki-dev run resume RUN_ID --answer "…"` fort; das ist die
-Kante `resume_requested`, bei einer Pause zurück zum Fortsetzungspunkt.
+setzt dagegen `ki-dev -f implement resume RUN_ID --answer "…"` fort;
+das ist die Kante `resume_requested`, bei einer Pause zurück zum Fortsetzungspunkt.
 
 Vollständig offline vorführen: `scripts/demo-mock-lauf.sh`.
 
@@ -123,7 +157,7 @@ bleibt auch nach einem Neustart byte-, zeilen- und gesamtbegrenzt.
 Bei `NEEDS_DECISION` und `ESCALATE` hält der Prozess dauerhaft an:
 
 ```bash
-ki-dev run resume run-42 --answer "Die gebundene Entscheidung"
+ki-dev -f implement resume run-42 --answer "Die gebundene Entscheidung"
 ```
 
 Eine Eskalation führt nach Resume wieder zum Reviewer und niemals direkt zu
@@ -135,7 +169,7 @@ Nach einem manuellen Abgleich kann das erwartete JSON-Ergebnis der
 angezeigten `operation_id` ausdrücklich übernommen werden:
 
 ```bash
-ki-dev run resume run-42 --reconcile-result abgeglichen.json
+ki-dev -f implement resume run-42 --reconcile-result abgeglichen.json
 ```
 
 Ohne diesen expliziten Abgleich bleibt der Lauf angehalten.
@@ -146,7 +180,7 @@ Ohne diesen expliziten Abgleich bleibt der Lauf angehalten.
 Anforderungen; sie ist Teil des unveraenderlichen Auftrags und bleibt
 ueber Korrekturen und Resume stabil. Der Reviewer erhaelt sie durchnummeriert
 als `AC1`, `AC2`, ... und muss ein `fix` (Urteil `CHANGES`) an genau eine
-davon binden. `event` ist ein Review-Ereignis von `delivery.toml`: `PASS`
+davon binden. `event` ist ein Review-Ereignis von `implement.toml`: `PASS`
 oder eine Befundklasse (`fix`, `decision`, `escalate`); das Urteil folgt
 aus `finding_class`:
 
@@ -170,7 +204,7 @@ Auftrags.
 ## Statusabfrage ohne Fortschreiben
 
 ```bash
-ki-dev run status run-42 --runs-dir .ki-dev/runs
+ki-dev -f implement status run-42 --runs-dir .ki-dev/runs
 ```
 
 Liest Status, Phase und Runden-ID des zuletzt persistierten Checkpoints,
@@ -192,7 +226,7 @@ Jeder genommene Übergang steht als eine Zeile in
 `<runs>/<RUN_ID>/events.jsonl`, mit den Namen des Ablaufs:
 
 ```json
-{"seq": 7, "ts": "…", "flow": "delivery", "run": "run-42", "state": "controller_step", "event": "fix", "target": "worker_step_prepare", "cond": ["checked_result"], "actions": ["begin_correction", "drop_result"], "escalation": null, "actor": "Controller (Review-Sitzung)", "adapter": "codex-cli"}
+{"seq": 7, "ts": "…", "flow": "implement", "run": "run-42", "state": "controller_step", "event": "fix", "target": "worker_step_prepare", "cond": ["checked_result"], "actions": ["begin_correction", "drop_result"], "escalation": null, "actor": "Controller (Review-Sitzung)", "adapter": "codex-cli"}
 ```
 
 `seq` ist die Laufrevision nach dem Übergang; nach einem Absturz wird
@@ -446,7 +480,7 @@ Referenz, Anzahl der Wiederholungen und den bisher aus `calls/`
 belegten Verbrauch. Die Serie wird bei jeder Pruefung aus den
 persistierten Review-Nachrichten neu berechnet; ein Neustart,
 Sitzungswechsel oder eine Antwort setzt sie nicht zurueck. Nach der
-Klaerung (`ki-dev run resume --answer ...`) prueft derselbe Reviewer
+Klaerung (`ki-dev -f implement resume --answer ...`) prueft derselbe Reviewer
 dieselbe Runde erneut, statt automatisch denselben unveraenderten
 Reparaturansatz erneut zu bauen; Verbrauchsgrenzen bleiben dabei
 wirksam.
@@ -488,7 +522,7 @@ Alle vier Abschlussoperationen besitzen unveränderliche Artefakte. Nach einem
 Prozessabbruch genügt daher:
 
 ```bash
-ki-dev run resume run-42
+ki-dev -f implement resume run-42
 ```
 
 Eine bereits nachgewiesene Integration wird dabei nicht wiederholt. Ein
@@ -496,7 +530,7 @@ negatives Drift-Gate pausiert; nachdem die äußere Ursache behoben wurde, wird
 dieselbe Phase mit einer gebundenen Bedienerantwort erneut geprüft:
 
 ```bash
-ki-dev run resume run-42 --answer "Zielstand extern geprüft und korrigiert"
+ki-dev -f implement resume run-42 --answer "Zielstand extern geprüft und korrigiert"
 ```
 
 ## Git- und Beads-/Dolt-Grenze

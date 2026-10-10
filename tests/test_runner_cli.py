@@ -360,11 +360,9 @@ def test_status_rejects_semantically_invalid_required_fields(
 
 
 def test_status_cli_exits_with_code_2_for_incomplete_checkpoint(
-    tmp_path,
+    tmp_path, capsys
 ):
-    from typer.testing import CliRunner
-
-    from ki_dev.cli import app
+    from ki_dev.cli import main
 
     runtime = RunRuntime(
         RunStore(tmp_path, "run-cli-corrupt"),
@@ -380,19 +378,20 @@ def test_status_cli_exits_with_code_2_for_incomplete_checkpoint(
     runtime.close()
     _add_configuration(tmp_path, "run-cli-corrupt")
 
-    result = CliRunner().invoke(
-        app,
-        [
-            "run",
-            "status",
-            "run-cli-corrupt",
-            "--runs-dir",
-            str(tmp_path),
-        ],
-    )
+    with pytest.raises(SystemExit) as raised:
+        main(
+            [
+                "-f",
+                "implement",
+                "status",
+                "run-cli-corrupt",
+                "--runs-dir",
+                str(tmp_path),
+            ]
+        )
 
-    assert result.exit_code == 2
-    assert "run-cli-corrupt" in result.output
+    assert raised.value.code == 2
+    assert "run-cli-corrupt" in capsys.readouterr().err
 
 
 def _initialize_with_configuration(store: RunStore) -> None:
@@ -487,26 +486,19 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
     monkeypatch.setattr(
         runner_cli, "_finalizer", lambda _: StaticFinalizer()
     )
-    config = tmp_path / "lauf.json"
-    config.write_text(
-        json.dumps(
-            {
-                "task": "Auftrag",
-                "acceptance_criteria": ["Kriterium 1"],
-                "sources": [],
-                "workdir": str(tmp_path),
-                "access_profile": "write",
-                "finalization": {},
-                "worker": {"executor": "manual"},
-                "review": {"executor": "mock", "answers": ["PASS"]},
-                "tests": [],
-            }
-        )
-    )
+    config = {
+        "task": "Auftrag",
+        "acceptance_criteria": ["Kriterium 1"],
+        "sources": [],
+        "workdir": str(tmp_path),
+        "access_profile": "write",
+        "finalization": {},
+        "worker": {"executor": "manual", "transport": "inbox"},
+        "review": {"executor": "mock", "answers": ["PASS"]},
+        "tests": [],
+    }
     runs = tmp_path / "runs"
-    halted = runner_cli.start_from_config(
-        config, run_id="r-1", runs_dir=runs
-    )
+    halted = runner_cli.start_run(config, run_id="r-1", runs_dir=runs)
     assert (halted.status, halted.phase) == (
         "awaiting_input",
         Phase.WORKER_STEP,

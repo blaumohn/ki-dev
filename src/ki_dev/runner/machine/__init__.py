@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from .contract import (
     DEFAULT_LIMITS,
-    DELIVERY,
     FINALIZATION_PHASES,
+    IMPLEMENT,
     STOPPED_PHASES,
     TERMINAL_PHASES,
     WAITING_PHASES,
@@ -65,10 +65,10 @@ from .state_json import (
     decode_run_state,
     encode_run_state,
 )
-from .transitions import DELIVERY_BOUND, advance, operation
+from .transitions import IMPLEMENT_BOUND, advance, operation
 
 __all__ = [
-    "DELIVERY",
+    "IMPLEMENT",
     "DEFAULT_LIMITS",
     "FINALIZATION_PHASES",
     "SCHEMA_VERSION",
@@ -110,7 +110,7 @@ __all__ = [
     "WorkerInputsPrepared",
     "WorkerNeedsDecision",
     "WorkerProcessError",
-    "DELIVERY_BOUND",
+    "IMPLEMENT_BOUND",
     "advance",
     "operation",
     "decode_run_state",

@@ -3,7 +3,7 @@
 Der Ausführer prüft die Hülle und den gemeinsamen Urteilskern aus
 :mod:`ki_dev.review_decision`; erst das geprüfte Urteil wird zum
 Ereignis des Ablaufs. Freitext ist nie unmittelbar ein Ereignis. Die
-Hülle des Lieferablaufs trägt ``run_id`` und ``round_id``, die des
+Hülle des Umsetzungsablaufs trägt ``run_id`` und ``round_id``, die des
 Planungsablaufs die Kennung des Versuchs (``attempt``), für den die
 Übergabe ausgegeben wurde; ob sie zum wartenden Versuch passt, prüft
 der Ausführer beim Fortsetzen.
@@ -24,17 +24,17 @@ from ki_dev.review_decision import (
     load_json_object,
     parse_verdict,
 )
-from ki_dev.runner.machine import DELIVERY
+from ki_dev.runner.machine import IMPLEMENT
 
-# Review-Antworten des Lieferablaufs, einmal aus dem Ablauf gebildet
+# Review-Antworten des Umsetzungsablaufs, einmal aus dem Ablauf gebildet
 # und dem Adapter mitgegeben (Adapter kennen keinen Ablauf).
 REVIEW_VOCABULARY = ReviewVocabulary(
-    events=DELIVERY.review_events(),
-    changes=DELIVERY.events_with(Verdict.CHANGES)[0],
-    unbound=DELIVERY.unbound_changes_event(),
+    events=IMPLEMENT.review_events(),
+    changes=IMPLEMENT.events_with(Verdict.CHANGES)[0],
+    unbound=IMPLEMENT.unbound_changes_event(),
     texts={
         name: item.text
-        for name, item in DELIVERY.finding_classes.items()
+        for name, item in IMPLEMENT.finding_classes.items()
     },
 )
 
@@ -61,7 +61,7 @@ def parse_review_decision(
         value = load_json_object(raw)
         _check_identity(value, run_id, round_id)
         core = {k: v for k, v in value.items() if k not in _IDENTITY}
-        verdict = parse_verdict(core, DELIVERY)
+        verdict = parse_verdict(core, IMPLEMENT)
     except ReviewContractError as exc:
         raise AgentProtocolError(str(exc)) from exc
     return ReviewDecision(
@@ -99,7 +99,7 @@ def bind_review_decision(
     """CHANGES an ein Abnahmekriterium des Laufs binden (gemeinsame
     Regel ``bind_requirement``)."""
     return bind_requirement(
-        decision, task.acceptance_criterion_refs(), DELIVERY
+        decision, task.acceptance_criterion_refs(), IMPLEMENT
     )
 
 

@@ -6,10 +6,10 @@ Adapter `manual`: Ein Aufruf nimmt die Kante seines Startereignisses, fährt
 Maschinenzustände wie den Vorlauf (`implement.preflight`) selbst und hält beim
 nächsten `turn` (Übergabe an eine Sitzung) oder `ask` (der Mensch entscheidet).
 Der Ausführer ist ein LangGraph-Thread je Bead (`src/ki_dev/runner/planning.py`),
-übersetzt mit demselben `compile_flow` wie `ki-dev run`; `turn` und `ask`
+übersetzt mit demselben `compile_flow` wie `ki-dev -f implement`; `turn` und `ask`
 halten mit `interrupt`. step wählt aus Halt und
 genommenem Weg die Vorlage und gibt sie aus, der Mensch trägt sie als Bote
-weiter (den Lieferablauf fährt `ki-dev run`, siehe [Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
+weiter (den Umsetzungsablauf fährt `ki-dev -f implement`, siehe [Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
 ausführungsreife Aufträge bleiben auf einen kleinen Umsetzungsschnitt
 begrenzt: notwendige Anforderungen, Schnittstellen und Prüfnachweise; bei
 fachlicher Übergröße teilen statt immer mehr Details anzuhäufen.
@@ -17,7 +17,7 @@ fachlicher Übergröße teilen statt immer mehr Details anzuhäufen.
 **Geprüfter Stand.** Nach dem Vorlauf hält step den Stand fest: den
 Git-Tree des Arbeitsbaums (mit uncommitteten und neuen Dateien, ohne `.local/`)
 und einen Fingerabdruck des Beads. Eine PASS-Antwort gilt nur, wenn beides
-seither unverändert ist (Wächter `unchanged`, wie `freeze` bei `ki-dev run`).
+seither unverändert ist (Wächter `unchanged`, wie `freeze` bei `ki-dev -f implement`).
 Sonst nimmt der Ablauf die Kante `implement.review --PASS--> implement.preflight`:
 Der Vorlauf läuft erneut, die nächste Nachricht geht an das Review. Der Vorlauf
 selbst braucht kein Git; ohne Git-Arbeitsverzeichnis gibt es keinen Stand und
@@ -27,7 +27,7 @@ damit kein PASS. Eine Antwortdatei im Projekt zählt nicht zum Stand.
 speichert ihn als Checkpoint unter `.local/handoff/steps/<BEAD_ID>/checkpoints.sqlite`
 (wartender Zustand und Tatsachen für Wächter, etwa „kein PASS nach
 Teillauf“) und protokolliert jede genommene Kante in `events.jsonl` (wie
-`ki-dev run`). Eine Antwort (etwa `--decision-file`) gilt nur dort, wo der
+`ki-dev -f implement`). Eine Antwort (etwa `--decision-file`) gilt nur dort, wo der
 Thread wartet; nach rotem Vorlauf beendet ein PASS den Lauf nicht. `ki-dev step BEAD_ID`
 ohne `--step` setzt fort: nach dem Schreiben folgt das Review, nach der
 Korrektur die Folgerunde; in Review, Entscheidung und Quelle nennt step die
@@ -36,10 +36,10 @@ letzten Halt ab, steht ein Hinweis auf stderr und im Protokoll die Zeile
 `letzter Halt --@jump--> Start`, die `check_conformance` meldet.
 Der Zustand ist lokaler Arbeitsstand, nicht Teil von bd/Dolt.
 
-**Transport.** step und `ki-dev run` übergeben an den Boten über dieselbe
+**Transport.** step und `ki-dev -f implement` übergeben an den Boten über dieselbe
 Funktion des Adapters `manual` (`ki_dev.adapter.manual.send`); nur die
 Transportart unterscheidet sich: `run` legt die Eingabe im Posteingang ab
-(`ki-dev run resume`), step gibt sie auf stdout aus und liest die Antwort aus
+(`ki-dev -f implement resume`), step gibt sie auf stdout aus und liest die Antwort aus
 `--decision-file DATEI|-`. Gerendert wird jede Übergabe vom Ausführer
 (`ki_dev.runner.turns`) aus der Deklaration in `planning.toml`: Vorlage und
 Kontextbausteine je Zustand oder, wenn die Kante sie bestimmt, je Übergang.
@@ -226,7 +226,7 @@ Exit 2; Lese- oder UTF-8-Fehler sind Exit 1, ohne Textinhalt in der Meldung.
 ### `--decision-file`: Antwort der Build-Review weitergeben
 
 Die Build-Review endet mit genau einem JSON-Objekt im gemeinsamen Vertrag
-von step und `ki-dev run` (`src/ki_dev/review_decision.py`):
+von step und `ki-dev -f implement` (`src/ki_dev/review_decision.py`):
 
 ```json
 {"event": "fix", "detail": "Test für leere Eingabe fehlt", "requirement_ref": "AC2", "attempt": "projekt-42:2"}
@@ -234,14 +234,14 @@ von step und `ki-dev run` (`src/ki_dev/review_decision.py`):
 
 `attempt` ist die Kennung des Versuchs, für den die Übergabe ausgegeben wurde
 (Zeile `Versuch:` am Ende jeder Übergabe). Eine Antwort gilt nur für ihren
-Versuch, wie `run_id` und `round_id` bei `ki-dev run`: fehlt `attempt` oder
+Versuch, wie `run_id` und `round_id` bei `ki-dev -f implement`: fehlt `attempt` oder
 gehört es zu einem früheren Versuch (etwa nach einem neuen Vorlauf oder einer
 Korrekturrunde), ist das Exit 2 und der Lauf bleibt unverändert.
 
 `event` ist ein Review-Ereignis von `planning.toml`: `PASS` oder eine
 Befundklasse (`fix`, `source`, `decision`); das Urteil (`CHANGES`,
 `NEEDS_DECISION`) folgt aus der Klasse (`escalate` gibt es nur in
-`delivery.toml`). Nicht-PASS braucht `detail`. `requirement_ref` ist immer
+`implement.toml`). Nicht-PASS braucht `detail`. `requirement_ref` ist immer
 vorhanden: bei `fix` `"AC<n>"` (ohne gültige Referenz wird daraus
 `decision`), sonst zwingend `null`. Die Übergabe nennt die Referenzen: Zeilen `N.` in
 `acceptance_criteria` ergeben `AC1..ACn`, ohne Nummerierung ist das ganze
@@ -265,7 +265,7 @@ Kriterium und gibt die Nachricht für genau die Kante dieses Ereignisses aus:
 | `PASS` | Mensch | `PASS → finished` (Schließen entscheidest du) |
 
 Statt `run_id`/`round_id` trägt die Hülle von step die Versuchskennung;
-`ki-dev run` legt seine Hülle um denselben Kern
+`ki-dev -f implement` legt seine Hülle um denselben Kern
 (`src/ki_dev/runner/review_output.py`). Höchstens 20000 Zeichen, nie gekürzt.
 Ungültiges JSON, fremde Felder, `escalate` oder verletzte Feldregeln: Exit 2
 mit Feldpfad, ohne Rohwerte. Nur mit `--next-turn`, nur Prüfgegenstand

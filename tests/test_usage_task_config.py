@@ -1,6 +1,6 @@
 """wu0.3.8: usage_task-Bindung aus der echten Loop-Konfiguration.
 
-``start_from_config`` laeuft unveraendert (Konfigurationsparser,
+``start_run`` laeuft unveraendert (Konfigurationsparser,
 Manifest-Schreiber, ``RunRuntime._usage_attribution``); ersetzt wird
 nur der Prozessaufbau (``_runtime``) durch Fake-Rollen. Kein Test
 befuellt das Manifest von Hand.
@@ -24,7 +24,7 @@ from ki_dev.run_store import RunStore
 from ki_dev.runner.cli import (
     RunConfigError,
     resume_run,
-    start_from_config,
+    start_run,
 )
 from ki_dev.runner.runtime import (
     RunRuntime,
@@ -48,8 +48,7 @@ BINDING = {
 
 
 def _config(tmp_path, **extra):
-    path = tmp_path / "run.json"
-    path.write_text(json.dumps({
+    return {
         "task": "Auftrag",
         "acceptance_criteria": ["Kriterium 1"],
         "workdir": str(tmp_path),
@@ -57,12 +56,11 @@ def _config(tmp_path, **extra):
         "worker": {},
         "review": {},
         **extra,
-    }))
-    return path
+    }
 
 
 def _patch_runtime(monkeypatch, worker, reviewer=None):
-    def build_runtime(_config, store, _projection):
+    def build_runtime(_config, store, _projection, _wrap):
         return RunRuntime(
             store,
             worker(),
@@ -115,12 +113,12 @@ def _agent_reviewer(session_id):
     return make
 
 
-def test_start_from_config_writes_usage_task_to_manifest(
+def test_start_run_writes_usage_task_to_manifest(
     monkeypatch, tmp_path
 ):
     _patch_runtime(monkeypatch, FakeWorker)
     runs = tmp_path / "runs"
-    start_from_config(
+    start_run(
         _config(tmp_path, usage_task=BINDING),
         run_id="run-a",
         runs_dir=runs,
@@ -137,7 +135,7 @@ def test_family_report_bundles_two_runs_from_real_config_path(
     runs = tmp_path / "runs"
     revisions = (("run-a", "rev-1"), ("run-b", "rev-2"))
     for run_id, task_revision in revisions:
-        start_from_config(
+        start_run(
             _config(
                 tmp_path,
                 usage_task={**BINDING, "task_revision": task_revision},
@@ -146,7 +144,7 @@ def test_family_report_bundles_two_runs_from_real_config_path(
             runs_dir=runs,
         )
     # Ein dritter Lauf ohne Bindung gehoert nicht zur Familie.
-    start_from_config(
+    start_run(
         _config(tmp_path), run_id="run-c", runs_dir=runs
     )
 
@@ -178,7 +176,7 @@ def test_run_without_usage_task_stays_visibly_unattributed(
 ):
     _patch_runtime(monkeypatch, _agent_builder)
     runs = tmp_path / "runs"
-    start_from_config(
+    start_run(
         _config(tmp_path), run_id="run-c", runs_dir=runs
     )
     assert "usage_task" not in RunStore(runs, "run-c").load_manifest()
@@ -208,7 +206,7 @@ def test_run_without_usage_task_stays_visibly_unattributed(
 )
 def test_usage_task_validation_stays_strict(tmp_path, usage_task):
     with pytest.raises(RunConfigError):
-        start_from_config(
+        start_run(
             _config(tmp_path, usage_task=usage_task),
             run_id="run-x",
             runs_dir=tmp_path / "runs",
@@ -218,7 +216,7 @@ def test_usage_task_validation_stays_strict(tmp_path, usage_task):
 def test_rejected_usage_task_leaves_no_run_behind(tmp_path):
     runs = tmp_path / "runs"
     with pytest.raises(RunConfigError):
-        start_from_config(
+        start_run(
             _config(
                 tmp_path,
                 usage_task={**BINDING, "bead_id": "a\nb"},
@@ -232,7 +230,7 @@ def test_rejected_usage_task_leaves_no_run_behind(tmp_path):
 def test_max_length_value_is_accepted(monkeypatch, tmp_path):
     _patch_runtime(monkeypatch, _agent_builder)
     runs = tmp_path / "runs"
-    start_from_config(
+    start_run(
         _config(
             tmp_path,
             usage_task={**BINDING, "family_id": "x" * 512},
@@ -246,7 +244,7 @@ def test_max_length_value_is_accepted(monkeypatch, tmp_path):
 
 def test_unknown_top_level_field_is_still_rejected(tmp_path):
     with pytest.raises(RunConfigError, match="unbekannte"):
-        start_from_config(
+        start_run(
             _config(tmp_path, usage_tsk=BINDING),
             run_id="run-x",
             runs_dir=tmp_path / "runs",
@@ -259,7 +257,7 @@ def test_parent_bead_id_is_optional(monkeypatch, tmp_path):
     binding = {
         k: v for k, v in BINDING.items() if k != "parent_bead_id"
     }
-    start_from_config(
+    start_run(
         _config(tmp_path, usage_task=binding),
         run_id="run-a",
         runs_dir=runs,
@@ -277,7 +275,7 @@ def test_resume_keeps_revisions_from_manifest(monkeypatch, tmp_path):
         ["escalate", "fix"]
     )
 
-    def build_runtime(_config, store, _projection):
+    def build_runtime(_config, store, _projection, _wrap):
         return RunRuntime(
             store,
             _agent_builder(),
@@ -292,7 +290,7 @@ def test_resume_keeps_revisions_from_manifest(monkeypatch, tmp_path):
         "ki_dev.runner.cli._runtime", build_runtime
     )
     runs = tmp_path / "runs"
-    paused = start_from_config(
+    paused = start_run(
         _config(tmp_path, usage_task=BINDING),
         run_id="run-a",
         runs_dir=runs,
@@ -321,13 +319,13 @@ def test_changed_revision_is_a_new_run_not_a_manifest_rewrite(
     """Entscheidung B: kein Ueberschreiben, kein Resume-Wechsel."""
     _patch_runtime(monkeypatch, _agent_builder)
     runs = tmp_path / "runs"
-    start_from_config(
+    start_run(
         _config(tmp_path, usage_task=BINDING),
         run_id="run-a",
         runs_dir=runs,
     )
     with pytest.raises(Exception, match="existiert|widerspricht"):
-        start_from_config(
+        start_run(
             _config(
                 tmp_path,
                 usage_task={**BINDING, "task_revision": "rev-2"},
@@ -367,7 +365,7 @@ def test_revision_change_via_new_run_keeps_family_cumulative(
         lambda: _agent_builder("build-a"),
         _agent_reviewer("review-a"),
     )
-    start_from_config(
+    start_run(
         _config(tmp_path, usage_task=BINDING),
         run_id="run-a",
         runs_dir=runs,
@@ -381,7 +379,7 @@ def test_revision_change_via_new_run_keeps_family_cumulative(
         lambda: _agent_builder("build-b"),
         _agent_reviewer("review-b"),
     )
-    start_from_config(
+    start_run(
         _config(tmp_path, usage_task=rev2),
         run_id="run-b",
         runs_dir=runs,

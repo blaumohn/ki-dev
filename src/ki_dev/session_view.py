@@ -63,9 +63,17 @@ def transcript_renderable(
     ]
     for message in transcript.messages:
         parts.append(Text())
-        parts.append(Rule(Text(_message_label(message)), align="left"))
-        parts.append(Markdown(message.text, code_theme="ansi_dark"))
+        parts.append(message_renderable(message))
     return Group(*parts)
+
+
+def message_renderable(message: TranscriptMessage) -> RenderableType:
+    """Ein Beitrag: Rolle als Linie, Text als Markdown (auch für die
+    Live-Ansicht eines laufenden Turns)."""
+    return Group(
+        Rule(Text(_message_label(message)), align="left"),
+        Markdown(message.text, code_theme="ansi_dark"),
+    )
 
 
 def transcript_markdown(

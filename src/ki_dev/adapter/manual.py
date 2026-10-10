@@ -8,15 +8,15 @@ dieselbe Prüfung wie bei jedem anderen Adapter (z. B. das JSON-Urteil
 des Reviews). Entscheider ist der Mensch nur in den Zuständen der Art
 ``wait`` des Ablaufs, nicht hier.
 
-Zwei Transportarten, dieselbe Übergabe (:func:`send`): der Posteingang
-(:class:`Inbox`, ``ki-dev run``) legt die Eingabe als Datei ab; die
-Konsole (:class:`Console`, ``ki-dev step``) gibt sie auf stdout aus.
-Fehlt die Antwort noch, schreibt der Adapter die Eingabe in den
-Posteingang und meldet :class:`ManualInputPending`. Das ist ein Halt des
-Ausführers, kein Ablaufzustand: der Lauf bleibt im selben Zustand, die
-Operation bleibt offen und läuft nach ``ki-dev run resume`` mit der
-Antwort weiter. Bei der Konsole liefert der Aufruf die Antwort selbst
-(Datei oder stdin, begrenzt gelesen).
+Zwei Transportarten, dieselbe Übergabe (:func:`send`), gewählt per
+Profil oder ``--adapter manual``: die Konsole (:class:`Console`) gibt
+die Eingabe auf stdout aus und liest die Antwort von stdin (Ende mit
+Strg-D, begrenzt gelesen); der Posteingang (:class:`Inbox`) legt sie
+als Datei im Laufverzeichnis ab. Fehlt die Antwort noch (leere
+Konsoleneingabe, keine Antwortdatei), meldet der Adapter
+:class:`ManualInputPending`. Das ist ein Halt des Ausführers, kein
+Ablaufzustand: der Lauf bleibt im selben Zustand, die Operation bleibt
+offen und läuft nach ``ki-dev -f implement resume`` erneut.
 """
 
 from __future__ import annotations
@@ -36,18 +36,13 @@ from ki_dev.adapter.contract import (
 
 NAME = "manual"
 STDIN_WORD = "-"
+# Obergrenze einer Konsolenantwort; länger ist ein Transportfehler.
+ANSWER_MAX_CHARS = 200_000
+RESUME_HINT = "dann `ki-dev -f implement resume RUN_ID` aufrufen"
 
 
 class ManualInputPending(Exception):
     """Die Eingabe liegt bereit; die Antwort des Boten fehlt noch."""
-
-    def __init__(self, ask: Path, answer: Path) -> None:
-        self.ask = ask
-        self.answer = answer
-        super().__init__(
-            f"Eingabe {ask} in eine Sitzung tragen, Antwort nach "
-            f"{answer} legen, dann `ki-dev run resume` aufrufen"
-        )
 
 
 class TransportReadError(RuntimeError):
@@ -75,12 +70,18 @@ class Inbox:
         return text if text.strip() else None
 
 
+def _silent(_text: str) -> None:
+    pass
+
+
 @dataclass(frozen=True)
 class Console:
-    """Konsole: Eingabe auf stdout, Antwort aus Datei oder stdin."""
+    """Konsole: Eingabe auf stdout, Antwort aus Datei oder stdin;
+    ``notice`` rahmt die Eingabe für den Menschen (stderr)."""
 
     write: Callable[[str], None]
     stdin: Callable[[], BinaryIO]
+    notice: Callable[[str], None] = _silent
 
     def receive(self, source: str, limit: int, what: str) -> str:
         """Höchstens ``limit + 1`` Zeichen UTF-8 aus Datei oder stdin
@@ -108,8 +109,8 @@ Transport = Inbox | Console
 
 
 def send(transport: Transport, key: str, prompt: str) -> None:
-    """Eingabe an den Boten: dieselbe Übergabe für ``ki-dev run`` und
-    ``ki-dev step``, nur die Transportart unterscheidet sich."""
+    """Eingabe an den Boten: dieselbe Übergabe für jeden Ablauf, nur
+    die Transportart unterscheidet sich."""
     if isinstance(transport, Inbox):
         transport.directory.mkdir(parents=True, exist_ok=True)
         transport.ask(key).write_text(prompt, encoding="utf-8")
@@ -144,7 +145,7 @@ def _read_limited(stream: BinaryIO, limit: int) -> str:
 class ManualRelay:
     """Bau- und Review-Rolle über einen menschlichen Boten."""
 
-    inbox: Path
+    transport: Transport
     role: str
 
     def work(self, request: WorkRequest) -> WorkReport:
@@ -160,9 +161,33 @@ class ManualRelay:
         # wartet der neue Versuch auf eine neue Antwort, statt die
         # abgewiesene erneut zu lesen.
         key = f"{request.attempt_id}-{self.role}-{digest}"
-        inbox = Inbox(self.inbox)
-        text = inbox.receive(key)
-        if text is not None:
-            return text
-        send(inbox, key, prompt)
-        raise ManualInputPending(inbox.ask(key), inbox.answer(key))
+        if isinstance(self.transport, Console):
+            return _ask_console(self.transport, key, prompt)
+        return _ask_inbox(self.transport, key, prompt)
+
+
+def _ask_console(console: Console, key: str, prompt: str) -> str:
+    console.notice(f"── Eingabe {key} (stdout) ──")
+    send(console, key, prompt)
+    console.notice("── formale Antwort einfügen, Ende mit Strg-D ──")
+    text = console.receive(STDIN_WORD, ANSWER_MAX_CHARS, "Antwort")
+    if len(text) > ANSWER_MAX_CHARS:
+        raise TransportReadError(
+            f"Antwort länger als {ANSWER_MAX_CHARS} Zeichen"
+        )
+    if not text.strip():
+        raise ManualInputPending(
+            f"keine Antwort zu {key}; {RESUME_HINT}"
+        )
+    return text
+
+
+def _ask_inbox(inbox: Inbox, key: str, prompt: str) -> str:
+    text = inbox.receive(key)
+    if text is not None:
+        return text
+    send(inbox, key, prompt)
+    raise ManualInputPending(
+        f"Eingabe {inbox.ask(key)} in eine Sitzung tragen, Antwort "
+        f"nach {inbox.answer(key)} legen, {RESUME_HINT}"
+    )

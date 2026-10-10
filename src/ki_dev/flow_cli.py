@@ -19,7 +19,7 @@ app = typer.Typer(
 def show(
     name: Annotated[
         str,
-        typer.Argument(help="Ablauf, z. B. delivery oder planning."),
+        typer.Argument(help="Ablauf, z. B. implement oder planning."),
     ],
     without_escalations: Annotated[
         bool,

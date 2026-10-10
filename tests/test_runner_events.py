@@ -21,15 +21,15 @@ from tests.test_runner_runtime import (
     _task,
 )
 
-DELIVERY = load_flow("delivery")
+IMPLEMENT = load_flow("implement")
 
 
 def _record(**fields) -> dict[str, object]:
-    (transition,) = DELIVERY.candidates("start", "run_started")
+    (transition,) = IMPLEMENT.candidates("start", "run_started")
     record = event_record(
         seq=1,
         ts="2026-10-08T09:00:00+00:00",
-        flow=DELIVERY,
+        flow=IMPLEMENT,
         run_id="r-1",
         transition=transition,
         target="controller_step",
@@ -54,7 +54,7 @@ def test_a_run_logs_every_taken_edge_and_conforms(tmp_path):
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
     assert events[0]["state"] == "start"
     assert events[-1]["target"] == "passed"
-    assert check_conformance(DELIVERY, events) == []
+    assert check_conformance(IMPLEMENT, events) == []
     fix = next(e for e in events if e["event"] == "fix")
     assert fix["actions"] == ["begin_correction", "drop_result"]
     assert fix["adapter"] == "FakeReviewer"
@@ -70,7 +70,7 @@ def test_replayed_transition_is_not_written_twice(tmp_path):
 def test_conformance_names_undeclared_edges_and_gaps():
     bogus = _record(event="PASS", target="passed")
     gap = _record(seq=2, state="worker_step")
-    problems = check_conformance(DELIVERY, [bogus, gap])
+    problems = check_conformance(IMPLEMENT, [bogus, gap])
     assert problems == [
         "0: keine Kante start --PASS--> passed",
         "1: beginnt in worker_step, vorher endete passed",

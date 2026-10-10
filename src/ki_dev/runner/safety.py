@@ -23,7 +23,7 @@ from ki_dev.usage_accounting import (
     reconcile_call,
 )
 
-# Fortschritt fuer ``ki-dev run --verbose``.
+# Fortschritt fuer ``ki-dev -f implement --verbose``.
 _log = logging.getLogger("ki_dev.run")
 
 
