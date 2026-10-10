@@ -23,6 +23,7 @@ from ki_dev.adapter.agent import (
 )
 from ki_dev.adapter.contract import (
     AgentTurnError,
+    AnswerPending,
     Reviewer,
     ReviewRequest,
     RunTask,
@@ -35,7 +36,6 @@ from ki_dev.adapter.executors.contract import (
     Measure,
     QuotaStatus,
 )
-from ki_dev.adapter.manual import ManualInputPending
 from ki_dev.deltas import (
     ControllerContext,
     StepDeltaAssessment,
@@ -576,8 +576,8 @@ class RunRuntime:
             }
         try:
             value = self._metered_operation(state, pending)
-        except ManualInputPending as exc:
-            return self._await_relay(pending, exc)
+        except AnswerPending as exc:
+            return self._await_answer(pending, exc)
         except (AgentTurnError, SafetyStop, PermissionError) as exc:
             return self._safety_stop(state, str(exc))
         except AgentProtocolError as exc:
@@ -614,8 +614,8 @@ class RunRuntime:
         return self.reviewer
 
     @staticmethod
-    def _await_relay(
-        pending: dict[str, object], exc: ManualInputPending
+    def _await_answer(
+        pending: dict[str, object], exc: AnswerPending
     ) -> dict[str, object]:
         """Halt des Ausführers, kein Ablaufzustand: die Operation bleibt
         offen und läuft nach der Antwort des Boten erneut."""

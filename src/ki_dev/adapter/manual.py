@@ -8,15 +8,14 @@ dieselbe Prüfung wie bei jedem anderen Adapter (z. B. das JSON-Urteil
 des Reviews). Entscheider ist der Mensch nur in den Zuständen der Art
 ``wait`` des Ablaufs, nicht hier.
 
-Zwei Transportarten, dieselbe Übergabe (:func:`send`), gewählt per
-Profil oder ``--adapter manual``: die Konsole (:class:`Console`) gibt
-die Eingabe auf stdout aus und liest die Antwort von stdin (Ende mit
+Zwei Transporte, dieselbe Übergabe (:func:`send`), gewählt über den
+Executor-Namen (``executor = "manual"`` bzw. ``"inbox"``, siehe
+``adapter/executors.toml``): die Konsole (:class:`Console`) gibt die
+Eingabe auf stdout aus und liest die Antwort von stdin (Ende mit
 Strg-D, begrenzt gelesen); der Posteingang (:class:`Inbox`) legt sie
 als Datei im Laufverzeichnis ab. Fehlt die Antwort noch (leere
 Konsoleneingabe, keine Antwortdatei), meldet der Adapter
-:class:`ManualInputPending`. Das ist ein Halt des Ausführers, kein
-Ablaufzustand: der Lauf bleibt im selben Zustand, die Operation bleibt
-offen und läuft nach ``ki-dev -f implement resume`` erneut.
+:class:`~ki_dev.adapter.contract.AnswerPending`.
 """
 
 from __future__ import annotations
@@ -29,6 +28,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from ki_dev.adapter.contract import (
+    AnswerPending,
     ReviewRequest,
     WorkReport,
     WorkRequest,
@@ -44,10 +44,6 @@ STDIN_WORD = "-"
 # Obergrenze einer Konsolenantwort; länger ist ein Transportfehler.
 ANSWER_MAX_CHARS = 200_000
 RESUME_HINT = "dann `ki-dev -f implement resume RUN_ID` aufrufen"
-
-
-class ManualInputPending(Exception):
-    """Die Eingabe liegt bereit; die Antwort des Boten fehlt noch."""
 
 
 class TransportReadError(RuntimeError):
@@ -182,7 +178,7 @@ def _ask_console(console: Console, key: str, prompt: str) -> str:
             f"Antwort länger als {ANSWER_MAX_CHARS} Zeichen"
         )
     if not text.strip():
-        raise ManualInputPending(
+        raise AnswerPending(
             f"keine Antwort zu {key}; {RESUME_HINT}"
         )
     return text
@@ -193,7 +189,7 @@ def _ask_inbox(inbox: Inbox, key: str, prompt: str) -> str:
     if text is not None:
         return text
     send(inbox, key, prompt)
-    raise ManualInputPending(
+    raise AnswerPending(
         f"Eingabe {inbox.ask(key)} in eine Sitzung tragen, Antwort "
         f"nach {inbox.answer(key)} legen, {RESUME_HINT}"
     )

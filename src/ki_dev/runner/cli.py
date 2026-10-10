@@ -368,6 +368,18 @@ def _has_session(spec: ExecutorSpec) -> bool:
     return spec.transport in cli_transports()
 
 
+def sessionless_executors() -> tuple[str, ...]:
+    """Executoren ohne Sitzungsangaben; nur sie sind per Argument
+    (``--adapter``) wählbar, die übrigen stehen im Profil."""
+    return tuple(
+        sorted(
+            name
+            for name, spec in executor_specs().items()
+            if not _has_session(spec)
+        )
+    )
+
+
 def _adapter(
     value: dict[str, object],
     role: str,
@@ -377,8 +389,8 @@ def _adapter(
     """Adapter einer Rolle aus ihrer Konfiguration bauen."""
     spec = _spec(value)
     if spec.transport in (manual.CONSOLE, manual.INBOX):
-        _exact_fields(value, {"executor"}, {"transport"}, "Rolle")
-        transport = _transport(value, spec, store)
+        _exact_fields(value, {"executor"}, set(), "Rolle")
+        transport = _transport(spec, store)
         return manual.ManualRelay(transport, role, spec)
     if spec.transport == mock.NAME:
         return _mock(value, role, spec)
@@ -389,20 +401,13 @@ def _adapter(
     return AgentReviewer(**agent, spec=spec)
 
 
-def _transport(
-    value: dict[str, object], spec: ExecutorSpec, store: RunStore
-) -> manual.Transport:
-    kind = value.get("transport", spec.transport)
-    if kind == manual.CONSOLE:
-        return manual.Console(
-            write=_stdout,
-            stdin=lambda: sys.stdin.buffer,
-            notice=_stderr,
-        )
-    if kind == manual.INBOX:
+def _transport(spec: ExecutorSpec, store: RunStore) -> manual.Transport:
+    if spec.transport == manual.INBOX:
         return manual.Inbox(store.run_dir / "inbox")
-    raise RunConfigError(
-        f"transport: {manual.CONSOLE} oder {manual.INBOX}"
+    return manual.Console(
+        write=_stdout,
+        stdin=lambda: sys.stdin.buffer,
+        notice=_stderr,
     )
 
 

@@ -106,19 +106,22 @@ auf stderr zeigt, welche greift; sonst `env -u PYTHONPATH ki-dev …`.
 | `executor` | Felder | Halt |
 | --- | --- | --- |
 | `claude`, `codex` | `session_id`, `model`, `effort`, optional `timeout_s`, `budget` | Schutzhalt (`execution_stopped`) bei Kontext-/Kontingentgrenze |
-| `manual` | optional `transport`: `console` (Standard) oder `inbox` | `console`: Eingabe auf stdout, formale Antwort von stdin (Ende mit Strg-D); leere Antwort → `awaiting_input`. `inbox`: Eingabe in `<runs>/<RUN_ID>/inbox/*.input.md`, Antwort als `*.answer.md` daneben. Danach `ki-dev -f implement resume RUN_ID` |
+| `manual` | – | Eingabe auf stdout, formale Antwort von stdin (Ende mit Strg-D); leere Antwort → `awaiting_input`, danach `ki-dev -f implement resume RUN_ID` |
+| `inbox` | – | Eingabe in `<runs>/<RUN_ID>/inbox/*.input.md` → `awaiting_input`; Antwort als `*.answer.md` daneben legen, dann `resume` |
 | `mock` | Worker: optional `file`; Review: `answers` (Review-Ereignisse: `PASS`, `fix`, `decision`, `escalate`) | erschöpfte Antwortliste ist ein Prozessfehler |
 
-`--adapter [ROLLE=]NAME` ersetzt beim Start den Adapter einer Rolle
-(`worker`, `review`) oder beider durch `manual` (Konsole) oder `mock`;
-`claude` und `codex` brauchen Sitzung und Modell und stehen deshalb im
-Profil. Damit ist der frühere `ki-dev step` für diesen Ablauf nur ein
+`--adapter [ROLLE=]NAME` ersetzt beim Start den Executor einer Rolle
+(`worker`, `review`) oder beider durch einen Executor ohne
+Sitzungsangaben (`manual`, `inbox`, `mock`); `claude` und `codex`
+brauchen Sitzung und Modell und stehen deshalb im Profil. Damit ist der frühere `ki-dev step` für diesen Ablauf nur ein
 Adapter, kein eigener Befehl.
 
-`awaiting_input` ist ein Halt des Ausführers, kein Zustand des Ablaufs:
+`awaiting_input` ist ein Halt des Ausführers, kein Zustand des Ablaufs
+(`AnswerPending` im Adaptervertrag, für jeden Transport gleich):
 Der Lauf bleibt im aktuellen Zustand (`worker_step` bzw.
 `controller_step`), die Operation bleibt offen und läuft nach der Antwort
-erneut. Der Bote verbraucht kein Agentenbudget von ki-dev.
+erneut. `manual` und `inbox` deklarieren keine Messung; ki-dev bucht
+für den Boten nichts.
 
 Halt mit Zustand des Ablaufs (`waiting_decision`, `paused_interactive`)
 setzt dagegen `ki-dev -f implement resume RUN_ID --answer "…"` fort;

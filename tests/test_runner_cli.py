@@ -494,7 +494,7 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
         "workdir": str(tmp_path),
         "access_profile": "write",
         "finalization": {},
-        "worker": {"executor": "manual", "transport": "inbox"},
+        "worker": {"executor": "inbox"},
         "review": {"executor": "mock", "answers": ["PASS"]},
         "tests": [],
     }

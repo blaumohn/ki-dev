@@ -22,7 +22,6 @@ import typer
 from rich.console import Console
 from rich.text import Text
 
-from ki_dev.adapter import manual, mock
 from ki_dev.adapter.executors import Executor
 from ki_dev.flow.model import Flow, FlowError
 from ki_dev.flow.templates import render, text
@@ -44,6 +43,7 @@ from ki_dev.runner.cli import (
     profile_path,
     result_document,
     resume_run,
+    sessionless_executors,
     start_run,
     status_run,
 )
@@ -51,9 +51,6 @@ from ki_dev.runner.machine import IMPLEMENT
 from ki_dev.runner.runtime import RunResult, RunResumeError
 
 ROLES = ("worker", "review")
-# Per Argument wählbar sind nur Adapter ohne Sitzungsangaben; claude
-# und codex brauchen Sitzung und Modell aus dem Profil.
-_ARGUMENT_ADAPTERS = (manual.NAME, mock.NAME)
 _ERRORS = (
     RunConfigError,
     RunResumeError,
@@ -111,8 +108,9 @@ def start(
         typer.Option(
             "--adapter",
             metavar="[ROLLE=]NAME",
-            help="Adapter je Rolle (worker, review) ersetzen; ohne "
-            "Rolle beide. NAME: manual (stdout/stdin) oder mock.",
+            help="Executor je Rolle (worker, review) ersetzen; ohne "
+            "Rolle beide. NAME: ein Executor ohne Sitzungsangaben, "
+            "z. B. manual (stdout/stdin), inbox oder mock.",
         ),
     ] = None,
     run_id: Annotated[str | None, typer.Option("--run-id")] = None,
@@ -205,13 +203,14 @@ def _task_text(issue: BeadInput) -> str:
 
 
 def _overrides(values: list[str]) -> list[tuple[str, str]]:
+    allowed = sessionless_executors()
     result: list[tuple[str, str]] = []
     for value in values:
         role, _, adapter = value.rpartition("=")
-        if adapter not in _ARGUMENT_ADAPTERS:
+        if adapter not in allowed:
             raise RunConfigError(
                 f"--adapter {value}: per Argument nur "
-                f"{', '.join(_ARGUMENT_ADAPTERS)}; claude und codex "
+                f"{', '.join(allowed)}; Executoren mit Sitzung "
                 "im Profil festlegen"
             )
         if role and role not in ROLES:

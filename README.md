@@ -322,6 +322,7 @@ src/ki_dev/
   ops/         checks/ (Vorlauf), context/ (Bead-Eingabe, Leitlinien,
                Grenzen, Kontextbausteine); kennt weder runner noch adapter
   adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),
+               executors.toml + registry.py (Executor = Transport + measures),
                executors/ (Claude- und Codex-CLI, Transkripte, Messung)
   step/        Adapter manual für den Planungsablauf: Bedienung,
                Laufzustand je Bead, Quellenimport

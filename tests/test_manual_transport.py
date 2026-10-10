@@ -11,11 +11,10 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev.adapter import manual
-from ki_dev.adapter.contract import RunTask, WorkRequest
+from ki_dev.adapter.contract import AnswerPending, RunTask, WorkRequest
 from ki_dev.adapter.manual import (
     Console,
     Inbox,
-    ManualInputPending,
     ManualRelay,
     TransportReadError,
 )
@@ -59,7 +58,7 @@ def test_run_and_step_hand_over_through_the_same_function(
     relay = ManualRelay(
         Inbox(tmp_path / "inbox"), "worker", SPECS["inbox"]
     )
-    with pytest.raises(ManualInputPending):
+    with pytest.raises(AnswerPending):
         relay.work(WorkRequest(task, 1, "Bauauftrag", "a-1"))
 
     BdScript(
@@ -118,7 +117,7 @@ def test_console_relay_writes_prompt_and_reads_stdin(tmp_path):
 
 def test_console_relay_halts_on_empty_answer(tmp_path):
     console = Console(print, lambda: io.BytesIO(b"  \n"))
-    with pytest.raises(ManualInputPending, match="resume"):
+    with pytest.raises(AnswerPending, match="resume"):
         _relay(console).work(_request(tmp_path))
 
 

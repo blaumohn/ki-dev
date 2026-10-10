@@ -17,6 +17,12 @@ from typing import Protocol
 from ki_dev.adapter.executors.contract import ExecutorSpec, TurnResult
 
 
+class AnswerPending(Exception):
+    """Die Eingabe ist übergeben, die Antwort des Transports fehlt noch
+    (z. B. Bote ohne Antwort). Halt des Ausführers, kein
+    Ablaufzustand: die Operation läuft nach ``resume`` erneut."""
+
+
 class AgentTurnError(RuntimeError):
     """Agentenaufruf ohne Erlaubnis zur automatischen Wiederholung."""
 

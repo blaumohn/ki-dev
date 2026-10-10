@@ -114,7 +114,11 @@ def test_bead_starts_run_with_profile_and_adapter_override(
 
 @pytest.mark.parametrize(
     ("value", "message"),
-    [("claude", "im Profil"), ("planner=manual", "Rolle")],
+    [
+        ("claude", "im Profil"),
+        ("review=claude", "nur inbox, manual, mock"),
+        ("planner=manual", "Rolle"),
+    ],
 )
 def test_adapter_argument_rejects_session_adapters_and_roles(
     capsys, monkeypatch, tmp_path, value, message
