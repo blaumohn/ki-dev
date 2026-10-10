@@ -703,8 +703,24 @@ def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
         "acceptance_criteria": ["Kriterium 1"],
         "workdir": str(tmp_path),
         "access_profile": "write",
-        "worker": {},
-        "review": {},
+        "worker": {
+            "executor": "claude",
+            "session_id": "w",
+            "model": "m",
+            "effort": "low",
+        },
+        "review": {
+            "executor": "codex",
+            "session_id": "r",
+            "model": "m",
+            "effort": "low",
+        },
+        "finalization": {
+            "target_workdir": str(tmp_path),
+            "target_ref": "refs/heads/main",
+            "commit_message": "Abschluss",
+            "data_mode": "file_proposal",
+        },
     }
     seen = {}
 

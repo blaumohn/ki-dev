@@ -72,9 +72,38 @@ def test_flow_file_in_cwd_wins_and_must_match_bound_flow(
     assert "weicht vom mitgelieferten" in err
 
 
+PROFILE = """\
+workdir = "/work"
+access_profile = "write"
+
+[finalization]
+target_workdir = "/ziel"
+target_ref = "refs/heads/main"
+commit_message = "Abschluss"
+data_mode = "file_proposal"
+
+[worker]
+executor = "claude"
+session_id = "w"
+model = "m"
+effort = "low"
+
+[review]
+executor = "codex"
+session_id = "r"
+model = "m"
+effort = "low"
+"""
+
+
 def _fake_start(monkeypatch, seen):
-    def fake(config, *, run_id, runs_dir, wrap):
-        seen.update(config=config, run_id=run_id, runs_dir=runs_dir)
+    def fake(config, *, run_id, runs_dir, wrap, profile):
+        seen.update(
+            config=config,
+            run_id=run_id,
+            runs_dir=runs_dir,
+            profile=profile.ref(),
+        )
         return RunResult("run-1", "passed", 1, Phase.PASSED)
 
     monkeypatch.setattr(implement_ops, "start_run", fake)
@@ -90,10 +119,7 @@ def test_bead_starts_run_with_profile_and_adapter_override(
 ):
     profile = tmp_path / ".ki-dev" / "profiles" / "default.toml"
     profile.parent.mkdir(parents=True)
-    profile.write_text(
-        '[worker]\nexecutor = "claude"\n[review]\nexecutor = "codex"\n',
-        encoding="utf-8",
-    )
+    profile.write_text(PROFILE, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     seen: dict = {}
     _fake_start(monkeypatch, seen)
@@ -104,12 +130,12 @@ def test_bead_starts_run_with_profile_and_adapter_override(
 
     assert code == 0
     assert '"status": "passed"' in out
-    assert seen["config"] == {
-        "worker": {"executor": "claude"},
-        "review": {"executor": "manual"},
-        "task": "Auftrag p-1",
-    }
+    assert seen["config"]["worker"]["executor"] == "claude"
+    assert seen["config"]["review"] == {"executor": "manual"}
+    assert seen["config"]["task"] == "Auftrag p-1"
     assert seen["runs_dir"] == Path(".ki-dev/runs")
+    assert seen["profile"]["path"] == str(profile)
+    assert len(seen["profile"]["sha256"]) == 64
 
 
 @pytest.mark.parametrize(

@@ -79,7 +79,17 @@ max_total_bytes = 65536
 
 `worker` und `review` müssen verschiedene vorbereitete Sitzungen benutzen.
 Optionale Felder dürfen entfallen; für Grenzen gelten dann die eingebauten
-Werte. Unbekannte Felder werden abgewiesen.
+Werte. Geprüft wird das Profil per JSON Schema
+([`runner/run_config.py`](../src/ki_dev/runner/run_config.py)); die
+Felder einer Rolle folgen aus dem Transport ihres Executors (siehe
+[Executoren](#executoren)). Fehler nennen den Feldpfad, nie den Wert:
+
+```
+Profil .ki-dev/profiles/default.toml: worker: fehlende Felder ['session_id']
+```
+
+Das Manifest eines Laufs hält Pfad und SHA-256 der Profildatei fest;
+`ki-dev -f implement status RUN_ID` zeigt sie unter `profile`.
 
 ## ki-dev getrennt vom Ziel-Repository installieren
 

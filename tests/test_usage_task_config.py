@@ -54,8 +54,14 @@ def _config(tmp_path, **extra):
         "acceptance_criteria": ["Kriterium 1"],
         "workdir": str(tmp_path),
         "access_profile": "write",
-        "worker": {},
-        "review": {},
+        "worker": {"executor": "mock"},
+        "review": {"executor": "mock"},
+        "finalization": {
+            "target_workdir": str(tmp_path),
+            "target_ref": "refs/heads/main",
+            "commit_message": "Abschluss",
+            "data_mode": "file_proposal",
+        },
         **extra,
     }
 

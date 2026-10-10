@@ -9,11 +9,11 @@ from langgraph.checkpoint.base import uuid6
 from ki_dev.adapter.contract import (
     RunTask,
 )
-from ki_dev.adapter.registry import executor_specs
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.cli import RunConfigError, status_run
 from ki_dev.runner.machine import Limits, Phase
+from ki_dev.runner.run_config import check_run_config
 from ki_dev.runner.runtime import (
     RunResumeError,
     RunRuntime,
@@ -493,7 +493,12 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
         "sources": [],
         "workdir": str(tmp_path),
         "access_profile": "write",
-        "finalization": {},
+"finalization": {
+            "target_workdir": str(tmp_path),
+            "target_ref": "refs/heads/main",
+            "commit_message": "Abschluss",
+            "data_mode": "file_proposal",
+        },
         "worker": {"executor": "inbox"},
         "review": {"executor": "mock", "answers": ["PASS"]},
         "tests": [],
@@ -534,7 +539,12 @@ def test_resume_override_replaces_role_only_for_this_call(
         "sources": [],
         "workdir": str(tmp_path),
         "access_profile": "write",
-        "finalization": {},
+"finalization": {
+            "target_workdir": str(tmp_path),
+            "target_ref": "refs/heads/main",
+            "commit_message": "Abschluss",
+            "data_mode": "file_proposal",
+        },
         "worker": {"executor": "inbox"},
         "review": {"executor": "mock", "answers": ["PASS"]},
         "tests": [],
@@ -565,6 +575,50 @@ def test_resume_override_replaces_role_only_for_this_call(
     assert [r["adapter"] for r in worker] == ["mock"]
 
 
+def test_manifest_and_status_name_the_profile(monkeypatch, tmp_path):
+    from ki_dev.runner import cli as runner_cli
+
+    monkeypatch.setattr(
+        runner_cli,
+        "RepositoryEvidenceCollector",
+        lambda **_: StaticEvidenceCollector((_context(1),)),
+    )
+    monkeypatch.setattr(
+        runner_cli, "_finalizer", lambda _: StaticFinalizer()
+    )
+    path = tmp_path / "profil.toml"
+    path.write_text(
+        f'workdir = "{tmp_path}"\n'
+        'access_profile = "write"\n'
+        "[worker]\nexecutor = \"mock\"\n"
+        "[review]\nexecutor = \"mock\"\n"
+        "[finalization]\n"
+        f'target_workdir = "{tmp_path}"\n'
+        'target_ref = "refs/heads/main"\n'
+        'commit_message = "c"\n'
+        'data_mode = "file_proposal"\n',
+        encoding="utf-8",
+    )
+    profile = runner_cli.load_profile(path)
+    config = {
+        **profile.values,
+        "task": "Auftrag",
+        "acceptance_criteria": ["Kriterium 1"],
+    }
+    runs = tmp_path / "runs"
+
+    runner_cli.start_run(
+        config, run_id="r-p", runs_dir=runs, profile=profile
+    )
+
+    expected = {"path": str(path), "sha256": profile.sha256}
+    manifest = RunStore(runs, "r-p").load_manifest()
+    assert manifest["profile"] == expected
+    document = runner_cli.status_document("r-p", runs_dir=runs)
+    assert document["profile"] == expected
+    assert document["status"] == "passed"
+
+
 @pytest.mark.parametrize(
     ("values", "message"),
     [
@@ -579,12 +633,22 @@ def test_adapter_overrides_are_checked(values, message):
         runner_cli.adapter_overrides(values)
 
 
-def test_unknown_mock_answer_is_rejected(tmp_path):
-    from ki_dev.runner import cli as runner_cli
-
-    with pytest.raises(RunConfigError, match="answers"):
-        runner_cli._mock(
-            {"executor": "mock", "answers": ["OK"]},
-            "review",
-            executor_specs()["mock"],
+def test_unknown_mock_answer_is_rejected():
+    with pytest.raises(
+        RunConfigError, match=r"review\.answers\.0: enum"
+    ):
+        check_run_config(
+            {
+                "workdir": "/w",
+                "access_profile": "write",
+                "worker": {"executor": "mock"},
+                "review": {"executor": "mock", "answers": ["OK"]},
+                "finalization": {
+                    "target_workdir": "/z",
+                    "target_ref": "refs/heads/main",
+                    "commit_message": "c",
+                    "data_mode": "file_proposal",
+                },
+            },
+            "Profil",
         )

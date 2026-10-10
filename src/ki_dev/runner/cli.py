@@ -10,12 +10,13 @@ ein; das Profil darf ihn nicht enthalten.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tomllib
 import uuid
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import cast
 
@@ -44,7 +45,12 @@ from ki_dev.repository_evidence import (
 from ki_dev.repository_finalization import RepositoryFinalizer
 from ki_dev.review_context import ProjectionLimits
 from ki_dev.run_store import RunStore
-from ki_dev.runner.machine import IMPLEMENT, Limits
+from ki_dev.runner.machine import Limits
+from ki_dev.runner.run_config import (
+    ROLES,
+    RunConfigError,
+    check_run_config,
+)
 from ki_dev.runner.runtime import (
     RunResult,
     RunRuntime,
@@ -64,12 +70,6 @@ CONFIG_SOURCE = ConfigSource(
 )
 # Felder des Auftrags: kommen vom Aufrufer (Bead), nie aus dem Profil.
 TASK_FIELDS = frozenset({"task", "acceptance_criteria", "sources"})
-# Rollen des Laufprofils; jede wählt einen Executor.
-ROLES = ("worker", "review")
-
-
-class RunConfigError(ValueError):
-    """Die Laufkonfiguration ist ungültig."""
 
 
 # Hülle um den Executor einer Rolle (z. B. Live-Ansicht); der Aufrufer
@@ -90,16 +90,30 @@ def profile_path(name: str, cwd: Path) -> Path:
     return cwd / PROFILE_DIR / f"{name}.toml"
 
 
-def load_profile(path: Path) -> dict[str, object]:
-    """Profil lesen; Auftragsfelder darin sind ein Fehler."""
+@dataclass(frozen=True)
+class Profile:
+    """Geprüftes Profil samt Nachweis, mit welcher Datei ein Lauf
+    startete (Pfad und SHA-256 im Manifest)."""
+
+    path: Path
+    sha256: str
+    values: dict[str, object]
+
+    def ref(self) -> dict[str, str]:
+        return {"path": str(self.path), "sha256": self.sha256}
+
+
+def load_profile(path: Path) -> Profile:
+    """Profil lesen und prüfen; Auftragsfelder darin sind ein Fehler."""
     try:
-        profile = tomllib.loads(path.read_text(encoding="utf-8"))
+        data = path.read_bytes()
+        profile = tomllib.loads(data.decode("utf-8"))
     except OSError as exc:
         raise RunConfigError(
             f"Profil {path} nicht lesbar: "
             f"{exc.strerror or type(exc).__name__}"
         ) from exc
-    except tomllib.TOMLDecodeError as exc:
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
         raise RunConfigError(
             f"Profil {path}: kein gültiges TOML ({exc})"
         ) from exc
@@ -109,7 +123,8 @@ def load_profile(path: Path) -> dict[str, object]:
             f"Profil {path}: Auftragsfelder {task_fields} kommen aus "
             "dem Bead, nicht aus dem Profil"
         )
-    return profile
+    check_run_config(profile, f"Profil {path}")
+    return Profile(path, hashlib.sha256(data).hexdigest(), profile)
 
 
 def start_run(
@@ -118,8 +133,11 @@ def start_run(
     run_id: str | None,
     runs_dir: Path,
     wrap: ExecutorWrap = _unwrapped,
+    profile: Profile | None = None,
 ) -> RunResult:
-    """Neuen Lauf aus Profil und Auftrag (ein Objekt) starten."""
+    """Neuen Lauf aus Profil und Auftrag (ein Objekt) starten;
+    ``profile`` belegt im Manifest, aus welcher Datei es kam."""
+    check_run_config(config, "Laufkonfiguration")
     config = dict(config)
     # Effektive Defaults bleiben ueber Upgrades nachvollziehbar.
     for role in ROLES:
@@ -144,6 +162,7 @@ def start_run(
             limits,
             manifest_extra={
                 "configuration": config,
+                **({"profile": profile.ref()} if profile else {}),
                 # Nur bei explizit konfigurierter Aufgabenbindung; sonst
                 # bleibt die Zurechnung sichtbar unvollstaendig
                 # (attribution_missing) statt geraten zu werden.
@@ -173,6 +192,7 @@ def resume_run(
         **_required_object(manifest, "configuration"),
         **(overrides or {}),
     }
+    check_run_config(config, f"Lauf {run_id}")
     projection = _projection(config.get("projection_limits", {}))
     with _runtime(config, store, projection, wrap) as runtime:
         if reconcile_result is not None:
@@ -197,6 +217,17 @@ def status_run(run_id: str, *, runs_dir: Path) -> RunResult:
     manifest = store.load_manifest()
     _required_object(manifest, "configuration")
     return read_run_status(store)
+
+
+def status_document(
+    run_id: str, *, runs_dir: Path
+) -> dict[str, object]:
+    """Status wie :func:`status_run` plus Profilnachweis des Manifests
+    (``None`` bei einem Lauf ohne Profil)."""
+    result = status_run(run_id, runs_dir=runs_dir)
+    manifest = RunStore(runs_dir, run_id).load_manifest()
+    profile = manifest.get("profile")
+    return {**result_document(result), "profile": profile}
 
 
 def result_document(result: RunResult) -> dict[str, object]:
@@ -243,52 +274,13 @@ def _runtime(
 
 
 def _task(config: dict[str, object], run_id: str) -> RunTask:
-    expected = {
-        "task",
-        "acceptance_criteria",
-        "sources",
-        "workdir",
-        "access_profile",
-        "env",
-        "worker",
-        "review",
-        "tests",
-        "limits",
-        "projection_limits",
-        "finalization",
-        "safety_limits",
-        "usage_task",
-    }
-    extra = set(config) - expected
-    if extra:
-        raise RunConfigError(
-            f"unbekannte Konfigurationsfelder: {sorted(extra)}"
-        )
-    sources = config.get("sources", [])
-    if not isinstance(sources, list) or any(
-        not isinstance(item, str) for item in sources
-    ):
-        raise RunConfigError("sources muss eine Textliste sein")
-    criteria = config.get("acceptance_criteria")
-    if (
-        not isinstance(criteria, list)
-        or not criteria
-        or any(
-            not isinstance(item, str) or not item.strip()
-            for item in criteria
-        )
-    ):
-        raise RunConfigError(
-            "acceptance_criteria muss eine nichtleere Textliste sein"
-        )
-    env = config.get("env", {})
-    if not isinstance(env, dict) or any(
-        not isinstance(k, str) or not isinstance(v, str)
-        for k, v in env.items()
-    ):
-        raise RunConfigError(
-            "env muss ein Mapping von Text auf Text sein"
-        )
+    """Auftrag aus der geprüften Konfiguration; Typen sichert
+    :func:`check_run_config`, hier nur die Pflicht des Auftrags."""
+    if "acceptance_criteria" not in config:
+        raise RunConfigError("acceptance_criteria fehlt")
+    sources = cast(list[str], config.get("sources", []))
+    criteria = cast(list[str], config["acceptance_criteria"])
+    env = cast(dict[str, str], config.get("env", {}))
     workdir = Path(_text(config, "workdir")).resolve()
     try:
         return RunTask(
@@ -302,17 +294,6 @@ def _task(config: dict[str, object], run_id: str) -> RunTask:
         )
     except (TypeError, ValueError) as exc:
         raise RunConfigError(str(exc)) from exc
-
-
-_USAGE_TASK_REQUIRED = (
-    "bead_id",
-    "task_revision",
-    "family_id",
-    "family_revision",
-)
-_USAGE_TASK_FIELDS = frozenset(
-    (*_USAGE_TASK_REQUIRED, "parent_bead_id")
-)
 
 
 def _usage_task(config: dict[str, object]) -> dict[str, str] | None:
@@ -334,16 +315,6 @@ def _usage_task(config: dict[str, object]) -> dict[str, str] | None:
     if "usage_task" not in config:
         return None
     binding = _mapping(config["usage_task"], "usage_task")
-    extra = set(binding) - _USAGE_TASK_FIELDS
-    if extra:
-        raise RunConfigError(
-            f"unbekannte usage_task-Felder: {sorted(extra)}"
-        )
-    missing = [k for k in _USAGE_TASK_REQUIRED if k not in binding]
-    if missing:
-        raise RunConfigError(
-            f"usage_task ohne Pflichtfelder: {missing}"
-        )
     result: dict[str, str] = {}
     for key, item in binding.items():
         # Dieselbe Regel wie UsageAttribution, damit ein Wert nicht erst
@@ -421,7 +392,6 @@ def _adapter(
     """Adapter einer Rolle aus ihrer Konfiguration bauen."""
     spec = _spec(value)
     if spec.transport in (manual.CONSOLE, manual.INBOX):
-        _exact_fields(value, {"executor"}, set(), "Rolle")
         transport = _transport(spec, store)
         return manual.ManualRelay(transport, role, spec)
     if spec.transport == mock.NAME:
@@ -455,38 +425,22 @@ def _stderr(text: str) -> None:
 def _mock(
     value: dict[str, object], role: str, spec: ExecutorSpec
 ) -> object:
-    _exact_fields(value, {"executor"}, {"answers", "file"}, "Rolle")
     if role == "worker":
         if "file" in value:
             return mock.MockWorker(spec, path=_text(value, "file"))
         return mock.MockWorker(spec)
-    answers = value.get("answers", ["PASS"])
-    if not isinstance(answers, list) or not all(
-        item in IMPLEMENT.review_events() for item in answers
-    ):
-        raise RunConfigError(
-            "answers: Liste aus "
-            + ", ".join(IMPLEMENT.review_events())
-        )
+    answers = cast(list[str], value.get("answers", ["PASS"]))
     return mock.MockReviewer(spec, list(answers))
 
 
 def _role(
     value: dict[str, object], spec: ExecutorSpec
 ) -> dict[str, object]:
-    required = {"executor", "session_id", "model", "effort"}
-    optional = {"executable", "timeout_s", "budget"}
-    _exact_fields(value, required, optional, "Rolle")
     kwargs: dict[str, object] = {}
     if "executable" in value:
         kwargs["executable"] = _text(value, "executable")
     if "timeout_s" in value:
-        timeout = value["timeout_s"]
-        if not isinstance(timeout, (int, float)) or isinstance(
-            timeout, bool
-        ):
-            raise RunConfigError("timeout_s muss eine Zahl sein")
-        kwargs["timeout_s"] = float(timeout)
+        kwargs["timeout_s"] = float(cast(float, value["timeout_s"]))
     try:
         effort = Effort(_text(value, "effort"))
         executor = build_executor(spec.transport, **kwargs)
@@ -516,31 +470,18 @@ def _safety(value: object) -> SafetyLimits:
 
 
 def _check(value: object) -> CheckCommand:
-    if not isinstance(value, dict):
-        raise RunConfigError("jeder Test muss ein Objekt sein")
-    _exact_fields(value, {"name", "argv"}, {"timeout_s"}, "Test")
-    argv = value["argv"]
-    if not isinstance(argv, list) or any(
-        not isinstance(item, str) for item in argv
-    ):
-        raise RunConfigError("Test.argv muss eine Textliste sein")
-    timeout = value.get("timeout_s", 600.0)
-    if not isinstance(timeout, (int, float)) or isinstance(
-        timeout, bool
-    ):
-        raise RunConfigError("Test.timeout_s muss eine Zahl sein")
-    return CheckCommand(
-        _text(value, "name"), tuple(argv), float(timeout)
-    )
+    item = cast(dict[str, object], value)
+    argv = cast(list[str], item["argv"])
+    timeout = cast(float, item.get("timeout_s", 600.0))
+    try:
+        return CheckCommand(
+            _text(item, "name"), tuple(argv), float(timeout)
+        )
+    except ValueError as exc:
+        raise RunConfigError(str(exc)) from exc
 
 
 def _finalizer(value: dict[str, object]) -> RepositoryFinalizer:
-    _exact_fields(
-        value,
-        {"target_workdir", "target_ref", "commit_message", "data_mode"},
-        set(),
-        "Finalisierung",
-    )
     try:
         return RepositoryFinalizer(
             target_workdir=Path(
@@ -556,11 +497,7 @@ def _finalizer(value: dict[str, object]) -> RepositoryFinalizer:
 
 def _limits(value: object) -> Limits:
     fields = asdict(Limits())
-    supplied = _mapping(value, "limits")
-    extra = set(supplied) - set(fields)
-    if extra:
-        raise RunConfigError(f"unbekannte Limits: {sorted(extra)}")
-    fields.update(supplied)
+    fields.update(_mapping(value, "limits"))
     try:
         return Limits(**fields)
     except (TypeError, ValueError) as exc:
@@ -569,13 +506,7 @@ def _limits(value: object) -> Limits:
 
 def _projection(value: object) -> ProjectionLimits:
     fields = asdict(ProjectionLimits())
-    supplied = _mapping(value, "projection_limits")
-    extra = set(supplied) - set(fields)
-    if extra:
-        raise RunConfigError(
-            f"unbekannte Projektionsgrenzen: {sorted(extra)}"
-        )
-    fields.update(supplied)
+    fields.update(_mapping(value, "projection_limits"))
     try:
         return ProjectionLimits(**fields)
     except (TypeError, ValueError) as exc:
@@ -620,20 +551,3 @@ def _text(value: dict[str, object], name: str) -> str:
         raise RunConfigError(f"{name} muss nichtleerer Text sein")
     return item
 
-
-def _exact_fields(
-    value: dict[str, object],
-    required: set[str],
-    optional: set[str],
-    label: str,
-) -> None:
-    missing = required - set(value)
-    extra = set(value) - required - optional
-    if missing:
-        raise RunConfigError(
-            f"{label}: fehlende Felder {sorted(missing)}"
-        )
-    if extra:
-        raise RunConfigError(
-            f"{label}: unbekannte Felder {sorted(extra)}"
-        )

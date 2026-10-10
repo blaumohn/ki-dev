@@ -46,7 +46,7 @@ from ki_dev.runner.cli import (
     result_document,
     resume_run,
     start_run,
-    status_run,
+    status_document,
 )
 from ki_dev.runner.machine import IMPLEMENT
 from ki_dev.runner.runtime import RunResult, RunResumeError
@@ -113,17 +113,22 @@ def start(
     cwd = Path.cwd()
 
     def action() -> RunResult:
-        config = load_profile(profile_path(profile, cwd))
-        config.update(_bead_task(bead_id, cwd))
-        config.update(adapter_overrides(adapters or []))
+        overrides = adapter_overrides(adapters or [])
+        loaded = load_profile(profile_path(profile, cwd))
+        config = {
+            **loaded.values,
+            **_bead_task(bead_id, cwd),
+            **overrides,
+        }
         return start_run(
             config,
             run_id=run_id,
             runs_dir=runs_dir,
             wrap=_live(verbose),
+            profile=loaded,
         )
 
-    _execute(action)
+    _execute(lambda: result_document(action()))
 
 
 def resume(
@@ -139,13 +144,15 @@ def resume(
     """Pausierten Lauf fortsetzen."""
     _progress(verbose)
     _execute(
-        lambda: resume_run(
-            run_id,
-            runs_dir=runs_dir,
-            answer=answer,
-            reconcile_result=reconcile_result,
-            wrap=_live(verbose),
-            overrides=adapter_overrides(adapters or []),
+        lambda: result_document(
+            resume_run(
+                run_id,
+                runs_dir=runs_dir,
+                answer=answer,
+                reconcile_result=reconcile_result,
+                wrap=_live(verbose),
+                overrides=adapter_overrides(adapters or []),
+            )
         )
     )
 
@@ -154,8 +161,9 @@ def status(
     run_id: Annotated[str, typer.Argument()],
     runs_dir: RUNS_OPTION = RUNS_DIR,
 ) -> None:
-    """Status eines Laufs zeigen, ohne ihn fortzusetzen."""
-    _execute(lambda: status_run(run_id, runs_dir=runs_dir))
+    """Status eines Laufs samt Profilnachweis zeigen, ohne ihn
+    fortzusetzen."""
+    _execute(lambda: status_document(run_id, runs_dir=runs_dir))
 
 
 def _bead_task(bead_id: str, cwd: Path) -> dict[str, object]:
@@ -216,12 +224,12 @@ def _progress(verbose: bool) -> None:
     logger.setLevel(logging.INFO)
 
 
-def _execute(action: Callable[[], RunResult]) -> None:
+def _execute(action: Callable[[], dict[str, object]]) -> None:
     try:
-        result = action()
+        document = action()
     except _ERRORS as exc:
         _abort(str(exc))
-    console.print_json(data=result_document(result))
+    console.print_json(data=document)
 
 
 def _abort(message: str) -> NoReturn:
