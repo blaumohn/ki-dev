@@ -33,8 +33,13 @@ from ki_dev.adapter.contract import (
     WorkReport,
     WorkRequest,
 )
+from ki_dev.adapter.executors import ExecutorSpec, Measure
 
 NAME = "manual"
+# Transporte des Boten; beide messen nichts.
+CONSOLE = "console"
+INBOX = "inbox"
+CAPABILITIES: frozenset[Measure] = frozenset()
 STDIN_WORD = "-"
 # Obergrenze einer Konsolenantwort; länger ist ein Transportfehler.
 ANSWER_MAX_CHARS = 200_000
@@ -147,6 +152,7 @@ class ManualRelay:
 
     transport: Transport
     role: str
+    spec: ExecutorSpec
 
     def work(self, request: WorkRequest) -> WorkReport:
         return WorkReport(self._relay(request))

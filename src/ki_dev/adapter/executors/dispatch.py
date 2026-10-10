@@ -1,8 +1,10 @@
 """Executor-unabhaengiger Einstieg in genau einen Agenten-Turn.
 
-Der Aufrufer nennt nur ``executor`` als Namen plus ``session``,
-``message``, ``model`` und ``effort``. Die konkrete Adapterklasse und
-jedes executor-spezifische CLI-Argument bleiben hinter dieser Grenze.
+Der Aufrufer nennt nur den Transport (``claude-cli``, ``codex-cli``)
+plus ``session``, ``message``, ``model`` und ``effort``. Die konkrete
+Adapterklasse und jedes CLI-Argument bleiben hinter dieser Grenze;
+welcher Executor-Name welchen Transport nutzt, deklariert
+``adapter/executors.toml``.
 """
 
 from __future__ import annotations
@@ -15,37 +17,37 @@ from .codex_cli import CodexCliAdapter
 from .contract import Effort, TurnRequest, TurnResult
 
 _ADAPTERS: dict[str, type[CliAdapter]] = {
-    "claude": ClaudeCliAdapter,
-    "codex": CodexCliAdapter,
+    adapter.name: adapter
+    for adapter in (ClaudeCliAdapter, CodexCliAdapter)
 }
 
 
-def available_executors() -> tuple[str, ...]:
-    """Namen der bekannten Executor-Adapter."""
-    return tuple(_ADAPTERS)
+def cli_transports() -> dict[str, type[CliAdapter]]:
+    """Die CLI-Transporte nach Namen."""
+    return dict(_ADAPTERS)
 
 
 def build_executor(
-    executor: str,
+    transport: str,
     **adapter_kwargs: object,
 ) -> CliAdapter:
-    """Erzeuge den Adapter zum Executor-Namen.
+    """Erzeuge den Adapter zum Transportnamen.
 
     Ein unbekannter Name bricht ausdruecklich ab (kein stiller
-    Standard-Executor).
+    Standard-Transport).
     """
     try:
-        adapter_cls = _ADAPTERS[executor]
+        adapter_cls = _ADAPTERS[transport]
     except KeyError:
         known = ", ".join(sorted(_ADAPTERS))
         raise ValueError(
-            f"Unbekannter executor {executor!r}; bekannt: {known}"
+            f"Unbekannter transport {transport!r}; bekannt: {known}"
         ) from None
     return adapter_cls(**adapter_kwargs)  # type: ignore[arg-type]
 
 
 def send_turn(
-    executor: str,
+    transport: str,
     *,
     session: str,
     message: str,
@@ -55,7 +57,7 @@ def send_turn(
     env: dict[str, str] | None = None,
     **adapter_kwargs: object,
 ) -> TurnResult:
-    """Fuehre genau einen Turn beim genannten Executor aus."""
+    """Fuehre genau einen Turn beim genannten Transport aus."""
     request = TurnRequest(
         session_id=session,
         message=message,
@@ -64,4 +66,5 @@ def send_turn(
         workdir=workdir,
         env=env or {},
     )
-    return build_executor(executor, **adapter_kwargs).send_turn(request)
+    adapter = build_executor(transport, **adapter_kwargs)
+    return adapter.send_turn(request)

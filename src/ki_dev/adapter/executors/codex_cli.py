@@ -14,6 +14,7 @@ from ki_dev.tool_versions import load_tool_versions
 
 from .base import CliAdapter
 from .contract import (
+    Measure,
     QuotaMeasurement,
     QuotaStatus,
     TurnRequest,
@@ -45,6 +46,7 @@ class CodexCliAdapter(CliAdapter):
     """
 
     name = "codex-cli"
+    capabilities = frozenset({Measure.QUOTA, Measure.BUDGET})
     cli_version_pin = CLI_VERSION
 
     @property

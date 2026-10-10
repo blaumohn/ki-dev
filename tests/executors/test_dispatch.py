@@ -8,8 +8,8 @@ from ki_dev.adapter.executors import (
     Effort,
     TurnResult,
     TurnStatus,
-    available_executors,
     build_executor,
+    cli_transports,
     send_turn,
 )
 from ki_dev.adapter.executors.claude_cli import ClaudeCliAdapter
@@ -18,27 +18,27 @@ from ki_dev.adapter.executors.codex_cli import CodexCliAdapter
 from .conftest import FakeRunner
 
 
-def test_known_executors_are_listed():
-    assert set(available_executors()) == {"claude", "codex"}
+def test_known_transports_are_listed():
+    assert set(cli_transports()) == {"claude-cli", "codex-cli"}
 
 
 @pytest.mark.parametrize(
-    ("executor", "cls"),
-    [("claude", ClaudeCliAdapter), ("codex", CodexCliAdapter)],
+    ("transport", "cls"),
+    [("claude-cli", ClaudeCliAdapter), ("codex-cli", CodexCliAdapter)],
 )
-def test_build_executor_by_name(executor, cls):
-    assert isinstance(build_executor(executor), cls)
+def test_build_executor_by_transport(transport, cls):
+    assert isinstance(build_executor(transport), cls)
 
 
-def test_unknown_executor_is_rejected():
-    with pytest.raises(ValueError, match="Unbekannter executor"):
+def test_unknown_transport_is_rejected():
+    with pytest.raises(ValueError, match="Unbekannter transport"):
         build_executor("gemini")
 
 
 def test_send_turn_dispatches_by_name():
     runner = FakeRunner()
     result = send_turn(
-        "codex",
+        "codex-cli",
         session="01J-sess",
         message="mach weiter",
         model="gpt-5-codex",
@@ -64,7 +64,7 @@ def test_send_turn_reports_runner_failure():
         error="Prozessstart fehlgeschlagen: claude fehlt",
     )
     result = send_turn(
-        "claude",
+        "claude-cli",
         session="sess-x",
         message="hallo",
         model="claude-sonnet-5",

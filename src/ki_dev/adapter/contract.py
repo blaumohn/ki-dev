@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from ki_dev.adapter.executors.contract import TurnResult
+from ki_dev.adapter.executors.contract import ExecutorSpec, TurnResult
 
 
 class AgentTurnError(RuntimeError):
@@ -152,8 +152,14 @@ class ReviewRequest:
 
 
 class Worker(Protocol):
+    """Bau-Rolle; ``spec`` nennt Executor und deklarierte Messungen."""
+
+    spec: ExecutorSpec
+
     def work(self, request: WorkRequest) -> WorkReport: ...
 
 
 class Reviewer(Protocol):
+    spec: ExecutorSpec
+
     def review(self, request: ReviewRequest) -> str: ...

@@ -57,7 +57,7 @@ def test_a_run_logs_every_taken_edge_and_conforms(tmp_path):
     assert check_conformance(IMPLEMENT, events) == []
     fix = next(e for e in events if e["event"] == "fix")
     assert fix["actions"] == ["begin_correction", "drop_result"]
-    assert fix["adapter"] == "FakeReviewer"
+    assert fix["adapter"] == reviewer.spec.name
 
 
 def test_replayed_transition_is_not_written_twice(tmp_path):

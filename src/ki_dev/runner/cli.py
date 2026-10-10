@@ -27,8 +27,15 @@ from ki_dev.adapter.agent import (
 from ki_dev.adapter.contract import (
     RunTask,
 )
-from ki_dev.adapter.executors import Effort, Executor, build_executor
+from ki_dev.adapter.executors import (
+    Effort,
+    Executor,
+    ExecutorSpec,
+    build_executor,
+    cli_transports,
+)
 from ki_dev.adapter.executors.contract import TurnBudget
+from ki_dev.adapter.registry import executor_specs
 from ki_dev.config_sources import ConfigSource
 from ki_dev.repository_evidence import (
     CheckCommand,
@@ -115,7 +122,8 @@ def start_run(
     # Effektive Defaults bleiben ueber Upgrades nachvollziehbar.
     for role in ("worker", "review"):
         values = _required_object(config, role)
-        if values.get("executor") in _LOCAL_ADAPTERS:
+        spec = executor_specs().get(cast(str, values.get("executor")))
+        if spec is not None and not _has_session(spec):
             continue
         config[role] = {
             **values,
@@ -343,7 +351,21 @@ def _usage_task(config: dict[str, object]) -> dict[str, str] | None:
     return result
 
 
-_LOCAL_ADAPTERS = (manual.NAME, mock.NAME)
+def _spec(value: dict[str, object]) -> ExecutorSpec:
+    """Deklarierter Executor der Rolle (``executor = NAME``)."""
+    name = value.get("executor")
+    specs = executor_specs()
+    if name not in specs:
+        raise RunConfigError(
+            f"executor {name!r}: bekannt "
+            + ", ".join(sorted(specs))
+        )
+    return specs[cast(str, name)]
+
+
+def _has_session(spec: ExecutorSpec) -> bool:
+    """CLI-Transporte setzen eine vorbereitete Sitzung fort."""
+    return spec.transport in cli_transports()
 
 
 def _adapter(
@@ -353,37 +375,35 @@ def _adapter(
     wrap: ExecutorWrap,
 ) -> object:
     """Adapter einer Rolle aus ihrer Konfiguration bauen."""
-    kind = value.get("executor")
-    if kind == manual.NAME:
+    spec = _spec(value)
+    if spec.transport in (manual.CONSOLE, manual.INBOX):
         _exact_fields(value, {"executor"}, {"transport"}, "Rolle")
-        return manual.ManualRelay(_transport(value, store), role)
-    if kind == mock.NAME:
-        return _mock(value, role)
-    agent = _role(value)
+        transport = _transport(value, spec, store)
+        return manual.ManualRelay(transport, role, spec)
+    if spec.transport == mock.NAME:
+        return _mock(value, role, spec)
+    agent = _role(value, spec)
     agent["executor"] = wrap(cast(Executor, agent["executor"]), role)
     if role == "worker":
-        return AgentWorker(**agent)
-    return AgentReviewer(**agent)
-
-
-# Transport des Adapters manual; ohne Angabe die Konsole.
-CONSOLE = "console"
-INBOX = "inbox"
+        return AgentWorker(**agent, spec=spec)
+    return AgentReviewer(**agent, spec=spec)
 
 
 def _transport(
-    value: dict[str, object], store: RunStore
+    value: dict[str, object], spec: ExecutorSpec, store: RunStore
 ) -> manual.Transport:
-    kind = value.get("transport", CONSOLE)
-    if kind == CONSOLE:
+    kind = value.get("transport", spec.transport)
+    if kind == manual.CONSOLE:
         return manual.Console(
             write=_stdout,
             stdin=lambda: sys.stdin.buffer,
             notice=_stderr,
         )
-    if kind == INBOX:
+    if kind == manual.INBOX:
         return manual.Inbox(store.run_dir / "inbox")
-    raise RunConfigError(f"transport: {CONSOLE} oder {INBOX}")
+    raise RunConfigError(
+        f"transport: {manual.CONSOLE} oder {manual.INBOX}"
+    )
 
 
 def _stdout(text: str) -> None:
@@ -395,12 +415,14 @@ def _stderr(text: str) -> None:
     print(text, file=sys.stderr, flush=True)
 
 
-def _mock(value: dict[str, object], role: str) -> object:
+def _mock(
+    value: dict[str, object], role: str, spec: ExecutorSpec
+) -> object:
     _exact_fields(value, {"executor"}, {"answers", "file"}, "Rolle")
     if role == "worker":
         if "file" in value:
-            return mock.MockWorker(path=_text(value, "file"))
-        return mock.MockWorker()
+            return mock.MockWorker(spec, path=_text(value, "file"))
+        return mock.MockWorker(spec)
     answers = value.get("answers", ["PASS"])
     if not isinstance(answers, list) or not all(
         item in IMPLEMENT.review_events() for item in answers
@@ -409,10 +431,12 @@ def _mock(value: dict[str, object], role: str) -> object:
             "answers: Liste aus "
             + ", ".join(IMPLEMENT.review_events())
         )
-    return mock.MockReviewer(list(answers))
+    return mock.MockReviewer(spec, list(answers))
 
 
-def _role(value: dict[str, object]) -> dict[str, object]:
+def _role(
+    value: dict[str, object], spec: ExecutorSpec
+) -> dict[str, object]:
     required = {"executor", "session_id", "model", "effort"}
     optional = {"executable", "timeout_s", "budget"}
     _exact_fields(value, required, optional, "Rolle")
@@ -428,7 +452,7 @@ def _role(value: dict[str, object]) -> dict[str, object]:
         kwargs["timeout_s"] = float(timeout)
     try:
         effort = Effort(_text(value, "effort"))
-        executor = build_executor(_text(value, "executor"), **kwargs)
+        executor = build_executor(spec.transport, **kwargs)
     except ValueError as exc:
         raise RunConfigError(str(exc)) from exc
     return {

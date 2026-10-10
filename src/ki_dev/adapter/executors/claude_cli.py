@@ -19,6 +19,7 @@ from .base import CliAdapter
 from .contract import (
     ContextMeasurement,
     ContextStatus,
+    Measure,
     QuotaMeasurement,
     QuotaStatus,
     TurnRequest,
@@ -52,6 +53,7 @@ class ClaudeCliAdapter(CliAdapter):
     """
 
     name = "claude-cli"
+    capabilities = frozenset(Measure)
     cli_version_pin = CLI_VERSION
 
     @property

@@ -19,6 +19,7 @@ from ki_dev.adapter.manual import (
     ManualRelay,
     TransportReadError,
 )
+from ki_dev.adapter.registry import executor_specs
 from ki_dev.cli import app
 from ki_dev.step import cli as step_cli
 from tests.fake_bd_command import BdScript
@@ -26,6 +27,12 @@ from tests.guideline_fixtures import write_guidelines
 from tests.test_step_cli import FULL
 
 runner = CliRunner()
+
+SPECS = executor_specs()
+
+
+def _relay(console: Console) -> ManualRelay:
+    return ManualRelay(console, "worker", SPECS["manual"])
 
 
 def test_step_binds_the_very_same_send_function():
@@ -49,7 +56,9 @@ def test_run_and_step_hand_over_through_the_same_function(
         "run-1", "Auftrag", (), tmp_path, "write",
         acceptance_criteria=("K",),
     )
-    relay = ManualRelay(Inbox(tmp_path / "inbox"), "worker")
+    relay = ManualRelay(
+        Inbox(tmp_path / "inbox"), "worker", SPECS["inbox"]
+    )
     with pytest.raises(ManualInputPending):
         relay.work(WorkRequest(task, 1, "Bauauftrag", "a-1"))
 
@@ -101,7 +110,7 @@ def test_console_relay_writes_prompt_and_reads_stdin(tmp_path):
     console = Console(
         written.append, lambda: io.BytesIO(b"Gebaut."), notes.append
     )
-    report = ManualRelay(console, "worker").work(_request(tmp_path))
+    report = _relay(console).work(_request(tmp_path))
     assert report.summary == "Gebaut."
     assert written == ["Bauauftrag"]
     assert "Strg-D" in notes[-1]
@@ -110,14 +119,14 @@ def test_console_relay_writes_prompt_and_reads_stdin(tmp_path):
 def test_console_relay_halts_on_empty_answer(tmp_path):
     console = Console(print, lambda: io.BytesIO(b"  \n"))
     with pytest.raises(ManualInputPending, match="resume"):
-        ManualRelay(console, "worker").work(_request(tmp_path))
+        _relay(console).work(_request(tmp_path))
 
 
 def test_console_relay_rejects_overlong_answer(monkeypatch, tmp_path):
     monkeypatch.setattr(manual, "ANSWER_MAX_CHARS", 3)
     console = Console(print, lambda: io.BytesIO(b"abcdef"))
     with pytest.raises(TransportReadError, match="länger"):
-        ManualRelay(console, "worker").work(_request(tmp_path))
+        _relay(console).work(_request(tmp_path))
 
 
 def test_inbox_answer_counts_only_when_not_blank(tmp_path):

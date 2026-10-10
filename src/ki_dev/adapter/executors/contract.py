@@ -24,6 +24,28 @@ class Effort(StrEnum):
     HIGH = "high"
 
 
+class Measure(StrEnum):
+    """Messung, die ein Transport umsetzt und ein Executor deklariert.
+
+    ``budget`` heisst: der Aufruf wird im Laufbudget gebucht
+    (Reservierung, Aufrufzahl, Verbrauch, Kosten).
+    """
+
+    CONTEXT = "context"
+    QUOTA = "quota"
+    BUDGET = "budget"
+
+
+@dataclass(frozen=True)
+class ExecutorSpec:
+    """Deklarierter Executor: Name, Transport und Messungen, die der
+    Ausführer verlangt (``adapter/executors.toml``)."""
+
+    name: str
+    transport: str
+    measures: frozenset[Measure]
+
+
 class TurnStatus(StrEnum):
     """Eindeutiger Ausgang eines Turn-Prozesses.
 
@@ -289,9 +311,11 @@ class TurnResult:
 
 @runtime_checkable
 class Executor(Protocol):
-    """Oeffentlicher Turn-Vertrag, den beide Adapter erfuellen."""
+    """Oeffentlicher Turn-Vertrag, den beide Adapter erfuellen;
+    ``capabilities`` nennt die Messungen, die der Transport umsetzt."""
 
     name: str
+    capabilities: frozenset[Measure]
 
     def send_turn(self, request: TurnRequest) -> TurnResult: ...
 

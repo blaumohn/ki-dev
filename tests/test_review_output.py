@@ -41,9 +41,12 @@ from ki_dev.runner.review_output import (
     bind_review_decision,
     parse_review_decision,
 )
+from tests.executor_specs import LOCAL, spec_for
 
 
 class FakeWorker:
+    spec = LOCAL
+
     def __init__(self) -> None:
         self.requests = []
 
@@ -53,6 +56,8 @@ class FakeWorker:
 
 
 class FakeReviewer:
+    spec = LOCAL
+
     def __init__(
         self, action: str, requirement_ref="AC1"
     ) -> None:
@@ -298,7 +303,10 @@ def test_build_prompt_includes_acceptance_criteria():
             return ContextMeasurement(ContextStatus.UNSUPPORTED)
 
     executor = RecordingExecutor()
-    build = AgentWorker(executor, "build-session", "m", Effort.LOW)
+    build = AgentWorker(
+        executor, "build-session", "m", Effort.LOW,
+        spec=spec_for(executor),
+    )
     task = RunTask(
         "run-1",
         "Auftrag",

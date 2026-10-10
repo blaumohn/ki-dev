@@ -31,6 +31,7 @@ from ki_dev.run_store import RunStore
 from ki_dev.runner.machine import Limits
 from ki_dev.runner.safety import CallLedger
 from ki_dev.usage import CounterScope, TokenCounts, UsageStatus
+from tests.executor_specs import spec_for
 from tests.executors.usage_fakes import write_usage_cli
 from tests.test_runner_runtime import FakeReviewer, FakeWorker, _task
 from tests.test_runner_safety import runtime
@@ -110,7 +111,7 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
         adapter,
         "measure_context",
         lambda _session: ContextMeasurement(
-            ContextStatus.UNSUPPORTED
+            ContextStatus.MEASURED, tokens=0
         ),
     )
     monkeypatch.setattr(
@@ -123,12 +124,18 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
         ),
     )
     worker = (
-        AgentWorker(adapter, "worker", "model", Effort.LOW)
+        AgentWorker(
+            adapter, "worker", "model", Effort.LOW,
+            spec=spec_for(adapter),
+        )
         if role == "worker"
         else FakeWorker()
     )
     reviewer = (
-        AgentReviewer(adapter, "review", "model", Effort.LOW)
+        AgentReviewer(
+            adapter, "review", "model", Effort.LOW,
+            spec=spec_for(adapter),
+        )
         if role == "review"
         else FakeReviewer(["PASS"])
     )

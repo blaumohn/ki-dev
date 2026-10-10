@@ -1,6 +1,6 @@
 """Anbieterneutraler Einstieg in Sitzungstranskripte.
 
-Unabhaengig von ``available_executors()``: ein Anbieter kann Turns
+Unabhaengig von ``cli_transports()``: ein Anbieter kann Turns
 ausfuehren, ohne Transkripte zu liefern, und umgekehrt. Jede
 anbieterspezifische Einzelheit bleibt hinter dieser Dispatch-Grenze.
 """

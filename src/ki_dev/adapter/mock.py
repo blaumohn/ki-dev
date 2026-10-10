@@ -18,12 +18,15 @@ from ki_dev.adapter.contract import (
     WorkReport,
     WorkRequest,
 )
+from ki_dev.adapter.executors import ExecutorSpec, Measure
 
 NAME = "mock"
+CAPABILITIES: frozenset[Measure] = frozenset()
 
 
 @dataclass
 class MockWorker:
+    spec: ExecutorSpec
     path: str = "MOCK.md"
     calls: int = 0
 
@@ -40,6 +43,7 @@ class MockReviewer:
     """Spielt vorgegebene Review-Ereignisse ab (``PASS`` oder eine
     Befundklasse des Ablaufs, z. B. ``fix``)."""
 
+    spec: ExecutorSpec
     events: list[str] = field(default_factory=lambda: ["PASS"])
     calls: int = 0
 

@@ -33,6 +33,7 @@ from ki_dev.runner.runtime import (
     RunRuntime,
     StaticEvidenceCollector,
 )
+from tests.executor_specs import spec_for
 from tests.test_runner_runtime import _context
 
 
@@ -43,13 +44,16 @@ class ControlledExecutor:
     def __init__(self, name: str, response: str) -> None:
         self.name = name
         self.response = response
-        self.measurement = ContextMeasurement(ContextStatus.UNSUPPORTED)
+        self.measurement = ContextMeasurement(
+            ContextStatus.MEASURED, tokens=0
+        )
         self.quota = QuotaMeasurement(
             QuotaStatus.MEASURED,
             used_percent=0.0,
             resets_at=9_999_999_999,
         )
         self.calls = 0
+        self.context_calls = 0
 
     def send_turn(self, request):
         del request
@@ -72,6 +76,7 @@ class ControlledExecutor:
 
     def measure_context(self, session_id: str) -> ContextMeasurement:
         del session_id
+        self.context_calls += 1
         return self.measurement
 
     def measure_quota(self, session_id: str) -> QuotaMeasurement:
@@ -109,6 +114,7 @@ def _agents(build_executor, review_executor):
         "model",
         Effort.LOW,
         budget=TurnBudget(),
+        spec=spec_for(build_executor),
     )
     review = AgentReviewer(
         review_executor,
@@ -116,6 +122,7 @@ def _agents(build_executor, review_executor):
         "model",
         Effort.LOW,
         budget=TurnBudget(),
+        spec=spec_for(review_executor),
     )
     return build, review
 
@@ -247,14 +254,15 @@ def test_unavailable_measurement_blocks_and_is_not_treated_as_small(
         result = runtime.start(_task("run-ctx-unavailable"), Limits())
 
     assert result.status == "paused_interactive"
-    assert "nicht verfuegbar" in result.detail
+    assert "Kontextmessung" in result.detail
+    assert "fehlt" in result.detail
     assert "mehrdeutig" in result.detail
     assert build_executor.calls == 0
 
 
-def test_unsupported_measurement_does_not_block(tmp_path):
-    """Codex-artiger Executor ohne Kontextmessung ist kein Blocker
-    (bekannter, dokumentierter Adaptergrenzfall)."""
+def test_undeclared_context_is_never_measured(tmp_path):
+    """codex deklariert kein ``context``: der Wächter gilt nicht, die
+    Messung wird nicht einmal angefragt."""
     build_executor = ControlledExecutor("codex-cli", "Bau erledigt")
     review_executor = ControlledExecutor(
         "codex-cli", _review_json("run-ctx-unsupported", 1, "PASS")
@@ -267,8 +275,32 @@ def test_unsupported_measurement_does_not_block(tmp_path):
         result = runtime.start(_task("run-ctx-unsupported"), Limits())
 
     assert result.status == "passed"
-    assert build_executor.calls == 1
-    assert review_executor.calls == 1
+    assert build_executor.calls == review_executor.calls == 1
+    assert build_executor.context_calls == 0
+    assert review_executor.context_calls == 0
+
+
+def test_declared_context_without_support_blocks(tmp_path):
+    """claude deklariert ``context``: UNSUPPORTED ist kein Freibrief,
+    sondern ein fehlender Pflichtwert."""
+    build_executor = ControlledExecutor("claude-cli", "Bau erledigt")
+    build_executor.measurement = ContextMeasurement(
+        ContextStatus.UNSUPPORTED
+    )
+    review_executor = ControlledExecutor(
+        "claude-cli", _review_json("run-ctx-declared", 1, "PASS")
+    )
+    build, review = _agents(build_executor, review_executor)
+
+    with _runtime(
+        tmp_path, "run-ctx-declared", build, review
+    ) as runtime:
+        result = runtime.start(_task("run-ctx-declared"), Limits())
+
+    assert result.status == "paused_interactive"
+    assert "Kontextmessung" in result.detail
+    assert "unsupported" in result.detail
+    assert build_executor.calls == 0
 
 
 def test_resume_rechecks_context_instead_of_reusing_old_measurement(

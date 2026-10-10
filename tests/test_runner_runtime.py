@@ -10,6 +10,7 @@ from ki_dev.adapter.contract import (
     WorkReport,
 )
 from ki_dev.adapter.manual import Inbox, ManualRelay
+from ki_dev.adapter.registry import executor_specs
 from ki_dev.deltas import (
     BeadsDelta,
     ChangeMedium,
@@ -32,9 +33,14 @@ from ki_dev.runner.runtime import (
     RunRuntime,
     StaticEvidenceCollector,
 )
+from tests.executor_specs import LOCAL
+
+SPECS = executor_specs()
 
 
 class FakeWorker:
+    spec = LOCAL
+
     def __init__(self, *, crash: bool = False) -> None:
         self.calls = 0
         self.crash = crash
@@ -54,6 +60,8 @@ class FailingBuilder(FakeWorker):
 
 
 class FakeReviewer:
+    spec = LOCAL
+
     def __init__(self, actions) -> None:
         self.actions = list(actions)
         self.calls = 0
@@ -633,7 +641,7 @@ def test_manual_relay_halts_executor_not_flow_and_continues(tmp_path):
     with _runtime(
         tmp_path,
         "run-relay",
-        ManualRelay(Inbox(inbox), "worker"),
+        ManualRelay(Inbox(inbox), "worker", SPECS["inbox"]),
         reviewer,
         [_context(1)],
     ) as runtime:
@@ -698,7 +706,7 @@ def test_manual_review_waits_for_a_new_answer_after_protocol_error(
         tmp_path,
         "run-relay-review",
         FakeWorker(),
-        ManualRelay(Inbox(inbox), "review"),
+        ManualRelay(Inbox(inbox), "review", SPECS["inbox"]),
         [_context(1)],
     ) as runtime:
         halted = runtime.start(_task("run-relay-review"), Limits())

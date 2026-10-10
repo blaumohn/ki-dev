@@ -17,7 +17,6 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command, interrupt
 
-from ki_dev.adapter import manual, mock
 from ki_dev.adapter.agent import (
     AgentReviewer,
     AgentWorker,
@@ -31,8 +30,12 @@ from ki_dev.adapter.contract import (
     WorkReport,
     WorkRequest,
 )
-from ki_dev.adapter.executors.contract import ContextStatus, QuotaStatus
-from ki_dev.adapter.manual import ManualInputPending, ManualRelay
+from ki_dev.adapter.executors.contract import (
+    ContextStatus,
+    Measure,
+    QuotaStatus,
+)
+from ki_dev.adapter.manual import ManualInputPending
 from ki_dev.deltas import (
     ControllerContext,
     StepDeltaAssessment,
@@ -219,11 +222,11 @@ class RunRuntime:
     safety_limits: SafetyLimits = SafetyLimits()
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.worker, AgentWorker)
-            and isinstance(self.reviewer, AgentReviewer)
-            and self.worker.session_id == self.reviewer.session_id
-        ):
+        sessions = (
+            getattr(self.worker, "session_id", None),
+            getattr(self.reviewer, "session_id", None),
+        )
+        if None not in sessions and sessions[0] == sessions[1]:
             raise ValueError(
                 "Bau und Review brauchen unabhaengige Sitzungen"
             )
@@ -535,34 +538,19 @@ class RunRuntime:
         status = pending["status"]
         if status == "prepared":
             call_id = None
-            if pending["kind"] in _AGENT_ROLES and not (
-                _is_relay(self._actor(pending))
-            ):
+            if pending["kind"] in _AGENT_ROLES:
                 actor = self._actor(pending)
                 blocker = self._call_guards(
                     _AGENT_ROLES[pending["kind"]], actor
                 )
                 if blocker is not None:
                     return self._safety_stop(state, blocker)
-                call_id = f"{operation_id}-{uuid.uuid4().hex}"
-                try:
-                    self._ledger.reserve(
-                        call_id,
-                        operation_id,
-                        isinstance(
-                            actor, (AgentWorker, AgentReviewer)
-                        ),
-                        actor.executor.name
-                        if isinstance(
-                            actor, (AgentWorker, AgentReviewer)
-                        )
-                        else None,
-                        attribution=self._usage_attribution(
-                            state, pending, actor
-                        ),
-                    )
-                except SafetyStop as exc:
-                    return self._safety_stop(state, str(exc))
+                if Measure.BUDGET in actor.spec.measures:
+                    call_id = f"{operation_id}-{uuid.uuid4().hex}"
+                    try:
+                        self._reserve(state, pending, actor, call_id)
+                    except SafetyStop as exc:
+                        return self._safety_stop(state, str(exc))
             started = {
                 **pending,
                 "status": "started",
@@ -600,6 +588,23 @@ class RunRuntime:
             )
         self.store.write_artifact(operation_id, value)
         return self._accept_artifact(state, pending, value)
+
+    def _reserve(
+        self,
+        state: RunGraphState,
+        pending: dict[str, object],
+        actor: Worker | Reviewer,
+        call_id: str,
+    ) -> None:
+        """Aufruf im Laufbudget buchen (deklarierte Messung
+        ``budget``)."""
+        self._ledger.reserve(
+            call_id,
+            cast(str, pending["id"]),
+            True,
+            actor.spec.transport,
+            attribution=self._usage_attribution(state, pending, actor),
+        )
 
     def _actor(
         self, pending: dict[str, object]
@@ -649,52 +654,44 @@ class RunRuntime:
 
         Der Adapter liefert nur einen Messwert; Freigabe und Halt
         entscheidet ausschliesslich diese Orchestrierung, nie eine
-        Selbsteinschaetzung des Agenten. ``UNSUPPORTED`` (z. B. Codex)
-        ist kein Blocker: das ist ein bekannter, dokumentierter
-        Adaptergrenzfall, keine ungeklaerte Situation. ``UNAVAILABLE``
-        dagegen ist ein Blocker: die Messung ist fuer diesen Executor
-        vorgesehen, aber gerade nicht belegbar, und ein unbelegter
-        Kontext gilt nicht als klein.
+        Selbsteinschaetzung des Agenten. Der Waechter gilt nur, wenn
+        der Executor ``context`` deklariert (z. B. nicht Codex); dann
+        ist die Messung Pflicht: ``UNAVAILABLE`` und ``UNSUPPORTED``
+        sind Blocker, ein unbelegter Kontext gilt nicht als klein.
 
         Ein fehlendes Rollenbudget ist unabhaengig vom Kontextstatus
         keine gueltige Konfiguration: es steuert auch den nativen
         Timeout und die Verbrauchserfassung im Adapter (siehe
         ``CliAdapter.send_turn``/``claude_result``/``codex_result``).
-        Ein ``UNSUPPORTED``- oder ``UNAVAILABLE``-Messwert darf das
-        deshalb nicht stillschweigend uebertoenen; die Pruefung steht
-        vor jeder Fallunterscheidung nach Kontextstatus.
+        Ein fehlender Messwert darf das deshalb nicht stillschweigend
+        uebertoenen; die Pruefung steht vor jeder Fallunterscheidung
+        nach Kontextstatus.
         """
-        if not isinstance(actor, (AgentWorker, AgentReviewer)):
+        if Measure.CONTEXT not in actor.spec.measures:
             return None
-        if actor.budget is None:
+        agent = _measured(actor)
+        if agent.budget is None:
             raise ValueError(
-                f"{role} (executor={actor.executor.name}, "
-                f"session={actor.session_id}): TurnBudget fehlt; "
+                f"{role} (executor={actor.spec.name}, "
+                f"session={agent.session_id}): TurnBudget fehlt; "
                 "Timeout und Verbrauchserfassung waeren ungueltig"
             )
-        measurement = actor.executor.measure_context(actor.session_id)
-        origin = (
-            f"{role} (executor={actor.executor.name}, "
-            f"session={actor.session_id})"
-        )
-        if measurement.status is ContextStatus.UNAVAILABLE:
-            blocker = (
-                f"Kontextmessung fuer {origin} nicht verfuegbar: "
-                f"{measurement.detail}; kein Aufruf ohne Nachweis"
+        measurement = agent.executor.measure_context(agent.session_id)
+        origin = _origin(role, actor)
+        if measurement.status is not ContextStatus.MEASURED:
+            detail = measurement.detail or measurement.status.value
+            return (
+                f"Kontextmessung fuer {origin} fehlt: {detail}; "
+                "kein Aufruf ohne Nachweis"
             )
-        elif (
-            measurement.status is ContextStatus.MEASURED
-            and measurement.tokens >= actor.budget.max_context_tokens
-        ):
-            blocker = (
+        if measurement.tokens >= agent.budget.max_context_tokens:
+            return (
                 f"Kontextgrenze erreicht fuer {origin}: gemessen "
                 f"{measurement.tokens} >= Grenze "
-                f"{actor.budget.max_context_tokens} "
+                f"{agent.budget.max_context_tokens} "
                 f"(Quelle: {measurement.status.value})"
             )
-        else:
-            blocker = None
-        return blocker
+        return None
 
     def _quota_guard(
         self, role: str, actor: Worker | Reviewer
@@ -722,16 +719,11 @@ class RunRuntime:
         harte Echtzeitgrenze: ein einzelner Aufruf kann sie
         ueberschreiten, da er nicht unterbrochen werden kann.
 
-        Wie bei der Kontextvorpruefung gibt es hier keinen Status, der
-        einen Aufruf freigibt, ausser einem tatsaechlichen Messwert:
-        fuer das Kontokontingent gibt es keine sichere Annahme "kein
-        Nachweis = ok". ``UNSUPPORTED`` blockiert deshalb -- anders als
-        bei ``measure_context`` -- ebenso wie ``UNAVAILABLE``, und wird
-        als eigene, von "Budget erschoepft" klar unterschiedene Ursache
-        gemeldet. Das ist eine bewusste, dokumentierte Betriebsfolge:
-        ein Executor ohne verifizierten, verbrauchsfreien Messweg
-        (aktuell ``claude-cli``) haelt vor jedem Aufruf an, bis ein
-        solcher Messweg existiert und getestet ist.
+        Der Waechter gilt nur, wenn der Executor ``quota`` deklariert.
+        Dann gibt ausser einem tatsaechlichen Messwert nur ``PENDING``
+        (noch kein Turn im Fenster) einen Aufruf frei: ``UNSUPPORTED``
+        und ``UNAVAILABLE`` blockieren und werden als eigene, von
+        "Budget erschoepft" klar unterschiedene Ursache gemeldet.
 
         ``self._ledger.limits()`` kann bei einem Altlauf ohne
         ``min_remaining_percent`` im Manifest ``SafetyStop`` werfen;
@@ -740,17 +732,15 @@ class RunRuntime:
         Ausnahme wird deshalb hier selbst in einen Blocker-Text
         uebersetzt statt unbehandelt aus dem Graph-Tick zu entkommen.
         """
-        if not isinstance(actor, (AgentWorker, AgentReviewer)):
+        if Measure.QUOTA not in actor.spec.measures:
             return None
+        agent = _measured(actor)
         try:
             limits = self._ledger.limits()
         except SafetyStop as exc:
             return str(exc)
-        measurement = actor.executor.measure_quota(actor.session_id)
-        origin = (
-            f"{role} (executor={actor.executor.name}, "
-            f"session={actor.session_id})"
-        )
+        measurement = agent.executor.measure_quota(agent.session_id)
+        origin = _origin(role, actor)
         if measurement.status is QuotaStatus.PENDING:
             return None
         if measurement.status is not QuotaStatus.MEASURED:
@@ -760,7 +750,7 @@ class RunRuntime:
             for reason in (
                 _quota_reserve_reason(origin, measurement, limits),
                 self._quota_delta_reason(
-                    origin, measurement, role, actor.budget
+                    origin, measurement, role, agent.budget
                 ),
             )
             if reason is not None
@@ -815,22 +805,18 @@ class RunRuntime:
     def _metered_operation(
         self, state: RunGraphState, pending: dict[str, object]
     ) -> object:
-        if pending["kind"] not in _AGENT_ROLES or _is_relay(
-            self._actor(pending)
-        ):
-            # Der Bote verbraucht kein Agentenbudget von ki-dev: die
-            # Sitzung, in die er die Eingabe trägt, misst ki-dev nicht.
+        if pending["kind"] not in _AGENT_ROLES:
+            return self._execute_operation(state, pending)
+        actor = self._actor(pending)
+        if Measure.BUDGET not in actor.spec.measures:
+            # Ohne deklarierte Messung bucht ki-dev nichts (manual,
+            # mock): die Sitzung des Boten misst ki-dev nicht.
             return self._execute_operation(state, pending)
         call_id = pending.get("call_id")
         if not call_id:
             raise SafetyStop(
                 "Agentenaufruf ohne persistierte Budgetreservierung"
             )
-        actor = (
-            self.worker
-            if pending["kind"] == "work"
-            else self.reviewer
-        )
         try:
             value = self._execute_operation(state, pending)
         except Exception as exc:
@@ -848,9 +834,7 @@ class RunRuntime:
                 getattr(actor, "last_result", None),
                 f"{type(exc).__name__}: {exc}",
             )
-            if isinstance(
-                actor, (AgentWorker, AgentReviewer)
-            ) and not isinstance(exc, AgentProtocolError):
+            if not isinstance(exc, AgentProtocolError):
                 raise SafetyStop(str(exc)) from exc
             raise
         self._record_turn_usage(call_id, actor)
@@ -1413,20 +1397,19 @@ def _review_attempt(
     return f"{pending['id']}-t{counters.protocol_attempt:04d}"
 
 
-def _adapter_name(actor: object) -> str:
-    executor = getattr(actor, "executor", None)
-    if executor is not None:
-        return str(executor.name)
-    if isinstance(actor, ManualRelay):
-        return manual.NAME
-    if isinstance(actor, (mock.MockWorker, mock.MockReviewer)):
-        return mock.NAME
-    # Testdoppel und eigene Adapter: ihr Klassenname
-    return type(actor).__name__
+def _adapter_name(actor: Worker | Reviewer) -> str:
+    return actor.spec.name
 
 
-def _is_relay(actor: object) -> bool:
-    return isinstance(actor, ManualRelay)
+def _measured(actor: Worker | Reviewer) -> AgentWorker | AgentReviewer:
+    """Rolle mit deklarierter Messung: die Deklaration ist beim Laden
+    gegen die Fähigkeiten des Transports geprüft (``registry``)."""
+    return cast(AgentWorker | AgentReviewer, actor)
+
+
+def _origin(role: str, actor: Worker | Reviewer) -> str:
+    session = getattr(actor, "session_id", None)
+    return f"{role} (executor={actor.spec.name}, session={session})"
 
 
 def _status_of(run: RunState) -> str:

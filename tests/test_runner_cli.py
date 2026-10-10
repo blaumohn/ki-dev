@@ -9,6 +9,7 @@ from langgraph.checkpoint.base import uuid6
 from ki_dev.adapter.contract import (
     RunTask,
 )
+from ki_dev.adapter.registry import executor_specs
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.cli import RunConfigError, status_run
@@ -517,5 +518,7 @@ def test_unknown_mock_answer_is_rejected(tmp_path):
 
     with pytest.raises(RunConfigError, match="answers"):
         runner_cli._mock(
-            {"executor": "mock", "answers": ["OK"]}, "review"
+            {"executor": "mock", "answers": ["OK"]},
+            "review",
+            executor_specs()["mock"],
         )

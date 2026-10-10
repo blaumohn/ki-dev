@@ -8,11 +8,13 @@ from .codex_cli import CodexCliAdapter
 from .contract import (
     Effort,
     Executor,
+    ExecutorSpec,
+    Measure,
     TurnRequest,
     TurnResult,
     TurnStatus,
 )
-from .dispatch import available_executors, build_executor, send_turn
+from .dispatch import build_executor, cli_transports, send_turn
 from .process import DEFAULT_TIMEOUT_S, run_cli_turn
 
 __all__ = [
@@ -22,12 +24,14 @@ __all__ = [
     "CodexCliAdapter",
     "Effort",
     "Executor",
+    "ExecutorSpec",
+    "Measure",
     "ProcessRunner",
     "TurnRequest",
     "TurnResult",
     "TurnStatus",
-    "available_executors",
     "build_executor",
+    "cli_transports",
     "run_cli_turn",
     "send_turn",
 ]

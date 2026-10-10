@@ -43,6 +43,7 @@ from ki_dev.runner.cli import status_run
 from ki_dev.runner.machine import Limits, Phase
 from ki_dev.runner.runtime import RunRuntime
 from ki_dev.runner.safety import SafetyLimits
+from tests.executor_specs import BOOKED
 
 
 def _bd_available() -> bool:
@@ -196,12 +197,14 @@ def test_offline_run_connects_reader_contract_progress_env_projection(
         "build-session",
         "model",
         Effort.LOW,
+        spec=BOOKED,
     )
     review = AgentReviewer(
         FakeExecutor([demand_fix, approve]),
         "review-session",
         "model",
         Effort.LOW,
+        spec=BOOKED,
     )
     runs_dir = tmp_path / "runs"
     with RunRuntime(
@@ -255,13 +258,15 @@ def test_offline_run_pauses_on_stagnation_and_stays_readable(tmp_path):
         return _review
 
     build = AgentWorker(
-        FakeExecutor([touch, touch]), "build-session", "m", Effort.LOW
+        FakeExecutor([touch, touch]), "build-session", "m", Effort.LOW,
+        spec=BOOKED,
     )
     review = AgentReviewer(
         FakeExecutor([still_wrong(1), still_wrong(2)]),
         "review-session",
         "m",
         Effort.LOW,
+        spec=BOOKED,
     )
     runs_dir = tmp_path / "runs"
     with RunRuntime(

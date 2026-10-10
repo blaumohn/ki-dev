@@ -31,6 +31,7 @@ from ki_dev.runner.runtime import (
     StaticEvidenceCollector,
 )
 from ki_dev.runner.safety import CallLedger
+from tests.executor_specs import spec_for
 from tests.test_runner_runtime import (
     FakeReviewer,
     FakeWorker,
@@ -86,7 +87,10 @@ def _agent_builder(session_id="build-sess"):
             TurnStatus.OK, 0, "fertig", "", (), 1.0, usage=dict(USAGE)
         )
     )
-    return AgentWorker(executor, session_id, "model", Effort.LOW)
+    return AgentWorker(
+        executor, session_id, "model", Effort.LOW,
+        spec=spec_for(executor),
+    )
 
 
 def _agent_reviewer(session_id):
@@ -107,7 +111,8 @@ def _agent_reviewer(session_id):
             )
         )
         return AgentReviewer(
-            executor, session_id, "model", Effort.LOW
+            executor, session_id, "model", Effort.LOW,
+            spec=spec_for(executor),
         )
 
     return make

@@ -23,6 +23,7 @@ from ki_dev.adapter.executors.contract import (
     TurnResult,
     TurnStatus,
 )
+from ki_dev.adapter.registry import executor_specs
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.cli import (
@@ -49,6 +50,7 @@ from ki_dev.usage import (
     UsageEvent,
     UsageStatus,
 )
+from tests.executor_specs import BOOKED, spec_for
 from tests.test_runner_runtime import (
     FakeReviewer,
     FakeWorker,
@@ -120,12 +122,18 @@ def test_agent_failure_pauses_immediately_and_keeps_usage(
         )
     )
     worker = (
-        AgentWorker(executor, "worker", "model", Effort.LOW)
+        AgentWorker(
+            executor, "worker", "model", Effort.LOW,
+            spec=spec_for(executor),
+        )
         if role == "worker"
         else FakeWorker()
     )
     reviewer = (
-        AgentReviewer(executor, "review", "model", Effort.LOW)
+        AgentReviewer(
+            executor, "review", "model", Effort.LOW,
+            spec=spec_for(executor),
+        )
         if role == "review"
         else FakeReviewer(["PASS"])
     )
@@ -191,12 +199,18 @@ def test_agent_failure_still_records_normalized_usage_event(
         )
     )
     worker = (
-        AgentWorker(executor, "worker", "model", Effort.LOW)
+        AgentWorker(
+            executor, "worker", "model", Effort.LOW,
+            spec=spec_for(executor),
+        )
         if role == "worker"
         else FakeWorker()
     )
     reviewer = (
-        AgentReviewer(executor, "review", "model", Effort.LOW)
+        AgentReviewer(
+            executor, "review", "model", Effort.LOW,
+            spec=spec_for(executor),
+        )
         if role == "review"
         else FakeReviewer(["PASS"])
     )
@@ -250,7 +264,10 @@ def test_successful_review_turn_records_usage_event(tmp_path):
         )
     )
     worker = FakeWorker()
-    reviewer = AgentReviewer(executor, "review", "model", Effort.LOW)
+    reviewer = AgentReviewer(
+        executor, "review", "model", Effort.LOW,
+        spec=spec_for(executor),
+    )
     with runtime(tmp_path, worker, reviewer) as run:
         result = run.start(_task("guard"), Limits())
 
@@ -321,7 +338,10 @@ def test_reservation_stays_locked_between_record_usage_and_finish(
         )
     )
     executor = Executor(result)
-    worker = AgentWorker(executor, "worker", "model", Effort.LOW)
+    worker = AgentWorker(
+        executor, "worker", "model", Effort.LOW,
+        spec=spec_for(executor),
+    )
     reviewer = FakeReviewer(["PASS"])
 
     # Fuer jeden ``finish()``-Aufruf festhalten, ob der Verbrauchs-
@@ -546,9 +566,34 @@ def test_stagnation_reason_reports_recorded_consumption(tmp_path):
     assert "0.2" in reason  # cost_usd
 
 
+def _review_answer(event):
+    return json.dumps(
+        {
+            "run_id": "guard",
+            "round_id": 1,
+            "event": event,
+            "detail": "Befund",
+            "requirement_ref": "AC1",
+        }
+    )
+
+
 def test_call_limit_survives_restart_and_answer(tmp_path):
-    worker = FakeWorker()
-    reviewer = FakeReviewer(["fix"])
+    build = Executor(
+        TurnResult(TurnStatus.OK, 0, "Bau", "", (), 1.0, usage=USAGE)
+    )
+    review = Executor(
+        TurnResult(
+            TurnStatus.OK, 0, _review_answer("fix"), "", (), 1.0,
+            usage=USAGE,
+        )
+    )
+    worker = AgentWorker(
+        build, "worker", "model", Effort.LOW, spec=spec_for(build)
+    )
+    reviewer = AgentReviewer(
+        review, "review", "model", Effort.LOW, spec=spec_for(review)
+    )
     with runtime(
         tmp_path,
         worker,
@@ -560,7 +605,7 @@ def test_call_limit_survives_restart_and_answer(tmp_path):
     with runtime(tmp_path, worker, reviewer) as run:
         result = run.resume("weiter")
     assert result.status == "paused_interactive"
-    assert worker.calls == reviewer.calls == 1
+    assert build.calls == review.calls == 1
     assert "Aufrufgrenze" in result.detail
 
 
@@ -576,8 +621,12 @@ def test_budget_blocks_next_paid_call(tmp_path, limits, usage, match):
     executor = Executor(
         TurnResult(TurnStatus.OK, 0, "Bau", "", (), 1.0, usage=usage)
     )
-    worker = AgentWorker(executor, "worker", "model", Effort.LOW)
+    worker = AgentWorker(
+        executor, "worker", "model", Effort.LOW,
+        spec=spec_for(executor),
+    )
     reviewer = FakeReviewer(["PASS"])
+    reviewer.spec = BOOKED
     with runtime(
         tmp_path, worker, reviewer, safety_limits=limits
     ) as run:
@@ -702,7 +751,8 @@ def test_role_configuration_cannot_disable_bounds(override):
                 "session_id": "session",
                 "effort": "low",
                 **override,
-            }
+            },
+            executor_specs()["claude"],
         )
 
 
@@ -767,3 +817,22 @@ def test_quota_baseline_rejects_resets_at_regression(tmp_path):
     baseline.delta_percent("worker", 50.0, resets_at=2000)
     with pytest.raises(RunStoreError, match="widerspruechlich"):
         baseline.delta_percent("worker", 5.0, resets_at=1000)
+
+
+def test_executor_without_measures_is_neither_reserved_nor_booked(
+    tmp_path,
+):
+    """``measures = []`` (manual, mock): kein Wächter, keine
+    Reservierung, keine Buchung."""
+    worker, reviewer = FakeWorker(), FakeReviewer(["PASS"])
+    with runtime(
+        tmp_path,
+        worker,
+        reviewer,
+        safety_limits=SafetyLimits(max_agent_calls=1),
+    ) as run:
+        result = run.start(_task("guard"), Limits())
+
+    assert result.status == "passed"
+    assert worker.calls == reviewer.calls == 1
+    assert not (RunStore(tmp_path, "guard").run_dir / "calls").exists()

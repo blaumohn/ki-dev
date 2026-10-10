@@ -294,10 +294,38 @@ kumulative Budgets ab Laufstart, keine Kontostand-Momentaufnahmen) und
 wurde durch das unten beschriebene Delta-/Reserve-Paar ersetzt
 (ki-dev-ablauf-dqv).
 
+### Executoren
+
+Ein Executor ist Daten des Geruests
+([`src/ki_dev/adapter/executors.toml`](../src/ki_dev/adapter/executors.toml)):
+ein Name bindet einen Transport (Code je Anbieter) und deklariert die
+Messungen, die der Ausfuehrer verlangt. Das Profil waehlt je Rolle nur
+den Namen.
+
+| Executor | Transport | `measures` |
+| --- | --- | --- |
+| `claude` | `claude-cli` | `context`, `quota`, `budget` |
+| `codex` | `codex-cli` | `quota`, `budget` |
+| `manual` | `console` | – |
+| `inbox` | `inbox` | – |
+| `mock` | `mock` | – |
+
+Deklariert heisst Pflicht: fehlt der Messwert, haelt der Lauf. Nicht
+deklariert heisst, der Waechter gilt nicht -- ohne `budget` wird der
+Aufruf weder reserviert noch gezaehlt noch gebucht. Beim Laden prueft
+`adapter/registry.py` (JSON Schema, dann benannte Pruefung), dass
+`measures` nur enthaelt, was der Transport kann:
+
+```
+[executor.manual] transport = "console", measures = ["quota"]
+→ executor.manual.measures: Transport console misst kein quota
+```
+
 ### Kontextvorpruefung
 
-Vor jedem Bau-/Review-Aufruf und bei Resume misst der zustaendige
-Adapter (`Executor.measure_context(session_id)`) den zuletzt bekannten
+Vor jedem Bau-/Review-Aufruf eines Executors mit `context` und bei
+Resume misst der zustaendige Adapter
+(`Executor.measure_context(session_id)`) den zuletzt bekannten
 Sitzungskontext; **Freigabe, Halt und Persistenz entscheidet
 ausschliesslich die Orchestrierung** (`runner.runtime._context_guard`),
 nie eine Selbsteinschaetzung des Agenten oder eine Prompt-Anweisung.
@@ -308,7 +336,7 @@ Der Messwert traegt eine von drei Herkunftsarten (`ContextStatus`):
 | Herkunft | Bedeutung | Wirkung |
 | --- | --- | --- |
 | `measured` | echter Messwert vorhanden | `>= max_context_tokens` haelt vor dem Aufruf an |
-| `unsupported` | dieser Adapter bietet grundsaetzlich keine Messung (aktuell Codex, siehe [cli-adapters.md](cli-adapters.md)) | kein Blocker -- bekannter, dokumentierter Adaptergrenzfall |
+| `unsupported` | der Transport bietet keine Messung, obwohl der Executor `context` deklariert | haelt vor dem Aufruf an |
 | `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (fehlende/mehrdeutige lokale Ablage, aktuell moeglich bei Claude fuer eine Sitzung ohne vorherigen realen Turn) | haelt vor dem Aufruf an -- ein unbelegter Kontext gilt nicht als klein |
 
 Eine erreichte oder unbelegte Grenze fuehrt vor dem naechsten externen
@@ -334,8 +362,9 @@ Vor dem naechsten echten Laufnachweis ist zusaetzlich der manuelle Messabgleich
 Die nachfolgend beschriebenen bestehenden Guards bleiben unabhaengig davon
 wirksam.
 
-Vor jedem Bau-/Review-Aufruf und bei Resume misst der zustaendige
-Adapter (`Executor.measure_quota(session_id)`) den zuletzt bekannten
+Vor jedem Bau-/Review-Aufruf eines Executors mit `quota` und bei
+Resume misst der zustaendige Adapter
+(`Executor.measure_quota(session_id)`) den zuletzt bekannten
 Verbrauchsanteil des rollierenden Fuenfstundenfensters des
 Kontokontingents; **Freigabe, Halt und Persistenz entscheidet
 ausschliesslich die Orchestrierung** (`runner.runtime._quota_guard`),
@@ -369,7 +398,7 @@ Kontokontingent gibt es keine sichere Annahme "kein Nachweis = ok":
 | --- | --- | --- |
 | `measured` | echter, vom Executor gemeldeter Prozentwert | Delta- und Reserve-Pruefung wie oben |
 | `pending` | der Adapter misst erst mit der Antwort und hat fuer diese Sitzung noch keinen Wert (`claude-cli` vor dem ersten Turn oder nach Fensterwechsel, siehe [cli-adapters.md](cli-adapters.md)) | laesst den Aufruf zu; Reserve und Delta greifen ab dem naechsten |
-| `unsupported` | dieser Adapter liefert keinen verbrauchsfreien, nicht-interaktiven Nachweis | haelt an, als eigene Ursache "Messwert fehlt" gemeldet -- kein unbedenklicher Adaptergrenzfall wie bei der Kontextvorpruefung |
+| `unsupported` | dieser Adapter liefert keinen verbrauchsfreien, nicht-interaktiven Nachweis | haelt an, als eigene Ursache "Messwert fehlt" gemeldet |
 | `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (z. B. Codex-Rollout fehlt/mehrdeutig oder Messwert abgelaufen) | haelt an, ebenfalls als "Messwert fehlt" gemeldet, nie vermischt mit "Budget/Reserve erreicht" |
 
 `codex-cli` liest dazu verbrauchsfrei die lokale Rollout-Ablage unter

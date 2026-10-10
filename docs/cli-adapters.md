@@ -23,7 +23,9 @@ Typen und keinerlei Claude-/Codex-spezifische Argumente.
 | `ContextStatus` | `MEASURED` / `UNSUPPORTED` / `UNAVAILABLE` |
 | `QuotaMeasurement` | Kontobezogener 5h-Kontingentmesswert: `status` (`QuotaStatus`), optional `used_percent`, `resets_at`, `detail` |
 | `QuotaStatus` | `MEASURED` / `UNSUPPORTED` / `UNAVAILABLE` -- anders als `ContextStatus` blockieren hier alle drei Nicht-"unter Grenze"-Faelle |
-| `Executor` | Protokoll mit `name`, `send_turn(request) -> TurnResult`, `measure_context(session_id) -> ContextMeasurement` und `measure_quota(session_id) -> QuotaMeasurement` |
+| `Executor` | Protokoll mit `name`, `capabilities`, `send_turn(request) -> TurnResult`, `measure_context(session_id) -> ContextMeasurement` und `measure_quota(session_id) -> QuotaMeasurement` |
+| `Measure` | `context` / `quota` / `budget` -- was ein Transport messen kann (`capabilities`) und ein Executor deklariert (`measures`) |
+| `ExecutorSpec` | Deklarierter Executor: `name`, `transport`, `measures` |
 
 Ein Adapter liefert mit `measure_context`/`measure_quota` nur den
 Messwert. Freigabe, Halt und Persistenz einer erreichten Kontext- oder
@@ -39,20 +41,26 @@ stillen Fallbacks; jeder Nicht-Erfolg traegt eine `error`-Meldung.
 
 ### Executor-unabhaengiger Einstieg
 
-Modul: `ki_dev.executors.dispatch`
+Modul: `ki_dev.adapter.executors.dispatch`
 
 Die Kontrollschleife waehlt keine Adapterklasse aus. Sie nennt nur
-den Executor-Namen und die vier Vertragswerte:
+den Transportnamen und die vier Vertragswerte:
 
 ```
-send_turn(executor, *, session, message, model, effort) -> TurnResult
+send_turn(transport, *, session, message, model, effort) -> TurnResult
 ```
 
-* `executor` ist `"claude"` oder `"codex"` (`available_executors()`).
-* `build_executor(executor, **adapter_kwargs)` liefert bei Bedarf den
+* `transport` ist `"claude-cli"` oder `"codex-cli"` (`cli_transports()`).
+* `build_executor(transport, **adapter_kwargs)` liefert bei Bedarf den
   Adapter allein.
-* Ein unbekannter Executor-Name bricht mit `ValueError` ab; es gibt
-  keinen stillen Standard-Executor.
+* Ein unbekannter Transport bricht mit `ValueError` ab; es gibt
+  keinen stillen Standard-Transport.
+
+Welcher Executor-Name (`claude`, `codex`, `manual`, `inbox`, `mock`)
+welchen Transport nutzt und welche Messungen der Ausfuehrer verlangt,
+steht als Daten in `src/ki_dev/adapter/executors.toml`
+(`adapter/registry.py`, siehe
+[ausfuehrer.de.md](ausfuehrer.de.md#executoren)).
 
 Jedes executor-spezifische CLI-Argument bleibt vollstaendig im
 jeweiligen Adapter.
@@ -203,12 +211,10 @@ werden nicht als unterstuetzte Codex-Funktionen ausgegeben.
 `measure_context` liefert deshalb unveraendert den `UNSUPPORTED`-
 Standard aus `CliAdapter`: Codex hat keine mit Claudes
 Sitzungsprotokoll vergleichbare lokale Ablage, aus der sich ein
-Kontextmesswert unabhaengig belegen liesse. `UNSUPPORTED` ist ein
-bekannter, dokumentierter Adaptergrenzfall und blockiert deshalb
-keinen Aufruf (siehe
-[ausfuehrer.de.md](ausfuehrer.de.md#kontextvorpruefung)) --
-anders als `UNAVAILABLE`, das eine vorgesehene, aber fehlgeschlagene
-Messung waere.
+Kontextmesswert unabhaengig belegen liesse. `codex-cli` nennt
+`context` deshalb nicht in `capabilities`, der Executor `codex`
+deklariert es nicht, und der Kontextwaechter gilt fuer ihn nicht
+(siehe [ausfuehrer.de.md](ausfuehrer.de.md#kontextvorpruefung)).
 
 `measure_quota` liest dagegen verbrauchsfrei die lokale Rollout-Ablage
 unter `~/.codex/sessions/JJJJ/MM/TT/rollout-*-<session_id>.jsonl`

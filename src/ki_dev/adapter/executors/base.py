@@ -16,6 +16,7 @@ from collections.abc import Callable
 from .contract import (
     ContextMeasurement,
     ContextStatus,
+    Measure,
     QuotaMeasurement,
     QuotaStatus,
     TurnRequest,
@@ -40,6 +41,7 @@ class CliAdapter(ABC):
     """Uebersetzt den Turn-Vertrag in genau einen CLI-Aufruf."""
 
     name: str = "cli"
+    capabilities: frozenset[Measure] = frozenset({Measure.BUDGET})
 
     def __init__(
         self,

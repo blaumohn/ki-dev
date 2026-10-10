@@ -1,0 +1,25 @@
+# Executoren des Gerüsts: ein Name bindet einen Transport (Code je
+# Anbieter) und die Messungen, die der Ausführer vor und nach jedem
+# Aufruf verlangt. Deklariert heißt Pflicht: fehlt der Messwert, hält
+# der Lauf; nicht deklariert heißt, der Wächter gilt nicht.
+# Profile wählen je Rolle nur den Namen (executor = "claude").
+
+[executor.claude]
+transport = "claude-cli"
+measures = ["context", "quota", "budget"]
+
+[executor.codex]
+transport = "codex-cli"
+measures = ["quota", "budget"]
+
+[executor.manual]
+transport = "console"
+measures = []
+
+[executor.inbox]
+transport = "inbox"
+measures = []
+
+[executor.mock]
+transport = "mock"
+measures = []

@@ -3,7 +3,7 @@ vorbereitete Agentensitzung eines CLI-Executors."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ki_dev.adapter.contract import (
     AgentTurnError,
@@ -11,7 +11,12 @@ from ki_dev.adapter.contract import (
     WorkReport,
     WorkRequest,
 )
-from ki_dev.adapter.executors import Effort, Executor, TurnRequest
+from ki_dev.adapter.executors import (
+    Effort,
+    Executor,
+    ExecutorSpec,
+    TurnRequest,
+)
 from ki_dev.adapter.executors.contract import TurnBudget, TurnResult
 
 
@@ -23,6 +28,7 @@ class AgentWorker:
     effort: Effort
     budget: TurnBudget = TurnBudget()
     last_result: TurnResult | None = None
+    spec: ExecutorSpec = field(kw_only=True)
 
     def work(self, request: WorkRequest) -> WorkReport:
         self.last_result = None
@@ -51,6 +57,7 @@ class AgentReviewer:
     effort: Effort
     budget: TurnBudget = TurnBudget()
     last_result: TurnResult | None = None
+    spec: ExecutorSpec = field(kw_only=True)
 
     def review(self, request: ReviewRequest) -> str:
         self.last_result = None
