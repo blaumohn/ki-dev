@@ -513,6 +513,72 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
     assert result.status == "passed"
 
 
+def test_resume_override_replaces_role_only_for_this_call(
+    monkeypatch, tmp_path
+):
+    """``resume --adapter worker=mock``: die Rolle läuft mit dem Ersatz,
+    die Kante nennt ihn; das Manifest behält die Profilrolle."""
+    from ki_dev.runner import cli as runner_cli
+
+    monkeypatch.setattr(
+        runner_cli,
+        "RepositoryEvidenceCollector",
+        lambda **_: StaticEvidenceCollector((_context(1),)),
+    )
+    monkeypatch.setattr(
+        runner_cli, "_finalizer", lambda _: StaticFinalizer()
+    )
+    config = {
+        "task": "Auftrag",
+        "acceptance_criteria": ["Kriterium 1"],
+        "sources": [],
+        "workdir": str(tmp_path),
+        "access_profile": "write",
+        "finalization": {},
+        "worker": {"executor": "inbox"},
+        "review": {"executor": "mock", "answers": ["PASS"]},
+        "tests": [],
+    }
+    runs = tmp_path / "runs"
+    halted = runner_cli.start_run(config, run_id="r-1", runs_dir=runs)
+    assert halted.status == "awaiting_input"
+
+    result = runner_cli.resume_run(
+        "r-1",
+        runs_dir=runs,
+        answer=None,
+        overrides=runner_cli.adapter_overrides(["worker=mock"]),
+    )
+
+    assert result.status == "passed"
+    assert (tmp_path / "MOCK.md").read_text() == "Runde 1\n"
+    store = RunStore(runs, "r-1")
+    manifest = store.load_manifest()["configuration"]
+    assert manifest["worker"] == {"executor": "inbox"}
+    records = [
+        json.loads(line)
+        for line in (store.run_dir / "events.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    worker = [r for r in records if r["state"] == "worker_step"]
+    assert [r["adapter"] for r in worker] == ["mock"]
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        (["claude"], "nur inbox, manual, mock"),
+        (["planner=manual"], "Rolle worker, review"),
+    ],
+)
+def test_adapter_overrides_are_checked(values, message):
+    from ki_dev.runner import cli as runner_cli
+
+    with pytest.raises(RunConfigError, match=message):
+        runner_cli.adapter_overrides(values)
+
+
 def test_unknown_mock_answer_is_rejected(tmp_path):
     from ki_dev.runner import cli as runner_cli
 

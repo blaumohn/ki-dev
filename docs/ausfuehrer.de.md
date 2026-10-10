@@ -110,10 +110,16 @@ auf stderr zeigt, welche greift; sonst `env -u PYTHONPATH ki-dev …`.
 | `inbox` | – | Eingabe in `<runs>/<RUN_ID>/inbox/*.input.md` → `awaiting_input`; Antwort als `*.answer.md` daneben legen, dann `resume` |
 | `mock` | Worker: optional `file`; Review: `answers` (Review-Ereignisse: `PASS`, `fix`, `decision`, `escalate`) | erschöpfte Antwortliste ist ein Prozessfehler |
 
-`--adapter [ROLLE=]NAME` ersetzt beim Start den Executor einer Rolle
-(`worker`, `review`) oder beider durch einen Executor ohne
-Sitzungsangaben (`manual`, `inbox`, `mock`); `claude` und `codex`
-brauchen Sitzung und Modell und stehen deshalb im Profil. Damit ist der frühere `ki-dev step` für diesen Ablauf nur ein
+`--adapter [ROLLE=]NAME` ersetzt den Executor einer Rolle (`worker`,
+`review`) oder beider durch einen Executor ohne Sitzungsangaben
+(`manual`, `inbox`, `mock`); `claude` und `codex` brauchen Sitzung und
+Modell und stehen deshalb im Profil. Beim Start gilt der Ersatz für den
+Lauf, bei `resume` nur für diesen Aufruf: das Manifest bleibt, die
+genommene Kante nennt den Ersatz im Feld `adapter` von `events.jsonl`.
+
+```bash
+ki-dev -f implement resume RUN_ID --adapter review=manual   # Review einmal von Hand
+``` Damit ist der frühere `ki-dev step` für diesen Ablauf nur ein
 Adapter, kein eigener Befehl.
 
 `awaiting_input` ist ein Halt des Ausführers, kein Zustand des Ablaufs

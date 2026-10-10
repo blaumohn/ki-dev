@@ -2,7 +2,7 @@
 Profil, der Ausführer fährt den Ablauf bis zum nächsten Halt.
 
     ki-dev -f implement BEAD [--profile NAME] [--adapter [ROLLE=]NAME]
-    ki-dev -f implement resume RUN_ID [--answer TEXT]
+    ki-dev -f implement resume RUN_ID [--answer TEXT] [--adapter …]
     ki-dev -f implement status RUN_ID
 
 ``--adapter manual`` ersetzt die Agentensitzung durch den Menschen als
@@ -26,6 +26,7 @@ from ki_dev.adapter.executors import Executor
 from ki_dev.flow.model import Flow, FlowError
 from ki_dev.flow.templates import render, text
 from ki_dev.flow_ops.live import LiveExecutor
+from ki_dev.flow_ops.options import ADAPTER_OPTION
 from ki_dev.ops.context.bead_input import (
     BeadInput,
     BeadInputInvalidError,
@@ -39,18 +40,17 @@ from ki_dev.runner.cli import (
     DEFAULT_PROFILE,
     ExecutorWrap,
     RunConfigError,
+    adapter_overrides,
     load_profile,
     profile_path,
     result_document,
     resume_run,
-    sessionless_executors,
     start_run,
     status_run,
 )
 from ki_dev.runner.machine import IMPLEMENT
 from ki_dev.runner.runtime import RunResult, RunResumeError
 
-ROLES = ("worker", "review")
 _ERRORS = (
     RunConfigError,
     RunResumeError,
@@ -103,16 +103,7 @@ def start(
             help="NAME (.ki-dev/profiles/NAME.toml) oder Pfad.",
         ),
     ] = DEFAULT_PROFILE,
-    adapters: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--adapter",
-            metavar="[ROLLE=]NAME",
-            help="Executor je Rolle (worker, review) ersetzen; ohne "
-            "Rolle beide. NAME: ein Executor ohne Sitzungsangaben, "
-            "z. B. manual (stdout/stdin), inbox oder mock.",
-        ),
-    ] = None,
+    adapters: ADAPTER_OPTION = None,
     run_id: Annotated[str | None, typer.Option("--run-id")] = None,
     runs_dir: RUNS_OPTION = RUNS_DIR,
     verbose: VERBOSE_OPTION = False,
@@ -124,8 +115,7 @@ def start(
     def action() -> RunResult:
         config = load_profile(profile_path(profile, cwd))
         config.update(_bead_task(bead_id, cwd))
-        for role, adapter in _overrides(adapters or []):
-            config[role] = {"executor": adapter}
+        config.update(adapter_overrides(adapters or []))
         return start_run(
             config,
             run_id=run_id,
@@ -142,6 +132,7 @@ def resume(
     reconcile_result: Annotated[
         Path | None, typer.Option("--reconcile-result")
     ] = None,
+    adapters: ADAPTER_OPTION = None,
     runs_dir: RUNS_OPTION = RUNS_DIR,
     verbose: VERBOSE_OPTION = False,
 ) -> None:
@@ -154,6 +145,7 @@ def resume(
             answer=answer,
             reconcile_result=reconcile_result,
             wrap=_live(verbose),
+            overrides=adapter_overrides(adapters or []),
         )
     )
 
@@ -201,25 +193,6 @@ def _task_text(issue: BeadInput) -> str:
         epics=epics,
     )
 
-
-def _overrides(values: list[str]) -> list[tuple[str, str]]:
-    allowed = sessionless_executors()
-    result: list[tuple[str, str]] = []
-    for value in values:
-        role, _, adapter = value.rpartition("=")
-        if adapter not in allowed:
-            raise RunConfigError(
-                f"--adapter {value}: per Argument nur "
-                f"{', '.join(allowed)}; Executoren mit Sitzung "
-                "im Profil festlegen"
-            )
-        if role and role not in ROLES:
-            raise RunConfigError(
-                f"--adapter {value}: Rolle {', '.join(ROLES)}"
-            )
-        roles = (role,) if role else ROLES
-        result += [(item, adapter) for item in roles]
-    return result
 
 
 def _live(verbose: bool) -> ExecutorWrap:

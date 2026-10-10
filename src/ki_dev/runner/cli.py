@@ -64,6 +64,8 @@ CONFIG_SOURCE = ConfigSource(
 )
 # Felder des Auftrags: kommen vom Aufrufer (Bead), nie aus dem Profil.
 TASK_FIELDS = frozenset({"task", "acceptance_criteria", "sources"})
+# Rollen des Laufprofils; jede wählt einen Executor.
+ROLES = ("worker", "review")
 
 
 class RunConfigError(ValueError):
@@ -120,7 +122,7 @@ def start_run(
     """Neuen Lauf aus Profil und Auftrag (ein Objekt) starten."""
     config = dict(config)
     # Effektive Defaults bleiben ueber Upgrades nachvollziehbar.
-    for role in ("worker", "review"):
+    for role in ROLES:
         values = _required_object(config, role)
         spec = executor_specs().get(cast(str, values.get("executor")))
         if spec is not None and not _has_session(spec):
@@ -161,10 +163,16 @@ def resume_run(
     answer: str | None,
     reconcile_result: Path | None = None,
     wrap: ExecutorWrap = _unwrapped,
+    overrides: dict[str, dict[str, object]] | None = None,
 ) -> RunResult:
+    """Lauf fortsetzen; ``overrides`` ersetzt Rollen nur für diesen
+    Aufruf, das write-once-Manifest bleibt unverändert."""
     store = RunStore(runs_dir, run_id)
     manifest = store.load_manifest()
-    config = _required_object(manifest, "configuration")
+    config = {
+        **_required_object(manifest, "configuration"),
+        **(overrides or {}),
+    }
     projection = _projection(config.get("projection_limits", {}))
     with _runtime(config, store, projection, wrap) as runtime:
         if reconcile_result is not None:
@@ -366,6 +374,30 @@ def _spec(value: dict[str, object]) -> ExecutorSpec:
 def _has_session(spec: ExecutorSpec) -> bool:
     """CLI-Transporte setzen eine vorbereitete Sitzung fort."""
     return spec.transport in cli_transports()
+
+
+def adapter_overrides(
+    values: list[str],
+) -> dict[str, dict[str, object]]:
+    """``--adapter [ROLLE=]NAME``: Rollenkonfiguration je ersetzter
+    Rolle; ohne ROLLE alle Rollen. Nur Executoren ohne Sitzung."""
+    allowed = sessionless_executors()
+    result: dict[str, dict[str, object]] = {}
+    for value in values:
+        role, _, name = value.rpartition("=")
+        if name not in allowed:
+            raise RunConfigError(
+                f"--adapter {value}: per Argument nur "
+                f"{', '.join(allowed)}; Executoren mit Sitzung "
+                "im Profil festlegen"
+            )
+        if role and role not in ROLES:
+            raise RunConfigError(
+                f"--adapter {value}: Rolle {', '.join(ROLES)}"
+            )
+        for item in (role,) if role else ROLES:
+            result[item] = {"executor": name}
+    return result
 
 
 def sessionless_executors() -> tuple[str, ...]:

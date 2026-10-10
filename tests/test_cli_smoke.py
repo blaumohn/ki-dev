@@ -149,9 +149,9 @@ def test_resume_passes_bound_answer(capsys, monkeypatch, tmp_path):
     seen = {}
 
     def fake_resume(
-        run_id, *, runs_dir, answer, reconcile_result, wrap
+        run_id, *, runs_dir, answer, reconcile_result, wrap, overrides
     ):
-        seen.update(run_id=run_id, answer=answer)
+        seen.update(run_id=run_id, answer=answer, overrides=overrides)
         return RunResult(
             run_id, "waiting_decision", 1, Phase.WAITING_DECISION
         )
@@ -161,6 +161,11 @@ def test_resume_passes_bound_answer(capsys, monkeypatch, tmp_path):
         capsys,
         "-f", "implement", "resume", "run-1",
         "--answer", "ja", "--runs-dir", str(tmp_path),
+        "--adapter", "review=manual",
     )
     assert code == 0
-    assert seen == {"run_id": "run-1", "answer": "ja"}
+    assert seen == {
+        "run_id": "run-1",
+        "answer": "ja",
+        "overrides": {"review": {"executor": "manual"}},
+    }
