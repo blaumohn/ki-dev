@@ -725,6 +725,31 @@ def test_answer_after_process_end_continues_in_a_new_runtime(tmp_path):
     assert result.status == "passed"
 
 
+def test_relay_answer_after_process_end_continues_in_a_new_runtime(
+    tmp_path,
+):
+    """Bote (inbox): Halt in awaiting_input, Prozessende, Antwortdatei,
+    neuer Aufruf fährt dieselbe Operation weiter."""
+    inbox = tmp_path / "inbox"
+    relay = ManualRelay(Inbox(inbox), "worker", SPECS["inbox"])
+    reviewer = FakeReviewer(["PASS"])
+    with _runtime(
+        tmp_path, "run-relay-new", relay, reviewer, [_context(1)]
+    ) as runtime:
+        halted = runtime.start(_task("run-relay-new"), Limits())
+    (ask,) = inbox.glob("*.input.md")
+    answer = ask.with_name(ask.name.replace(".input.md", ".answer.md"))
+    answer.write_text("Gebaut.")
+
+    with _runtime(
+        tmp_path, "run-relay-new", relay, reviewer, [_context(1)]
+    ) as resumed:
+        result = resumed.resume()
+
+    assert halted.status == "awaiting_input"
+    assert result.status == "passed"
+
+
 def test_a_second_writer_is_rejected(tmp_path):
     with _runtime(
         tmp_path, "run-lock", FakeWorker(), FakeReviewer([]), []

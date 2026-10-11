@@ -92,6 +92,15 @@ def test_controller_operation_depends_on_reviewed_result():
     assert (task.do, task.cond) == ("task", ())
 
 
+def test_guard_typo_in_the_flow_file_stops_on_load():
+    raw = copy.deepcopy(read_raw("implement"))
+    raw["statechart"]["states"]["active"]["states"]["capture_step_result"][
+        "transitions"
+    ][0]["cond"] = "delta_efective"
+    with pytest.raises(FsmError, match="fehlt: delta_efective"):
+        bind(raw["statechart"], ImplementModel)
+
+
 def test_unguarded_candidate_must_come_last():
     raw = copy.deepcopy(read_raw("implement"))
     edges = raw["statechart"]["states"]["active"]["states"][
