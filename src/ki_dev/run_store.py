@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+RECORD_FILE = "record.json"
+
 
 class RunStoreError(RuntimeError):
     """Persistierte Laufdaten fehlen oder widersprechen sich."""
@@ -19,7 +21,7 @@ class RunStoreError(RuntimeError):
 
 @dataclass(frozen=True)
 class RunStore:
-    """Kleine atomare Ablage neben dem LangGraph-Checkpoint."""
+    """Kleine atomare Ablage eines Laufs: Datensatz und Nachweise."""
 
     root: Path
     run_id: str
@@ -42,6 +44,11 @@ class RunStore:
         return self.run_dir / "checkpoints.sqlite"
 
     @property
+    def record_path(self) -> Path:
+        """Datensatz des Laufs: Maschinenstände und Laufdaten."""
+        return self.run_dir / RECORD_FILE
+
+    @property
     def manifest_path(self) -> Path:
         return self.run_dir / "manifest.json"
 
@@ -54,6 +61,16 @@ class RunStore:
         if not isinstance(value, dict):
             raise RunStoreError("manifest.json ist kein JSON-Objekt")
         return value
+
+    def save_record(self, value: object) -> None:
+        """Datensatz atomar ersetzen (je Schritt)."""
+        replace_json(self.record_path, value)
+
+    def load_record(self) -> object | None:
+        """Gespeicherter Datensatz; ``None``, wenn der Lauf fehlt."""
+        if not self.record_path.exists():
+            return None
+        return self._load_json(self.record_path)
 
     def write_artifact(self, operation_id: str, value: object) -> None:
         path = self.run_dir / "artifacts" / f"{operation_id}.json"
@@ -197,6 +214,31 @@ class RunStore:
             raise RunStoreError(
                 f"ungueltiger Laufnachweis: {path}"
             ) from exc
+
+
+def replace_json(path: Path, value: object) -> None:
+    """``value`` als JSON atomar nach ``path`` schreiben: temporäre
+    Datei im selben Verzeichnis, ``fsync``, ``os.replace``. Ein Abbruch
+    davor lässt den bisherigen Inhalt stehen."""
+    encoded = _canonical_json(value)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def _canonical_json(value: object) -> bytes:
