@@ -1,9 +1,10 @@
-"""Begrenzte deterministische V0-Zustandsmaschine.
+"""Begrenzte deterministische Ablauf-Maschine (implement.toml).
 
 Oeffentliche Nutzung durch den spaeteren Orchestrator:
 
 * :class:`Phase` / :class:`MachineState` -- reiner Laufzustand
-* :func:`advance` -- reine Uebergangsentscheidung
+* :func:`advance` -- reine Uebergangsentscheidung ueber
+  python-statemachine (:class:`ImplementModel` sind die Ops)
 * :class:`InvalidTransition` -- sichtbare Abweisung
 * :class:`Limits` / :class:`Counters` -- begrenzte aktive Zyklen
 * :class:`AgentEscalation` / :class:`MachineEscalation` -- getrennte
@@ -59,13 +60,19 @@ from .contract import (
     WorkerNeedsDecision,
     WorkerProcessError,
 )
+from .model import (
+    EVENT_TYPES,
+    IMPLEMENT_CHART,
+    ImplementModel,
+    advance,
+    operation,
+)
 from .state_json import (
     SCHEMA_VERSION,
     RunStateFormatError,
     decode_run_state,
     encode_run_state,
 )
-from .transitions import IMPLEMENT_BOUND, advance, operation
 
 __all__ = [
     "IMPLEMENT",
@@ -110,7 +117,9 @@ __all__ = [
     "WorkerInputsPrepared",
     "WorkerNeedsDecision",
     "WorkerProcessError",
-    "IMPLEMENT_BOUND",
+    "EVENT_TYPES",
+    "IMPLEMENT_CHART",
+    "ImplementModel",
     "advance",
     "operation",
     "decode_run_state",

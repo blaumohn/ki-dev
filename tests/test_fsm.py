@@ -116,6 +116,22 @@ def test_structured_action_other_than_raise_is_rejected():
         bind(doc, Ops)
 
 
+def test_callback_named_like_an_event_is_rejected():
+    """Die Bibliothek sendete sonst das Ereignis ``done``."""
+    doc = copy.deepcopy(DOC)
+    doc["states"]["running"]["states"]["review"]["transitions"][0][
+        "on"
+    ] = "done"
+
+    class Clash(Ops):
+        count_round = None
+
+        def done(self) -> None: ...
+
+    with pytest.raises(FsmError, match="wie ein Ereignis: done"):
+        bind(doc, Clash)
+
+
 def test_raise_without_receiver_is_rejected():
     doc = copy.deepcopy(DOC)
     doc["states"]["awaiting_input"]["transitions"].pop(0)

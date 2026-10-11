@@ -30,27 +30,30 @@ the workflow. Guards decide when it ends; every back edge consumes a counter.
 From [`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
-# controller_step --fix [cond] / actions--> target   (UML edge)
+# controller_step --fix [cond] / on--> target   (UML edge)
 
-[[transition]]                     # correction budget spent → human
-source = "controller_step"
+# correction budget spent → human
+[[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
-cond = ["checked_result", "!changes_rounds_left"]
-escalation = "changes_rounds_exhausted"
+cond = "checked_result"
+unless = "changes_rounds_left"
 target = "paused_interactive"
+on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
 
-[[transition]]                     # otherwise: next round, counter +1
-source = "controller_step"
+# otherwise: next round, counter +1
+[[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
-cond = ["checked_result"]
-actions = ["begin_correction", "drop_result"]
+cond = "checked_result"
 target = "worker_step_prepare"
+on = ["begin_correction", "drop_result"]
 ```
 
-Keys and semantics follow UML state machines and SCXML (`source`,
-`event`, `cond`, `actions`, `target`, `@history` as `<history>`). Candidates are tried in file
-order, the first matching guard wins, no match means the event is not
-allowed there.
+`[statechart]` is the native format of
+[python-statemachine](https://python-statemachine.readthedocs.io/)
+(SCXML semantics). Transitions are tried in file order, the first match
+wins, no match means the event is not allowed there. The library selects
+edges and handles history (where a pause resumes) and `raise`; the
+executor only knows guard and action names, not the topology.
 
 ## Try it in a minute
 

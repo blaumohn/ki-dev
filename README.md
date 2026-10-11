@@ -34,27 +34,30 @@ jede Rückkante verbraucht einen Zähler. Auszug aus
 [`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
-# controller_step --fix [cond] / actions--> target   (UML-Kante)
+# controller_step --fix [cond] / on--> target   (UML-Kante)
 
-[[transition]]                     # Korrekturbudget erschöpft → Mensch
-source = "controller_step"
+# Korrekturbudget erschöpft → Mensch
+[[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
-cond = ["checked_result", "!changes_rounds_left"]
-escalation = "changes_rounds_exhausted"
+cond = "checked_result"
+unless = "changes_rounds_left"
 target = "paused_interactive"
+on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
 
-[[transition]]                     # sonst: neue Runde, Zähler +1
-source = "controller_step"
+# sonst: neue Runde, Zähler +1
+[[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
-cond = ["checked_result"]
-actions = ["begin_correction", "drop_result"]
+cond = "checked_result"
 target = "worker_step_prepare"
+on = ["begin_correction", "drop_result"]
 ```
 
-Kandidaten werden in Dateireihenfolge geprüft, der erste passende Wächter
-gewinnt. Passt keiner, ist das Ereignis dort nicht erlaubt. Die Begriffe folgen
-UML-Zustandsmaschinen bzw. SCXML (`event`, `cond`, `target`, `@history`); der
-Ausführer kennt nur das Vokabular, nicht die Topologie.
+`[statechart]` ist das native Format von
+[python-statemachine](https://python-statemachine.readthedocs.io/)
+(SCXML-Semantik): Kanten werden in Dateireihenfolge geprüft, die erste passende
+gewinnt; passt keine, ist das Ereignis dort nicht erlaubt. Kantenwahl, History
+(Fortsetzungspunkt einer Pause) und `raise` übernimmt die Bibliothek; der
+Ausführer kennt nur die Namen der Wächter und Aktionen, nicht die Topologie.
 
 ---
 
@@ -179,13 +182,16 @@ stateDiagram-v2
     controller_step --> waiting_decision: decision
     controller_step --> freeze_reviewed_result: PASS [checked_result]
     controller_step --> controller_step: protocol_error / retry_protocol
+    controller_step --> controller_step: process_error / retry_process
     worker_step_prepare --> worker_step: worker_inputs_prepared
+    worker_step_prepare --> worker_step_prepare: process_error / retry_process
     worker_step --> capture_step_result: worker_completed
     worker_step --> waiting_decision: worker_needs_decision
     worker_step --> worker_step_prepare: worker_process_error / retry_process
     worker_step --> worker_step: protocol_error / retry_protocol
     capture_step_result --> checkpoint: step_result_captured [delta_effective]
     capture_step_result --> worker_step_prepare: step_result_captured / begin_correction, drop_result
+    capture_step_result --> capture_step_result: process_error / retry_process
     checkpoint --> controller_step: checkpoint_recorded / keep_result
     freeze_reviewed_result --> finalize_history: reviewed_result_frozen
     freeze_reviewed_result --> error: finalization_error
@@ -195,9 +201,6 @@ stateDiagram-v2
     verify_final_result --> error: finalization_error
     fast_forward_integrate --> passed: integration_completed [result_ok]
     fast_forward_integrate --> error: finalization_error
-    controller_step --> controller_step: process_error / retry_process
-    worker_step_prepare --> worker_step_prepare: process_error / retry_process
-    capture_step_result --> capture_step_result: process_error / retry_process
     waiting_decision --> controller_step: resume_requested
     paused_interactive --> paused_interactive_history: resume_requested
     passed --> [*]
@@ -281,7 +284,7 @@ Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
 | Kein Zyklus ohne Mensch läuft unbegrenzt | `tests/machine/test_reachability.py` zählt den ganzen Zustandsraum auf |
 | … und das schon an den Daten | `tests/test_flow_implement.py`: jeder Zyklus hat eine zählende Kante |
 | `PASSED` nur über die geprüfte Integration | `tests/machine/test_reachability.py` |
-| Ablauf und Ausführer sprechen dasselbe Vokabular | `bind()` prüft beim Import; `tests/test_flow_implement.py` |
+| Ablauf und Ausführer sprechen dasselbe Vokabular | `ki_dev.fsm.bind` prüft beim Import; `tests/test_flow_implement.py`, `tests/test_fsm.py` |
 | Schichten importieren nie rückwärts | `tests/test_schichten.py` (transitiv, per AST) |
 | Der Bote hält den Ausführer, nicht den Ablauf | `tests/test_runner_runtime.py`, `tests/test_runner_cli.py` |
 
@@ -312,8 +315,9 @@ Oder der Agent-Container mit bd, Codex und Claude Code:
 src/ki_dev/
   flow/        model.py (Schema, Prüfung), pattern.py (Muster), diagram.py
                (Mermaid), templates/ (Rollentexte), implement.toml, planning.toml
-  runner/      interpreter.py (bindet Vokabular, wählt Kanten), machine/ (Wächter,
-               Aktionen, advance), runtime.py (LangGraph-Graph aus implement.toml),
+  runner/      interpreter.py (Planungsablauf: bindet Vokabular, wählt Kanten),
+               machine/ (Ops des Umsetzungsablaufs, advance über die
+               Bibliothek), runtime.py (LangGraph-Graph aus implement.toml),
                planning.py (Planungs-Thread je Bead), graph.py (Ablauf → Graph,
                für run und step), turns.py (jede Übergabe aus ihrer
                Deklaration), implement_turns.py (Felder des Umsetzungsablaufs),

@@ -15,7 +15,8 @@ Die drei Ereignisquellen bleiben getrennt typisiert
 Freitext ist niemals unmittelbar ein Ereignis; die Protokollschicht
 erzeugt aus geprueften Agentenausgaben die Typen dieses Moduls.
 
-Die Uebergangsentscheidung selbst steht in ``transitions.advance``.
+Die Uebergangsentscheidung trifft python-statemachine ueber
+``[statechart]`` von implement.toml (``model.advance``).
 """
 
 from __future__ import annotations
@@ -240,14 +241,21 @@ class MachineState:
     vorliegendes Ergebnis und die Pruefung eines tatsaechlich
     erfassten und gecheckpointeten Worker-Ergebnisses. Nur der zweite
     Fall traegt ein Qualitaetsurteil.
+
+    ``history`` ist der Fortsetzungspunkt einer Pause: der zuletzt
+    aktive Arbeitszustand, den die History ``h`` des Ablaufs
+    festhaelt (``None``, solange der Lauf nie angehalten hat).
     """
 
     phase: Phase
     counters: Counters = field(default_factory=Counters)
     checkpointed_result: bool = False
+    history: Phase | None = None
 
     def __post_init__(self) -> None:
         _require_phase(self.phase, "MachineState.phase")
+        if self.history is not None:
+            _require_phase(self.history, "MachineState.history")
         if not isinstance(self.counters, Counters):
             raise TypeError(
                 "MachineState.counters muessen Counters sein"
@@ -261,24 +269,6 @@ class MachineState:
     def is_stopped(self) -> bool:
         """Wartender oder terminaler Zustand ohne aktiven Zyklus."""
         return self.phase in STOPPED_PHASES
-
-    def moved_to(
-        self,
-        phase: Phase,
-        *,
-        counters: Counters | None = None,
-        checkpointed_result: bool | None = None,
-    ) -> MachineState:
-        """Leite den Folgezustand ab; ``None`` uebernimmt den Wert."""
-        return MachineState(
-            phase=phase,
-            counters=self.counters if counters is None else counters,
-            checkpointed_result=(
-                self.checkpointed_result
-                if checkpointed_result is None
-                else checkpointed_result
-            ),
-        )
 
 
 @dataclass(frozen=True)
@@ -549,21 +539,8 @@ class ExecutionStopped(Event):
 
 @dataclass(frozen=True)
 class ResumeRequested(Event):
-    """Der Mensch setzt einen angehaltenen Lauf fort.
-
-    ``resume_point`` ist der Fortsetzungspunkt einer Pause (SCXML:
-    ``<history>``); der Ausführer übernimmt ihn aus der Eskalation des
-    Laufs. Ein Halt ohne Eskalation (wartende Entscheidung) braucht
-    keinen.
-    """
-
-    resume_point: Phase | None = None
-
-    def __post_init__(self) -> None:
-        if self.resume_point is not None:
-            _require_phase(
-                self.resume_point, "ResumeRequested.resume_point"
-            )
+    """Der Mensch setzt einen angehaltenen Lauf fort; wohin, sagt der
+    Ablauf (aus der Pause über die History ``h``)."""
 
 
 @dataclass(frozen=True)

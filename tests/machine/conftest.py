@@ -3,13 +3,16 @@
 ``EVENT_POOL`` enthaelt genau eine repraesentative Auspraegung jedes
 Ereignistyps sowie beide Auspraegungen der Ereignisse mit Ergebnisfeld.
 ``TIGHT_LIMITS`` haelt den erreichbaren Zustandsraum klein genug, um ihn
-vollstaendig aufzuzaehlen.
+vollstaendig aufzuzaehlen. ``TRANSITIONS`` ist die Sicht des Ablaufs:
+welche Ereignistypen je Zustand ueberhaupt eine Kante haben.
 """
 
 from __future__ import annotations
 
 from ki_dev.deltas import StepDeltaAssessment
 from ki_dev.runner.machine import (
+    EVENT_TYPES,
+    IMPLEMENT,
     CheckpointRecorded,
     ControllerChanges,
     ControllerEscalate,
@@ -70,5 +73,10 @@ EVENT_POOL: tuple[Event, ...] = (
     ProcessError("bd nicht erreichbar"),
     ExecutionStopped("Kontextgrenze erreicht"),
     ResumeRequested(),
-    ResumeRequested(Phase.WORKER_STEP),
 )
+
+TRANSITIONS: dict[Phase, dict[type[Event], tuple[str, ...]]] = {}
+for _t in IMPLEMENT.transitions:
+    _row = TRANSITIONS.setdefault(Phase(_t.source), {})
+    _type = EVENT_TYPES[_t.event]
+    _row[_type] = (*_row.get(_type, ()), _t.target)

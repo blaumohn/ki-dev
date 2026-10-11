@@ -60,7 +60,6 @@ from ki_dev.runner.implement_turns import review_prompt, work_prompt
 from ki_dev.runner.machine import (
     FINALIZATION_PHASES,
     IMPLEMENT,
-    IMPLEMENT_BOUND,
     WAITING_PHASES,
     AgentEscalation,
     CheckpointRecorded,
@@ -137,7 +136,7 @@ _EXTERNAL_OPERATIONS = frozenset(
     }
 )
 if set(
-    IMPLEMENT_BOUND.flow.vocabulary.operations
+    IMPLEMENT.vocabulary.operations
 ) != _IMMEDIATE_OPERATIONS | _EXTERNAL_OPERATIONS:
     raise FlowError(
         "implement.toml: Operationen passen nicht zur Laufzeit"
@@ -1365,15 +1364,8 @@ class RunRuntime:
         run = decode_run_state(state["run_state"])
         if run.state.phase not in WAITING_PHASES:
             raise RunResumeError("persistierter Lauf wartet nicht")
-        resume_point = (
-            None
-            if run.escalation is None
-            else run.escalation.resume_point
-        )
         try:
-            update = self._transition(
-                run, ResumeRequested(resume_point)
-            )
+            update = self._transition(run, ResumeRequested())
         except InvalidTransition as exc:
             raise RunResumeError(
                 "pausierter Lauf hat keinen Fortsetzungspunkt"

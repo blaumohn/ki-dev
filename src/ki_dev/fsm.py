@@ -13,6 +13,8 @@ sie. Dieses Modul schließt ihre stillen Fallen:
   schaltet beides ab.
 * Ein mit ``raise`` erzeugtes Ereignis ohne Empfänger verfiele still:
   :func:`bind` verlangt eine Kante im Ziel oder darüber.
+* Ein Callback, der wie ein Ereignis heißt, sendet dieses Ereignis
+  statt die Methode aufzurufen: :func:`bind` weist solche Namen ab.
 * ``history_values`` liegen nicht im Modell und die Konfiguration ist
   ``str`` oder ``OrderedSet``: :class:`Durable` speichert und lädt
   beides als Datensatz (:data:`RECORD_SCHEMA`).
@@ -91,7 +93,14 @@ def bind(
     genutzt (``also``: Namen, die eine Fachschicht nutzt)."""
     machine = load_statechart(doc)
     used = _used_names(doc) | also
-    _check_names(str(doc.get("name")), used, ops)
+    where = str(doc.get("name"))
+    _check_names(where, used, ops)
+    clash = sorted(used & _events(doc))
+    if clash:
+        raise FsmError(
+            f"{where}: Callback heißt wie ein Ereignis: "
+            f"{', '.join(clash)}"
+        )
     _check_raises(doc)
     return Chart(machine, ops, doc)
 
@@ -230,6 +239,15 @@ def _used_names(doc: Mapping[str, object]) -> set[str]:
             for key in _NAME_KEYS:
                 names |= _callbacks(transition.get(key))
     return names
+
+
+def _events(doc: Mapping[str, object]) -> set[str]:
+    return {
+        transition["event"]
+        for state in _walk(cast(Mapping, doc["states"]))
+        for transition in state.get("transitions", ())
+        if transition.get("event")
+    }
 
 
 def _callbacks(value: object) -> set[str]:

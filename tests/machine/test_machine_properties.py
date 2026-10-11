@@ -30,9 +30,8 @@ from ki_dev.runner.machine import (
     Phase,
     advance,
 )
-from ki_dev.runner.machine.transitions import _TRANSITIONS
 
-from .conftest import EVENT_POOL, TIGHT_LIMITS
+from .conftest import EVENT_POOL, TIGHT_LIMITS, TRANSITIONS
 
 _MAX_TURNS = 60
 
@@ -44,7 +43,7 @@ _PLAUSIBLE: dict[Phase, list[Event]] = {
     phase: [
         event for event_type in row for event in _BY_TYPE[event_type]
     ]
-    for phase, row in _TRANSITIONS.items()
+    for phase, row in TRANSITIONS.items()
 }
 
 # Nur die laufweit monotonen Grenzen; changes_round gehoert zum

@@ -10,7 +10,6 @@ dasselbe erschöpfend über den Zustandsraum.
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
 
 import pytest
 
@@ -21,8 +20,8 @@ from ki_dev.flow.model import (
     parse_flow,
     read_raw,
 )
-from ki_dev.runner.interpreter import bind
-from ki_dev.runner.machine import IMPLEMENT_BOUND, Phase
+from ki_dev.fsm import FsmError, bind
+from ki_dev.runner.machine import ImplementModel, Phase
 
 IMPLEMENT = load_flow("implement")
 COUNTING = {
@@ -69,14 +68,17 @@ def _has_cycle(edges: set[tuple[str, str]]) -> bool:
 
 
 def test_executor_must_speak_the_declared_vocabulary():
-    binding = IMPLEMENT_BOUND.binding
-    missing = dict(binding.guards)
-    missing.pop("stagnation")
-    with pytest.raises(FlowError, match="fehlt: stagnation"):
-        bind(IMPLEMENT, replace(binding, guards=missing))
-    extra = {**binding.actions, "zaubern": lambda state: state}
-    with pytest.raises(FlowError, match="nicht deklariert: zaubern"):
-        bind(IMPLEMENT, replace(binding, actions=extra))
+    class Missing(ImplementModel):
+        stagnation = None
+
+    with pytest.raises(FsmError, match="fehlt: stagnation"):
+        bind(IMPLEMENT.statechart, Missing)
+
+    class Extra(ImplementModel):
+        def zaubern(self) -> None: ...
+
+    with pytest.raises(FsmError, match="ungenutzt: zaubern"):
+        bind(IMPLEMENT.statechart, Extra)
 
 
 def test_controller_operation_depends_on_reviewed_result():
@@ -92,16 +94,39 @@ def test_controller_operation_depends_on_reviewed_result():
 
 def test_unguarded_candidate_must_come_last():
     raw = copy.deepcopy(read_raw("implement"))
-    index = next(
-        i
-        for i, t in enumerate(raw["transition"])
-        if t["source"] == "controller_step"
-        and t["event"] == "controller_task"
-    )
-    raw["transition"][index], raw["transition"][index + 1] = (
-        raw["transition"][index + 1],
-        raw["transition"][index],
-    )
+    edges = raw["statechart"]["states"]["active"]["states"][
+        "controller_step"
+    ]["transitions"]
+    edges[0], edges[1] = edges[1], edges[0]
     with pytest.raises(FlowError, match="doppelter Übergang"):
         parse_flow(raw)
+
+
+def test_fact_layer_names_exactly_the_innermost_states():
+    raw = copy.deepcopy(read_raw("implement"))
+    del raw["state"]["checkpoint"]
+    with pytest.raises(FlowError, match="fehlt: checkpoint"):
+        parse_flow(raw)
+
+
+def test_view_is_derived_from_the_statechart():
+    """Kanten des Elternzustands gelten für jeden Arbeitszustand und
+    folgen dessen eigenen; ``raise`` wird zur Eskalation."""
+    stopped = [
+        t
+        for t in IMPLEMENT.transitions
+        if t.event == "execution_stopped"
+    ]
+    assert {t.source for t in stopped} == set(raw_active_states())
+    assert {t.escalation for t in stopped} == {"execution_guard"}
+    (resume,) = IMPLEMENT.candidates(
+        "paused_interactive", "resume_requested"
+    )
+    assert resume.target == "@history"
+
+
+def raw_active_states() -> list[str]:
+    return list(
+        read_raw("implement")["statechart"]["states"]["active"]["states"]
+    )
 

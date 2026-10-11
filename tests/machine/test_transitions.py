@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from ki_dev.deltas import StepDeltaAssessment
@@ -30,6 +32,7 @@ from ki_dev.runner.machine import (
     ResumeRequested,
     ReviewedResultFrozen,
     RunStarted,
+    RunState,
     StepResultCaptured,
     WorkerCompleted,
     WorkerEscalate,
@@ -37,8 +40,11 @@ from ki_dev.runner.machine import (
     WorkerNeedsDecision,
     WorkerProcessError,
     advance,
+    decode_run_state,
+    encode_run_state,
 )
-from ki_dev.runner.machine.transitions import _TRANSITIONS
+
+from .conftest import TRANSITIONS
 
 _EFFECTIVE = StepResultCaptured(StepDeltaAssessment.EFFECTIVE)
 _EMPTY = StepResultCaptured(StepDeltaAssessment.EMPTY_UNEXPLAINED)
@@ -255,8 +261,10 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
         None,
     ),
     (
-        _at(Phase.PAUSED_INTERACTIVE),
-        ResumeRequested(Phase.WORKER_STEP),
+        MachineState(
+            Phase.PAUSED_INTERACTIVE, history=Phase.WORKER_STEP
+        ),
+        ResumeRequested(),
         Phase.WORKER_STEP,
         None,
     ),
@@ -288,6 +296,26 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
         if phase not in STOPPED_PHASES
     ),
 ]
+
+
+def test_resume_after_pause_survives_a_process_boundary():
+    """History über den gespeicherten Laufzustand: speichern, neu
+    laden, fortsetzen landet im Quellzustand."""
+    paused = advance(
+        _at(Phase.WORKER_STEP, protocol_attempt=1),
+        ProtocolError("kein Trailer"),
+        _TIGHT,
+    )
+    run = RunState("run-x", 1, paused.state, _TIGHT, paused.escalation)
+    stored = json.loads(json.dumps(encode_run_state(run)))
+
+    resumed = advance(
+        decode_run_state(stored).state, ResumeRequested(), _TIGHT
+    )
+
+    assert paused.phase is Phase.PAUSED_INTERACTIVE
+    assert resumed.phase is Phase.WORKER_STEP
+    assert resumed.transition.target == "@history"
 
 
 def test_pause_without_resume_point_is_rejected():
@@ -331,7 +359,7 @@ def test_table_covers_all_transitions():
     covered = {(s.phase, type(e)) for s, e, _, _ in _ALLOWED}
     declared = {
         (phase, event_type)
-        for phase, row in _TRANSITIONS.items()
+        for phase, row in TRANSITIONS.items()
         for event_type in row
     }
     assert covered == declared

@@ -36,7 +36,7 @@ weder Ausführer noch Adapter.
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib.resources import files
@@ -46,7 +46,9 @@ from typing import cast
 from jsonschema import Draft202012Validator
 
 from ki_dev.flow.pattern import PatternError, expand
+from ki_dev.flow.statechart import StatechartError, edge_of, table_of
 from ki_dev.flow.templates import text
+from ki_dev.fsm import FsmError, load_statechart
 
 HISTORY = "@history"
 PASS = "PASS"
@@ -157,6 +159,9 @@ class Flow:
     # Modul, das die Operationen dieses Ablaufs umsetzt (Ops des
     # Pakets); fehlt es, ist der Ablauf nur Daten (z. B. Diagramm).
     ops: str | None = None
+    statechart: Mapping[str, object] | None = None
+    """FSM-Kern im nativen Format der Bibliothek (``ki_dev.fsm``);
+    ``states`` und ``transitions`` sind seine flache Sicht."""
 
     def outgoing(self, state: str) -> tuple[Transition, ...]:
         self.state(state)
@@ -169,6 +174,29 @@ class Flow:
         return tuple(
             t for t in self.outgoing(state) if t.event == flow_event
         )
+
+    def operation(
+        self, state: str, holds: Callable[[str], bool]
+    ) -> Operation | None:
+        """Was beim Betreten von ``state`` auszuführen ist (Moore): die
+        erste Operation, deren Wächter gelten (``holds`` wertet einen
+        Wächternamen aus); ``None`` für Halt und Ende."""
+        for operation in self.state(state).operations:
+            if all(
+                holds(name.removeprefix("!")) != name.startswith("!")
+                for name in operation.cond
+            ):
+                return operation
+        return None
+
+    def edge(self, owner: str, index: int, source: str) -> Transition:
+        """Kante der Sicht zu einer Kante, die die Bibliothek genommen
+        hat: deklariert in ``owner`` an Stelle ``index``, genommen in
+        ``source``."""
+        if self.statechart is None:
+            raise FlowError(f"{self.name}: kein [statechart]")
+        item = edge_of(self.statechart, owner, index, source, HISTORY)
+        return _transition(item, source)
 
     def state(self, state: str) -> State:
         try:
@@ -267,14 +295,37 @@ def read_raw(name: str) -> dict:
 
 
 def parse_flow(raw: object) -> Flow:
-    """Muster expandieren, dann Schema, dann Beziehungen prüfen;
-    danach Objekte bauen."""
+    """Ablauf mit ``[statechart]`` oder mit Mustern lesen: erst die
+    flache Tabelle bilden, dann Schema, dann Beziehungen prüfen."""
+    if isinstance(raw, dict) and "statechart" in raw:
+        return _parse_statechart(raw)
     _check_schema(raw, _PATTERN_VALIDATOR)
     where = f"{cast(dict, raw).get('name')}.toml"
     try:
         table = expand(cast(dict, raw), where)
     except PatternError as exc:
         raise FlowError(str(exc)) from exc
+    return _flow(table, where)
+
+
+def _parse_statechart(raw: dict) -> Flow:
+    """FSM-Kern laden (Schema der Bibliothek), Fachschicht prüfen und
+    die flache Sicht daraus ableiten."""
+    _check_schema(raw, _CHART_VALIDATOR)
+    where = f"{raw['name']}.toml"
+    try:
+        load_statechart(raw["statechart"])
+        table = table_of(raw, HISTORY)
+    except (FsmError, StatechartError) as exc:
+        raise FlowError(f"{where}: statechart: {exc}") from exc
+    return _flow(table, where, raw["statechart"])
+
+
+def _flow(
+    table: dict,
+    where: str,
+    statechart: Mapping[str, object] | None = None,
+) -> Flow:
     _check_schema(table)
     flow = Flow(
         name=table["name"],
@@ -295,6 +346,7 @@ def parse_flow(raw: object) -> Flow:
         },
         priority=tuple(table.get("priority", ())),
         ops=table.get("ops"),
+        statechart=statechart,
     )
     _check_relations(flow, where)
     return flow
@@ -617,6 +669,42 @@ _PATTERN_SCHEMA = {
     "dependentRequired": {"phase": ["pattern"]},
 }
 _PATTERN_VALIDATOR = Draft202012Validator(_PATTERN_SCHEMA)
+
+# Ablauf mit [statechart]: Fachschicht je Zustand unter [state.<id>];
+# Zustände und Kanten prüft das Schema der Bibliothek.
+_CHART_SCHEMA = {
+    "type": "object",
+    "required": ["name", "vocabulary", "state", "statechart"],
+    "additionalProperties": False,
+    "dependentRequired": _SCHEMA["dependentRequired"],
+    "properties": {
+        **{
+            key: _SCHEMA["properties"][key]
+            for key in ("name", "ops", "finding_class", "priority")
+        },
+        "vocabulary": {
+            "type": "object",
+            "required": ["kinds"],
+            "additionalProperties": False,
+            "properties": {"kinds": {**_NAMES, "minItems": 1}},
+        },
+        "state": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+                **_STATE_ITEM,
+                "required": ["kind"],
+                "properties": {
+                    key: value
+                    for key, value in _STATE_ITEM["properties"].items()
+                    if key != "id"
+                },
+            },
+        },
+        "statechart": {"type": "object"},
+    },
+}
+_CHART_VALIDATOR = Draft202012Validator(_CHART_SCHEMA)
 
 
 def _check_schema(

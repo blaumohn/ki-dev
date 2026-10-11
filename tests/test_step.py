@@ -153,13 +153,16 @@ def test_render_refuses_invalid_issue():
 
 
 def test_core_imports_no_cli_or_process_modules():
+    """Prozesse startet ki-dev über Plumbum (Technikleitlinie);
+    ``subprocess`` selbst lädt schon python-statemachine über
+    ``asyncio``, ohne etwas zu starten."""
     import subprocess
     import sys
 
     code = (
         "import sys, ki_dev.runner.turns,"
         " ki_dev.ops.context.bead_input;"
-        "bad = {'typer', 'rich', 'subprocess',"
+        "bad = {'typer', 'rich', 'plumbum',"
         " 'ki_dev.ops.context.beads_reader'};"
         "sys.exit(int(bool(bad & set(sys.modules))))"
     )

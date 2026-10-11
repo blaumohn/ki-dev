@@ -105,9 +105,7 @@ def test_every_turn_operation_names_a_template():
 
 def test_operation_without_template_is_rejected_at_bind():
     raw = copy.deepcopy(read_raw("implement"))
-    for state in raw["state"]:
-        if state["id"] == "worker_step":
-            state["operation"] = [{"do": "work"}]
+    raw["state"]["worker_step"]["operation"] = [{"do": "work"}]
     flow = parse_flow(raw)
     with pytest.raises(FlowError, match="work ohne Vorlage"):
         bind_turns(flow, implement_turns.PLUG, ("work", "review"))

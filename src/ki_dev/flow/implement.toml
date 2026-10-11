@@ -11,18 +11,25 @@
 # allein die Wächter dieses Ablaufs (Runden- und Versuchsgrenzen), nicht
 # der Ausführer.
 #
+# Zwei Teile:
+# - Fachschicht (`[state.<id>]`, Befundklassen): was ein Zustand für
+#   den Ausführer ist (`kind`, `actor`) und was er beim Betreten tut
+#   (`operation`, Moore-Ausgabe). Format: src/ki_dev/flow/model.py.
+# - FSM-Kern (`[statechart]`): Zustände und Kanten im nativen Format von
+#   python-statemachine; Kantenwahl, History und `raise` übernimmt die
+#   Bibliothek (src/ki_dev/fsm.py). Wächter und Aktionen sind Namen der
+#   Ops-Klasse `ImplementModel` (src/ki_dev/runner/machine/model.py).
+#
 # Lesart einer Kante (UML-Schreibweise):
-#   source --event [cond] / actions--> target
-# Gleiche (source, event) werden in Dateireihenfolge geprüft; der erste
-# passende Wächter gewinnt. Passt keiner, ist das Ereignis dort nicht
-# erlaubt. `escalation` hält mit dieser Ursache an; Fortsetzungspunkt
-# ist der Quellzustand. `operation` sagt dem Ausführer, was er beim
-# Betreten tut. Format: src/ki_dev/flow/model.py.
+#   source --event [cond] / on--> target
+# Kanten eines Zustands werden in Dateireihenfolge geprüft, dann die
+# seines Elternzustands; die erste, deren `cond` gelten und deren
+# `unless` nicht gelten, gewinnt. Passt keine, ist das Ereignis dort
+# nicht erlaubt. `raise escalation.<ursache>` hält mit dieser Ursache an;
+# Fortsetzungspunkt ist der Quellzustand (History `h`).
 
 name = "implement"
 ops = "ki_dev.flow_ops.implement"
-start = "start"
-final = ["passed", "error"]
 # Review-Antworten des Controllers: PASS oder eine Befundklasse; das
 # Urteil folgt aus der Klasse (ein Vokabular für step und run).
 priority = ["escalate", "decision", "fix"]
@@ -41,64 +48,21 @@ text = "nicht zuverlässig automatisch fortsetzbar"
 
 [vocabulary]
 # machine: ki-dev erzeugt das Ereignis selbst; agent: ein Adapter
-# liefert die formale Antwort; finalization: Git-Abschlussweg;
-# wait: Halt bis zu einer Antwort von außen.
+# liefert die formale Antwort; finalization: Git-Abschlussweg,
+# wiederholbar; wait: Halt bis zu einer Antwort von außen.
 kinds = ["machine", "agent", "finalization", "wait", "final"]
-events = [
-  "run_started",
-  "controller_task", "PASS", "fix", "decision", "escalate",
-  "protocol_error",
-  "worker_inputs_prepared", "worker_completed", "worker_needs_decision",
-  "worker_escalate", "worker_process_error",
-  "step_result_captured", "checkpoint_recorded",
-  "reviewed_result_frozen", "history_finalized", "final_result_verified",
-  "integration_completed", "finalization_error",
-  "process_error", "execution_stopped",
-  "resume_requested",
-]
-guards = [
-  "checked_result",         # ein Worker-Ergebnis ist gecheckpointet
-  "changes_rounds_left",    # changes_round < changes_rounds
-  "worker_attempts_left",   # worker_attempt < worker_attempts
-  "protocol_attempts_left", # protocol_attempt < protocol_attempts
-  "process_retries_left",   # process_retry < process_retries
-  "delta_effective",        # Schrittdelta hat beobachtete Wirkung
-  "result_ok",              # Abschlussprüfung bzw. Integration gelungen
-  "changes_refused",        # Fakt des Ausführers: Korrekturbudget des Laufs erschöpft
-  "stagnation",             # Fakt des Ausführers: gleiches Kriterium wiederholt beanstandet
-]
-actions = [
-  "begin_task",             # worker_attempt + 1, changes_round = 0
-  "begin_correction",       # worker_attempt + 1, changes_round + 1
-  "retry_protocol",         # protocol_attempt + 1
-  "retry_process",          # process_retry + 1
-  "keep_result",            # gecheckpointetes Ergebnis liegt vor
-  "drop_result",            # kein prüfbares Ergebnis mehr
-]
-escalations = [
-  "agent",
-  "protocol_attempts_exhausted", "worker_attempts_exhausted",
-  "changes_rounds_exhausted", "process_retries_exhausted",
-  "empty_result_unresolved", "final_verification_failed",
-  "integration_failed", "execution_guard",
-]
+
+# --- Fachschicht je Zustand -------------------------------------------
+#
 # Was der Ausführer beim Betreten tut. start, task, prepare und
 # checkpoint erzeugt ki-dev selbst; work und review rufen einen
 # Adapter; evidence und die Abschlussoperationen sind Git-/bd-Arbeit.
-operations = [
-  "start", "task", "review", "prepare", "work", "evidence",
-  "checkpoint", "freeze", "finalize_history", "verify_final", "integrate",
-]
 
-# --- Zustände ---------------------------------------------------------
-
-[[state]]
-id = "start"
+[state.start]
 kind = "machine"
 operation = [{ do = "start" }]
 
-[[state]]
-id = "controller_step"
+[state.controller_step]
 kind = "agent"
 actor = "Controller (Review-Sitzung)"
 # Ohne geprüftes Ergebnis gibt es nichts zu beurteilen: der erste
@@ -108,343 +72,327 @@ operation = [
   { do = "task" },
 ]
 
-[[state]]
-id = "worker_step_prepare"
+[state.worker_step_prepare]
 kind = "machine"
 operation = [{ do = "prepare" }]
 
-[[state]]
-id = "worker_step"
+[state.worker_step]
 kind = "agent"
 actor = "Worker (Bau-Sitzung)"
 operation = [{ do = "work", template = "work" }]
 
-[[state]]
-id = "capture_step_result"
+[state.capture_step_result]
 kind = "machine"
 operation = [{ do = "evidence" }]
 
-[[state]]
-id = "checkpoint"
+[state.checkpoint]
 kind = "machine"
 operation = [{ do = "checkpoint" }]
 
-[[state]]
-id = "freeze_reviewed_result"
+[state.freeze_reviewed_result]
 kind = "finalization"
 operation = [{ do = "freeze" }]
 
-[[state]]
-id = "finalize_history"
+[state.finalize_history]
 kind = "finalization"
 operation = [{ do = "finalize_history" }]
 
-[[state]]
-id = "verify_final_result"
+[state.verify_final_result]
 kind = "finalization"
 operation = [{ do = "verify_final" }]
 
-[[state]]
-id = "fast_forward_integrate"
+[state.fast_forward_integrate]
 kind = "finalization"
 operation = [{ do = "integrate" }]
 
-[[state]]
-id = "waiting_decision"
+[state.waiting_decision]
 kind = "wait"
 actor = "Mensch (Entscheider)"
 
-[[state]]
-id = "paused_interactive"
+[state.paused_interactive]
 kind = "wait"
 actor = "Mensch (Entscheider)"
 
-[[state]]
-id = "passed"
+[state.passed]
 kind = "final"
 
-[[state]]
-id = "error"
+[state.error]
 kind = "final"
 
-# --- Beauftragung -----------------------------------------------------
+# --- FSM-Kern ---------------------------------------------------------
 
-[[transition]]
-source = "start"
-event = "run_started"
-actions = ["drop_result"]
-target = "controller_step"
+[statechart]
+name = "implement"
 
-[[transition]]
-source = "controller_step"
-event = "controller_task"
-cond = ["!worker_attempts_left"]
-escalation = "worker_attempts_exhausted"
-target = "paused_interactive"
-
-[[transition]]
-source = "controller_step"
-event = "controller_task"
-actions = ["begin_task", "drop_result"]
-target = "worker_step_prepare"
-
-# --- Rückkante: CHANGES öffnet eine Korrekturrunde --------------------
-
-[[transition]]
-source = "controller_step"
-event = "fix"
-cond = ["checked_result", "changes_refused"]
-escalation = "execution_guard"
-target = "paused_interactive"
-
-[[transition]]
-source = "controller_step"
-event = "fix"
-cond = ["checked_result", "stagnation"]
-escalation = "execution_guard"
-target = "paused_interactive"
-
-[[transition]]
-source = "controller_step"
-event = "fix"
-cond = ["checked_result", "!changes_rounds_left"]
-escalation = "changes_rounds_exhausted"
-target = "paused_interactive"
-
-[[transition]]
-source = "controller_step"
-event = "fix"
-cond = ["checked_result", "!worker_attempts_left"]
-escalation = "worker_attempts_exhausted"
-target = "paused_interactive"
-
-[[transition]]
-source = "controller_step"
-event = "fix"
-cond = ["checked_result"]
-actions = ["begin_correction", "drop_result"]
-target = "worker_step_prepare"
-
-# --- weitere Controller-Urteile ---------------------------------------
-
-[[transition]]
-source = "controller_step"
-event = "decision"
-target = "waiting_decision"
-
-[[transition]]
-source = "controller_step"
-event = "escalate"
-escalation = "agent"
-target = "paused_interactive"
-
-[[transition]]
-source = "controller_step"
-event = "PASS"
-cond = ["checked_result"]
-target = "freeze_reviewed_result"
-
-[[transition]]
-source = "controller_step"
-event = "protocol_error"
-cond = ["!protocol_attempts_left"]
-escalation = "protocol_attempts_exhausted"
-target = "paused_interactive"
-
-[[transition]]
-source = "controller_step"
-event = "protocol_error"
-actions = ["retry_protocol"]
-target = "controller_step"
-
-# --- Worker-Turn ------------------------------------------------------
-
-[[transition]]
-source = "worker_step_prepare"
-event = "worker_inputs_prepared"
-target = "worker_step"
-
-[[transition]]
-source = "worker_step"
-event = "worker_completed"
-target = "capture_step_result"
-
-[[transition]]
-source = "worker_step"
-event = "worker_needs_decision"
-target = "waiting_decision"
-
-[[transition]]
-source = "worker_step"
-event = "worker_escalate"
-escalation = "agent"
-target = "paused_interactive"
-
-[[transition]]
-source = "worker_step"
-event = "worker_process_error"
-cond = ["!process_retries_left"]
-escalation = "process_retries_exhausted"
-target = "paused_interactive"
-
-[[transition]]
-source = "worker_step"
-event = "worker_process_error"
-actions = ["retry_process"]
-target = "worker_step_prepare"
-
-[[transition]]
-source = "worker_step"
-event = "protocol_error"
-cond = ["!protocol_attempts_left"]
-escalation = "protocol_attempts_exhausted"
-target = "paused_interactive"
-
-[[transition]]
-source = "worker_step"
-event = "protocol_error"
-actions = ["retry_protocol"]
-target = "worker_step"
-
-# --- Nachweis: nur wirksamer Delta wird geprüft -----------------------
-
-[[transition]]
-source = "capture_step_result"
-event = "step_result_captured"
-cond = ["delta_effective"]
-target = "checkpoint"
-
-[[transition]]
-source = "capture_step_result"
-event = "step_result_captured"
-cond = ["!changes_rounds_left"]
-escalation = "empty_result_unresolved"
-target = "paused_interactive"
-
-[[transition]]
-source = "capture_step_result"
-event = "step_result_captured"
-cond = ["!worker_attempts_left"]
-escalation = "worker_attempts_exhausted"
-target = "paused_interactive"
-
-[[transition]]
-source = "capture_step_result"
-event = "step_result_captured"
-actions = ["begin_correction", "drop_result"]
-target = "worker_step_prepare"
-
-[[transition]]
-source = "checkpoint"
-event = "checkpoint_recorded"
-actions = ["keep_result"]
-target = "controller_step"
-
-# --- Abschluss: PASS ist ein Urteil, PASSED erst nach Integration -----
-
-[[transition]]
-source = "freeze_reviewed_result"
-event = "reviewed_result_frozen"
-target = "finalize_history"
-
-[[transition]]
-source = "freeze_reviewed_result"
-event = "finalization_error"
-target = "error"
-
-[[transition]]
-source = "finalize_history"
-event = "history_finalized"
-target = "verify_final_result"
-
-[[transition]]
-source = "finalize_history"
-event = "finalization_error"
-target = "error"
-
-[[transition]]
-source = "verify_final_result"
-event = "final_result_verified"
-cond = ["result_ok"]
-target = "fast_forward_integrate"
-
-[[transition]]
-source = "verify_final_result"
-event = "final_result_verified"
-escalation = "final_verification_failed"
-target = "paused_interactive"
-
-[[transition]]
-source = "verify_final_result"
-event = "finalization_error"
-target = "error"
-
-[[transition]]
-source = "fast_forward_integrate"
-event = "integration_completed"
-cond = ["result_ok"]
-target = "passed"
-
-[[transition]]
-source = "fast_forward_integrate"
-event = "integration_completed"
-escalation = "integration_failed"
-target = "paused_interactive"
-
-[[transition]]
-source = "fast_forward_integrate"
-event = "finalization_error"
-target = "error"
-
-# --- technische Fehler und Schutzhalt des Ausführers ------------------
-
-# Eine Maschinenoperation (Vorbereitung, Nachweis, Review-Aufruf)
-# scheitert technisch: begrenzt wiederholen, dann anhalten.
-[[transition]]
-source = ["controller_step", "worker_step_prepare", "capture_step_result"]
-event = "process_error"
-cond = ["!process_retries_left"]
-escalation = "process_retries_exhausted"
-target = "paused_interactive"
-
-[[transition]]
-source = "controller_step"
-event = "process_error"
-actions = ["retry_process"]
-target = "controller_step"
-
-[[transition]]
-source = "worker_step_prepare"
-event = "process_error"
-actions = ["retry_process"]
-target = "worker_step_prepare"
-
-[[transition]]
-source = "capture_step_result"
-event = "process_error"
-actions = ["retry_process"]
-target = "capture_step_result"
+# Alle Arbeitszustände liegen in `active`; die History `h` merkt sich,
+# wo der Lauf zuletzt war (Fortsetzungspunkt einer Pause).
+[statechart.states.active]
+initial = true
+history = { h = { type = "shallow" } }
 
 # Schutzhalt (Kontext-/Kontingentgrenze, fehlgeschlagener
 # Agentenaufruf): aus jedem aktiven Zustand anhalten, Fortsetzung dort.
-[[transition]]
-source = [
-  "start", "controller_step", "worker_step_prepare", "worker_step",
-  "capture_step_result", "checkpoint", "freeze_reviewed_result",
-  "finalize_history", "verify_final_result", "fast_forward_integrate",
-]
+[[statechart.states.active.transitions]]
 event = "execution_stopped"
-escalation = "execution_guard"
 target = "paused_interactive"
+on = [{ raise = { event = "escalation.execution_guard" } }]
+
+[statechart.states.active.states.start]
+initial = true
+
+[[statechart.states.active.states.start.transitions]]
+event = "run_started"
+target = "controller_step"
+on = "drop_result"
+
+# --- Beauftragung -----------------------------------------------------
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "controller_task"
+unless = "worker_attempts_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.worker_attempts_exhausted" } }]
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "controller_task"
+target = "worker_step_prepare"
+on = ["begin_task", "drop_result"]
+
+# --- Rückkante: CHANGES öffnet eine Korrekturrunde --------------------
+
+# Fakten des Ausführers (Korrekturbudget, Stagnation) vor den
+# Rundengrenzen des Ablaufs.
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = ["checked_result", "changes_refused"]
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.execution_guard" } }]
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = ["checked_result", "stagnation"]
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.execution_guard" } }]
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = "checked_result"
+unless = "changes_rounds_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = "checked_result"
+unless = "worker_attempts_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.worker_attempts_exhausted" } }]
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = "checked_result"
+target = "worker_step_prepare"
+on = ["begin_correction", "drop_result"]
+
+# --- weitere Controller-Urteile ---------------------------------------
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "decision"
+target = "waiting_decision"
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "escalate"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.agent" } }]
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "PASS"
+cond = "checked_result"
+target = "freeze_reviewed_result"
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "protocol_error"
+unless = "protocol_attempts_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.protocol_attempts_exhausted" } }]
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "protocol_error"
+target = "controller_step"
+on = "retry_protocol"
+
+# Technischer Fehler der Maschinenoperation: begrenzt am selben Ort
+# wiederholen, dann anhalten.
+[[statechart.states.active.states.controller_step.transitions]]
+event = "process_error"
+unless = "process_retries_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.process_retries_exhausted" } }]
+
+[[statechart.states.active.states.controller_step.transitions]]
+event = "process_error"
+target = "controller_step"
+on = "retry_process"
+
+# --- Worker-Turn ------------------------------------------------------
+
+[[statechart.states.active.states.worker_step_prepare.transitions]]
+event = "worker_inputs_prepared"
+target = "worker_step"
+
+# Technischer Fehler der Maschinenoperation: begrenzt am selben Ort
+# wiederholen, dann anhalten.
+[[statechart.states.active.states.worker_step_prepare.transitions]]
+event = "process_error"
+unless = "process_retries_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.process_retries_exhausted" } }]
+
+[[statechart.states.active.states.worker_step_prepare.transitions]]
+event = "process_error"
+target = "worker_step_prepare"
+on = "retry_process"
+
+[[statechart.states.active.states.worker_step.transitions]]
+event = "worker_completed"
+target = "capture_step_result"
+
+[[statechart.states.active.states.worker_step.transitions]]
+event = "worker_needs_decision"
+target = "waiting_decision"
+
+[[statechart.states.active.states.worker_step.transitions]]
+event = "worker_escalate"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.agent" } }]
+
+[[statechart.states.active.states.worker_step.transitions]]
+event = "worker_process_error"
+unless = "process_retries_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.process_retries_exhausted" } }]
+
+[[statechart.states.active.states.worker_step.transitions]]
+event = "worker_process_error"
+target = "worker_step_prepare"
+on = "retry_process"
+
+[[statechart.states.active.states.worker_step.transitions]]
+event = "protocol_error"
+unless = "protocol_attempts_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.protocol_attempts_exhausted" } }]
+
+[[statechart.states.active.states.worker_step.transitions]]
+event = "protocol_error"
+target = "worker_step"
+on = "retry_protocol"
+
+# --- Nachweis: nur wirksamer Delta wird geprüft -----------------------
+
+[[statechart.states.active.states.capture_step_result.transitions]]
+event = "step_result_captured"
+cond = "delta_effective"
+target = "checkpoint"
+
+[[statechart.states.active.states.capture_step_result.transitions]]
+event = "step_result_captured"
+unless = "changes_rounds_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.empty_result_unresolved" } }]
+
+[[statechart.states.active.states.capture_step_result.transitions]]
+event = "step_result_captured"
+unless = "worker_attempts_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.worker_attempts_exhausted" } }]
+
+[[statechart.states.active.states.capture_step_result.transitions]]
+event = "step_result_captured"
+target = "worker_step_prepare"
+on = ["begin_correction", "drop_result"]
+
+# Technischer Fehler der Maschinenoperation: begrenzt am selben Ort
+# wiederholen, dann anhalten.
+[[statechart.states.active.states.capture_step_result.transitions]]
+event = "process_error"
+unless = "process_retries_left"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.process_retries_exhausted" } }]
+
+[[statechart.states.active.states.capture_step_result.transitions]]
+event = "process_error"
+target = "capture_step_result"
+on = "retry_process"
+
+[[statechart.states.active.states.checkpoint.transitions]]
+event = "checkpoint_recorded"
+target = "controller_step"
+on = "keep_result"
+
+# --- Abschluss: PASS ist ein Urteil, PASSED erst nach Integration -----
+
+[[statechart.states.active.states.freeze_reviewed_result.transitions]]
+event = "reviewed_result_frozen"
+target = "finalize_history"
+
+[[statechart.states.active.states.freeze_reviewed_result.transitions]]
+event = "finalization_error"
+target = "error"
+
+[[statechart.states.active.states.finalize_history.transitions]]
+event = "history_finalized"
+target = "verify_final_result"
+
+[[statechart.states.active.states.finalize_history.transitions]]
+event = "finalization_error"
+target = "error"
+
+[[statechart.states.active.states.verify_final_result.transitions]]
+event = "final_result_verified"
+cond = "result_ok"
+target = "fast_forward_integrate"
+
+[[statechart.states.active.states.verify_final_result.transitions]]
+event = "final_result_verified"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.final_verification_failed" } }]
+
+[[statechart.states.active.states.verify_final_result.transitions]]
+event = "finalization_error"
+target = "error"
+
+[[statechart.states.active.states.fast_forward_integrate.transitions]]
+event = "integration_completed"
+cond = "result_ok"
+target = "passed"
+
+[[statechart.states.active.states.fast_forward_integrate.transitions]]
+event = "integration_completed"
+target = "paused_interactive"
+on = [{ raise = { event = "escalation.integration_failed" } }]
+
+[[statechart.states.active.states.fast_forward_integrate.transitions]]
+event = "finalization_error"
+target = "error"
 
 # --- Halt und Fortsetzung durch den Menschen --------------------------
 
-[[transition]]
-source = "waiting_decision"
-event = "resume_requested"
-target = "controller_step"
+[statechart.states.waiting_decision]
+transitions = [
+  { event = "resume_requested", target = "controller_step" },
+]
 
-[[transition]]
-source = "paused_interactive"
-event = "resume_requested"
-target = "@history"
+# Empfänger der Eskalation (`raise`): die Ursache landet im Modell.
+# Fortsetzung über die History dorthin, wo der Lauf anhielt.
+[statechart.states.paused_interactive]
+transitions = [
+  { event = "escalation", on = "record_escalation" },
+  { event = "resume_requested", target = "h" },
+]
+
+[statechart.states.passed]
+final = true
+
+[statechart.states.error]
+final = true
