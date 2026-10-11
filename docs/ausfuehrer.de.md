@@ -7,7 +7,11 @@ ein Ereignis, wählt mit den Wächtern des Ablaufs die Kante, führt deren
 Aktion aus und gibt die nächste Eingabe aus. Eine eigene Topologie hat er
 nicht: Welche Operation in welchem Zustand läuft (`operation`), welche
 Korrekturrunde noch erlaubt ist und wohin ein Schutzhalt führt, steht im
-Ablauf. LangGraph liefert Checkpoint, Halt und Fortsetzung.
+Ablauf. Die Kante wählt python-statemachine aus `[statechart]` der
+Ablaufdatei; Status und offene Operation eines Laufs sind eine zweite
+deklarierte Maschine im Gerüst (`src/ki_dev/runner/run.toml`). Nach jedem
+Schritt ersetzt der Ausführer den Datensatz des Laufs atomar; ein Halt
+beendet den Prozess, `resume` liest den Datensatz.
 
 Ein neuer Lauf nimmt den Auftrag aus einem Bead und Rollen, Prüfungen
 und Grenzen aus einem Profil:
@@ -167,10 +171,15 @@ steht. Vor dem Start stehen beide auf demselben Basiscommit. Damit ist der
 vollständige Lauf ohne Kopieren von Agentennachrichten startbar; Bau und Review
 werden aus der Konfiguration in getrennten Sitzungen fortgesetzt.
 
-Der Lauf liegt unter `.ki-dev/runs/<run-id>/`: SQLite enthält die
-LangGraph-Checkpoints, `manifest.json` den unveränderlichen Auftrag samt
+Der Lauf liegt unter `.ki-dev/runs/<run-id>/`: `record.json` enthält den
+Datensatz (Lauf-Maschine, offene Operation, Ablaufzustand mit History,
+Laufdaten), `manifest.json` den unveränderlichen Auftrag samt
 Konfiguration, und einzelne JSON-Dateien enthalten unveränderliche
-Operations- und Review-Nachweise. Die an den Reviewer übergebene Projektion
+Operations- und Review-Nachweise. Vor jeder externen Wirkung speichert der
+Ausführer die Absicht (`started`), danach das Ergebnis; endet der Prozess
+dazwischen, ist der Lauf `uncertain`, außer die Operation gehört zum
+wiederholbaren Abschlussweg. Ein Lauf hat genau einen Schreiber; ein
+zweiter Aufruf für denselben Lauf wird abgewiesen. Die an den Reviewer übergebene Projektion
 bleibt auch nach einem Neustart byte-, zeilen- und gesamtbegrenzt.
 
 Bei `NEEDS_DECISION` und `ESCALATE` hält der Prozess dauerhaft an:
@@ -226,18 +235,14 @@ Auftrags.
 ki-dev -f implement status run-42 --runs-dir .ki-dev/runs
 ```
 
-Liest Status, Phase und Runden-ID des zuletzt persistierten Checkpoints,
-ohne Bau/Review/Resume auszufuehren und ohne den Lauf inhaltlich zu
-veraendern. Die Momentaufnahme laeuft ueber SQLites Online-Backup-API
-(Snapshot-Isolation): ein aktiver Schreiber mit offener WAL-Datei wird
-konsistent gelesen, nicht blockiert und sein Datenstand nicht veraendert,
-auch wenn waehrend der Aufnahme ein Checkpoint dazwischenkommt. Fehlt
-zu einer WAL-Datei die zugehoerige SHM-Datei (z. B. nach einem Absturz),
-legt das Lesen genau diesen notwendigen Sidecar neu an -- keine
-Kopiereigenheit, sondern SQLites eigene Koordination fuer den
-WAL-Index; Haupt- und WAL-Datei selbst bleiben dabei byteidentisch.
-Fehlt der Lauf oder ist sein Checkpoint unvollstaendig, meldet das
-Kommando das eindeutig statt eines erfundenen Platzhalterstatus.
+Liest Status, Phase und Runden-ID aus dem zuletzt gespeicherten
+Datensatz, ohne Bau/Review/Resume auszuführen und ohne eine Datei zu
+schreiben. Der Datensatz wird je Schritt über `os.replace` ersetzt; ein
+Leser sieht deshalb auch bei aktivem Schreiber immer einen ganzen Stand.
+Fehlt der Lauf oder verletzt sein Datensatz das Schema, meldet das
+Kommando das eindeutig (mit Feldpfad) statt eines erfundenen
+Platzhalterstatus. Läufe aus der Zeit mit LangGraph-Checkpoint sind nicht
+fortsetzbar; das Kommando sagt das ausdrücklich.
 
 ## Ereignisprotokoll je Übergang
 
@@ -491,8 +496,8 @@ vermeidet bei Codex deren Doppelzaehlung als ungecachten Input.
 
 Ein Agentenfehler, verweigerte Berechtigung, Kontingentabbruch, fehlender
 Verbrauchsnachweis oder eine erreichte Grenze fuehrt zu einer
-Maschineneskalation `execution_guard`, `paused_interactive` und einem
-Interrupt der Art `escalate`. Es folgt kein automatischer Agenten-Retry.
+Maschineneskalation `execution_guard` und zum Halt `paused_interactive`
+mit Übergabe. Es folgt kein automatischer Agenten-Retry.
 Das gilt auch fuer unbekannte CLI-Fehler; sie gelten nicht ohne Nachweis
 als voruebergehend. Fachliche Review-Nachrichten bleiben davon getrennt.
 

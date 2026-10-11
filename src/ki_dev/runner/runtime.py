@@ -1,21 +1,26 @@
-"""LangGraph-Laufzeit des Ausführers: fährt implement.toml bis zum
-Halt."""
+"""Laufzeit des Ausführers: fährt implement.toml bis zum Halt.
+
+Drei deklarierte Maschinen: der Ablauf (``implement.toml`` über
+:func:`~ki_dev.runner.machine.advance`) und, im Gerüst, der Lauf mit
+seiner offenen Operation (``runner/run.toml``,
+:class:`~ki_dev.runner.run_machine.RunMachine`). Die Schleife ist
+synchron: ein Schritt sendet Ereignisse an die Maschinen, externe
+Wirkung (Agent, Nachweis, Abschlussweg) läuft außerhalb davon. Vor der
+Wirkung wird die Absicht gespeichert, danach das Ergebnis
+(Zwei-Schreib-Protokoll); nach jedem Schritt ersetzt
+``RunStore.save_record`` den Datensatz atomar. Ein Halt beendet den
+Aufruf, ``resume`` liest den Datensatz.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
-import sqlite3
-import tempfile
 import uuid
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import NotRequired, Protocol, TypedDict, cast
-
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.types import Command, interrupt
+from typing import Protocol, cast
 
 from ki_dev.adapter.agent import (
     AgentReviewer,
@@ -42,11 +47,13 @@ from ki_dev.deltas import (
     assess_step_delta,
 )
 from ki_dev.flow.model import (
+    FINAL_KIND,
     WAIT_KIND,
     FlowError,
     Transition,
     Verdict,
 )
+from ki_dev.fsm import RecordError, TransitionNotAllowed
 from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
     DEFAULT_PROJECTION_LIMITS,
@@ -55,7 +62,6 @@ from ki_dev.review_context import (
 )
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.events import event_record
-from ki_dev.runner.graph import END_ROUTE, compile_flow
 from ki_dev.runner.implement_turns import review_prompt, work_prompt
 from ki_dev.runner.machine import (
     FINALIZATION_PHASES,
@@ -86,6 +92,7 @@ from ki_dev.runner.machine import (
     ReviewedResultFrozen,
     RunStarted,
     RunState,
+    RunStateFormatError,
     StepResultCaptured,
     TransitionResult,
     WorkerCompleted,
@@ -103,6 +110,13 @@ from ki_dev.runner.review_output import (
     bind_review_decision,
     parse_review_decision,
 )
+from ki_dev.runner.run_machine import Operation, RunMachine
+from ki_dev.runner.run_record import (
+    RunData,
+    RunRecordError,
+    decode_record,
+    encode_record,
+)
 from ki_dev.runner.safety import (
     CallLedger,
     QuotaBaseline,
@@ -114,13 +128,13 @@ from ki_dev.runner.session_handoff import build_handoff
 from ki_dev.usage import UsageStatus
 from ki_dev.usage_accounting import UsageAttribution, UsagePurpose
 
-# Operationen aus ``implement.toml``: sofort erzeugte Ereignisse
-# (``_tick``) und persistierte externe Wirkungen
-# (``_execute_operation``). Beide Mengen zusammen müssen genau das
-# Vokabular des Ablaufs sein.
 # Fortschritt fuer ``ki-dev -f implement --verbose``.
 _log = logging.getLogger("ki_dev.run")
 
+# Operationen aus ``implement.toml``: sofort erzeugte Ereignisse
+# (``_step``) und gespeicherte externe Wirkungen
+# (``_execute_operation``). Beide Mengen zusammen müssen genau das
+# Vokabular des Ablaufs sein.
 _IMMEDIATE_OPERATIONS = frozenset(
     {"start", "task", "prepare", "checkpoint"}
 )
@@ -142,24 +156,18 @@ if set(
         "implement.toml: Operationen passen nicht zur Laufzeit"
     )
 
-
-# Halt des Ausführers (kein Ablaufzustand): der Aufruf endet hier.
-_HALT_STATUSES = frozenset(
-    {
-        "ready_to_finalize",
-        "awaiting_input",
-        "uncertain",
-        "error",
-        "passed",
-    }
-)
+# Zustandsarten, deren Erreichen der Lauf-Maschine als Halt gemeldet
+# wird (Ereignis = Name des Zustands).
+_HALT_KINDS = frozenset({WAIT_KIND, FINAL_KIND})
 # Agentenoperationen des Umsetzungsablaufs und die Rolle, die sie
 # ausführt (Konfigurationsschlüssel, Verbrauchsbuch, Budget).
 _AGENT_ROLES = {"work": "worker", "review": "review"}
+# Datensatz aus der Zeit vor python-statemachine (LangGraph).
+_LANGGRAPH_CHECKPOINT = "checkpoints.sqlite"
 
 
 class RunResumeError(RuntimeError):
-    """Eine Wiederaufnahme passt nicht zum persistierten Laufzustand."""
+    """Eine Wiederaufnahme passt nicht zum gespeicherten Lauf."""
 
 
 class EvidenceCollector(Protocol):
@@ -177,27 +185,6 @@ class EvidenceCollector(Protocol):
     ) -> ControllerContext: ...
 
 
-class RunGraphState(TypedDict):
-    run_state: dict[str, object]
-    task: dict[str, object]
-    round_id: int
-    review_sequence: int
-    status: str
-    open_objection: str | None
-    round_base: object | None
-    run_base: object | None
-    work_report: str | None
-    evidence: dict[str, object] | None
-    reviewed_refs: dict[str, object] | None
-    frozen_result: dict[str, object] | None
-    final_result: dict[str, object] | None
-    pending_operation: dict[str, object] | None
-    decision: dict[str, object] | None
-    decision_answer: str | None
-    last_error: str | None
-    interrupt_payload: NotRequired[dict[str, object] | None]
-
-
 @dataclass(frozen=True)
 class RunResult:
     run_id: str
@@ -210,7 +197,8 @@ class RunResult:
 
 @dataclass
 class RunRuntime:
-    """Fuehrt genau einen Laufthread mit SQLite-Checkpoints aus."""
+    """Fährt genau einen Lauf als einziger Schreiber seines
+    Datensatzes."""
 
     store: RunStore
     worker: Worker
@@ -229,21 +217,17 @@ class RunRuntime:
             raise ValueError(
                 "Bau und Review brauchen unabhaengige Sitzungen"
             )
-        self._invocation_id = uuid.uuid4().hex
         self._ledger = CallLedger(self.store)
         self._quota_baseline = QuotaBaseline(self.store)
-        self.store.run_dir.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(
-            self.store.checkpoint_path, check_same_thread=False
-        )
-        serializer = JsonPlusSerializer(allowed_msgpack_modules=[])
-        self._checkpointer = SqliteSaver(
-            self._connection, serde=serializer
-        )
-        self._graph = self._compile_graph()
+        try:
+            self._writer = self.store.acquire_writer()
+        except RunStoreError as exc:
+            raise RunResumeError(str(exc)) from exc
+        self._lauf = RunMachine()
+        self._data: RunData | None = None
 
     def close(self) -> None:
-        self._connection.close()
+        self._writer.close()
 
     def __enter__(self) -> RunRuntime:
         return self
@@ -273,8 +257,13 @@ class RunRuntime:
                     f"reservierte Manifestfelder: {sorted(overlap)}"
                 )
             manifest.update(manifest_extra)
+        if self.store.load_record() is not None:
+            raise RunResumeError(
+                f"Lauf {task.run_id} existiert bereits"
+            )
         self.store.initialize(manifest)
-        initial: RunGraphState = {
+        self._lauf = RunMachine()
+        self._data = {
             "run_state": encode_run_state(
                 RunState(
                     task.run_id,
@@ -286,7 +275,6 @@ class RunRuntime:
             "task": _encode_task(task),
             "round_id": 1,
             "review_sequence": 0,
-            "status": "running",
             "open_objection": None,
             "round_base": None,
             "run_base": None,
@@ -295,189 +283,157 @@ class RunRuntime:
             "reviewed_refs": None,
             "frozen_result": None,
             "final_result": None,
-            "pending_operation": None,
             "decision": None,
             "decision_answer": None,
             "last_error": None,
         }
-        if self._snapshot_exists():
-            raise RunResumeError(
-                f"Lauf {task.run_id} existiert bereits"
-            )
-        self._invoke(initial)
+        self._drive()
         return self.result()
 
     def resume(self, answer: str | None = None) -> RunResult:
-        snapshot = self._snapshot()
-        state = cast(RunGraphState, snapshot.values)
-        if state["status"] == "uncertain":
-            return self.result()
-        if state["status"] == "passed":
-            return self.result()
-        if state["status"] == "awaiting_input":
-            return self._continue_after_relay(answer)
-        if snapshot.interrupts:
-            if answer is None or not answer.strip():
-                raise RunResumeError(
-                    "Wiederaufnahme braucht eine Antwort"
-                )
-            payload = {
-                "run_id": self.store.run_id,
-                "answer": answer,
-            }
-            self._invoke(Command(resume=payload))
+        """Lauf fortsetzen: ohne Antwort (``resume``: nach Prozessende,
+        nach abgelegter Antwort des Boten) oder mit Antwort des Menschen
+        (``answer``: wartende Entscheidung, Pause). Was zum Status
+        nicht passt, weist die Lauf-Maschine ab."""
+        self._load()
+        if answer is None:
+            self._send_resume("resume", "Fortsetzen ohne Antwort")
+            self._data["last_error"] = None
         else:
-            if answer is not None:
-                raise RunResumeError(
-                    "dieser Lauf wartet auf keine Antwort"
-                )
-            self._invoke(None)
+            if not answer.strip():
+                raise RunResumeError("Antwort darf nicht leer sein")
+            self._send_resume("answer", "Eine Antwort")
+            self._answer(answer)
+        self._drive()
         return self.result()
 
-    def _continue_after_relay(self, answer: str | None) -> RunResult:
-        """Offene Operation des Boten erneut fahren; die Antwort liegt
-        als Datei im Posteingang, nicht in ``--answer``."""
-        if answer is not None:
+    def _send_resume(self, event: str, what: str) -> None:
+        try:
+            self._lauf.send(event)
+        except TransitionNotAllowed:
             raise RunResumeError(
-                "der Bote legt seine Antwort als Datei ab, nicht per "
-                "--answer"
-            )
-        self._graph.update_state(
-            self._config(),
-            {"status": "running", "last_error": None},
-            as_node=self._current_node(),
+                f"{what} passt nicht zum Laufstatus "
+                f"{self._lauf.status} (möglich: "
+                f"{', '.join(self._lauf.allowed) or '-'})"
+            ) from None
+
+    def _answer(self, text: str) -> None:
+        """Antwort des Menschen: der Ablauf setzt fort (Entscheidung
+        zum Controller, Pause über die History)."""
+        run = decode_run_state(self._data["run_state"])
+        try:
+            update = self._transition(run, ResumeRequested())
+        except InvalidTransition as exc:
+            raise RunResumeError(
+                "pausierter Lauf hat keinen Fortsetzungspunkt"
+            ) from exc
+        self._apply(
+            {
+                **update,
+                "decision_answer": text,
+                "decision": None,
+                "last_error": None,
+            }
         )
-        self._invoke(None)
-        return self.result()
 
     def reconcile(
         self, operation_id: str, artifact: object
     ) -> RunResult:
         """Uebernimm ein extern abgeglichenes Ergebnis explizit."""
-        state = cast(RunGraphState, self._snapshot().values)
-        pending = state.get("pending_operation")
-        if state["status"] != "uncertain" or pending is None:
-            raise RunResumeError("Lauf hat keine unklare Operation")
-        if pending.get("id") != operation_id:
+        self._load()
+        try:
+            self._lauf.send("reconcile")
+        except TransitionNotAllowed:
+            raise RunResumeError(
+                "Lauf hat keine unklare Operation"
+            ) from None
+        pending = cast(Operation, self._lauf.pending)
+        if pending["id"] != operation_id:
             raise RunResumeError(
                 "Abgleich gehoert nicht zur unklaren Operation"
             )
-        if pending.get("call_id"):
+        if pending["call_id"]:
             try:
-                self._ledger.reconcile(pending["call_id"], artifact)
+                self._ledger.reconcile(
+                    cast(str, pending["call_id"]), artifact
+                )
             except SafetyStop as exc:
                 raise RunResumeError(str(exc)) from exc
         self.store.write_artifact(operation_id, artifact)
-        self._graph.update_state(
-            self._config(),
-            {"status": "running", "last_error": None},
-            as_node=self._current_node(),
-        )
-        self._invoke(None)
+        self._data["last_error"] = None
+        self._drive()
         return self.result()
 
     def result(self) -> RunResult:
-        state = cast(RunGraphState, self._snapshot().values)
-        return _decode_result(state)
+        if self._data is None:
+            self._load()
+        return _result(self._lauf, self._data)
 
-    def _invoke(self, value: object) -> None:
-        run = self._latest_run_state(value)
+    def _load(self) -> None:
+        self._lauf, self._data = _read_record(self.store)
+
+    def _drive(self) -> None:
+        """Schritte fahren, bis die Lauf-Maschine hält; nach jedem
+        Schritt den Datensatz atomar ersetzen. Die Schrittgrenze folgt
+        aus den Grenzen des Laufs (jede Rückkante zählt)."""
+        run = decode_run_state(self._data["run_state"])
         maximum_steps = 20 + 12 * (
             run.limits.worker_attempts
             + run.limits.protocol_attempts
             + run.limits.process_retries
         )
-        config = {
-            "configurable": {"thread_id": self.store.run_id},
-            "recursion_limit": maximum_steps,
-        }
-        self._graph.invoke(value, config)
+        steps = 0
+        while not self._lauf.halted:
+            if steps == maximum_steps:
+                raise RuntimeError(
+                    f"Lauf {run.run_id} überschreitet die "
+                    f"Schrittgrenze {maximum_steps}"
+                )
+            self._step()
+            self._save()
+            steps += 1
 
-    def _latest_run_state(self, value: object) -> RunState:
-        if isinstance(value, dict) and "run_state" in value:
-            return decode_run_state(value["run_state"])
-        if self._snapshot_exists():
-            state = cast(RunGraphState, self._snapshot().values)
-            return decode_run_state(state["run_state"])
-        raise RunResumeError("kein persistierter Lauf vorhanden")
+    def _save(self) -> None:
+        self.store.save_record(encode_record(self._lauf, self._data))
 
-    def _snapshot_exists(self) -> bool:
-        return bool(self._graph.get_state(self._config()).values)
+    def _apply(self, update: dict[str, object]) -> None:
+        self._data.update(cast(RunData, update))
 
-    def _snapshot(self):
-        snapshot = self._graph.get_state(self._config())
-        if not snapshot.values:
-            raise RunResumeError(f"Lauf {self.store.run_id} fehlt")
-        return snapshot
-
-    def _config(self) -> dict[str, object]:
-        return _thread_config(self.store.run_id)
-
-    def _compile_graph(self):
-        """Ein Graphmodell: der gemeinsame Übersetzer macht aus
-        ``implement.toml`` den Graphen (ein Knoten je Zustand); welche
-        Kante gilt, wählt weiterhin der Ablauf (``advance``)."""
-        return compile_flow(
-            IMPLEMENT,
-            RunGraphState,
-            lambda state: (
-                self._wait_node
-                if state.kind == WAIT_KIND
-                else self._tick
-            ),
-            self._route,
-            self._checkpointer,
-        )
-
-    @staticmethod
-    def _route(state: RunGraphState) -> str:
-        """Halt des Ausführers beendet den Aufruf; sonst weiter im
-        Knoten der aktuellen Phase (auch derselbe Zustand, solange eine
-        Operation läuft oder ein wartender Zustand anhält)."""
-        if state["status"] in _HALT_STATUSES:
-            return END_ROUTE
-        return decode_run_state(state["run_state"]).state.phase.value
-
-    def _current_node(self) -> str:
-        state = cast(RunGraphState, self._snapshot().values)
-        return decode_run_state(state["run_state"]).state.phase.value
-
-    def _wait_node(self, state: RunGraphState) -> dict[str, object]:
-        """Wartender Zustand: erst den Status setzen (Checkpoint), beim
-        nächsten Besuch auf die Antwort von außen warten."""
-        phase = decode_run_state(state["run_state"]).state.phase.value
-        if state["status"] != phase:
-            return {"status": phase}
-        return self._wait(state)
-
-    def _tick(self, state: RunGraphState) -> dict[str, object]:
-        """Einen Schritt fahren: was zu tun ist, sagt der Ablauf.
-
-        Halt- und Endzustände melden nur ihren Status; sonst liefert
-        ``implement.toml`` die Operation des Zustands (Moore-Ausgabe).
-        Sofort erzeugte Ereignisse laufen direkt durch ``advance``,
-        externe Wirkungen über eine persistierte Operation."""
-        pending = state["pending_operation"]
+    def _step(self) -> None:
+        """Einen Schritt fahren: eine offene Operation geht vor; sonst
+        sagt der Ablauf, was zu tun ist (Moore-Ausgabe). Sofort
+        erzeugte Ereignisse laufen direkt durch ``advance``, externe
+        Wirkungen als Operation der Lauf-Maschine."""
+        state = self._data
+        pending = self._lauf.pending
         if pending is not None:
-            return self._progress_operation(state, pending)
+            self._apply(self._progress_operation(state, pending))
+            return
         run = decode_run_state(state["run_state"])
         kind = operation(run.state, run.limits)
         if kind is None:
-            return {"status": run.state.phase.value}
-        if kind == "start":
-            return self._transition(run, RunStarted())
-        if kind == "task":
-            return self._transition(
-                run, ControllerTask(_task(state).task)
+            raise RuntimeError(
+                f"Ablauf hält in {run.state.phase.value}, der Lauf "
+                "fährt aber"
             )
-        if kind == "prepare":
-            return self._prepare_worker(state, run)
-        if kind == "checkpoint":
-            return self._transition(run, CheckpointRecorded())
-        return {"pending_operation": self._operation(state, kind)}
+        if kind == "start":
+            self._apply(self._transition(run, RunStarted()))
+        elif kind == "task":
+            self._apply(
+                self._transition(run, ControllerTask(_task(state).task))
+            )
+        elif kind == "prepare":
+            self._apply(self._prepare_worker(state, run))
+        elif kind == "checkpoint":
+            self._apply(self._transition(run, CheckpointRecorded()))
+        else:
+            self._lauf.send(
+                "hold", operation=self._operation(state, run, kind)
+            )
+
 
     def _prepare_worker(
-        self, state: RunGraphState, run: RunState
+        self, state: RunData, run: RunState
     ) -> dict[str, object]:
         if state["round_base"] is not None:
             return self._transition(run, WorkerInputsPrepared())
@@ -495,15 +451,12 @@ class RunRuntime:
         }
 
     def _operation(
-        self, state: RunGraphState, kind: str
-    ) -> dict[str, object]:
-        run = decode_run_state(state["run_state"])
-        if kind in {
-            "freeze",
-            "finalize_history",
-            "verify_final",
-            "integrate",
-        }:
+        self, state: RunData, run: RunState, kind: str
+    ) -> Operation:
+        """Offene Operation mit stabiler Kennung: eine Wiederholung
+        derselben Wirkung trifft ihr gespeichertes Ergebnis wieder."""
+        repeatable = run.state.phase in FINALIZATION_PHASES
+        if repeatable:
             operation_id = f"final-{kind}-r{run.revision:04d}"
         elif kind == "review":
             operation_id = (
@@ -525,58 +478,74 @@ class RunRuntime:
                 f"-p{counters.process_retry:04d}"
                 f"-t{counters.protocol_attempt:04d}"
             )
-        return {"id": operation_id, "kind": kind, "status": "prepared"}
+        return {
+            "id": operation_id,
+            "kind": kind,
+            "repeatable": repeatable,
+        }
 
     def _progress_operation(
-        self, state: RunGraphState, pending: dict[str, object]
+        self, state: RunData, pending: Operation
     ) -> dict[str, object]:
+        """Zwei-Schreib-Protokoll: ein gespeichertes Ergebnis gilt;
+        sonst Absicht speichern, Wirkung ausführen, Ergebnis
+        speichern. Eine Absicht ohne Ergebnis nach Prozessende ist
+        unklar, außer die Operation ist wiederholbar."""
         operation_id = cast(str, pending["id"])
         stored = self.store.load_artifact(operation_id)
         if stored is not None:
+            self._lauf.send("artifact_saved")
             return self._accept_artifact(state, pending, stored)
-        status = pending["status"]
-        if status == "prepared":
-            call_id = None
-            if pending["kind"] in _AGENT_ROLES:
-                actor = self._actor(pending)
-                blocker = self._call_guards(
-                    _AGENT_ROLES[pending["kind"]], actor
-                )
-                if blocker is not None:
-                    return self._safety_stop(state, blocker)
-                if Measure.BUDGET in actor.spec.measures:
-                    call_id = f"{operation_id}-{uuid.uuid4().hex}"
-                    try:
-                        self._reserve(state, pending, actor, call_id)
-                    except SafetyStop as exc:
-                        return self._safety_stop(state, str(exc))
-            started = {
-                **pending,
-                "status": "started",
-                "invocation": self._invocation_id,
-                "call_id": call_id,
-            }
-            return {"pending_operation": started}
-        if pending.get(
-            "invocation"
-        ) != self._invocation_id and pending.get("kind") not in {
-            "freeze",
-            "finalize_history",
-            "verify_final",
-            "integrate",
-        }:
-            return {
-                "status": "uncertain",
-                "last_error": (
-                    "Externe Wirkung wurde begonnen, aber kein "
-                    "Ergebnis wurde "
-                    f"gesichert: {operation_id}"
-                ),
-            }
+        if self._lauf.started:
+            self._lauf.send("interrupted")
+            if self._lauf.halted:
+                return {
+                    "last_error": (
+                        "Externe Wirkung wurde begonnen, aber kein "
+                        f"Ergebnis wurde gesichert: {operation_id}"
+                    )
+                }
+        else:
+            stopped = self._begin(state, pending)
+            if stopped is not None:
+                return stopped
+        return self._effect(state, cast(Operation, self._lauf.pending))
+
+    def _begin(
+        self, state: RunData, pending: Operation
+    ) -> dict[str, object] | None:
+        """Schutzwächter und Budget vor dem Aufruf; dann die Absicht
+        speichern. Ein Schutzhalt liefert sein Update."""
+        call_id = None
+        if pending["kind"] in _AGENT_ROLES:
+            actor = self._actor(pending)
+            blocker = self._call_guards(
+                _AGENT_ROLES[cast(str, pending["kind"])], actor
+            )
+            if blocker is not None:
+                return self._safety_stop(state, blocker)
+            if Measure.BUDGET in actor.spec.measures:
+                call_id = f"{pending['id']}-{uuid.uuid4().hex}"
+                try:
+                    self._reserve(state, pending, actor, call_id)
+                except SafetyStop as exc:
+                    return self._safety_stop(state, str(exc))
+        self._lauf.send("start", call_id=call_id)
+        self._save()
+        return None
+
+    def _effect(
+        self, state: RunData, pending: Operation
+    ) -> dict[str, object]:
+        """Externe Wirkung außerhalb der Maschinen; ihr Ausgang wird
+        Ereignis."""
         try:
             value = self._metered_operation(state, pending)
         except AnswerPending as exc:
-            return self._await_answer(pending, exc)
+            # Halt des Ausführers, kein Ablaufzustand: die Operation
+            # bleibt offen und läuft nach der Antwort des Boten erneut.
+            self._lauf.send("answer_pending")
+            return {"last_error": str(exc)}
         except (AgentTurnError, SafetyStop, PermissionError) as exc:
             return self._safety_stop(state, str(exc))
         except AgentProtocolError as exc:
@@ -585,12 +554,13 @@ class RunRuntime:
             return self._process_failure(
                 state, f"{type(exc).__name__}: {exc}"
             )
-        self.store.write_artifact(operation_id, value)
+        self.store.write_artifact(cast(str, pending["id"]), value)
+        self._lauf.send("artifact_saved")
         return self._accept_artifact(state, pending, value)
 
     def _reserve(
         self,
-        state: RunGraphState,
+        state: RunData,
         pending: dict[str, object],
         actor: Worker | Reviewer,
         call_id: str,
@@ -611,22 +581,6 @@ class RunRuntime:
         if pending["kind"] == "work":
             return self.worker
         return self.reviewer
-
-    @staticmethod
-    def _await_answer(
-        pending: dict[str, object], exc: AnswerPending
-    ) -> dict[str, object]:
-        """Halt des Ausführers, kein Ablaufzustand: die Operation bleibt
-        offen und läuft nach der Antwort des Boten erneut."""
-        return {
-            "pending_operation": {
-                "id": pending["id"],
-                "kind": pending["kind"],
-                "status": "prepared",
-            },
-            "status": "awaiting_input",
-            "last_error": str(exc),
-        }
 
     def _call_guards(
         self, role: str, actor: Worker | Reviewer
@@ -802,7 +756,7 @@ class RunRuntime:
         )
 
     def _metered_operation(
-        self, state: RunGraphState, pending: dict[str, object]
+        self, state: RunData, pending: dict[str, object]
     ) -> object:
         if pending["kind"] not in _AGENT_ROLES:
             return self._execute_operation(state, pending)
@@ -877,41 +831,29 @@ class RunRuntime:
         )
 
     def _safety_stop(
-        self, state: RunGraphState, detail: str
+        self, state: RunData, detail: str
     ) -> dict[str, object]:
         """Technischer Schutzhalt: Kante ``execution_stopped`` des
         Ablaufs, Fortsetzungspunkt ist der aktuelle Zustand."""
+        self._lauf.send("failed")
         run = decode_run_state(state["run_state"])
         update = self._transition(run, ExecutionStopped(detail))
         return self._guard_halt(state, update, detail)
 
     def _guard_halt(
         self,
-        state: RunGraphState,
+        state: RunData,
         update: dict[str, object],
         detail: str,
     ) -> dict[str, object]:
         """Hülle eines Halts mit Ursache ``execution_guard``."""
-        run = decode_run_state(
-            cast(dict[str, object], update["run_state"])
+        return self._write_handoff_if_stopped(
+            state, {**update, "last_error": detail}, detail
         )
-        halted = {
-            **update,
-            "status": "paused_interactive",
-            "pending_operation": None,
-            "last_error": detail,
-            "interrupt_payload": {
-                "kind": "escalate",
-                "run_id": run.run_id,
-                "round_id": state["round_id"],
-                "reason": detail,
-            },
-        }
-        return self._write_handoff_if_stopped(state, halted, detail)
 
     def _write_handoff_if_stopped(
         self,
-        state: RunGraphState,
+        state: RunData,
         update: dict[str, object],
         reason: str,
     ) -> dict[str, object]:
@@ -941,7 +883,7 @@ class RunRuntime:
         return update
 
     def _execute_operation(
-        self, state: RunGraphState, pending: dict[str, object]
+        self, state: RunData, pending: dict[str, object]
     ) -> object:
         kind = pending["kind"]
         task = _task(state)
@@ -1052,8 +994,8 @@ class RunRuntime:
 
     def _accept_artifact(
         self,
-        state: RunGraphState,
-        pending: dict[str, object],
+        state: RunData,
+        pending: Operation,
         artifact: object,
     ) -> dict[str, object]:
         if not isinstance(artifact, dict):
@@ -1064,7 +1006,6 @@ class RunRuntime:
             return {
                 **self._transition(run, WorkerCompleted()),
                 "work_report": cast(str, artifact["summary"]),
-                "pending_operation": None,
                 "last_error": None,
             }
         if kind == "evidence":
@@ -1076,55 +1017,36 @@ class RunRuntime:
                 **self._transition(run, StepResultCaptured(assessment)),
                 "evidence": projection,
                 "reviewed_refs": _result_refs(artifact),
-                "pending_operation": None,
                 "last_error": None,
             }
         if kind == "freeze":
             return {
                 **self._transition(run, ReviewedResultFrozen()),
                 "frozen_result": artifact,
-                "pending_operation": None,
                 "last_error": None,
             }
         if kind == "finalize_history":
             return {
                 **self._transition(run, HistoryFinalized()),
                 "final_result": artifact,
-                "pending_operation": None,
                 "last_error": None,
             }
         if kind == "verify_final":
             ok = artifact.get("ok") is True
             update = self._transition(run, FinalResultVerified(ok))
-            next_run = decode_run_state(
-                cast(dict[str, object], update["run_state"])
-            )
             detail = cast(str | None, artifact.get("detail"))
             return self._write_handoff_if_stopped(
                 state,
-                {
-                    **update,
-                    "pending_operation": None,
-                    "status": _status_of(next_run),
-                    "last_error": detail,
-                },
+                {**update, "last_error": detail},
                 detail or "Abschlusspruefung fehlgeschlagen",
             )
         if kind == "integrate":
             ok = artifact.get("ok") is True
             update = self._transition(run, IntegrationCompleted(ok))
-            next_run = decode_run_state(
-                cast(dict[str, object], update["run_state"])
-            )
             detail = cast(str | None, artifact.get("detail"))
             return self._write_handoff_if_stopped(
                 state,
-                {
-                    **update,
-                    "pending_operation": None,
-                    "status": _status_of(next_run),
-                    "last_error": None if ok else detail,
-                },
+                {**update, "last_error": None if ok else detail},
                 detail or "Integration fehlgeschlagen",
             )
         decision_doc = cast(dict[str, object], artifact["decision"])
@@ -1133,14 +1055,13 @@ class RunRuntime:
         update = self._apply_decision(state, run, decision)
         return {
             **update,
-            "pending_operation": None,
             "decision": decision_doc,
             "review_sequence": state["review_sequence"] + 1,
         }
 
     def _apply_decision(
         self,
-        state: RunGraphState,
+        state: RunData,
         run: RunState,
         decision: ReviewDecision,
     ) -> dict[str, object]:
@@ -1159,9 +1080,7 @@ class RunRuntime:
             )
             if next_run.state.is_stopped:
                 return self._write_handoff_if_stopped(
-                    state,
-                    {**update, "status": _status_of(next_run)},
-                    decision.detail,
+                    state, update, decision.detail
                 )
             return {
                 **update,
@@ -1177,32 +1096,14 @@ class RunRuntime:
         if verdict is Verdict.NEEDS_DECISION:
             return self._write_handoff_if_stopped(
                 state,
-                {
-                    **self._transition(
-                        run, ControllerNeedsDecision(decision.detail)
-                    ),
-                    "interrupt_payload": {
-                        "kind": "needs_decision",
-                        "run_id": run.run_id,
-                        "round_id": state["round_id"],
-                        "question": decision.detail,
-                    },
-                },
+                self._transition(
+                    run, ControllerNeedsDecision(decision.detail)
+                ),
                 decision.detail,
             )
         return self._write_handoff_if_stopped(
             state,
-            {
-                **self._transition(
-                    run, ControllerEscalate(decision.detail)
-                ),
-                "interrupt_payload": {
-                    "kind": "escalate",
-                    "run_id": run.run_id,
-                    "round_id": state["round_id"],
-                    "reason": decision.detail,
-                },
-            },
+            self._transition(run, ControllerEscalate(decision.detail)),
             decision.detail,
         )
 
@@ -1236,36 +1137,23 @@ class RunRuntime:
         return frozenset(), decision.detail
 
     def _protocol_failure(
-        self, state: RunGraphState, detail: str
+        self, state: RunData, detail: str
     ) -> dict[str, object]:
+        self._lauf.send("failed")
         run = decode_run_state(state["run_state"])
         update = self._transition(run, ProtocolError(detail))
-        next_run = decode_run_state(
-            cast(dict[str, object], update["run_state"])
-        )
         return self._write_handoff_if_stopped(
-            state,
-            {
-                **update,
-                "pending_operation": None,
-                "status": _status_of(next_run),
-                "last_error": detail,
-            },
-            detail,
+            state, {**update, "last_error": detail}, detail
         )
 
     def _process_failure(
-        self, state: RunGraphState, detail: str
+        self, state: RunData, detail: str
     ) -> dict[str, object]:
+        self._lauf.send("failed")
         run = decode_run_state(state["run_state"])
         if run.state.phase in FINALIZATION_PHASES:
             update = self._transition(run, FinalizationError(detail))
-            return {
-                **update,
-                "pending_operation": None,
-                "status": "error",
-                "last_error": detail,
-            }
+            return {**update, "last_error": detail}
         # Formale Ausgabe → Ereignis: ein gescheiterter Bau-Turn ist
         # ein Worker-Ereignis, jede andere Operation ein Prozessfehler.
         event = (
@@ -1283,9 +1171,7 @@ class RunRuntime:
             state,
             {
                 **update,
-                "pending_operation": None,
                 "round_base": None if prepares else state["round_base"],
-                "status": _status_of(next_run),
                 "last_error": detail,
             },
             detail,
@@ -1298,8 +1184,13 @@ class RunRuntime:
         *,
         facts: frozenset[str] = frozenset(),
     ) -> dict[str, object]:
+        """Ablauf-Maschine fortschreiben; erreicht sie einen Halt
+        (wartend oder final), erfährt es die Lauf-Maschine unter dem
+        Namen des Zustands."""
         result = advance(run.state, event, run.limits, facts=facts)
         self._log_transition(run, result)
+        if IMPLEMENT.state(result.phase.value).kind in _HALT_KINDS:
+            self._lauf.send(result.phase.value)
         return self._replace_run(run, result.state, result.escalation)
 
     def _log_transition(
@@ -1348,40 +1239,9 @@ class RunRuntime:
         )
         return {"run_state": encode_run_state(changed)}
 
-    def _wait(self, state: RunGraphState) -> dict[str, object]:
-        payload = state.get("interrupt_payload")
-        answer = interrupt(payload)
-        if not isinstance(answer, dict) or set(answer) != {
-            "run_id",
-            "answer",
-        }:
-            raise RunResumeError("ungueltige Wiederaufnahme-Huelle")
-        if answer["run_id"] != self.store.run_id:
-            raise RunResumeError("Antwort gehoert zu fremdem Lauf")
-        text = answer["answer"]
-        if not isinstance(text, str) or not text.strip():
-            raise RunResumeError("Antwort darf nicht leer sein")
-        run = decode_run_state(state["run_state"])
-        if run.state.phase not in WAITING_PHASES:
-            raise RunResumeError("persistierter Lauf wartet nicht")
-        try:
-            update = self._transition(run, ResumeRequested())
-        except InvalidTransition as exc:
-            raise RunResumeError(
-                "pausierter Lauf hat keinen Fortsetzungspunkt"
-            ) from exc
-        return {
-            **update,
-            "status": "running",
-            "decision_answer": text,
-            "decision": None,
-            "interrupt_payload": None,
-            "last_error": None,
-        }
-
 
 def _review_attempt(
-    state: RunGraphState, pending: dict[str, object]
+    state: RunData, pending: dict[str, object]
 ) -> str:
     """Review-Operation plus Protokollversuch: eine Wiederholung nach
     ungültiger Antwort ist ein neuer Versuch."""
@@ -1404,13 +1264,6 @@ def _origin(role: str, actor: Worker | Reviewer) -> str:
     return f"{role} (executor={actor.spec.name}, session={session})"
 
 
-def _status_of(run: RunState) -> str:
-    """Status eines Laufs: der Haltezustand selbst oder ``running``."""
-    if run.state.is_stopped:
-        return run.state.phase.value
-    return "running"
-
-
 def _halted_by_guard(update: dict[str, object]) -> bool:
     run = decode_run_state(cast(dict[str, object], update["run_state"]))
     return (
@@ -1420,59 +1273,54 @@ def _halted_by_guard(update: dict[str, object]) -> bool:
     )
 
 
-_STATUS_READ_ATTEMPTS = 3
+def _result(lauf: RunMachine, data: RunData) -> RunResult:
+    run = decode_run_state(data["run_state"])
+    pending = lauf.pending or {}
+    detail = data["last_error"]
+    if run.escalation is not None:
+        cause = str(run.escalation.cause)
+        detail = f"{cause}: {detail}" if detail else cause
+    return RunResult(
+        run_id=run.run_id,
+        status=lauf.status,
+        round_id=data["round_id"],
+        phase=run.state.phase,
+        detail=detail,
+        operation_id=cast(str | None, pending.get("id")),
+    )
 
 
 def read_run_status(store: RunStore) -> RunResult:
-    """Lies den zuletzt persistierten Laufstatus rein lesend.
+    """Lies den zuletzt gespeicherten Laufstatus rein lesend.
 
-    Der Checkpoint wird nur betrachtet, wenn er bereits existiert. Die
-    Kopie entsteht ueber SQLites eigene Online-Backup-API
-    (``sqlite3.Connection.backup``) aus einer read-only geoeffneten
-    Quellverbindung: das Backup laeuft in einer eigenen
-    Lesetransaktion mit Snapshot-Isolation und liefert deshalb immer
-    einen tatsaechlich existierenden, in sich konsistenten Zustand --
-    nie eine Mischung aus zwei verschiedenen Schreibvorgaengen, wie es
-    ein manuelles Kopieren von WAL-/SHM-/Hauptdatei bei einem
-    dazwischenliegenden Checkpoint erzeugen koennte. Im Laufverzeichnis
-    selbst entsteht dadurch nie eine neue Datei und nie eine
-    Schreibwirkung.
+    Der Datensatz wird je Schritt atomar ersetzt (``os.replace``); ein
+    Leser sieht deshalb immer einen ganzen Stand, nie eine Mischung aus
+    zwei Schreibvorgängen. Ein ungültiger Datensatz wird als
+    ``RunResumeError`` mit Feldpfad gemeldet."""
+    return _result(*_read_record(store))
 
-    Ein zweiter und dritter Leseversuch mit je frischer Kopie faengt
-    eine seltene ``sqlite3.OperationalError`` (z. B. eine sehr kurze
-    Sperre) ab, statt einen vollstaendigen, persistierten Lauf
-    faelschlich als fehlend zu melden.
 
-    Die gelesene Zustandsstruktur wird beim Dekodieren validiert:
-    fehlende oder ungueltige Pflichtfelder (``status``, ``round_id``)
-    oder ein ungueltiges ``run_state``-Dokument werden als
-    ``RunResumeError`` gemeldet statt als ungefangener
-    ``KeyError``/Formatfehler durchzuschlagen.
-    """
-    if not store.checkpoint_path.exists():
-        raise RunResumeError(f"Lauf {store.run_id} fehlt")
-    last_error: Exception | None = None
-    for _ in range(_STATUS_READ_ATTEMPTS):
-        try:
-            tuple_ = _read_checkpoint_tuple(store)
-        except (sqlite3.DatabaseError, OSError) as exc:
-            last_error = exc
-            continue
-        if tuple_ is None:
-            continue
-        try:
-            state = cast(
-                RunGraphState, tuple_.checkpoint["channel_values"]
-            )
-            return _decode_result(state)
-        except (KeyError, TypeError, ValueError) as exc:
-            last_error = exc
-            continue
-    if last_error is not None:
+def _read_record(store: RunStore) -> tuple[RunMachine, RunData]:
+    try:
+        document = store.load_record()
+    except RunStoreError as exc:
         raise RunResumeError(
-            f"Lauf {store.run_id} ist unvollstaendig: {last_error}"
-        ) from last_error
-    raise RunResumeError(f"Lauf {store.run_id} fehlt")
+            f"Lauf {store.run_id} ist unvollstaendig: {exc}"
+        ) from exc
+    if document is None:
+        if (store.run_dir / _LANGGRAPH_CHECKPOINT).exists():
+            raise RunResumeError(
+                f"Lauf {store.run_id} stammt aus einer älteren "
+                "ki-dev-Version (LangGraph-Checkpoint) und ist nicht "
+                "fortsetzbar; bitte neu starten"
+            )
+        raise RunResumeError(f"Lauf {store.run_id} fehlt")
+    try:
+        return decode_record(document)
+    except (RunRecordError, RecordError, RunStateFormatError) as exc:
+        raise RunResumeError(
+            f"Lauf {store.run_id} ist unvollstaendig: {exc}"
+        ) from exc
 
 
 def _quota_missing_reason(origin: str, measurement: object) -> str:
@@ -1496,91 +1344,6 @@ def _quota_reserve_reason(
     )
 
 
-def _read_checkpoint_tuple(store: RunStore):
-    with tempfile.TemporaryDirectory() as scratch:
-        copy_path = Path(scratch) / store.checkpoint_path.name
-        # as_uri() verlangt einen absoluten Pfad; --runs-dir ist im
-        # CLI-Standard (".ki-dev/runs") relativ.
-        absolute_checkpoint = store.checkpoint_path.resolve()
-        source = sqlite3.connect(
-            f"{absolute_checkpoint.as_uri()}?mode=ro", uri=True
-        )
-        try:
-            _backup_snapshot(source, copy_path)
-        finally:
-            source.close()
-        connection = sqlite3.connect(copy_path, check_same_thread=False)
-        try:
-            checkpointer = SqliteSaver(
-                connection,
-                serde=JsonPlusSerializer(allowed_msgpack_modules=[]),
-            )
-            return checkpointer.get_tuple(_thread_config(store.run_id))
-        finally:
-            connection.close()
-
-
-def _backup_snapshot(
-    source: sqlite3.Connection, destination: Path
-) -> None:
-    """Konsistente Momentaufnahme ueber die SQLite-Online-Backup-API.
-
-    ``backup`` haelt intern eine eigene Lesetransaktion und liest die
-    Quelle damit als Snapshot zu genau einem Zeitpunkt, unabhaengig
-    davon, wie viele Checkpoints ein Schreiber waehrenddessen ausfuehrt.
-    """
-    target = sqlite3.connect(destination)
-    try:
-        source.backup(target)
-    finally:
-        target.close()
-
-
-def _thread_config(run_id: str) -> dict[str, object]:
-    return {"configurable": {"thread_id": run_id}}
-
-
-_VALID_RUN_STATUSES = frozenset(
-    {
-        "running",
-        "awaiting_input",
-        "waiting_decision",
-        "paused_interactive",
-        "uncertain",
-        "error",
-        "passed",
-    }
-)
-
-
-def _decode_result(state: RunGraphState) -> RunResult:
-    run = decode_run_state(state["run_state"])
-    status = state["status"]
-    if status not in _VALID_RUN_STATUSES:
-        raise RunResumeError(f"unbekannter Laufstatus: {status!r}")
-    round_id = state["round_id"]
-    if (
-        isinstance(round_id, bool)
-        or not isinstance(round_id, int)
-        or round_id < 1
-    ):
-        raise RunResumeError(f"ungueltige round_id: {round_id!r}")
-    pending = state.get("pending_operation") or {}
-    operation_id = cast(str | None, pending.get("id"))
-    detail = state.get("last_error")
-    if run.escalation is not None:
-        cause = str(run.escalation.cause)
-        detail = f"{cause}: {detail}" if detail else cause
-    return RunResult(
-        run_id=run.run_id,
-        status=status,
-        round_id=round_id,
-        phase=run.state.phase,
-        detail=detail,
-        operation_id=operation_id,
-    )
-
-
 def _encode_task(task: RunTask) -> dict[str, object]:
     return {
         "run_id": task.run_id,
@@ -1593,7 +1356,7 @@ def _encode_task(task: RunTask) -> dict[str, object]:
     }
 
 
-def _task(state: RunGraphState) -> RunTask:
+def _task(state: RunData) -> RunTask:
     value = state["task"]
     return RunTask(
         run_id=cast(str, value["run_id"]),

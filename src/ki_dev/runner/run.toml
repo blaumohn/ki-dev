@@ -1,0 +1,75 @@
+# Lauf-Maschine des Ausführers (Gerüst, kein Ablaufpaket): der Status
+# eines Laufs und darin die offene Operation als Zwei-Schreib-Protokoll.
+#
+# Operation (in `running`): Absicht speichern (`prepared` → `started`),
+# externe Wirkung außerhalb der Maschine ausführen, Ergebnis speichern
+# (`artifact_saved`). Endet der Prozess zwischen beiden Schreibvorgängen,
+# ist die Wirkung unklar (`interrupted` → `uncertain`), außer bei einer
+# wiederholbaren Operation (Abschlussweg).
+#
+# Lauf: Halte sind eigene Zustände. Erreicht der Ablauf einen wartenden
+# oder finalen Zustand, sendet der Ausführer dessen Namen als Ereignis;
+# Phasen kennt er dafür nicht. Fortsetzen ist `resume` (ohne Antwort)
+# oder `answer` (mit Antwort des Menschen); was im aktuellen Status
+# nicht passt, weist die Bibliothek ab.
+#
+# Format: [statechart] von python-statemachine (src/ki_dev/fsm.py); die
+# Namen in `cond`/`on`/`enter` sind Methoden von RunModel
+# (src/ki_dev/runner/run_machine.py).
+
+[statechart]
+name = "run"
+
+[statechart.states.running]
+initial = true
+transitions = [
+  # nach Prozessende dort weiter, wo der Datensatz steht
+  { event = "resume" },
+  # Fehlschlag der Operation: der Ablauf entscheidet, wie es weitergeht
+  { event = "failed", target = "idle" },
+  { event = "paused_interactive", target = "paused_interactive" },
+  { event = "waiting_decision", target = "waiting_decision" },
+  { event = "passed", target = "passed" },
+  { event = "error", target = "error" },
+]
+
+[statechart.states.running.states.idle]
+initial = true
+enter = "drop_operation"
+transitions = [
+  { event = "hold", target = "prepared", on = "hold_operation" },
+]
+
+[statechart.states.running.states.prepared]
+transitions = [
+  { event = "start", target = "started", on = "begin_operation" },
+  { event = "artifact_saved", target = "idle" },
+]
+
+[statechart.states.running.states.started]
+transitions = [
+  { event = "artifact_saved", target = "idle" },
+  # Bote ohne Antwort: Halt des Ausführers, nicht des Ablaufs
+  { event = "answer_pending", target = "awaiting_input" },
+  { event = "interrupted", unless = "repeatable", target = "uncertain" },
+  { event = "interrupted" },
+]
+
+[statechart.states.awaiting_input]
+transitions = [{ event = "resume", target = "prepared" }]
+
+# Bis der Mensch das Ergebnis abgleicht (`--reconcile-result`).
+[statechart.states.uncertain]
+transitions = [{ event = "reconcile", target = "started" }]
+
+[statechart.states.paused_interactive]
+transitions = [{ event = "answer", target = "running" }]
+
+[statechart.states.waiting_decision]
+transitions = [{ event = "answer", target = "running" }]
+
+[statechart.states.passed]
+final = true
+
+[statechart.states.error]
+final = true

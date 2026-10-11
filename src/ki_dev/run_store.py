@@ -10,7 +10,7 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import IO, cast
 
 RECORD_FILE = "record.json"
 
@@ -38,10 +38,6 @@ class RunStore:
     @property
     def run_dir(self) -> Path:
         return self.root / self.run_id
-
-    @property
-    def checkpoint_path(self) -> Path:
-        return self.run_dir / "checkpoints.sqlite"
 
     @property
     def record_path(self) -> Path:
@@ -139,6 +135,21 @@ class RunStore:
             cast(dict[str, object], json.loads(line))
             for line in path.read_text(encoding="utf-8").splitlines()
         ]
+
+    def acquire_writer(self) -> IO[str]:
+        """Einziger Schreiber dieses Laufs; frei mit ``close()`` des
+        Rückgabewerts (auch beim Prozessende)."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        handle = (self.root / f".{self.run_id}.lock").open("a")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            raise RunStoreError(
+                f"Lauf {self.run_id} wird bereits von einem anderen "
+                "Aufruf gefahren"
+            ) from None
+        return handle
 
     @contextmanager
     def usage_lock(self):

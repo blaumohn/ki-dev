@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-from langgraph.checkpoint.base import uuid6
 
 from ki_dev.adapter.contract import (
     RunTask,
@@ -37,17 +36,12 @@ def _task(run_id: str) -> RunTask:
     )
 
 
-def _sidecar_free_snapshot(root: Path) -> dict[str, bytes]:
-    """Dateibaum ohne SQLite-Sidecars (``-wal``/``-shm``).
-
-    Deren Vorhandensein ist kein Fehler (p0h.1: "Kein byteidentischer
-    gesamter Dateibaum als stilles Ersatzkriterium" / "notwendige
-    Sidecars alleine lassen Tests nicht fehlschlagen").
-    """
+def _tree(root: Path) -> dict[str, bytes]:
+    """Dateibaum eines Laufverzeichnisses mit Inhalt."""
     return {
         str(path.relative_to(root)): path.read_bytes()
         for path in sorted(root.rglob("*"))
-        if path.is_file() and not path.name.endswith(("-wal", "-shm"))
+        if path.is_file()
     }
 
 
@@ -128,256 +122,81 @@ def test_status_reports_manifest_without_configuration(tmp_path):
         status_run("run-no-config", runs_dir=tmp_path)
 
 
-def test_status_reads_live_run_while_writer_holds_wal_open(
-    tmp_path,
-):
-    worker = FakeWorker()
-    reviewer = FakeReviewer(
-        ["decision", "PASS"]
-    )
+def _waiting_run(tmp_path: Path, run_id: str) -> RunRuntime:
+    """Lauf bis zur wartenden Entscheidung; der Schreiber bleibt
+    offen."""
     runtime = RunRuntime(
-        RunStore(tmp_path, "run-live"),
-        worker,
-        reviewer,
+        RunStore(tmp_path, run_id),
+        FakeWorker(),
+        FakeReviewer(["decision", "PASS"]),
         StaticEvidenceCollector((_context(1),)),
         StaticFinalizer(),
     )
+    runtime.start(_task(run_id), Limits())
+    _add_configuration(tmp_path, run_id)
+    return runtime
+
+
+def test_status_reads_live_run_while_writer_is_open(tmp_path):
+    runtime = _waiting_run(tmp_path, "run-live")
     try:
-        waiting = runtime.start(_task("run-live"), Limits())
-        run_dir = tmp_path / "run-live"
-        assert (run_dir / "checkpoints.sqlite-wal").exists()
-        _add_configuration(tmp_path, "run-live")
-
         result = status_run("run-live", runs_dir=tmp_path)
-
         assert result.status == "waiting_decision"
-        assert result.phase is waiting.phase
-        assert result.round_id == waiting.round_id
-        assert worker.calls == 1
-        assert reviewer.calls == 1
+        assert result.phase is Phase.WAITING_DECISION
+        assert result.round_id == 1
     finally:
         runtime.close()
 
 
-def test_status_reads_crash_state_with_wal_but_no_shm(tmp_path):
-    worker = FakeWorker()
-    reviewer = FakeReviewer(
-        ["decision", "PASS"]
-    )
-    runtime = RunRuntime(
-        RunStore(tmp_path, "run-crash"),
-        worker,
-        reviewer,
-        StaticEvidenceCollector((_context(1),)),
-        StaticFinalizer(),
-    )
+def test_status_ignores_an_unfinished_replacement(tmp_path):
+    """Ein abgebrochener Schreibvorgang hinterlässt höchstens eine
+    temporäre Datei; gelesen wird der letzte ganze Stand."""
+    _waiting_run(tmp_path, "run-crash").close()
     run_dir = tmp_path / "run-crash"
-    waiting = runtime.start(_task("run-crash"), Limits())
-    main_bytes = (run_dir / "checkpoints.sqlite").read_bytes()
-    wal_bytes = (run_dir / "checkpoints.sqlite-wal").read_bytes()
-    runtime.close()
-    _add_configuration(tmp_path, "run-crash")
-
-    # Nach einem Absturz kann eine WAL-Datei ohne zugehoerige SHM-Datei
-    # zurueckbleiben. Ein sauberes runtime.close() raeumt je nach
-    # SQLite-Build beides auf oder behaelt beides (dauerhaftes WAL,
-    # macOS-Host); daher wird der Zustand hier gezielt aus den waehrend
-    # des offenen Laufs erfassten Bytes rekonstruiert.
-    (run_dir / "checkpoints.sqlite").write_bytes(main_bytes)
-    (run_dir / "checkpoints.sqlite-wal").write_bytes(wal_bytes)
-    (run_dir / "checkpoints.sqlite-shm").unlink(missing_ok=True)
+    (run_dir / ".record.json.abc.tmp").write_text("{halb")
 
     result = status_run("run-crash", runs_dir=tmp_path)
 
     assert result.status == "waiting_decision"
-    assert result.phase is waiting.phase
-    assert result.round_id == waiting.round_id
-
-    # Das Lesen einer WAL ohne vorhandene SHM-Datei braucht deren
-    # Neuanlage (SQLites eigene Koordination fuer den WAL-Index); das
-    # ist ein notwendiger Sidecar und kein stiller Fehlschlag-Grund
-    # (p0h.1). Hauptdatei und WAL selbst bleiben dabei byteidentisch --
-    # das Lesen veraendert nie den eigentlichen persistierten Inhalt.
-    assert (run_dir / "checkpoints.sqlite").read_bytes() == main_bytes
-    assert (
-        run_dir / "checkpoints.sqlite-wal"
-    ).read_bytes() == wal_bytes
 
 
-def test_status_read_is_consistent_despite_concurrent_checkpoint(
-    tmp_path, monkeypatch
-):
-    """Ein Checkpoint mitten in unserer eigenen Momentaufnahme darf nie
-    zu einer Mischung aus zwei Schreibvorgaengen fuehren (re0)."""
-    import ki_dev.runner.runtime as run_runtime_module
-
-    worker = FakeWorker()
-    reviewer = FakeReviewer(
-        ["decision", "PASS"]
-    )
-    runtime = RunRuntime(
-        RunStore(tmp_path, "run-race"),
-        worker,
-        reviewer,
-        StaticEvidenceCollector((_context(1),)),
-        StaticFinalizer(),
-    )
-    waiting = runtime.start(_task("run-race"), Limits())
-    _add_configuration(tmp_path, "run-race")
-
-    triggered = {"done": False}
-
-    def racing_snapshot(source, destination):
-        target = run_runtime_module.sqlite3.connect(destination)
-
-        def concurrent_write_mid_copy(status, remaining, total):
-            del status, total
-            if not triggered["done"] and remaining > 0:
-                triggered["done"] = True
-                # Ein weiterer Schreibvorgang samt Checkpoint laeuft,
-                # waehrend unsere eigene Momentaufnahme bereits eine
-                # Seite kopiert hat.
-                runtime.resume("weiter")
-
-        try:
-            source.backup(
-                target, pages=1, progress=concurrent_write_mid_copy
-            )
-        finally:
-            target.close()
-
-    monkeypatch.setattr(
-        run_runtime_module, "_backup_snapshot", racing_snapshot
-    )
-
-    result = status_run("run-race", runs_dir=tmp_path)
-
-    assert triggered["done"]
-    # Die Momentaufnahme ist entweder der Stand vor oder der Stand nach
-    # dem nebenlaeufigen Schreibvorgang -- niemals eine unmoegliche
-    # Mischung aus beiden.
-    if result.status == "waiting_decision":
-        assert result.round_id == waiting.round_id
-        assert result.phase is waiting.phase
-    else:
-        assert result.status == "passed"
-    runtime.close()
-
-
-def _corrupt_latest_checkpoint(
-    runtime: RunRuntime, run_id: str, mutate
-) -> None:
-    """Schreibe einen neuen, gezielt beschaedigten Checkpoint fuer den
-    Lauf, so wie ein realer, aber unvollstaendiger Schreibvorgang ihn
-    hinterlassen koennte."""
-    config = {"configurable": {"thread_id": run_id}}
-    saver = runtime._checkpointer
-    current = saver.get_tuple(config)
-    checkpoint = dict(current.checkpoint)
-    values = dict(checkpoint["channel_values"])
-    mutate(values)
-    checkpoint["channel_values"] = values
-    # uuid6 statt uuid4: LangGraph waehlt den "neuesten" Checkpoint
-    # ueber die sortierbare Checkpoint-ID; eine zufaellige uuid4 waere
-    # nicht zuverlaessig groesser als die vorherige und liesse den
-    # Test nichtdeterministisch fehlschlagen.
-    checkpoint["id"] = str(uuid6())
-    saver.put(current.config, checkpoint, current.metadata, {})
-
-
-def test_status_reports_checkpoint_missing_required_field(tmp_path):
-    runtime = RunRuntime(
-        RunStore(tmp_path, "run-missing-status"),
-        FakeWorker(),
-        FakeReviewer(["decision"]),
-        StaticEvidenceCollector((_context(1),)),
-        StaticFinalizer(),
-    )
-    runtime.start(_task("run-missing-status"), Limits())
-    _corrupt_latest_checkpoint(
-        runtime,
-        "run-missing-status",
-        lambda values: values.pop("status"),
-    )
-    runtime.close()
-    _add_configuration(tmp_path, "run-missing-status")
-
-    with pytest.raises(RunResumeError):
-        status_run("run-missing-status", runs_dir=tmp_path)
-
-
-def test_status_reports_checkpoint_with_invalid_run_state(tmp_path):
-    runtime = RunRuntime(
-        RunStore(tmp_path, "run-bad-run-state"),
-        FakeWorker(),
-        FakeReviewer(["decision"]),
-        StaticEvidenceCollector((_context(1),)),
-        StaticFinalizer(),
-    )
-    runtime.start(_task("run-bad-run-state"), Limits())
-
-    def _break_run_state(values: dict) -> None:
-        run_state = dict(values["run_state"])
-        del run_state["schema_version"]
-        values["run_state"] = run_state
-
-    _corrupt_latest_checkpoint(
-        runtime, "run-bad-run-state", _break_run_state
-    )
-    runtime.close()
-    _add_configuration(tmp_path, "run-bad-run-state")
-
-    with pytest.raises(RunResumeError):
-        status_run("run-bad-run-state", runs_dir=tmp_path)
+def _corrupt_record(tmp_path: Path, run_id: str, mutate) -> None:
+    path = tmp_path / run_id / "record.json"
+    document = json.loads(path.read_text())
+    mutate(document)
+    path.write_text(json.dumps(document))
 
 
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda values: values.__setitem__("status", "nonsense"),
-        lambda values: values.__setitem__("round_id", -7),
-        lambda values: values.__setitem__("round_id", True),
+        lambda d: d["data"].pop("round_id"),
+        lambda d: d["data"]["run_state"].pop("schema_version"),
+        lambda d: d["run"].__setitem__("state", ["nonsense"]),
+        lambda d: d["data"].__setitem__("round_id", -7),
+        lambda d: d["data"].__setitem__("round_id", True),
+        lambda d: d.__setitem__("pending", {"id": "x"}),
     ],
 )
-def test_status_rejects_semantically_invalid_required_fields(
-    tmp_path, mutate
-):
-    """8to: ``status``/``round_id`` muessen echte, gueltige Werte sein,
-    nicht nur irgendein vorhandenes JSON-Feld."""
-    runtime = RunRuntime(
-        RunStore(tmp_path, "run-invalid-status"),
-        FakeWorker(),
-        FakeReviewer(["decision"]),
-        StaticEvidenceCollector((_context(1),)),
-        StaticFinalizer(),
-    )
-    runtime.start(_task("run-invalid-status"), Limits())
-    _corrupt_latest_checkpoint(runtime, "run-invalid-status", mutate)
-    runtime.close()
-    _add_configuration(tmp_path, "run-invalid-status")
+def test_status_rejects_an_invalid_record(tmp_path, mutate):
+    """8to: Pflichtfelder müssen echte, gültige Werte sein, nicht nur
+    irgendein vorhandenes JSON-Feld."""
+    _waiting_run(tmp_path, "run-invalid").close()
+    _corrupt_record(tmp_path, "run-invalid", mutate)
 
-    with pytest.raises(RunResumeError):
-        status_run("run-invalid-status", runs_dir=tmp_path)
+    with pytest.raises(RunResumeError, match="unvollstaendig"):
+        status_run("run-invalid", runs_dir=tmp_path)
 
 
-def test_status_cli_exits_with_code_2_for_incomplete_checkpoint(
+def test_status_cli_exits_with_code_2_for_incomplete_record(
     tmp_path, capsys
 ):
     from ki_dev.cli import main
 
-    runtime = RunRuntime(
-        RunStore(tmp_path, "run-cli-corrupt"),
-        FakeWorker(),
-        FakeReviewer(["decision"]),
-        StaticEvidenceCollector((_context(1),)),
-        StaticFinalizer(),
+    _waiting_run(tmp_path, "run-cli-corrupt").close()
+    _corrupt_record(
+        tmp_path, "run-cli-corrupt", lambda d: d["data"].pop("round_id")
     )
-    runtime.start(_task("run-cli-corrupt"), Limits())
-    _corrupt_latest_checkpoint(
-        runtime, "run-cli-corrupt", lambda values: values.pop("status")
-    )
-    runtime.close()
-    _add_configuration(tmp_path, "run-cli-corrupt")
 
     with pytest.raises(SystemExit) as raised:
         main(
@@ -406,71 +225,45 @@ def _initialize_with_configuration(store: RunStore) -> None:
     )
 
 
-def test_status_reports_missing_checkpoint_clearly(tmp_path):
-    store = RunStore(tmp_path, "run-no-checkpoint")
+def test_status_reports_missing_record_clearly(tmp_path):
+    store = RunStore(tmp_path, "run-no-record")
     _initialize_with_configuration(store)
 
-    with pytest.raises(RunResumeError):
-        status_run("run-no-checkpoint", runs_dir=tmp_path)
+    with pytest.raises(RunResumeError, match="fehlt"):
+        status_run("run-no-record", runs_dir=tmp_path)
 
 
-def test_status_creates_no_checkpoint_file_for_incomplete_run(
-    tmp_path,
-):
+def test_status_creates_no_file_for_incomplete_run(tmp_path):
     store = RunStore(tmp_path, "run-incomplete")
     _initialize_with_configuration(store)
-    run_dir = tmp_path / "run-incomplete"
-    before = _sidecar_free_snapshot(run_dir)
-    assert "checkpoints.sqlite" not in before
+    before = _tree(tmp_path)
 
     with pytest.raises(RunResumeError):
         status_run("run-incomplete", runs_dir=tmp_path)
 
-    after = _sidecar_free_snapshot(run_dir)
-    assert after == before
-    assert not store.checkpoint_path.exists()
+    assert _tree(tmp_path) == before
+    assert not store.record_path.exists()
 
 
-def test_status_leaves_unusable_checkpoint_file_untouched(tmp_path):
-    store = RunStore(tmp_path, "run-empty-checkpoint")
+def test_status_leaves_unusable_record_untouched(tmp_path):
+    store = RunStore(tmp_path, "run-empty-record")
     _initialize_with_configuration(store)
-    store.checkpoint_path.touch()
-    before = store.checkpoint_path.read_bytes()
+    store.record_path.touch()
 
     with pytest.raises(RunResumeError):
-        status_run("run-empty-checkpoint", runs_dir=tmp_path)
+        status_run("run-empty-record", runs_dir=tmp_path)
 
-    after = store.checkpoint_path.read_bytes()
-    assert after == before
+    assert store.record_path.read_bytes() == b""
 
 
-def test_status_leaves_complete_run_checkpoint_byte_identical(
-    tmp_path,
-):
-    worker = FakeWorker()
-    reviewer = FakeReviewer(
-        ["decision", "PASS"]
-    )
-    with RunRuntime(
-        RunStore(tmp_path, "run-complete"),
-        worker,
-        reviewer,
-        StaticEvidenceCollector((_context(1),)),
-        StaticFinalizer(),
-    ) as runtime:
-        runtime.start(_task("run-complete"), Limits())
-
-    _add_configuration(tmp_path, "run-complete")
-    store = RunStore(tmp_path, "run-complete")
-    checkpoint_before = store.checkpoint_path.read_bytes()
-    run_dir = tmp_path / "run-complete"
-    known_before = _sidecar_free_snapshot(run_dir)
+def test_status_leaves_complete_run_byte_identical(tmp_path):
+    _waiting_run(tmp_path, "run-complete").close()
+    before = _tree(tmp_path / "run-complete")
 
     status_run("run-complete", runs_dir=tmp_path)
     status_run("run-complete", runs_dir=tmp_path)
 
-    assert store.checkpoint_path.read_bytes() == checkpoint_before
-    assert _sidecar_free_snapshot(run_dir) == known_before
+    assert _tree(tmp_path / "run-complete") == before
 
 
 def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):

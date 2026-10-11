@@ -15,6 +15,9 @@ sie. Dieses Modul schließt ihre stillen Fallen:
   :func:`bind` verlangt eine Kante im Ziel oder darüber.
 * Ein Callback, der wie ein Ereignis heißt, sendet dieses Ereignis
   statt die Methode aufzurufen: :func:`bind` weist solche Namen ab.
+* Ereignisse und Zustände werden Attribute der Maschinenklasse; ein
+  Name wie ``prepare`` verdeckt eines der Bibliothek: :func:`bind`
+  weist solche Namen ab.
 * ``history_values`` liegen nicht im Modell und die Konfiguration ist
   ``str`` oder ``OrderedSet``: :class:`Durable` speichert und lädt
   beides als Datensatz (:data:`RECORD_SCHEMA`).
@@ -73,6 +76,14 @@ class Taken:
 def load_statechart(doc: Mapping[str, object]) -> type[StateChart]:
     """Native Definition laden und gegen das Schema der Bibliothek
     prüfen; die Klasse läuft strikt."""
+    shadowed = sorted(
+        (_events(doc) | set(_ids(doc))) & set(dir(StateChart))
+    )
+    if shadowed:
+        raise FsmError(
+            f"{doc.get('name')}: Name verdeckt die Bibliothek: "
+            f"{', '.join(shadowed)}"
+        )
     try:
         machine = load(json.dumps(doc), format="json", validate=True)
     except InvalidDefinition as exc:
@@ -248,6 +259,13 @@ def _events(doc: Mapping[str, object]) -> set[str]:
         for transition in state.get("transitions", ())
         if transition.get("event")
     }
+
+
+def _ids(doc: Mapping[str, object]) -> Iterator[str]:
+    states = cast(Mapping, doc["states"])
+    for sid, state in _items(states):
+        yield sid
+        yield from state.get("history", {})
 
 
 def _callbacks(value: object) -> set[str]:

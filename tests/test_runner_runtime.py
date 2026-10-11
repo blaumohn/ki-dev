@@ -660,7 +660,9 @@ def test_manual_relay_halts_executor_not_flow_and_continues(tmp_path):
             ask.name.replace(".input.md", ".answer.md")
         )
         answer.write_text("Gebaut und geprüft.")
-        with pytest.raises(RunResumeError, match="als Datei"):
+        with pytest.raises(
+            RunResumeError, match="Laufstatus awaiting_input"
+        ):
             runtime.resume("Text statt Datei")
         result = runtime.resume()
 
@@ -680,19 +682,66 @@ def test_evidence_of_a_foreign_task_is_a_protocol_error():
         )
 
 
-def test_graph_nodes_are_exactly_the_flow_states(tmp_path):
-    """Ein Graphmodell: der StateGraph wird aus implement.toml
-    übersetzt."""
+def test_record_is_the_only_run_state(tmp_path):
+    """Kein Checkpoint neben dem Datensatz: Lauf-Maschine, offene
+    Operation und Ablaufzustand stehen in ``record.json``."""
     with _runtime(
-        tmp_path, "run-graph", FakeWorker(), FakeReviewer([]), []
+        tmp_path,
+        "run-record",
+        FakeWorker(),
+        FakeReviewer(["decision"]),
+        [_context(1)],
     ) as runtime:
-        graph = runtime._graph.get_graph()
-    nodes = set(graph.nodes) - {"__start__", "__end__"}
-    assert nodes == set(IMPLEMENT.states)
-    edges = {(e.source, e.target) for e in graph.edges}
-    for transition in IMPLEMENT.transitions:
-        if transition.target != "@history":
-            assert (transition.source, transition.target) in edges
+        waiting = runtime.start(_task("run-record"), Limits())
+
+    record = json.loads(
+        (tmp_path / "run-record" / "record.json").read_text()
+    )
+    assert waiting.status == "waiting_decision"
+    assert record["run"]["state"] == ["waiting_decision"]
+    assert record["pending"] is None
+    assert record["data"]["run_state"]["state"]["phase"] == (
+        "waiting_decision"
+    )
+    assert not list((tmp_path / "run-record").glob("*.sqlite*"))
+
+
+def test_answer_after_process_end_continues_in_a_new_runtime(tmp_path):
+    """Halt beendet den Prozess; ein neuer Aufruf liest den Datensatz
+    und setzt mit der Antwort fort."""
+    reviewer = FakeReviewer(["decision", "PASS"])
+    with _runtime(
+        tmp_path, "run-answer", FakeWorker(), reviewer, [_context(1)]
+    ) as runtime:
+        runtime.start(_task("run-answer"), Limits())
+
+    with _runtime(
+        tmp_path, "run-answer", FakeWorker(), reviewer, [_context(1)]
+    ) as resumed:
+        with pytest.raises(RunResumeError, match="möglich: answer"):
+            resumed.resume()
+        result = resumed.resume("Ablage A")
+
+    assert result.status == "passed"
+
+
+def test_a_second_writer_is_rejected(tmp_path):
+    with _runtime(
+        tmp_path, "run-lock", FakeWorker(), FakeReviewer([]), []
+    ), pytest.raises(RunResumeError, match="bereits"):
+        _runtime(
+            tmp_path, "run-lock", FakeWorker(), FakeReviewer([]), []
+        )
+
+
+def test_langgraph_checkpoint_gets_a_clear_message(tmp_path):
+    run_dir = tmp_path / "run-old"
+    run_dir.mkdir()
+    (run_dir / "checkpoints.sqlite").write_bytes(b"")
+    with _runtime(
+        tmp_path, "run-old", FakeWorker(), FakeReviewer([]), []
+    ) as runtime, pytest.raises(RunResumeError, match="LangGraph"):
+        runtime.resume()
 
 
 def test_manual_review_waits_for_a_new_answer_after_protocol_error(

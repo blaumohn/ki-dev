@@ -9,7 +9,6 @@ from dataclasses import replace
 import pytest
 
 from ki_dev.flow.model import FlowError, load_flow, parse_flow, read_raw
-from ki_dev.runner import graph
 from ki_dev.runner.planning import (
     ASK,
     TURN,
@@ -207,16 +206,6 @@ def test_new_start_never_reuses_an_old_attempt(tmp_path):
         with pytest.raises(StaleAnswerError):
             runtime.resume("done", attempt=old)
         assert runtime.resume("done", attempt=new).state == "map.review"
-
-
-def test_run_and_step_share_the_graph_translation():
-    """Ein Ausführer: beide Laufzeiten bauen ihren Graphen mit
-    compile_flow aus ihrer Ablaufdatei."""
-    import ki_dev.runner.planning as planning
-    import ki_dev.runner.runtime as runtime
-
-    assert runtime.compile_flow is graph.compile_flow
-    assert planning.compile_flow is graph.compile_flow
 
 
 def test_step_graph_nodes_are_exactly_the_planning_states(tmp_path):

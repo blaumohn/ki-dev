@@ -132,6 +132,17 @@ def test_callback_named_like_an_event_is_rejected():
         bind(doc, Clash)
 
 
+def test_name_shadowing_the_library_is_rejected():
+    """``prepare`` ist ein Attribut der Bibliothek; als Ereignis
+    zerbräche es die Maschine beim Start."""
+    doc = copy.deepcopy(DOC)
+    doc["states"]["running"]["states"]["worker"]["transitions"][0][
+        "event"
+    ] = "prepare"
+    with pytest.raises(FsmError, match="Bibliothek: prepare"):
+        bind(doc, Ops)
+
+
 def test_raise_without_receiver_is_rejected():
     doc = copy.deepcopy(DOC)
     doc["states"]["awaiting_input"]["transitions"].pop(0)
