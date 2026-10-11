@@ -606,6 +606,37 @@ def test_resume_rechecks_integration_after_crash_without_artifact(
     assert finalizer.effect_count == 1
 
 
+class BrokenIntegrationFinalizer(StaticFinalizer):
+    def integrate(self, *_):
+        raise RuntimeError("Git kaputt")
+
+
+def test_failed_operation_sends_its_declared_failure_event(tmp_path):
+    """Das Scheitern einer Operation ist das Ereignis, das sie im
+    Ablauf nennt (`failure`): bei der Integration finalization_error."""
+    with RunRuntime(
+        RunStore(tmp_path, "run-broken-integration"),
+        FakeWorker(),
+        FakeReviewer(["PASS"]),
+        StaticEvidenceCollector((_context(1),)),
+        BrokenIntegrationFinalizer(),
+    ) as runtime:
+        result = runtime.start(
+            _task("run-broken-integration"), Limits()
+        )
+
+    assert result.status == "error"
+    assert result.phase is Phase.ERROR
+    events = [
+        json.loads(line)
+        for line in (
+            tmp_path / "run-broken-integration" / "events.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
+    ]
+    assert events[-1]["event"] == "finalization_error"
+    assert events[-1]["state"] == "fast_forward_integrate"
+
+
 def test_failed_integration_pauses_and_writes_handoff(tmp_path):
     """ucq (wiedereroeffnet): eine fachlich fehlgeschlagene Integration
     (nicht nur ein Prozessabsturz) muss ebenfalls eine

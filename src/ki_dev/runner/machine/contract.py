@@ -80,8 +80,6 @@ WAITING_PHASES = frozenset(_phases_of(WAIT_KIND))
 
 STOPPED_PHASES = TERMINAL_PHASES | WAITING_PHASES
 
-FINALIZATION_PHASES = _phases_of("finalization")
-
 
 class MachineEscalationCause(StrEnum):
     """Deterministische Ursache einer maschinellen Eskalation.

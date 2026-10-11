@@ -57,6 +57,9 @@ kinds = ["machine", "agent", "finalization", "wait", "final"]
 # Was der Ausführer beim Betreten tut. start, task, prepare und
 # checkpoint erzeugt ki-dev selbst; work und review rufen einen
 # Adapter; evidence und die Abschlussoperationen sind Git-/bd-Arbeit.
+# `failure`: Ereignis, wenn die Wirkung technisch scheitert;
+# `repeatable`: darf nach Prozessende erneut laufen (sonst ist eine
+# begonnene Wirkung ohne Ergebnis unklar).
 
 [state.start]
 kind = "machine"
@@ -67,23 +70,28 @@ kind = "agent"
 actor = "Controller (Review-Sitzung)"
 # Ohne geprüftes Ergebnis gibt es nichts zu beurteilen: der erste
 # Auftrag kommt aus der Laufkonfiguration, nicht von einem Agenten.
-operation = [
-  { do = "review", cond = ["checked_result"], template = "review" },
-  { do = "task" },
-]
+[[state.controller_step.operation]]
+do = "review"
+cond = ["checked_result"]
+template = "review"
+failure = "process_error"
+[[state.controller_step.operation]]
+do = "task"
 
 [state.worker_step_prepare]
 kind = "machine"
-operation = [{ do = "prepare" }]
+operation = [{ do = "prepare", failure = "process_error" }]
 
 [state.worker_step]
 kind = "agent"
 actor = "Worker (Bau-Sitzung)"
-operation = [{ do = "work", template = "work" }]
+operation = [
+  { do = "work", template = "work", failure = "worker_process_error" },
+]
 
 [state.capture_step_result]
 kind = "machine"
-operation = [{ do = "evidence" }]
+operation = [{ do = "evidence", failure = "process_error" }]
 
 [state.checkpoint]
 kind = "machine"
@@ -91,19 +99,31 @@ operation = [{ do = "checkpoint" }]
 
 [state.freeze_reviewed_result]
 kind = "finalization"
-operation = [{ do = "freeze" }]
+[[state.freeze_reviewed_result.operation]]
+do = "freeze"
+repeatable = true
+failure = "finalization_error"
 
 [state.finalize_history]
 kind = "finalization"
-operation = [{ do = "finalize_history" }]
+[[state.finalize_history.operation]]
+do = "finalize_history"
+repeatable = true
+failure = "finalization_error"
 
 [state.verify_final_result]
 kind = "finalization"
-operation = [{ do = "verify_final" }]
+[[state.verify_final_result.operation]]
+do = "verify_final"
+repeatable = true
+failure = "finalization_error"
 
 [state.fast_forward_integrate]
 kind = "finalization"
-operation = [{ do = "integrate" }]
+[[state.fast_forward_integrate.operation]]
+do = "integrate"
+repeatable = true
+failure = "finalization_error"
 
 [state.waiting_decision]
 kind = "wait"

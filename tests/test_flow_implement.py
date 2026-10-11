@@ -92,6 +92,32 @@ def test_controller_operation_depends_on_reviewed_result():
     assert (task.do, task.cond) == ("task", ())
 
 
+def test_operation_says_what_it_means_for_the_run():
+    """Wiederholbarkeit und Fehlerereignis sind Daten des Pakets an der
+    Operation, nicht Wissen des Ausführers über Phasen."""
+    (work,) = IMPLEMENT.state("worker_step").operations
+    (integrate,) = IMPLEMENT.state("fast_forward_integrate").operations
+    assert (work.repeatable, work.failure) == (
+        False,
+        "worker_process_error",
+    )
+    assert (integrate.repeatable, integrate.failure) == (
+        True,
+        "finalization_error",
+    )
+
+
+def test_failure_without_edge_stops_on_load():
+    raw = copy.deepcopy(read_raw("implement"))
+    raw["state"]["worker_step"]["operation"][0]["failure"] = (
+        "finalization_error"
+    )
+    with pytest.raises(
+        FlowError, match="finalization_error hat in worker_step"
+    ):
+        parse_flow(raw)
+
+
 def test_guard_typo_in_the_flow_file_stops_on_load():
     raw = copy.deepcopy(read_raw("implement"))
     raw["statechart"]["states"]["active"]["states"]["capture_step_result"][

@@ -29,7 +29,7 @@ bleibt im Ablauf.
 from __future__ import annotations
 
 from ki_dev.deltas import StepDeltaAssessment
-from ki_dev.flow.model import HISTORY, FlowError
+from ki_dev.flow.model import HISTORY, FlowError, Operation
 from ki_dev.flow.statechart import ESCALATION_EVENT
 from ki_dev.fsm import (
     Durable,
@@ -229,15 +229,23 @@ def _escalation(
     )
 
 
+def operation_of(
+    state: MachineState, limits: Limits = DEFAULT_LIMITS
+) -> Operation | None:
+    """Operation, die der Ausführer in ``state`` auszuführen hat
+    (Moore-Ausgabe des Ablaufs), mit ihren Daten für den Lauf;
+    ``None`` für Halt und Ende."""
+    model = ImplementModel(state, limits)
+    return IMPLEMENT.operation(
+        state.phase.value, lambda name: getattr(model, name)()
+    )
+
+
 def operation(
     state: MachineState, limits: Limits = DEFAULT_LIMITS
 ) -> str | None:
-    """Operation, die der Ausführer in ``state`` auszuführen hat
-    (Moore-Ausgabe des Ablaufs); ``None`` für Halt und Ende."""
-    model = ImplementModel(state, limits)
-    chosen = IMPLEMENT.operation(
-        state.phase.value, lambda name: getattr(model, name)()
-    )
+    """Name der Operation in ``state`` (:func:`operation_of`)."""
+    chosen = operation_of(state, limits)
     return None if chosen is None else chosen.do
 
 

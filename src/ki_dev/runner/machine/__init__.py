@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from .contract import (
     DEFAULT_LIMITS,
-    FINALIZATION_PHASES,
     IMPLEMENT,
     STOPPED_PHASES,
     TERMINAL_PHASES,
@@ -66,6 +65,7 @@ from .model import (
     ImplementModel,
     advance,
     operation,
+    operation_of,
 )
 from .state_json import (
     SCHEMA_VERSION,
@@ -77,7 +77,6 @@ from .state_json import (
 __all__ = [
     "IMPLEMENT",
     "DEFAULT_LIMITS",
-    "FINALIZATION_PHASES",
     "SCHEMA_VERSION",
     "STOPPED_PHASES",
     "TERMINAL_PHASES",
@@ -122,6 +121,7 @@ __all__ = [
     "ImplementModel",
     "advance",
     "operation",
+    "operation_of",
     "decode_run_state",
     "encode_run_state",
 ]

@@ -96,12 +96,18 @@ class Operation:
     ``template`` und ``context`` beschreiben eine Übergabe (``turn``):
     Rollenvorlage unter ``flow/templates/<ABLAUF>/`` und die
     Kontextbausteine in ihrer Reihenfolge; was ein Baustein liefert,
-    steckt der Aufrufer unter dem Namen ein."""
+    steckt der Aufrufer unter dem Namen ein.
+
+    ``repeatable`` und ``failure`` sagen dem Ausführer, was die
+    Operation für den Lauf bedeutet: ob sie nach Prozessende erneut
+    laufen darf und welches Ereignis ihr technisches Scheitern ist."""
 
     do: str
     cond: tuple[str, ...] = ()
     template: str | None = None
     context: tuple[str, ...] = ()
+    repeatable: bool = False
+    failure: str | None = None
 
     @property
     def turn(self) -> Turn | None:
@@ -414,6 +420,8 @@ def _operation(item: dict) -> Operation:
         tuple(item.get("cond", ())),
         item.get("template"),
         tuple(use["use"] for use in item.get("context", ())),
+        item.get("repeatable", False),
+        item.get("failure"),
     )
 
 
@@ -564,6 +572,8 @@ _SCHEMA = {
                                 "cond": _GUARDS,
                                 "template": _TEMPLATE,
                                 "context": _CONTEXT,
+                                "repeatable": {"type": "boolean"},
+                                "failure": _NAME,
                             },
                         },
                     },
@@ -839,6 +849,14 @@ def _check_operations(flow: Flow, where: str) -> None:
             )
             if op.template is not None:
                 _require_template(flow.name, op.template, label)
+            if op.failure is not None and not any(
+                t.source == state.id and t.event == op.failure
+                for t in flow.transitions
+            ):
+                raise FlowError(
+                    f"{label}.failure: {op.failure} hat in "
+                    f"{state.id} keine Kante"
+                )
             last = index == len(state.operations) - 1
             if not op.cond and not last:
                 raise FlowError(

@@ -53,6 +53,7 @@ from ki_dev.flow.model import (
     Transition,
     Verdict,
 )
+from ki_dev.flow.model import Operation as FlowOperation
 from ki_dev.fsm import RecordError, TransitionNotAllowed
 from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
@@ -64,7 +65,7 @@ from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.events import event_record
 from ki_dev.runner.implement_turns import review_prompt, work_prompt
 from ki_dev.runner.machine import (
-    FINALIZATION_PHASES,
+    EVENT_TYPES,
     IMPLEMENT,
     WAITING_PHASES,
     AgentEscalation,
@@ -76,7 +77,6 @@ from ki_dev.runner.machine import (
     ControllerTask,
     Event,
     ExecutionStopped,
-    FinalizationError,
     FinalResultVerified,
     HistoryFinalized,
     IntegrationCompleted,
@@ -86,7 +86,6 @@ from ki_dev.runner.machine import (
     MachineEscalationCause,
     MachineState,
     Phase,
-    ProcessError,
     ProtocolError,
     ResumeRequested,
     ReviewedResultFrozen,
@@ -97,11 +96,11 @@ from ki_dev.runner.machine import (
     TransitionResult,
     WorkerCompleted,
     WorkerInputsPrepared,
-    WorkerProcessError,
     advance,
     decode_run_state,
     encode_run_state,
     operation,
+    operation_of,
 )
 from ki_dev.runner.review_output import (
     REVIEW_VOCABULARY,
@@ -455,7 +454,9 @@ class RunRuntime:
     ) -> Operation:
         """Offene Operation mit stabiler Kennung: eine Wiederholung
         derselben Wirkung trifft ihr gespeichertes Ergebnis wieder."""
-        repeatable = run.state.phase in FINALIZATION_PHASES
+        repeatable = cast(
+            FlowOperation, operation_of(run.state, run.limits)
+        ).repeatable
         if repeatable:
             operation_id = f"final-{kind}-r{run.revision:04d}"
         elif kind == "review":
@@ -1151,16 +1152,15 @@ class RunRuntime:
     ) -> dict[str, object]:
         self._lauf.send("failed")
         run = decode_run_state(state["run_state"])
-        if run.state.phase in FINALIZATION_PHASES:
-            update = self._transition(run, FinalizationError(detail))
-            return {**update, "last_error": detail}
-        # Formale Ausgabe → Ereignis: ein gescheiterter Bau-Turn ist
-        # ein Worker-Ereignis, jede andere Operation ein Prozessfehler.
-        event = (
-            WorkerProcessError(detail)
-            if operation(run.state, run.limits) == "work"
-            else ProcessError(detail)
-        )
+        # Welches Ereignis das Scheitern ist, sagt die Operation des
+        # Ablaufs (`failure`), nicht der Ausführer.
+        failed = operation_of(run.state, run.limits)
+        if failed is None or failed.failure is None:
+            raise RuntimeError(
+                f"Operation in {run.state.phase.value} ohne failure "
+                f"scheiterte: {detail}"
+            )
+        event = EVENT_TYPES[failed.failure](detail)
         update = self._transition(run, event)
         next_run = decode_run_state(
             cast(dict[str, object], update["run_state"])
