@@ -145,15 +145,17 @@ class ImplementModel:
         )
 
 
+OPERATION_GUARDS = frozenset(
+    name.removeprefix("!")
+    for state in IMPLEMENT.states.values()
+    for operation in state.operations
+    for name in operation.cond
+)
+"""Wächter, die die Fachschicht nennt (Wahl der Operation), nicht der
+``[statechart]``."""
+
 IMPLEMENT_CHART = bind(
-    IMPLEMENT.statechart,
-    ImplementModel,
-    also=frozenset(
-        name.removeprefix("!")
-        for state in IMPLEMENT.states.values()
-        for operation in state.operations
-        for name in operation.cond
-    ),
+    IMPLEMENT.statechart, ImplementModel, also=OPERATION_GUARDS
 )
 
 if set(IMPLEMENT.vocabulary.escalations) != {
@@ -173,9 +175,22 @@ def advance(
     *,
     facts: frozenset[str] = frozenset(),
 ) -> TransitionResult:
-    """Entscheide den Folgezustand oder weise den Übergang ab."""
+    """Entscheide den Folgezustand oder weise den Übergang ab (der
+    Ablauf allein, ohne Lauf)."""
     model = ImplementModel(state, limits, facts)
     machine = Durable(IMPLEMENT_CHART, model, _record(state))
+    return step(machine, model, state, event)
+
+
+def step(
+    machine: Durable,
+    model: ImplementModel,
+    state: MachineState,
+    event: Event,
+) -> TransitionResult:
+    """Ein Ereignis des Ablaufs an ``machine`` senden: den Ablauf allein
+    oder den Lauf, in dem er eine Region ist (``model`` ist dann das
+    gemeinsame Modell). ``state`` ist der Stand vor dem Ereignis."""
     try:
         taken = machine.send(event.flow_event, payload=event)
     except TransitionNotAllowed:
@@ -184,7 +199,7 @@ def advance(
         taken.owner, taken.index, state.phase.value
     )
     moved = MachineState(
-        phase=Phase(machine.configuration[-1]),
+        phase=phase_of(machine.configuration),
         counters=model.counters,
         checkpointed_result=model.checkpointed_result,
     )
@@ -193,6 +208,16 @@ def advance(
         escalation=_escalation(state.phase, event, model.escalation),
         transition=transition,
     )
+
+
+def phase_of(configuration: list[str]) -> Phase:
+    """Innerster Ablaufzustand einer Konfiguration (auch einer, in der
+    der Ablauf eine von mehreren Regionen ist)."""
+    (phase,) = (sid for sid in configuration if sid in _PHASES)
+    return Phase(phase)
+
+
+_PHASES = frozenset(phase.value for phase in Phase)
 
 
 def _record(state: MachineState) -> dict[str, object]:

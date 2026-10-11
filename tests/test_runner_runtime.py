@@ -719,7 +719,9 @@ def test_evidence_of_a_foreign_task_is_a_protocol_error():
 
 def test_record_is_the_only_run_state(tmp_path):
     """Kein Checkpoint neben dem Datensatz: Lauf-Maschine, offene
-    Operation und Ablaufzustand stehen in ``record.json``."""
+    Operation und Ablaufzustand stehen in ``record.json``; der
+    Ablaufzustand genau einmal (Laufdaten), nicht auch in der
+    Konfiguration der Lauf-Maschine."""
     with _runtime(
         tmp_path,
         "run-record",
@@ -733,7 +735,9 @@ def test_record_is_the_only_run_state(tmp_path):
         (tmp_path / "run-record" / "record.json").read_text()
     )
     assert waiting.status == "waiting_decision"
-    assert record["run"]["state"] == ["waiting_decision"]
+    assert sorted(record["run"]["state"]) == [
+        "halt", "idle", "lauf", "operation", "waiting",
+    ]
     assert record["pending"] is None
     assert record["data"]["run_state"]["state"]["phase"] == (
         "waiting_decision"

@@ -62,10 +62,13 @@ from .contract import (
 from .model import (
     EVENT_TYPES,
     IMPLEMENT_CHART,
+    OPERATION_GUARDS,
     ImplementModel,
     advance,
     operation,
     operation_of,
+    phase_of,
+    step,
 )
 from .state_json import (
     SCHEMA_VERSION,
@@ -118,10 +121,13 @@ __all__ = [
     "WorkerProcessError",
     "EVENT_TYPES",
     "IMPLEMENT_CHART",
+    "OPERATION_GUARDS",
     "ImplementModel",
     "advance",
     "operation",
     "operation_of",
+    "phase_of",
+    "step",
     "decode_run_state",
     "encode_run_state",
 ]

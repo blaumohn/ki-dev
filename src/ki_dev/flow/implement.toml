@@ -380,7 +380,9 @@ target = "error"
 
 # --- Entscheidung des Menschen ---------------------------------------
 
+# Beim Betreten hält der Lauf an (`wait`, Region halt in run.toml).
 [statechart.states.waiting_decision]
+enter = [{ raise = { event = "wait" } }]
 transitions = [
   { event = "resume_requested", target = "controller_step" },
 ]

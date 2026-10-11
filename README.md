@@ -318,7 +318,8 @@ src/ki_dev/
                flache Sicht), pattern.py (Muster), diagram.py (Mermaid),
                templates/ (Rollentexte), implement.toml, planning.toml
   runner/      machine/ (Ops des Umsetzungsablaufs, advance), run.toml +
-               run_machine.py (Lauf und Operation), runtime.py (Schleife,
+               run_machine.py (Lauf: Regionen ablauf, operation, halt),
+               runtime.py (Schleife,
                Datensatz je Schritt), planning.py (Planungslauf je Bead),
                turns.py (jede Übergabe aus ihrer
                Deklaration), implement_turns.py (Felder des Umsetzungsablaufs),

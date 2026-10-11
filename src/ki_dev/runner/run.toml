@@ -1,19 +1,23 @@
-# Lauf-Maschine des Ausführers (Gerüst, kein Ablaufpaket): der Status
-# eines Laufs und darin die offene Operation als Zwei-Schreib-Protokoll.
+# Lauf-Maschine des Ausführers (Gerüst, kein Ablaufpaket): eine
+# parallele Statechart (SCXML `<parallel>`) mit drei Regionen. Eine
+# Konfiguration ist ein Tupel, z. B. (review, started, running).
 #
-# Operation (in `running`): Absicht speichern (`prepared` → `started`),
-# externe Wirkung außerhalb der Maschine ausführen, Ergebnis speichern
-# (`artifact_saved`). Endet der Prozess zwischen beiden Schreibvorgängen,
-# ist die Wirkung unklar (`interrupted` → `uncertain`), außer bei einer
-# wiederholbaren Operation (Abschlussweg).
+# - `ablauf`: der `[statechart]` des Pakets; das Gerüst setzt ihn beim
+#   Laden ein (src/ki_dev/runner/run_machine.py, `compose`). Diese
+#   Datei nennt ihn nur über `done.state.ablauf`.
+# - `operation`: die offene Operation als Zwei-Schreib-Protokoll.
+#   Absicht speichern (`prepared` → `started`), externe Wirkung
+#   außerhalb der Maschine ausführen, Ergebnis speichern
+#   (`artifact_saved`).
+# - `halt`: ob der Lauf fährt. Die Bibliothek koppelt die Regionen: ein
+#   Ereignis wirkt in jeder Region, die eine Kante dafür hat. So hält
+#   `escalation.<ursache>` aus dem Ablauf hier an (der Ablauf legt die
+#   Ursache ab und bleibt stehen), `wait` aus einem wartenden
+#   Ablaufzustand ebenso, und das Ende des Ablaufs meldet die
+#   Bibliothek als `done.state.ablauf`.
 #
-# Lauf: Halte sind eigene Zustände. Eskaliert der Ablauf (Kante ohne
-# Ziel mit `raise escalation.<ursache>`), hält der Lauf in
-# `paused_interactive`, der Ablauf bleibt im Quellzustand; erreicht der
-# Ablauf einen wartenden oder finalen Zustand, sendet der Ausführer
-# dessen Namen als Ereignis. Fortsetzen ist `resume` (ohne Antwort)
-# oder `answer` (mit Antwort des Menschen); was im aktuellen Status
-# nicht passt, weist die Bibliothek ab.
+# Fortsetzen ist `resume` (ohne Antwort) oder `answer` (mit Antwort des
+# Menschen); was im aktuellen Halt nicht passt, weist die Bibliothek ab.
 #
 # Format: [statechart] von python-statemachine (src/ki_dev/fsm.py); die
 # Namen in `cond`/`on`/`enter` sind Methoden von RunModel
@@ -22,56 +26,80 @@
 [statechart]
 name = "run"
 
-[statechart.states.running]
+[statechart.states.lauf]
+initial = true
+parallel = true
+
+# --- Region operation -------------------------------------------------
+
+# Eine Operation beginnt und scheitert nur, solange der Lauf fährt
+# (`is_running`). Fehlschlag: der Ablauf entscheidet, wie es weitergeht.
+# `internal`: nur die Region wechselt; eine externe Kante verließe den
+# parallelen Elternzustand und setzte alle Regionen zurück (SCXML).
+[[statechart.states.lauf.states.operation.transitions]]
+event = "failed"
+cond = "is_running"
+target = "idle"
+internal = true
+
+[statechart.states.lauf.states.operation.states.idle]
+initial = true
+enter = "drop_operation"
+
+[[statechart.states.lauf.states.operation.states.idle.transitions]]
+event = "hold"
+cond = "is_running"
+target = "prepared"
+on = "hold_operation"
+
+[[statechart.states.lauf.states.operation.states.prepared.transitions]]
+event = "start"
+cond = "is_running"
+target = "started"
+on = "begin_operation"
+
+[[statechart.states.lauf.states.operation.states.prepared.transitions]]
+event = "artifact_saved"
+target = "idle"
+
+[statechart.states.lauf.states.operation.states.started]
+transitions = [
+  { event = "artifact_saved", target = "idle" },
+  # Bote ohne Antwort: die Operation läuft nach der Antwort erneut
+  { event = "answer_pending", target = "prepared" },
+  # Wirkung begonnen, Ergebnis fehlt: bleibt begonnen (halt entscheidet)
+  { event = "interrupted" },
+]
+
+# --- Region halt ------------------------------------------------------
+
+[statechart.states.lauf.states.halt.states.running]
 initial = true
 transitions = [
   # nach Prozessende dort weiter, wo der Datensatz steht
   { event = "resume" },
-  # Fehlschlag der Operation: der Ablauf entscheidet, wie es weitergeht
-  { event = "failed", target = "idle" },
-  { event = "paused_interactive", target = "paused_interactive" },
-  { event = "waiting_decision", target = "waiting_decision" },
-  { event = "passed", target = "passed" },
-  { event = "error", target = "error" },
-]
-
-[statechart.states.running.states.idle]
-initial = true
-enter = "drop_operation"
-transitions = [
-  { event = "hold", target = "prepared", on = "hold_operation" },
-]
-
-[statechart.states.running.states.prepared]
-transitions = [
-  { event = "start", target = "started", on = "begin_operation" },
-  { event = "artifact_saved", target = "idle" },
-]
-
-[statechart.states.running.states.started]
-transitions = [
-  { event = "artifact_saved", target = "idle" },
-  # Bote ohne Antwort: Halt des Ausführers, nicht des Ablaufs
+  { event = "escalation", target = "paused_interactive" },
+  { event = "wait", target = "waiting" },
   { event = "answer_pending", target = "awaiting_input" },
   { event = "interrupted", unless = "repeatable", target = "uncertain" },
-  { event = "interrupted" },
+  { event = "done.state.ablauf", target = "finished" },
 ]
 
-[statechart.states.awaiting_input]
-transitions = [{ event = "resume", target = "prepared" }]
+# Bote ohne Antwort: Halt des Ausführers, nicht des Ablaufs.
+[statechart.states.lauf.states.halt.states.awaiting_input]
+transitions = [{ event = "resume", target = "running" }]
 
 # Bis der Mensch das Ergebnis abgleicht (`--reconcile-result`).
-[statechart.states.uncertain]
-transitions = [{ event = "reconcile", target = "started" }]
+[statechart.states.lauf.states.halt.states.uncertain]
+transitions = [{ event = "reconcile", target = "running" }]
 
-[statechart.states.paused_interactive]
+[statechart.states.lauf.states.halt.states.paused_interactive]
 transitions = [{ event = "answer", target = "running" }]
 
-[statechart.states.waiting_decision]
+# Der Ablauf wartet auf eine Antwort von außen (welche, sagt sein
+# Zustand, z. B. `waiting_decision`).
+[statechart.states.lauf.states.halt.states.waiting]
 transitions = [{ event = "answer", target = "running" }]
 
-[statechart.states.passed]
-final = true
-
-[statechart.states.error]
+[statechart.states.lauf.states.halt.states.finished]
 final = true

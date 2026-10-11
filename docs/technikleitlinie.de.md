@@ -86,9 +86,9 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
   python-statemachine (`[statechart]` der Ablaufdatei, bei Mustern
   daraus erzeugt); Kantenwahl, History und `raise` übernimmt die
   Bibliothek, kein eigener Interpreter. Diagramme erzeugt
-  `ki-dev flow show`. Eigene Maschinen hat daneben nur das Gerüst
-  (Lauf und Operation, `runner/run.toml`), ohne Phasennamen des
-  Ablaufs.
+  `ki-dev flow show`. Daneben hat nur das Gerüst eine Maschine
+  (`runner/run.toml`, Regionen `operation` und `halt`); den Ablauf
+  setzt es als Region `ablauf` ein, ohne seine Phasennamen zu kennen.
 - Ein Vokabular: Review-Antworten nennen ein Ereignis des Ablaufs
   (`PASS` oder eine Befundklasse); das Urteil steht in
   `finding_class`, nicht im Code.

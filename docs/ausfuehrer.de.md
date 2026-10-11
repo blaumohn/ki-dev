@@ -8,8 +8,11 @@ Aktion aus und gibt die nächste Eingabe aus. Eine eigene Topologie hat er
 nicht: Welche Operation in welchem Zustand läuft (`operation`), welche
 Korrekturrunde noch erlaubt ist und wohin ein Schutzhalt führt, steht im
 Ablauf. Die Kante wählt python-statemachine aus `[statechart]` der
-Ablaufdatei; Status und offene Operation eines Laufs sind eine zweite
-deklarierte Maschine im Gerüst (`src/ki_dev/runner/run.toml`). Nach jedem
+Ablaufdatei. Der Lauf ist eine parallele Statechart im Gerüst
+(`src/ki_dev/runner/run.toml`): der Ablauf ist darin eine Region neben
+`operation` (offene Operation) und `halt` (fährt, pausiert, wartet,
+beendet); eine Eskalation, ein wartender Zustand und das Ende des
+Ablaufs halten den Lauf über die Bibliothek an, nicht über Code. Nach jedem
 Schritt ersetzt der Ausführer den Datensatz des Laufs atomar; ein Halt
 beendet den Prozess, `resume` liest den Datensatz.
 

@@ -1,10 +1,10 @@
 """Laufzeit des Ausführers: fährt implement.toml bis zum Halt.
 
-Drei deklarierte Maschinen: der Ablauf (``implement.toml`` über
-:func:`~ki_dev.runner.machine.advance`) und, im Gerüst, der Lauf mit
-seiner offenen Operation (``runner/run.toml``,
-:class:`~ki_dev.runner.run_machine.RunMachine`). Die Schleife ist
-synchron: ein Schritt sendet Ereignisse an die Maschinen, externe
+Eine deklarierte Maschine: der Lauf (``runner/run.toml``,
+:class:`~ki_dev.runner.run_machine.RunMachine`) als parallele
+Statechart mit dem Ablauf (``implement.toml``) als Region neben der
+offenen Operation und dem Halt. Die Schleife ist synchron: ein Schritt
+sendet Ereignisse an die Maschine, externe
 Wirkung (Agent, Nachweis, Abschlussweg) läuft außerhalb davon. Vor der
 Wirkung wird die Absicht gespeichert, danach das Ergebnis
 (Zwei-Schreib-Protokoll); nach jedem Schritt ersetzt
@@ -47,8 +47,6 @@ from ki_dev.deltas import (
     assess_step_delta,
 )
 from ki_dev.flow.model import (
-    FINAL_KIND,
-    WAIT_KIND,
     FlowError,
     Transition,
     Verdict,
@@ -96,7 +94,6 @@ from ki_dev.runner.machine import (
     TransitionResult,
     WorkerCompleted,
     WorkerInputsPrepared,
-    advance,
     decode_run_state,
     encode_run_state,
     operation,
@@ -157,7 +154,6 @@ if set(
 
 # Zustandsarten, deren Erreichen der Lauf-Maschine als Halt gemeldet
 # wird (Ereignis = Name des Zustands).
-_HALT_KINDS = frozenset({WAIT_KIND, FINAL_KIND})
 # Agentenoperationen des Umsetzungsablaufs und die Rolle, die sie
 # ausführt (Konfigurationsschlüssel, Verbrauchsbuch, Budget).
 _AGENT_ROLES = {"work": "worker", "review": "review"}
@@ -1195,16 +1191,13 @@ class RunRuntime:
         *,
         facts: frozenset[str] = frozenset(),
     ) -> dict[str, object]:
-        """Ablauf-Maschine fortschreiben. Eine Eskalation hält den
-        Lauf an (der Ablauf bleibt im Quellzustand); erreicht der
-        Ablauf einen wartenden oder finalen Zustand, erfährt es die
-        Lauf-Maschine unter dessen Namen."""
-        result = advance(run.state, event, run.limits, facts=facts)
+        """Ablauf fortschreiben, über die eine Maschine des Laufs: was
+        das im Lauf auslöst (Pause bei Eskalation, Warten, Ende), nimmt
+        die Bibliothek mit."""
+        result = self._lauf.advance(
+            run.state, event, run.limits, facts=facts
+        )
         self._log_transition(run, result)
-        if result.escalation is not None:
-            self._lauf.send("paused_interactive")
-        elif IMPLEMENT.state(result.phase.value).kind in _HALT_KINDS:
-            self._lauf.send(result.phase.value)
         return self._replace_run(run, result.state, result.escalation)
 
     def _log_transition(

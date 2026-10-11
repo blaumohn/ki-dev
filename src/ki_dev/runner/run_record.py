@@ -18,7 +18,7 @@ from ki_dev.fsm import RECORD_SCHEMA
 from ki_dev.runner.machine import decode_run_state
 from ki_dev.runner.run_machine import Operation, RunMachine
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class RunData(TypedDict):
@@ -116,10 +116,11 @@ def decode_record(document: object) -> tuple[RunMachine, RunData]:
     _check(document)
     fields = cast(dict[str, object], document)
     data = cast(RunData, fields["data"])
-    decode_run_state(data["run_state"])
+    run = decode_run_state(data["run_state"])
     machine = RunMachine(
         cast(dict[str, object], fields["run"]),
         cast(Operation | None, fields["pending"]),
+        run.state,
     )
     return machine, data
 
