@@ -358,7 +358,8 @@ Nur Sonderfälle meldet der Worker selbst: `NEEDS_DECISION` und `ESCALATE`.
 
 Korrekturrunden, Protokollfehler, Prozess-Retries: jede Rückkante in
 `implement.toml` trägt eine zählende Aktion und einen Wächter. Ist der Zähler
-erschöpft, führt die nächste Kante zu `paused_interactive`.
+erschöpft, hält die nächste Kante den Lauf an (`paused_interactive`); der
+Ablauf bleibt, wo er ist.
 
 ---
 
@@ -370,8 +371,8 @@ erschöpft, führt die nächste Kante zu `paused_interactive`.
 
 Es gibt genau ein Zustandsmodell je Ablauf: `[statechart]` in der
 Ablaufdatei, im nativen Format der Bibliothek. Sie wählt die Kante (Wächter
-in Dateireihenfolge), merkt sich über eine History, wo eine Pause fortsetzt,
-und meldet Eskalationen über `raise`. Der Ausführer fährt die Operation, die
+in Dateireihenfolge) und meldet Eskalationen über `raise`; eine Pause ist ein
+Halt des Laufs, der Ablauf bleibt im Quellzustand. Der Ausführer fährt die Operation, die
 der Ablauf für den Zustand nennt; wartende Zustände beenden den Prozess.
 
 Gebraucht werden Persistenz, Unterbrechung und Wiederaufnahme über
@@ -385,8 +386,8 @@ python-statemachine liefert  ki-dev liefert
 ─────────────────────────    ─────────────────────────────────
 Kantenwahl, Zustände         Controller-/Worker-Vertrag
 verschachtelte Zustände      adaptive Worker-Schnitte
-History (Fortsetzungspunkt)  Größen-Gates
-raise (Eskalation)           Git-/bd-Wirkungsnachweis
+raise (Eskalation)           Größen-Gates
+                             Git-/bd-Wirkungsnachweis
                              Datensatz je Schritt, Resume
                              PASS_STEP vs. PASS
                              Zähler und Eskalationsregeln

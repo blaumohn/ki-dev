@@ -317,15 +317,23 @@ class RunRuntime:
             ) from None
 
     def _answer(self, text: str) -> None:
-        """Antwort des Menschen: der Ablauf setzt fort (Entscheidung
-        zum Controller, Pause über die History)."""
+        """Antwort des Menschen: nach einer Pause geht es im
+        Quellzustand weiter, der Ablauf bewegt sich nicht; eine
+        Entscheidung setzt der Ablauf fort (zum Controller)."""
         run = decode_run_state(self._data["run_state"])
-        try:
-            update = self._transition(run, ResumeRequested())
-        except InvalidTransition as exc:
-            raise RunResumeError(
-                "pausierter Lauf hat keinen Fortsetzungspunkt"
-            ) from exc
+        if run.escalation is not None:
+            update = {
+                "run_state": encode_run_state(
+                    replace(run, escalation=None)
+                )
+            }
+        else:
+            try:
+                update = self._transition(run, ResumeRequested())
+            except InvalidTransition as exc:
+                raise RunResumeError(
+                    f"Antwort passt nicht zu {run.state.phase.value}"
+                ) from exc
         self._apply(
             {
                 **update,
@@ -860,15 +868,18 @@ class RunRuntime:
     ) -> dict[str, object]:
         """Persistiere die kompakte Sitzungsuebergabe fuer jeden Halt.
 
-        Gilt fuer jeden Uebergang nach ``PAUSED_INTERACTIVE`` oder
-        ``WAITING_DECISION`` -- unabhaengig davon, ob eine
+        Gilt fuer jede Eskalation (Pause des Laufs) und jeden
+        wartenden Ablaufzustand -- unabhaengig davon, ob eine
         Maschinengrenze, ein Prozessfehler oder ein Reviewer-Urteil
         (``ESCALATE``/``NEEDS_DECISION``) den Halt ausgeloest hat.
         """
         next_run = decode_run_state(
             cast(dict[str, object], update["run_state"])
         )
-        if next_run.state.phase not in WAITING_PHASES:
+        if (
+            next_run.escalation is None
+            and next_run.state.phase not in WAITING_PHASES
+        ):
             return update
         handoff = build_handoff(
             self.store,
@@ -1079,7 +1090,7 @@ class RunRuntime:
             next_run = decode_run_state(
                 cast(dict[str, object], update["run_state"])
             )
-            if next_run.state.is_stopped:
+            if next_run.halted:
                 return self._write_handoff_if_stopped(
                     state, update, decision.detail
                 )
@@ -1184,12 +1195,15 @@ class RunRuntime:
         *,
         facts: frozenset[str] = frozenset(),
     ) -> dict[str, object]:
-        """Ablauf-Maschine fortschreiben; erreicht sie einen Halt
-        (wartend oder final), erfährt es die Lauf-Maschine unter dem
-        Namen des Zustands."""
+        """Ablauf-Maschine fortschreiben. Eine Eskalation hält den
+        Lauf an (der Ablauf bleibt im Quellzustand); erreicht der
+        Ablauf einen wartenden oder finalen Zustand, erfährt es die
+        Lauf-Maschine unter dessen Namen."""
         result = advance(run.state, event, run.limits, facts=facts)
         self._log_transition(run, result)
-        if IMPLEMENT.state(result.phase.value).kind in _HALT_KINDS:
+        if result.escalation is not None:
+            self._lauf.send("paused_interactive")
+        elif IMPLEMENT.state(result.phase.value).kind in _HALT_KINDS:
             self._lauf.send(result.phase.value)
         return self._replace_run(run, result.state, result.escalation)
 

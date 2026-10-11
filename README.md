@@ -36,12 +36,12 @@ jede Rückkante verbraucht einen Zähler. Auszug aus
 ```toml
 # controller_step --fix [cond] / on--> target   (UML-Kante)
 
-# Korrekturbudget erschöpft → Mensch
+# Korrekturbudget erschöpft → Mensch (ohne Ziel: der Lauf hält an,
+# der Ablauf bleibt hier)
 [[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
 cond = "checked_result"
 unless = "changes_rounds_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
 
 # sonst: neue Runde, Zähler +1
@@ -55,9 +55,10 @@ on = ["begin_correction", "drop_result"]
 `[statechart]` ist das native Format von
 [python-statemachine](https://python-statemachine.readthedocs.io/)
 (SCXML-Semantik): Kanten werden in Dateireihenfolge geprüft, die erste passende
-gewinnt; passt keine, ist das Ereignis dort nicht erlaubt. Kantenwahl, History
-(Fortsetzungspunkt einer Pause) und `raise` übernimmt die Bibliothek; der
-Ausführer kennt nur die Namen der Wächter und Aktionen, nicht die Topologie.
+gewinnt; passt keine, ist das Ereignis dort nicht erlaubt. Kantenwahl und
+`raise` übernimmt die Bibliothek; der Ausführer kennt nur die Namen der Wächter
+und Aktionen, nicht die Topologie. Eine Pause ist Sache des Laufs
+(`runner/run.toml`): der Ablauf bleibt, wo er eskaliert hat.
 
 ---
 
@@ -174,7 +175,6 @@ Grenz- und Schutzhalte, also ohne Kanten mit `escalation`):
 ```mermaid
 stateDiagram-v2
     direction LR
-    state "@history" as paused_interactive_history
     [*] --> start
     start --> controller_step: run_started / drop_result
     controller_step --> worker_step_prepare: controller_task / begin_task, drop_result
@@ -202,7 +202,6 @@ stateDiagram-v2
     fast_forward_integrate --> passed: integration_completed [result_ok]
     fast_forward_integrate --> error: finalization_error
     waiting_decision --> controller_step: resume_requested
-    paused_interactive --> paused_interactive_history: resume_requested
     passed --> [*]
     error --> [*]
 ```
@@ -314,7 +313,7 @@ Oder der Agent-Container mit bd, Codex und Claude Code:
 ```text
 src/ki_dev/
   fsm.py       Gerüst auf python-statemachine: Namen prüfen, strikt,
-               Datensatz mit History
+               Datensatz (Konfiguration, History)
   flow/        model.py (Schema, Prüfung), statechart.py ([statechart] ↔
                flache Sicht), pattern.py (Muster), diagram.py (Mermaid),
                templates/ (Rollentexte), implement.toml, planning.toml

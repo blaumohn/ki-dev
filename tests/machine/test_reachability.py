@@ -28,18 +28,26 @@ from .conftest import EVENT_POOL, TIGHT_LIMITS
 
 _Edge = tuple[MachineState, Event, MachineState]
 
+_HALTS: set[MachineState] = set()
+"""Zustände mit einer Eskalation: dort hält der Lauf an, der Ablauf
+bleibt im Quellzustand (kein Schritt eines Zyklus)."""
+
 
 def _outgoing(state: MachineState) -> list[_Edge]:
-    """Alle angenommenen Uebergaenge genau eines Zustands."""
+    """Alle angenommenen Uebergaenge genau eines Zustands, ohne
+    Eskalationen (Halt des Laufs)."""
     if state.is_stopped:
         return []
     edges: list[_Edge] = []
     for event in EVENT_POOL:
         try:
-            target = advance(state, event, TIGHT_LIMITS).state
+            result = advance(state, event, TIGHT_LIMITS)
         except InvalidTransition:
             continue
-        edges.append((state, event, target))
+        if result.escalation is not None:
+            _HALTS.add(state)
+            continue
+        edges.append((state, event, result.state))
     return edges
 
 
@@ -126,7 +134,7 @@ def test_every_reachable_state_can_still_stop():
         predecessors.setdefault(target, set()).add(source)
     can_stop = {
         state for state in _STATES if state.phase in STOPPED_PHASES
-    }
+    } | _HALTS
     pending = list(can_stop)
     while pending:
         fresh = predecessors.get(pending.pop(), set()) - can_stop

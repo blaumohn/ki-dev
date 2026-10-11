@@ -143,9 +143,11 @@ Der Lauf bleibt im aktuellen Zustand (`worker_step` bzw.
 erneut. `manual` und `inbox` deklarieren keine Messung; ki-dev bucht
 für den Boten nichts.
 
-Halt mit Zustand des Ablaufs (`waiting_decision`, `paused_interactive`)
-setzt dagegen `ki-dev -f implement resume RUN_ID --answer "…"` fort;
-das ist die Kante `resume_requested`, bei einer Pause zurück zum Fortsetzungspunkt.
+Eine Entscheidung (`waiting_decision`, Zustand des Ablaufs) und eine Pause
+(`paused_interactive`, Halt des Laufs nach einer Eskalation) setzt dagegen
+`ki-dev -f implement resume RUN_ID --answer "…"` fort: bei der Entscheidung
+über die Kante `resume_requested` zum Controller, bei der Pause im
+Ablaufzustand, in dem eskaliert wurde (der Ablauf hat sich nicht bewegt).
 
 Vollständig offline vorführen: `scripts/demo-mock-lauf.sh`.
 
@@ -172,8 +174,7 @@ vollständige Lauf ohne Kopieren von Agentennachrichten startbar; Bau und Review
 werden aus der Konfiguration in getrennten Sitzungen fortgesetzt.
 
 Der Lauf liegt unter `.ki-dev/runs/<run-id>/`: `record.json` enthält den
-Datensatz (Lauf-Maschine, offene Operation, Ablaufzustand mit History,
-Laufdaten), `manifest.json` den unveränderlichen Auftrag samt
+Datensatz (Lauf-Maschine, offene Operation, Ablaufzustand, Laufdaten), `manifest.json` den unveränderlichen Auftrag samt
 Konfiguration, und einzelne JSON-Dateien enthalten unveränderliche
 Operations- und Review-Nachweise. Vor jeder externen Wirkung speichert der
 Ausführer die Absicht (`started`), danach das Ergebnis; endet der Prozess
@@ -497,7 +498,7 @@ vermeidet bei Codex deren Doppelzaehlung als ungecachten Input.
 Ein Agentenfehler, verweigerte Berechtigung, Kontingentabbruch, fehlender
 Verbrauchsnachweis oder eine erreichte Grenze fuehrt zu einer
 Maschineneskalation `execution_guard` und zum Halt `paused_interactive`
-mit Übergabe. Es folgt kein automatischer Agenten-Retry.
+(Lauf; der Ablauf bleibt stehen) mit Übergabe. Es folgt kein automatischer Agenten-Retry.
 Das gilt auch fuer unbekannte CLI-Fehler; sie gelten nicht ohne Nachweis
 als voruebergehend. Fachliche Review-Nachrichten bleiben davon getrennt.
 
@@ -506,7 +507,7 @@ als voruebergehend. Fachliche Review-Nachrichten bleiben davon getrennt.
 Sitzungen sind aufrufergebunden vorbereitet (getrennte `session_id` je
 Rolle, siehe uar.1); ki-dev provisioniert oder rotiert sie nicht selbst
 -- das waere ein eigenstaendiger Mechanismus, den dieses Design nicht
-vorsieht. Jeder Halt nach `paused_interactive` oder
+vorsieht. Jede Pause (`paused_interactive`) und jeder Halt in
 `waiting_decision` -- Verbrauchsgrenze, Kontextvorpruefung, Stillstand,
 Agentenfehler, erschoepfte Protokoll-/Prozessversuche, Reviewer-Urteil
 `ESCALATE`/`NEEDS_DECISION` -- schreibt stattdessen unter

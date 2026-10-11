@@ -51,7 +51,6 @@ class Phase(StrEnum):
     CAPTURE_STEP_RESULT = "capture_step_result"
     CHECKPOINT = "checkpoint"
     WAITING_DECISION = "waiting_decision"
-    PAUSED_INTERACTIVE = "paused_interactive"
     FREEZE_REVIEWED_RESULT = "freeze_reviewed_result"
     FINALIZE_HISTORY = "finalize_history"
     VERIFY_FINAL_RESULT = "verify_final_result"
@@ -239,21 +238,14 @@ class MachineState:
     vorliegendes Ergebnis und die Pruefung eines tatsaechlich
     erfassten und gecheckpointeten Worker-Ergebnisses. Nur der zweite
     Fall traegt ein Qualitaetsurteil.
-
-    ``history`` ist der Fortsetzungspunkt einer Pause: der zuletzt
-    aktive Arbeitszustand, den die History ``h`` des Ablaufs
-    festhaelt (``None``, solange der Lauf nie angehalten hat).
     """
 
     phase: Phase
     counters: Counters = field(default_factory=Counters)
     checkpointed_result: bool = False
-    history: Phase | None = None
 
     def __post_init__(self) -> None:
         _require_phase(self.phase, "MachineState.phase")
-        if self.history is not None:
-            _require_phase(self.history, "MachineState.history")
         if not isinstance(self.counters, Counters):
             raise TypeError(
                 "MachineState.counters muessen Counters sein"
@@ -280,7 +272,8 @@ class RunState:
 
     ``escalation`` traegt die zuletzt ausgeloeste Eskalation
     einschliesslich Ursache und ``resume_point``; ohne angehaltenen
-    Zyklus ist sie ``None``.
+    Zyklus ist sie ``None``. Eine Eskalation laesst den Ablauf im
+    Quellzustand; angehalten ist der Lauf (``halted``).
 
     Die Formatversion gehoert nicht hierher, sondern zur
     Serialisierung (``state_json.SCHEMA_VERSION``).
@@ -300,6 +293,12 @@ class RunState:
         if not isinstance(self.limits, Limits):
             raise TypeError("RunState.limits muessen Limits sein")
         _require_escalation(self.escalation)
+
+    @property
+    def halted(self) -> bool:
+        """Der Lauf hält: Eskalation offen oder Ablauf wartend bzw.
+        am Ende."""
+        return self.escalation is not None or self.state.is_stopped
 
 
 @dataclass(frozen=True)
@@ -537,8 +536,8 @@ class ExecutionStopped(Event):
 
 @dataclass(frozen=True)
 class ResumeRequested(Event):
-    """Der Mensch setzt einen angehaltenen Lauf fort; wohin, sagt der
-    Ablauf (aus der Pause über die History ``h``)."""
+    """Der Mensch hat entschieden; wohin es weitergeht, sagt der
+    Ablauf (aus ``waiting_decision``)."""
 
 
 @dataclass(frozen=True)

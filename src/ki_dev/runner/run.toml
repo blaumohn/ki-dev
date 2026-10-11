@@ -7,9 +7,11 @@
 # ist die Wirkung unklar (`interrupted` → `uncertain`), außer bei einer
 # wiederholbaren Operation (Abschlussweg).
 #
-# Lauf: Halte sind eigene Zustände. Erreicht der Ablauf einen wartenden
-# oder finalen Zustand, sendet der Ausführer dessen Namen als Ereignis;
-# Phasen kennt er dafür nicht. Fortsetzen ist `resume` (ohne Antwort)
+# Lauf: Halte sind eigene Zustände. Eskaliert der Ablauf (Kante ohne
+# Ziel mit `raise escalation.<ursache>`), hält der Lauf in
+# `paused_interactive`, der Ablauf bleibt im Quellzustand; erreicht der
+# Ablauf einen wartenden oder finalen Zustand, sendet der Ausführer
+# dessen Namen als Ereignis. Fortsetzen ist `resume` (ohne Antwort)
 # oder `answer` (mit Antwort des Menschen); was im aktuellen Status
 # nicht passt, weist die Bibliothek ab.
 #

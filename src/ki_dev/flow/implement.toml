@@ -25,8 +25,9 @@
 # Kanten eines Zustands werden in Dateireihenfolge geprüft, dann die
 # seines Elternzustands; die erste, deren `cond` gelten und deren
 # `unless` nicht gelten, gewinnt. Passt keine, ist das Ereignis dort
-# nicht erlaubt. `raise escalation.<ursache>` hält mit dieser Ursache an;
-# Fortsetzungspunkt ist der Quellzustand (History `h`).
+# nicht erlaubt. Eine Kante ohne Ziel mit `raise escalation.<ursache>`
+# lässt den Ablauf im Quellzustand; anhalten ist Sache des Laufs
+# (runner/run.toml), nach der Antwort geht es dort weiter.
 
 name = "implement"
 ops = "ki_dev.flow_ops.implement"
@@ -129,10 +130,6 @@ failure = "finalization_error"
 kind = "wait"
 actor = "Mensch (Entscheider)"
 
-[state.paused_interactive]
-kind = "wait"
-actor = "Mensch (Entscheider)"
-
 [state.passed]
 kind = "final"
 
@@ -144,18 +141,20 @@ kind = "final"
 [statechart]
 name = "implement"
 
-# Alle Arbeitszustände liegen in `active`; die History `h` merkt sich,
-# wo der Lauf zuletzt war (Fortsetzungspunkt einer Pause).
+# Alle Arbeitszustände liegen in `active`.
 [statechart.states.active]
 initial = true
-history = { h = { type = "shallow" } }
 
 # Schutzhalt (Kontext-/Kontingentgrenze, fehlgeschlagener
 # Agentenaufruf): aus jedem aktiven Zustand anhalten, Fortsetzung dort.
 [[statechart.states.active.transitions]]
 event = "execution_stopped"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.execution_guard" } }]
+
+# Empfänger der Eskalation (`raise`): die Ursache landet im Modell.
+[[statechart.states.active.transitions]]
+event = "escalation"
+on = "record_escalation"
 
 [statechart.states.active.states.start]
 initial = true
@@ -170,7 +169,6 @@ on = "drop_result"
 [[statechart.states.active.states.controller_step.transitions]]
 event = "controller_task"
 unless = "worker_attempts_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.worker_attempts_exhausted" } }]
 
 [[statechart.states.active.states.controller_step.transitions]]
@@ -185,27 +183,23 @@ on = ["begin_task", "drop_result"]
 [[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
 cond = ["checked_result", "changes_refused"]
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.execution_guard" } }]
 
 [[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
 cond = ["checked_result", "stagnation"]
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.execution_guard" } }]
 
 [[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
 cond = "checked_result"
 unless = "changes_rounds_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
 
 [[statechart.states.active.states.controller_step.transitions]]
 event = "fix"
 cond = "checked_result"
 unless = "worker_attempts_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.worker_attempts_exhausted" } }]
 
 [[statechart.states.active.states.controller_step.transitions]]
@@ -222,7 +216,6 @@ target = "waiting_decision"
 
 [[statechart.states.active.states.controller_step.transitions]]
 event = "escalate"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.agent" } }]
 
 [[statechart.states.active.states.controller_step.transitions]]
@@ -233,7 +226,6 @@ target = "freeze_reviewed_result"
 [[statechart.states.active.states.controller_step.transitions]]
 event = "protocol_error"
 unless = "protocol_attempts_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.protocol_attempts_exhausted" } }]
 
 [[statechart.states.active.states.controller_step.transitions]]
@@ -246,7 +238,6 @@ on = "retry_protocol"
 [[statechart.states.active.states.controller_step.transitions]]
 event = "process_error"
 unless = "process_retries_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.process_retries_exhausted" } }]
 
 [[statechart.states.active.states.controller_step.transitions]]
@@ -265,7 +256,6 @@ target = "worker_step"
 [[statechart.states.active.states.worker_step_prepare.transitions]]
 event = "process_error"
 unless = "process_retries_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.process_retries_exhausted" } }]
 
 [[statechart.states.active.states.worker_step_prepare.transitions]]
@@ -283,13 +273,11 @@ target = "waiting_decision"
 
 [[statechart.states.active.states.worker_step.transitions]]
 event = "worker_escalate"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.agent" } }]
 
 [[statechart.states.active.states.worker_step.transitions]]
 event = "worker_process_error"
 unless = "process_retries_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.process_retries_exhausted" } }]
 
 [[statechart.states.active.states.worker_step.transitions]]
@@ -300,7 +288,6 @@ on = "retry_process"
 [[statechart.states.active.states.worker_step.transitions]]
 event = "protocol_error"
 unless = "protocol_attempts_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.protocol_attempts_exhausted" } }]
 
 [[statechart.states.active.states.worker_step.transitions]]
@@ -318,13 +305,11 @@ target = "checkpoint"
 [[statechart.states.active.states.capture_step_result.transitions]]
 event = "step_result_captured"
 unless = "changes_rounds_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.empty_result_unresolved" } }]
 
 [[statechart.states.active.states.capture_step_result.transitions]]
 event = "step_result_captured"
 unless = "worker_attempts_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.worker_attempts_exhausted" } }]
 
 [[statechart.states.active.states.capture_step_result.transitions]]
@@ -337,7 +322,6 @@ on = ["begin_correction", "drop_result"]
 [[statechart.states.active.states.capture_step_result.transitions]]
 event = "process_error"
 unless = "process_retries_left"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.process_retries_exhausted" } }]
 
 [[statechart.states.active.states.capture_step_result.transitions]]
@@ -375,7 +359,6 @@ target = "fast_forward_integrate"
 
 [[statechart.states.active.states.verify_final_result.transitions]]
 event = "final_result_verified"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.final_verification_failed" } }]
 
 [[statechart.states.active.states.verify_final_result.transitions]]
@@ -389,26 +372,17 @@ target = "passed"
 
 [[statechart.states.active.states.fast_forward_integrate.transitions]]
 event = "integration_completed"
-target = "paused_interactive"
 on = [{ raise = { event = "escalation.integration_failed" } }]
 
 [[statechart.states.active.states.fast_forward_integrate.transitions]]
 event = "finalization_error"
 target = "error"
 
-# --- Halt und Fortsetzung durch den Menschen --------------------------
+# --- Entscheidung des Menschen ---------------------------------------
 
 [statechart.states.waiting_decision]
 transitions = [
   { event = "resume_requested", target = "controller_step" },
-]
-
-# Empfänger der Eskalation (`raise`): die Ursache landet im Modell.
-# Fortsetzung über die History dorthin, wo der Lauf anhielt.
-[statechart.states.paused_interactive]
-transitions = [
-  { event = "escalation", on = "record_escalation" },
-  { event = "resume_requested", target = "h" },
 ]
 
 [statechart.states.passed]

@@ -9,7 +9,7 @@ Eskalationstypen.
 Aufbau eines Dokuments::
 
     {
-      "schema_version": 3,
+      "schema_version": 4,
       "run_id": "...",
       "revision": 0,
       "limits": {protocol_attempts, worker_attempts,
@@ -17,8 +17,7 @@ Aufbau eines Dokuments::
       "state": {"phase": "...",
                 "counters": {protocol_attempt, worker_attempt,
                              process_retry, changes_round},
-                "checkpointed_result": false,
-                "history": null | "..."},
+                "checkpointed_result": false},
       "escalation": null | {"kind": "agent" | "machine",
                             "cause": "...",
                             "resume_point": "..."}
@@ -60,7 +59,7 @@ from .contract import (
 
 # 3: Fortsetzungspunkt als History im Zustand (python-statemachine,
 # ki-dev-ablauf-9cn.2); ältere Läufe werden abgelehnt, nicht migriert.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 JsonObject = dict[str, object]
 
@@ -88,7 +87,6 @@ _STATE_FIELDS = (
     "phase",
     "counters",
     "checkpointed_result",
-    "history",
 )
 _COUNTERS_FIELDS = (
     "protocol_attempt",
@@ -149,9 +147,6 @@ def _encode_state(state: MachineState) -> JsonObject:
         "phase": state.phase.value,
         "counters": _encode_counters(state.counters),
         "checkpointed_result": state.checkpointed_result,
-        "history": (
-            None if state.history is None else state.history.value
-        ),
     }
 
 
@@ -201,13 +196,6 @@ def _decode_state(value: object) -> MachineState:
         checkpointed_result=_flag(
             fields["checkpointed_result"],
             f"{_STATE_PATH}.checkpointed_result",
-        ),
-        history=(
-            None
-            if fields["history"] is None
-            else _enum_member(
-                Phase, fields["history"], f"{_STATE_PATH}.history"
-            )
         ),
     )
 

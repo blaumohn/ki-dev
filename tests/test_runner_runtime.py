@@ -240,6 +240,10 @@ def test_escalation_resume_rechecks_and_never_passes_by_itself(
     ) as runtime:
         paused = runtime.start(_task("run-escalate"), Limits())
     assert paused.status == "paused_interactive"
+    # Die Pause hält den Lauf, nicht den Ablauf: er steht noch dort,
+    # wo eskaliert wurde, und setzt dort fort.
+    assert paused.phase is Phase.CONTROLLER_STEP
+    assert paused.detail == "escalate detail"
     # ucq: der normale Reviewer-ESCALATE-Pfad (nicht nur der
     # Maschinen-Guard) schreibt ebenfalls eine Sitzungsuebergabe.
     handoffs = list(
@@ -553,7 +557,7 @@ def test_failed_final_verification_never_passes_and_can_resume(
         paused = runtime.start(_task("run-final-drift"), Limits())
 
     assert paused.status == "paused_interactive"
-    assert paused.phase is Phase.PAUSED_INTERACTIVE
+    assert paused.phase is Phase.VERIFY_FINAL_RESULT
     assert "final_verification_failed" in paused.detail
     # ucq (wiedereroeffnet): auch eine fehlgeschlagene Abschlusspruefung
     # muss eine Sitzungsuebergabe schreiben.

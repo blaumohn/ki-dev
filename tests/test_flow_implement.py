@@ -37,12 +37,14 @@ def test_phase_names_exactly_the_states_of_the_flow():
 
 
 def test_every_cycle_without_a_human_consumes_a_counter():
-    """Kanten ohne zählende Aktion und Halt bilden keinen Zyklus."""
+    """Kanten ohne zählende Aktion, Halt und Eskalation bilden keinen
+    Zyklus (eine Eskalation hält den Lauf an)."""
     free = {
         (t.source, t.target)
         for t in IMPLEMENT.transitions
         if not COUNTING & set(t.actions)
         and IMPLEMENT.state(t.source).kind != WAIT_KIND
+        and t.escalation is None
     }
     assert not _has_cycle(free)
 
@@ -146,7 +148,8 @@ def test_fact_layer_names_exactly_the_innermost_states():
 
 def test_view_is_derived_from_the_statechart():
     """Kanten des Elternzustands gelten für jeden Arbeitszustand und
-    folgen dessen eigenen; ``raise`` wird zur Eskalation."""
+    folgen dessen eigenen; ``raise`` wird zur Eskalation, eine Kante
+    ohne Ziel zur Selbstkante, der Empfänger des ``raise`` zu keiner."""
     stopped = [
         t
         for t in IMPLEMENT.transitions
@@ -154,10 +157,10 @@ def test_view_is_derived_from_the_statechart():
     ]
     assert {t.source for t in stopped} == set(raw_active_states())
     assert {t.escalation for t in stopped} == {"execution_guard"}
-    (resume,) = IMPLEMENT.candidates(
-        "paused_interactive", "resume_requested"
-    )
-    assert resume.target == "@history"
+    assert all(t.target == t.source for t in stopped)
+    assert not [
+        t for t in IMPLEMENT.transitions if t.event == "escalation"
+    ]
 
 
 def raw_active_states() -> list[str]:

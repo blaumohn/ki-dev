@@ -3,6 +3,7 @@ und gegen die Ausgabe geprüft."""
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -13,7 +14,7 @@ from ki_dev.flow.diagram import (
     render_mermaid,
     sync_diagrams,
 )
-from ki_dev.flow.model import load_flow
+from ki_dev.flow.model import load_flow, parse_flow, read_raw
 
 ROOT = Path(__file__).parent.parent
 IMPLEMENT = load_flow("implement")
@@ -45,9 +46,17 @@ def test_without_escalations_hides_exactly_the_escalation_edges():
 
 
 def test_history_is_a_pseudo_state_not_a_guess():
-    text = render_mermaid(IMPLEMENT)
-    assert 'state "@history" as paused_interactive_history' in text
-    assert "paused_interactive --> paused_interactive_history" in text
+    """Kein Paketablauf nutzt History; das Format kennt sie (SCXML)."""
+    raw = copy.deepcopy(read_raw("implement"))
+    raw["statechart"]["states"]["active"]["history"] = {
+        "h": {"type": "shallow"}
+    }
+    raw["statechart"]["states"]["waiting_decision"]["transitions"] = [
+        {"event": "resume_requested", "target": "h"}
+    ]
+    text = render_mermaid(parse_flow(raw))
+    assert 'state "@history" as waiting_decision_history' in text
+    assert "waiting_decision --> waiting_decision_history" in text
 
 
 def test_output_is_deterministic():

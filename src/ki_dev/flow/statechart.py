@@ -17,7 +17,8 @@ deren eigenen (Vorrang der Kinder wie in SCXML). Abgebildet werden:
 ``before`` / ``on`` / ``after`` ``actions`` (Namen)
 ``raise escalation.<ursache>``  ``escalation``
 Ziel ist ein History-Zustand    ``@history``
-Kante ohne Ziel                 keine Kante (Empfänger eines ``raise``)
+Kante ohne Ziel                 Selbstkante je innerstem Zustand
+Empfänger eines ``raise``       keine Kante (Ereignis ``escalation``)
 ==============================  ======================================
 
 Die Sicht ist abgeleitet, nicht gepflegt; ein Test vergleicht sie mit
@@ -56,9 +57,10 @@ def table_of(raw: Mapping, history: str) -> dict:
         )
     histories = set(_history_ids(states))
     transitions = [
-        _transition(item, source, histories, history)
+        _transition(item, each, histories, history)
         for source, item in _edges(states)
-        if "target" in item
+        if _in_view(item)
+        for each in _sources(source, item)
     ]
     by_id = {sid: state for _, sid, state in _walk(states, 0)}
     table = {
@@ -90,7 +92,7 @@ def edges_of(chart: Mapping, history: str) -> dict:
             else [owner]
         )
         for index, item in enumerate(state.get("transitions", ())):
-            if "target" not in item:
+            if not _in_view(item):
                 continue
             for source in sources:
                 edges[(owner, index, source)] = _transition(
@@ -182,13 +184,29 @@ def _walk(
         yield from _walk(state.get("states", {}), depth + 1)
 
 
+def _in_view(item: Mapping) -> bool:
+    """Jede Kante außer dem Empfänger eines ``raise``: der legt nur
+    ab, was die auslösende Kante schon in der Sicht trägt."""
+    return item["event"] != ESCALATION_EVENT
+
+
+def _sources(
+    source: str | list[str], item: Mapping
+) -> list[str | list[str]]:
+    """Eine Kante ohne Ziel bleibt im Zustand, in dem sie genommen
+    wird: je innerstem Zustand eine Selbstkante."""
+    if "target" in item or isinstance(source, str):
+        return [source]
+    return list(source)
+
+
 def _transition(
     item: Mapping,
     source: str | list[str],
     histories: set[str],
     history: str,
 ) -> dict:
-    target = item["target"]
+    target = item.get("target", source)
     edge: dict[str, object] = {
         "source": source,
         "event": item["event"],

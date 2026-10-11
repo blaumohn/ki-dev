@@ -72,9 +72,12 @@ def _walk(data) -> list[MachineState]:
             break
         event = _draw_event(data, state.phase)
         try:
-            state = advance(state, event, TIGHT_LIMITS).state
+            result = advance(state, event, TIGHT_LIMITS)
         except InvalidTransition:
             continue
+        if result.escalation is not None:
+            break  # Halt des Laufs; der Ablauf bleibt stehen
+        state = result.state
         states.append(state)
     return states
 

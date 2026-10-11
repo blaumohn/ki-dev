@@ -255,7 +255,6 @@ def test_state_defaults_to_no_result():
         Phase.PASSED,
         Phase.ERROR,
         Phase.WAITING_DECISION,
-        Phase.PAUSED_INTERACTIVE,
     ],
 )
 def test_stopped_phases_are_recognised(phase: Phase):

@@ -29,14 +29,13 @@ bleibt im Ablauf.
 from __future__ import annotations
 
 from ki_dev.deltas import StepDeltaAssessment
-from ki_dev.flow.model import HISTORY, FlowError, Operation
+from ki_dev.flow.model import FlowError, Operation
 from ki_dev.flow.statechart import ESCALATION_EVENT
 from ki_dev.fsm import (
     Durable,
     TransitionNotAllowed,
     bind,
     configuration_of,
-    history_ids,
 )
 
 from .contract import (
@@ -156,7 +155,6 @@ IMPLEMENT_CHART = bind(
         for name in operation.cond
     ),
 )
-(_HISTORY,) = history_ids(IMPLEMENT_CHART)
 
 if set(IMPLEMENT.vocabulary.escalations) != {
     AGENT_CAUSE,
@@ -185,16 +183,10 @@ def advance(
     transition = IMPLEMENT.edge(
         taken.owner, taken.index, state.phase.value
     )
-    if transition.target == HISTORY and state.history is None:
-        # Pause ohne Fortsetzungspunkt: die History fiele auf den
-        # Start zurück; das ist kein gültiger Lauf.
-        raise InvalidTransition(state, event)
-    history = machine.record["history"].get(_HISTORY)
     moved = MachineState(
         phase=Phase(machine.configuration[-1]),
         counters=model.counters,
         checkpointed_result=model.checkpointed_result,
-        history=Phase(history[0]) if history else None,
     )
     return TransitionResult(
         state=moved,
@@ -205,13 +197,9 @@ def advance(
 
 def _record(state: MachineState) -> dict[str, object]:
     """Datensatz der Bibliothek zu einem Maschinenzustand."""
-    history = (
-        {} if state.history is None
-        else {_HISTORY: [state.history.value]}
-    )
     return {
         "state": configuration_of(IMPLEMENT_CHART, state.phase.value),
-        "history": history,
+        "history": {},
     }
 
 

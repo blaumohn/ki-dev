@@ -90,7 +90,7 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
     (
         _at(Phase.CONTROLLER_STEP),
         ControllerEscalate("Sitzung unklar"),
-        Phase.PAUSED_INTERACTIVE,
+        Phase.CONTROLLER_STEP,
         AgentEscalation,
     ),
     (
@@ -121,7 +121,7 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
     (
         _reviewed(worker_attempt=1),
         ControllerEscalate("Werkzeug antwortet nicht"),
-        Phase.PAUSED_INTERACTIVE,
+        Phase.CONTROLLER_STEP,
         AgentEscalation,
     ),
     (
@@ -158,7 +158,7 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
     (
         _at(Phase.WORKER_STEP),
         WorkerEscalate("Zustand praktisch unklar"),
-        Phase.PAUSED_INTERACTIVE,
+        Phase.WORKER_STEP,
         AgentEscalation,
     ),
     (
@@ -213,7 +213,7 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
     (
         _at(Phase.VERIFY_FINAL_RESULT),
         FinalResultVerified(ok=False),
-        Phase.PAUSED_INTERACTIVE,
+        Phase.VERIFY_FINAL_RESULT,
         MachineEscalation,
     ),
     (
@@ -225,7 +225,7 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
     (
         _at(Phase.FAST_FORWARD_INTEGRATE),
         IntegrationCompleted(ok=False),
-        Phase.PAUSED_INTERACTIVE,
+        Phase.FAST_FORWARD_INTEGRATE,
         MachineEscalation,
     ),
     (
@@ -252,20 +252,11 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
         Phase.ERROR,
         None,
     ),
-    # Fortsetzung durch den Menschen: Entscheidung zurück zum
-    # Controller, Pause zurück zum Fortsetzungspunkt (<history>).
+    # Entscheidung des Menschen: zurück zum Controller.
     (
         _at(Phase.WAITING_DECISION),
         ResumeRequested(),
         Phase.CONTROLLER_STEP,
-        None,
-    ),
-    (
-        MachineState(
-            Phase.PAUSED_INTERACTIVE, history=Phase.WORKER_STEP
-        ),
-        ResumeRequested(),
-        Phase.WORKER_STEP,
         None,
     ),
     # Technischer Fehler einer Maschinenoperation: begrenzt am selben
@@ -281,15 +272,16 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
     (
         _at(Phase.CAPTURE_STEP_RESULT, process_retry=3),
         ProcessError("bd nicht erreichbar"),
-        Phase.PAUSED_INTERACTIVE,
+        Phase.CAPTURE_STEP_RESULT,
         MachineEscalation,
     ),
-    # Schutzhalt des Ausführers aus jedem aktiven Zustand.
+    # Schutzhalt des Ausführers aus jedem aktiven Zustand: der
+    # Ablauf bleibt, wo er ist.
     *(
         (
             _at(phase),
             ExecutionStopped("Kontextgrenze erreicht"),
-            Phase.PAUSED_INTERACTIVE,
+            phase,
             MachineEscalation,
         )
         for phase in Phase
@@ -298,29 +290,28 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
 ]
 
 
-def test_resume_after_pause_survives_a_process_boundary():
-    """History über den gespeicherten Laufzustand: speichern, neu
-    laden, fortsetzen landet im Quellzustand."""
+def test_escalation_keeps_the_flow_across_a_process_boundary():
+    """Eine Eskalation hält den Lauf, nicht den Ablauf: gespeichert und
+    neu geladen steht er im Quellzustand, die Ursache bleibt."""
     paused = advance(
         _at(Phase.WORKER_STEP, protocol_attempt=1),
         ProtocolError("kein Trailer"),
         _TIGHT,
     )
     run = RunState("run-x", 1, paused.state, _TIGHT, paused.escalation)
-    stored = json.loads(json.dumps(encode_run_state(run)))
-
-    resumed = advance(
-        decode_run_state(stored).state, ResumeRequested(), _TIGHT
+    stored = decode_run_state(
+        json.loads(json.dumps(encode_run_state(run)))
     )
 
-    assert paused.phase is Phase.PAUSED_INTERACTIVE
-    assert resumed.phase is Phase.WORKER_STEP
-    assert resumed.transition.target == "@history"
+    assert stored.state.phase is Phase.WORKER_STEP
+    assert stored.halted
+    assert paused.transition.target == "worker_step"
+    assert stored.escalation.resume_point is Phase.WORKER_STEP
 
 
-def test_pause_without_resume_point_is_rejected():
+def test_resume_is_only_an_answer_to_a_decision():
     with pytest.raises(InvalidTransition):
-        advance(_at(Phase.PAUSED_INTERACTIVE), ResumeRequested())
+        advance(_at(Phase.WORKER_STEP), ResumeRequested())
 
 
 def test_executor_facts_stop_changes_before_round_budget():
@@ -332,7 +323,7 @@ def test_executor_facts_stop_changes_before_round_budget():
             ControllerChanges("Test fehlt"),
             facts=frozenset({fact}),
         )
-        assert result.phase is Phase.PAUSED_INTERACTIVE
+        assert result.phase is Phase.CONTROLLER_STEP
         assert result.escalation.cause is (
             MachineEscalationCause.EXECUTION_GUARD
         )
@@ -383,8 +374,7 @@ _FORBIDDEN: list[tuple[MachineState, Event]] = [
     (_at(Phase.VERIFY_FINAL_RESULT), IntegrationCompleted(ok=True)),
     (_at(Phase.WAITING_DECISION), CheckpointRecorded()),
     (_at(Phase.WAITING_DECISION), RunStarted()),
-    (_at(Phase.PAUSED_INTERACTIVE), RunStarted()),
-    (_at(Phase.PAUSED_INTERACTIVE), ControllerPass()),
+    (_at(Phase.WORKER_STEP), ResumeRequested()),
     (_at(Phase.PASSED), RunStarted()),
     (_at(Phase.ERROR), RunStarted()),
 ]
@@ -492,7 +482,7 @@ def test_complete_run_walks_finalization():
 def test_failed_finalization_not_passed(phase: Phase, event: Event):
     result = advance(_at(phase), event)
     assert result.phase is not Phase.PASSED
-    assert result.state.is_stopped is True
+    assert result.state.is_stopped or result.escalation is not None
 
 
 def test_escalation_kinds_stay_distinct():
@@ -561,7 +551,7 @@ def test_exhausted_limit_stops_cycle(
     cause: MachineEscalationCause,
 ):
     result = advance(state, event, _TIGHT)
-    assert result.phase is Phase.PAUSED_INTERACTIVE
+    assert result.phase is state.phase
     assert isinstance(result.escalation, MachineEscalation)
     assert result.escalation.cause is cause
     assert result.escalation.resume_point is state.phase
@@ -654,7 +644,7 @@ def test_new_task_gets_fresh_rounds():
     blocked = advance(
         after_a, ControllerChanges("A: immer noch"), _ADAPTIVE
     )
-    assert blocked.phase is Phase.PAUSED_INTERACTIVE
+    assert blocked.phase is Phase.CONTROLLER_STEP
     assert (
         blocked.escalation.cause
         is MachineEscalationCause.CHANGES_ROUNDS_EXHAUSTED
@@ -680,7 +670,7 @@ def test_new_task_gets_fresh_rounds():
         corrected.state, *_WORKER_CYCLE, limits=_ADAPTIVE
     )
     stopped = advance(exhausted, ControllerTask("TASK C"), _ADAPTIVE)
-    assert stopped.phase is Phase.PAUSED_INTERACTIVE
+    assert stopped.phase is Phase.CONTROLLER_STEP
     assert (
         stopped.escalation.cause
         is MachineEscalationCause.WORKER_ATTEMPTS_EXHAUSTED
@@ -706,13 +696,12 @@ def test_correction_loop_cannot_run_forever():
 
     escalation = None
     for _ in range(50):
-        if state.is_stopped:
+        if state.is_stopped or escalation is not None:
             break
         result = advance(state, _LOOP_ANSWER[state.phase], _TIGHT)
         escalation = result.escalation
         state = result.state
 
-    assert state.phase is Phase.PAUSED_INTERACTIVE
     assert isinstance(escalation, MachineEscalation)
     assert escalation.cause in {
         MachineEscalationCause.CHANGES_ROUNDS_EXHAUSTED,
