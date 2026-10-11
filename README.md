@@ -15,7 +15,7 @@ Die drei Bausteine teilen sich die Verantwortung:
 | Baustein | Legt fest | Inhalt / Aufgabe |
 | --- | --- | --- |
 | `flow/implement.toml`, `flow/planning.toml` | **Was** passieren darf | Daten: Zustände, Übergänge, Wächter und Aktionen |
-| `runner/` | **Wie** der Ablauf ausgeführt wird | Formale Antwort → Ereignis → Wächter prüfen → Kantenaktion ausführen → nächste Eingabe; LangGraph verwaltet Checkpoints und Halte |
+| `runner/` | **Wie** der Ablauf ausgeführt wird | Formale Antwort → Ereignis → Kante wählen (python-statemachine) → nächste Eingabe; Datensatz je Schritt, Halt beendet den Prozess |
 | `adapter/` | **Wer** die Eingabe bearbeitet | Anbindung von Claude, Codex, einem Menschen (`manual`) oder einer Simulation (`mock`) |
 
 Der Ausführer (`runner/`) liest die Ablaufdatei und ruft den jeweiligen
@@ -313,13 +313,15 @@ Oder der Agent-Container mit bd, Codex und Claude Code:
 
 ```text
 src/ki_dev/
-  flow/        model.py (Schema, Prüfung), pattern.py (Muster), diagram.py
-               (Mermaid), templates/ (Rollentexte), implement.toml, planning.toml
-  runner/      interpreter.py (Planungsablauf: bindet Vokabular, wählt Kanten),
-               machine/ (Ops des Umsetzungsablaufs, advance über die
-               Bibliothek), runtime.py (LangGraph-Graph aus implement.toml),
-               planning.py (Planungs-Thread je Bead), graph.py (Ablauf → Graph,
-               für run und step), turns.py (jede Übergabe aus ihrer
+  fsm.py       Gerüst auf python-statemachine: Namen prüfen, strikt,
+               Datensatz mit History
+  flow/        model.py (Schema, Prüfung), statechart.py ([statechart] ↔
+               flache Sicht), pattern.py (Muster), diagram.py (Mermaid),
+               templates/ (Rollentexte), implement.toml, planning.toml
+  runner/      machine/ (Ops des Umsetzungsablaufs, advance), run.toml +
+               run_machine.py (Lauf und Operation), runtime.py (Schleife,
+               Datensatz je Schritt), planning.py (Planungslauf je Bead),
+               turns.py (jede Übergabe aus ihrer
                Deklaration), implement_turns.py (Felder des Umsetzungsablaufs),
                events.py (Protokoll), cli.py,
                safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
@@ -345,8 +347,8 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 
 - **Benutzbar:** `ki-dev step` (Planungsablauf von Hand), `ki-dev -f implement` mit
   allen vier Adaptern (Bauablauf).
-- **Planungsablauf:** `step` fährt `planning.toml` als LangGraph-Thread je
-  Bead (`runner/planning.py`, derselbe Graph-Übersetzer wie `run`) bis zum
+- **Planungsablauf:** `step` fährt `planning.toml` als Lauf je Bead
+  (`runner/planning.py`, auf python-statemachine wie `run`) bis zum
   nächsten `turn`/`ask`; `map`, `graph` und
   `materialize` laufen ohne Vorlauf (Stub), `implement` mit
   `implement.preflight`.
@@ -371,8 +373,8 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 
 ## Einordnung und Nicht-Ziele
 
-Claude Code und Codex führen die Arbeit aus, LangGraph trägt Persistenz und
-Halt, Beads den Arbeitsgraphen. Der eigene Beitrag ist der Ablauf als Daten
+Claude Code und Codex führen die Arbeit aus, python-statemachine wählt die
+Kanten, Beads tragen den Arbeitsgraphen. Der eigene Beitrag ist der Ablauf als Daten
 und ein Ausführer ohne eigene Topologie.
 
 Nicht das Ziel: ein Chatbot, der „irgendwie das Repository erledigt“; eine

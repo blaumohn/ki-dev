@@ -74,17 +74,21 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
   Ausführers. Eine Schleife ist eine Rückkante mit Wächter und zählender
   Aktion, keine eigene Komponente oder Schicht.
 - Der Ausführer implementiert nur benannte Wächter, Aktionen und
-  Operationen; `bind` prüft beim Laden, dass Ablauf und Code dasselbe
-  Vokabular kennen. Agenten liefern Ereignisse und Laufdaten, wählen aber
-  nie selbst eine Kante.
+  Operationen (Methoden einer Ops-Klasse); `ki_dev.fsm.bind` prüft beim
+  Laden, dass Ablauf und Code dasselbe Vokabular kennen. Agenten liefern
+  Ereignisse und Laufdaten, wählen aber nie selbst eine Kante.
 - Inhaltliche Entscheidungen (CHANGES → neue Runde, Rundenlimit,
   Entscheidung des Menschen) gehören in den Ablauf, technische
   (Prozess abgestürzt, Kontextgrenze) in den Ausführer.
 - Schichtrichtung: Ablauf kennt weder Ausführer noch Adapter, Adapter
   kennen keinen Ablauf (`tests/test_schichten.py`).
-- Ein Graphmodell: Der LangGraph-Graph des Ausführers wird aus der
-  Ablaufdatei übersetzt (ein Knoten je Zustand); Diagramme erzeugt
-  `ki-dev flow show`. Keine zweite Zustandsmaschine neben dem Ablauf.
+- Ein Zustandsmodell: Zustände und Kanten stehen im nativen Format von
+  python-statemachine (`[statechart]` der Ablaufdatei, bei Mustern
+  daraus erzeugt); Kantenwahl, History und `raise` übernimmt die
+  Bibliothek, kein eigener Interpreter. Diagramme erzeugt
+  `ki-dev flow show`. Eigene Maschinen hat daneben nur das Gerüst
+  (Lauf und Operation, `runner/run.toml`), ohne Phasennamen des
+  Ablaufs.
 - Ein Vokabular: Review-Antworten nennen ein Ereignis des Ablaufs
   (`PASS` oder eine Befundklasse); das Urteil steht in
   `finding_class`, nicht im Code.

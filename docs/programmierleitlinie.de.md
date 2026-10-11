@@ -224,8 +224,8 @@ Projektstruktur als Daten im Speicher und führt selbst keine Ein- oder Ausgabe 
   wird daraus übersetzt.
 
 **Beispiel – Ablauf:** Die Zustände stehen nur in der Ablaufdatei.
-Der Laufzeitgraph und die Mermaid-Diagramme der Dokumentation werden
-daraus erzeugt; Review-Antworten sind Ereignisse dieses Ablaufs, das
+Die Zustandsmaschine zur Laufzeit und die Mermaid-Diagramme der
+Dokumentation werden daraus erzeugt; Review-Antworten sind Ereignisse dieses Ablaufs, das
 Urteil folgt aus seiner Befundklasse.
 
 ### Jedes Modul hat einen belegten Nutzer

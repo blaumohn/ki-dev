@@ -14,7 +14,7 @@ The three components divide responsibility:
 | Component | Defines | Contents / role |
 | --- | --- | --- |
 | `flow/implement.toml`, `flow/planning.toml` | **What** may happen | Data: states, transitions, guards and actions |
-| `runner/` | **How** the workflow executes | Formal answer → event → check guard → execute edge action → next input; LangGraph manages checkpoints and halts |
+| `runner/` | **How** the workflow executes | Formal answer → event → select edge (python-statemachine) → next input; one record per step, a halt ends the process |
 | `adapter/` | **Who** handles the input | Connects Claude, Codex, a human (`manual`) or a simulation (`mock`) |
 
 The executor (`runner/`) reads the workflow file and calls the appropriate

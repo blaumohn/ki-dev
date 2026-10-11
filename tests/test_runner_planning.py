@@ -1,9 +1,10 @@
-"""Planungs-Thread je Bead: Start, Maschinenzustände, interrupt am turn,
-Checkpoint über Prozessgrenzen, Antwort nur am wartenden Zustand."""
+"""Planungslauf je Bead: Start, Maschinenzustände, Halt am turn,
+Datensatz über Prozessgrenzen, Antwort nur am wartenden Zustand."""
 
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import replace
 
 import pytest
@@ -15,7 +16,7 @@ from ki_dev.runner.planning import (
     PlanningContext,
     StaleAnswerError,
     StaleHaltError,
-    bind_planning,
+    allows,
     flow_digest,
     planning_runtime,
     with_facts,
@@ -129,8 +130,21 @@ def test_pass_on_changed_stand_runs_checks_again(tmp_path):
     ]
 
 
+def _taken(state, event, context):
+    """Kante, die die Bibliothek mit diesen Laufdaten nimmt."""
+    from ki_dev.fsm import Durable
+    from ki_dev.runner.planning import PlanningModel, _chart
+
+    machine = Durable(
+        _chart(FLOW),
+        PlanningModel(context),
+        {"state": [state], "history": {}},
+    )
+    taken = machine.send(event)
+    return FLOW.edge(taken.owner, taken.index, state)
+
+
 def test_unchanged_guard_compares_without_io():
-    bound = bind_planning(FLOW)
     review = "implement.review"
     same = PlanningContext(frozenset({"full_checks"}), checked=STAND)
     for current, target in (
@@ -139,7 +153,13 @@ def test_unchanged_guard_compares_without_io():
         (None, "implement.preflight"),
     ):
         context = replace(same, current=current)
-        assert bound.select(review, "PASS", context).target == target
+        (edge,) = [
+            t
+            for t in FLOW.candidates(review, "PASS")
+            if t.target == target
+        ]
+        assert allows(FLOW, review, "PASS", context)
+        assert _taken(review, "PASS", context) == edge
 
 
 def _renamed_graph_phase() -> object:
@@ -208,10 +228,39 @@ def test_new_start_never_reuses_an_old_attempt(tmp_path):
         assert runtime.resume("done", attempt=new).state == "map.review"
 
 
-def test_step_graph_nodes_are_exactly_the_planning_states(tmp_path):
+def test_generated_statechart_has_exactly_the_planning_states():
+    """Muster erzeugen ``[statechart]`` (Programmierleitlinie: genau
+    eine maßgebliche Quelle); Zustände und Kanten entsprechen der
+    flachen Sicht."""
+    states = FLOW.statechart["states"]
+    assert set(states) == set(FLOW.states)
+    for state in FLOW.states:
+        native = states[state].get("transitions", [])
+        view = FLOW.outgoing(state)
+        assert [(e["event"], e["target"]) for e in native] == [
+            (t.event, t.target) for t in view
+        ]
+
+
+def test_record_survives_the_process_boundary(tmp_path):
     with planning_runtime(FLOW, tmp_path, "b") as runtime:
-        nodes = set(runtime._graph.get_graph().nodes)
-    assert nodes - {"__start__", "__end__"} == set(FLOW.states)
+        attempt = runtime.start("map", None).attempt
+    record = json.loads((tmp_path / "record.json").read_text())
+    assert record["run"]["state"] == ["map"]
+    assert record["waiting"] == TURN
+    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+        assert runtime.resume("done", attempt=attempt).state == (
+            "map.review"
+        )
+
+
+def test_a_second_writer_is_rejected(tmp_path):
+    with (
+        planning_runtime(FLOW, tmp_path, "b"),
+        pytest.raises(FlowError, match="bereits"),
+        planning_runtime(FLOW, tmp_path, "b"),
+    ):
+        pass
 
 
 def test_halt_without_attempt_is_stale_not_a_keyerror(tmp_path):
@@ -219,14 +268,10 @@ def test_halt_without_attempt_is_stale_not_a_keyerror(tmp_path):
     Fehler wie bei einem anderen Ablaufstand; --step beginnt neu."""
     with planning_runtime(FLOW, tmp_path, "b") as runtime:
         runtime.start("map", None)
-        real = runtime._checkpointer.get_tuple
-
-        def old(config):
-            saved = real(config)
-            saved.checkpoint["channel_values"].pop("attempt")
-            return saved
-
-        runtime._checkpointer.get_tuple = old
+        path = tmp_path / "record.json"
+        record = json.loads(path.read_text())
+        record.pop("attempt")
+        path.write_text(json.dumps(record))
         for call in (
             runtime.waiting,
             lambda: runtime.resume("done", attempt="b:1"),

@@ -5,9 +5,10 @@
 Adapter `manual`: Ein Aufruf nimmt die Kante seines Startereignisses, fährt
 Maschinenzustände wie den Vorlauf (`implement.preflight`) selbst und hält beim
 nächsten `turn` (Übergabe an eine Sitzung) oder `ask` (der Mensch entscheidet).
-Der Ausführer ist ein LangGraph-Thread je Bead (`src/ki_dev/runner/planning.py`),
-übersetzt mit demselben `compile_flow` wie `ki-dev -f implement`; `turn` und `ask`
-halten mit `interrupt`. step wählt aus Halt und
+Der Ausführer ist ein Lauf je Bead (`src/ki_dev/runner/planning.py`) auf
+python-statemachine wie `ki-dev -f implement`; das `[statechart]` erzeugt die
+Mustererweiterung aus `planning.toml`. Bei `turn` und `ask` hält er, der
+Prozess endet. step wählt aus Halt und
 genommenem Weg die Vorlage und gibt sie aus, der Mensch trägt sie als Bote
 weiter (den Umsetzungsablauf fährt `ki-dev -f implement`, siehe [Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
 ausführungsreife Aufträge bleiben auf einen kleinen Umsetzungsschnitt
@@ -24,7 +25,7 @@ selbst braucht kein Git; ohne Git-Arbeitsverzeichnis gibt es keinen Stand und
 damit kein PASS. Eine Antwortdatei im Projekt zählt nicht zum Stand.
 
 **Laufzustand je Bead.** Jeder Aufruf endet in einem Halt des Ablaufs; step
-speichert ihn als Checkpoint unter `.local/handoff/steps/<BEAD_ID>/checkpoints.sqlite`
+speichert ihn als Datensatz unter `.local/handoff/steps/<BEAD_ID>/record.json`
 (wartender Zustand und Tatsachen für Wächter, etwa „kein PASS nach
 Teillauf“) und protokolliert jede genommene Kante in `events.jsonl` (wie
 `ki-dev -f implement`). Eine Antwort (etwa `--decision-file`) gilt nur dort, wo der

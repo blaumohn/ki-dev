@@ -76,17 +76,73 @@ def table_of(raw: Mapping, history: str) -> dict:
     }
 
 
-def edge_of(
-    chart: Mapping, owner: str, index: int, source: str, history: str
-) -> dict:
-    """Kante der Sicht zur Kante ``index`` von ``owner``, genommen in
-    ``source`` (bei einem Elternzustand einer seiner inneren)."""
+def edges_of(chart: Mapping, history: str) -> dict:
+    """Kante der Sicht je Kante der Bibliothek: Schlüssel ist
+    (deklarierender Zustand, Stelle in seinen ``transitions``,
+    innerster Zustand, in dem sie genommen wird)."""
     states = chart["states"]
-    by_id = {sid: state for _, sid, state in _walk(states, 0)}
-    item = by_id[owner]["transitions"][index]
-    return _transition(
-        item, source, set(_history_ids(states)), history
-    )
+    histories = set(_history_ids(states))
+    edges = {}
+    for _, owner, state in _walk(states, 0):
+        sources = (
+            list(_leaves(state["states"]))
+            if state.get("states")
+            else [owner]
+        )
+        for index, item in enumerate(state.get("transitions", ())):
+            if "target" not in item:
+                continue
+            for source in sources:
+                edges[(owner, index, source)] = _transition(
+                    item, source, histories, history
+                )
+    return edges
+
+
+def chart_of(table: Mapping, history: str) -> tuple[dict, dict]:
+    """``[statechart]`` aus einer flachen Tabelle (Musterexpansion) und
+    die Kantenzuordnung wie :func:`edges_of`: ein Zustand je Eintrag,
+    Kanten in Tabellenreihenfolge, ``!name`` als ``unless``. Erzeugt,
+    nicht gepflegt; History und Eskalationen gibt es nur in einem
+    geschriebenen ``[statechart]``."""
+    states: dict[str, dict] = {
+        item["id"]: {} for item in table["state"]
+    }
+    states[table["start"]]["initial"] = True
+    for end in table["final"]:
+        states[end]["final"] = True
+    edges = {}
+    for item in table["transition"]:
+        if item["target"] == history or "escalation" in item:
+            raise StatechartError(
+                f"{item['source']} --{item['event']}-->: History und "
+                "Eskalation nur in [statechart]"
+            )
+        sources = item["source"]
+        if not isinstance(sources, list):
+            sources = [sources]
+        for source in sources:
+            listed = states[source].setdefault("transitions", [])
+            edges[(source, len(listed), source)] = {
+                **item,
+                "source": source,
+            }
+            listed.append(_native(item))
+    return {"name": table["name"], "states": states}, edges
+
+
+def _native(item: Mapping) -> dict:
+    edge = {"event": item["event"], "target": item["target"]}
+    cond = item.get("cond", ())
+    plain = [name for name in cond if not name.startswith("!")]
+    negated = [name[1:] for name in cond if name.startswith("!")]
+    if plain:
+        edge["cond"] = plain
+    if negated:
+        edge["unless"] = negated
+    if item.get("actions"):
+        edge["on"] = list(item["actions"])
+    return edge
 
 
 def _leaves(states: Mapping) -> Iterator[str]:

@@ -53,7 +53,7 @@ Zustand liegt, wenn der Prozess endet:
 Agent mit Subagenten    der Agent selbst       der Agentensitzung
 Ralphex                 ein Agent im Lauf      Plan-Datei + Lauf
 LangGraph / CrewAI      dein eigener Code      dem Graphzustand
-ki-dev                  der Orchestrator       Graphzustand + bd + Git
+ki-dev                  der Orchestrator       Datensatz + bd + Git
 ```
 
 Ein Agent, der sich selbst reviewt, entscheidet auch selbst, ob er noch eine
@@ -68,9 +68,9 @@ ki-dev entscheidet:   Wer ist jetzt dran? Wie groß darf der Schnitt sein?
 ```
 
 Gegenüber LangGraph und CrewAI Flows ist `ki-dev` kein Wettbewerber, sondern
-ein Aufsatz: LangGraph liefert die Ablaufmechanik, `ki-dev` den fachlichen
-Vertrag darüber — Vorgangsbindung, Schnitt-Gates, Wirkungsnachweis, geltender
-Kontext.
+ein schmaler Aufsatz auf einer Statechart-Bibliothek: python-statemachine
+liefert die Ablaufmechanik, `ki-dev` den fachlichen Vertrag darüber —
+Vorgangsbindung, Schnitt-Gates, Wirkungsnachweis, geltender Kontext.
 
 Ob äußere feingranulare Steuerung im Ergebnis wirklich besser ist als ein
 Agent mit Subagenten, ist offen — siehe
@@ -362,31 +362,33 @@ erschöpft, führt die nächste Kante zu `paused_interactive`.
 
 ---
 
-## Worauf der Ausführer läuft: LangGraph
+## Worauf der Ausführer läuft: python-statemachine
 
-**Entscheidung: die Ablauf-Laufzeit ist LangGraph.** `ki-dev` baut dafür keine
-eigene persistente Agentenlaufzeit.
+**Entscheidung (2026-10-11): die Abläufe laufen auf python-statemachine**
+(SCXML-Semantik), ohne LangGraph und ohne eigene Agentenlaufzeit
+(`bd:ki-dev-ablauf-nrkj`).
 
-Es gibt genau ein Graphmodell: Der LangGraph-Graph wird aus `implement.toml`
-übersetzt. Jeder Zustand ist ein Knoten, jede Kante eine mögliche Verbindung
-(`@history` aufgelöst). Ein Knoten fährt die Operation, die der Ablauf für
-seinen Zustand nennt; wartende Zustände halten mit `interrupt`. Welche Kante
-gilt, wählt weiterhin der Ablauf (Wächter in Dateireihenfolge).
+Es gibt genau ein Zustandsmodell je Ablauf: `[statechart]` in der
+Ablaufdatei, im nativen Format der Bibliothek. Sie wählt die Kante (Wächter
+in Dateireihenfolge), merkt sich über eine History, wo eine Pause fortsetzt,
+und meldet Eskalationen über `raise`. Der Ausführer fährt die Operation, die
+der Ablauf für den Zustand nennt; wartende Zustände beenden den Prozess.
 
-Gebraucht wird nicht nur „welche Zustände gibt es“, sondern Persistenz,
-Checkpoints, Unterbrechung und Wiederaufnahme über Prozessenden hinweg — genau
-LangGraphs Gegenstand. CrewAI Flows wäre technisch ebenfalls geeignet; seine
-zusätzlichen Crew- und Delegations-Abstraktionen braucht `ki-dev` nicht, weil
-die Rollen ohnehin festgelegt sind.
+Gebraucht werden Persistenz, Unterbrechung und Wiederaufnahme über
+Prozessenden hinweg. Für einen synchronen Einzellauf reicht dafür ein
+Datensatz je Schritt (atomar ersetzt) und das Zwei-Schreib-Protokoll der
+Operation: Absicht speichern, Wirkung ausführen, Ergebnis speichern. Lauf und
+Operation sind dafür eine zweite, ebenfalls deklarierte Maschine im Gerüst.
 
 ```text
-LangGraph liefert            ki-dev liefert
+python-statemachine liefert  ki-dev liefert
 ─────────────────────────    ─────────────────────────────────
-Graphzustand                 Controller-/Worker-Vertrag
-Knoten und Übergänge         adaptive Worker-Schnitte
-Rückkanten (aus implement.toml)   Größen-Gates
-Checkpoints                  Git-/bd-Wirkungsnachweis
-Unterbrechung / Resume       PASS_STEP vs. PASS
+Kantenwahl, Zustände         Controller-/Worker-Vertrag
+verschachtelte Zustände      adaptive Worker-Schnitte
+History (Fortsetzungspunkt)  Größen-Gates
+raise (Eskalation)           Git-/bd-Wirkungsnachweis
+                             Datensatz je Schritt, Resume
+                             PASS_STEP vs. PASS
                              Zähler und Eskalationsregeln
                              sichere Integration
 ```
@@ -410,9 +412,9 @@ CONTROLLER          KI       codex CLI
 Eine Grenze bleibt ausdrücklich bei `ki-dev`:
 
 ```text
-LangGraph beantwortet:        Wo stand der Ablauf?
-LangGraph beantwortet nicht:  Darf diese äußere Wirkung erneut ausgeführt
-                              werden?
+Der Datensatz beantwortet:        Wo stand der Ablauf?
+Der Datensatz beantwortet nicht:  Darf diese äußere Wirkung erneut
+                                  ausgeführt werden?
 ```
 
 Nachricht zugestellt, Commit erzeugt, `bd` verändert, integriert, Vorgang
@@ -625,7 +627,7 @@ Git- und bd-Delta je Schritt         Pages-PM-Integration
 adaptive Schnitte + Größen-Gate      automatische Modellwahl
 geprüfter Nachrichtenvertrag         Anbieter-APIs, Schlüsselverwaltung
 begrenzte Zähler + Eskalation
-LangGraph: Checkpoints + resume
+Datensatz je Schritt + resume
 ```
 
 Keine eigenen API-Schlüssel, keine Abrechnungsschicht, kein zusätzlicher

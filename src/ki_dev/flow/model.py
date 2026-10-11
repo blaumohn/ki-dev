@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import tomllib
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
@@ -46,7 +46,12 @@ from typing import cast
 from jsonschema import Draft202012Validator
 
 from ki_dev.flow.pattern import PatternError, expand
-from ki_dev.flow.statechart import StatechartError, edge_of, table_of
+from ki_dev.flow.statechart import (
+    StatechartError,
+    chart_of,
+    edges_of,
+    table_of,
+)
 from ki_dev.flow.templates import text
 from ki_dev.fsm import FsmError, load_statechart
 
@@ -159,9 +164,13 @@ class Flow:
     # Modul, das die Operationen dieses Ablaufs umsetzt (Ops des
     # Pakets); fehlt es, ist der Ablauf nur Daten (z. B. Diagramm).
     ops: str | None = None
-    statechart: Mapping[str, object] | None = None
+    statechart: Mapping[str, object] = field(default_factory=dict)
     """FSM-Kern im nativen Format der Bibliothek (``ki_dev.fsm``);
     ``states`` und ``transitions`` sind seine flache Sicht."""
+    edges: Mapping[tuple[str, int, str], Transition] = field(
+        default_factory=dict, compare=False, repr=False
+    )
+    """Kante der Sicht je Kante der Bibliothek (:meth:`edge`)."""
 
     def outgoing(self, state: str) -> tuple[Transition, ...]:
         self.state(state)
@@ -193,10 +202,7 @@ class Flow:
         """Kante der Sicht zu einer Kante, die die Bibliothek genommen
         hat: deklariert in ``owner`` an Stelle ``index``, genommen in
         ``source``."""
-        if self.statechart is None:
-            raise FlowError(f"{self.name}: kein [statechart]")
-        item = edge_of(self.statechart, owner, index, source, HISTORY)
-        return _transition(item, source)
+        return self.edges[(owner, index, source)]
 
     def state(self, state: str) -> State:
         try:
@@ -314,18 +320,24 @@ def _parse_statechart(raw: dict) -> Flow:
     _check_schema(raw, _CHART_VALIDATOR)
     where = f"{raw['name']}.toml"
     try:
-        load_statechart(raw["statechart"])
         table = table_of(raw, HISTORY)
-    except (FsmError, StatechartError) as exc:
+    except StatechartError as exc:
         raise FlowError(f"{where}: statechart: {exc}") from exc
-    return _flow(table, where, raw["statechart"])
+    return _flow(
+        table,
+        where,
+        (raw["statechart"], edges_of(raw["statechart"], HISTORY)),
+    )
 
 
 def _flow(
     table: dict,
     where: str,
-    statechart: Mapping[str, object] | None = None,
+    chart: tuple[dict, dict] | None = None,
 ) -> Flow:
+    """Flow aus der flachen Tabelle; ohne geschriebenes
+    ``[statechart]`` wird es aus der Tabelle erzeugt. Die Bibliothek
+    prüft es in beiden Fällen beim Laden."""
     _check_schema(table)
     flow = Flow(
         name=table["name"],
@@ -346,10 +358,21 @@ def _flow(
         },
         priority=tuple(table.get("priority", ())),
         ops=table.get("ops"),
-        statechart=statechart,
     )
     _check_relations(flow, where)
-    return flow
+    try:
+        statechart, edges = chart or chart_of(table, HISTORY)
+        load_statechart(statechart)
+    except (FsmError, StatechartError) as exc:
+        raise FlowError(f"{where}: statechart: {exc}") from exc
+    return replace(
+        flow,
+        statechart=statechart,
+        edges={
+            key: _transition(item, key[2])
+            for key, item in edges.items()
+        },
+    )
 
 
 def _vocabulary(item: dict, required: dict) -> Vocabulary:
@@ -762,13 +785,13 @@ def _check_classes(flow: Flow, where: str) -> None:
 
 
 def _check_endpoints(flow: Flow, where: str) -> None:
-    for field, state in (
+    for key, state in (
         ("start", flow.start),
         *(("final", end) for end in flow.final),
     ):
         if state not in flow.states:
             raise FlowError(
-                f"{where}: {field}: unbekannter Zustand {state}"
+                f"{where}: {key}: unbekannter Zustand {state}"
             )
     for state in flow.states.values():
         is_end = state.id in flow.final

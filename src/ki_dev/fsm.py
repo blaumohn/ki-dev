@@ -87,7 +87,10 @@ def load_statechart(doc: Mapping[str, object]) -> type[StateChart]:
     try:
         machine = load(json.dumps(doc), format="json", validate=True)
     except InvalidDefinition as exc:
-        raise FsmError(f"{doc.get('name')}: {exc}") from exc
+        # Ohne den Abdruck der ganzen Definition, den die Bibliothek
+        # anhängt (keine Rohwerte in Diagnosen).
+        detail = str(exc).split(" from definition:")[0]
+        raise FsmError(f"{doc.get('name')}: {detail}") from exc
     machine.allow_event_without_transition = False
     machine.catch_errors_as_events = False
     return machine
@@ -203,7 +206,7 @@ class Durable:
         }
 
 
-_ID = {"type": "string", "pattern": r"^[A-Za-z_][A-Za-z0-9_]*$"}
+_ID = {"type": "string", "pattern": r"^[A-Za-z_][A-Za-z0-9_.]*$"}
 _IDS = {"type": "array", "uniqueItems": True, "items": _ID}
 
 RECORD_SCHEMA: dict[str, object] = {

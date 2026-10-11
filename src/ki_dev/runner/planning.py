@@ -1,49 +1,52 @@
-"""Ausführer des Planungsablaufs: LangGraph-Thread je Bead.
+"""Ausführer des Planungsablaufs: ein Lauf je Bead.
 
 ``ki-dev step`` ist eine Projektion dieses Ausführers mit dem Adapter
-``manual``. Der Graph entsteht mit demselben Übersetzer wie bei
-``ki-dev -f implement`` (:func:`~ki_dev.runner.graph.compile_flow`):
-ein Knoten je Zustand von ``planning.toml``. Maschinenzustände
-(``checks``) führt der Ausführer selbst aus; bei ``turn`` (Übergabe
-an eine Sitzung) und ``ask`` (der Mensch entscheidet) hält er mit
-``interrupt``. Der
-Checkpoint je Bead hält Zustand und Tatsachen für Wächter (z. B. kein
-PASS nach Teillauf) sowie den Stand, den die Maschinenoperation geprüft
-hat; eine Antwort gilt nur dort, wo der Thread wartet, und bringt den
-aktuellen Stand mit (Wächter ``unchanged``, synchron verglichen).
+``manual``. Kanten wählt python-statemachine aus dem ``[statechart]``,
+das die Mustererweiterung aus ``planning.toml`` erzeugt
+(:mod:`ki_dev.flow.statechart`); die Wächter sind Methoden von
+:class:`PlanningModel`. Maschinenzustände (``checks``) führt der
+Ausführer selbst aus; bei ``turn`` (Übergabe an eine Sitzung) und
+``ask`` (der Mensch entscheidet) hält er, der Prozess endet. Der
+Datensatz je Bead (``record.json``, atomar ersetzt) hält Zustand und
+Tatsachen für Wächter (z. B. kein PASS nach Teillauf) sowie den Stand,
+den die Maschinenoperation geprüft hat; eine Antwort gilt nur dort, wo
+der Lauf wartet, und bringt den aktuellen Stand mit (Wächter
+``unchanged``, synchron verglichen).
 
-Welche Kante gilt, entscheidet allein der Ablauf über den gebundenen
-Interpreter; was eine Maschinenoperation tut, reicht der Aufrufer als
-benannte Implementierung herein (der Ausführer kennt step nicht). Der
-Halt nennt Zustand, Operation und den in diesem Aufruf genommenen Weg;
-daraus wählt der Halt die Übergabe (``Halt.turn``: Vorlage am
-Übergang oder an der Operation des Zustands).
+Was eine Maschinenoperation tut, reicht der Aufrufer als benannte
+Implementierung herein (der Ausführer kennt step nicht). Der Halt nennt
+Zustand, Operation und den in diesem Aufruf genommenen Weg; daraus
+wählt der Halt die Übergabe (``Halt.turn``: Vorlage am Übergang oder an
+der Operation des Zustands).
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TypedDict
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.types import Command, interrupt
+from jsonschema import Draft202012Validator
 
-from ki_dev.flow.model import Flow, FlowError, State, Transition, Turn
-from ki_dev.runner.graph import END_ROUTE, compile_flow
-from ki_dev.runner.interpreter import Binding, BoundFlow, bind
+from ki_dev.flow.model import Flow, FlowError, Transition, Turn
+from ki_dev.fsm import (
+    RECORD_SCHEMA,
+    Chart,
+    Durable,
+    TransitionNotAllowed,
+    bind,
+)
+from ki_dev.run_store import RunStore, RunStoreError, replace_json
 
 TURN = "turn"
 ASK = "ask"
 CHECKS = "checks"
 FULL_CHECKS = "full_checks"
 UNCHANGED = "unchanged"
-CHECKPOINT_FILE = "checkpoints.sqlite"
+RECORD_FILE = "record.json"
 
 
 @dataclass(frozen=True)
@@ -96,16 +99,6 @@ MachineOperation = Callable[
 neue Laufdaten."""
 
 
-class PlanningGraphState(TypedDict):
-    state: str
-    attempt: int
-    facts: list[str]
-    checked: dict[str, str] | None
-    answer_file: str | None
-    flow_digest: str
-    final: bool
-
-
 class StaleHaltError(FlowError):
     """Der gespeicherte Halt stammt aus einem anderen Ablaufstand."""
 
@@ -131,21 +124,18 @@ def flow_digest(flow: Flow) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def bind_planning(flow: Flow) -> BoundFlow[PlanningContext]:
-    return bind(
-        flow,
-        Binding(
-            guards={
-                FULL_CHECKS: lambda context: (
-                    FULL_CHECKS in context.facts
-                ),
-                UNCHANGED: _unchanged,
-            },
-            actions={},
-            escalations=frozenset(),
-            operations=frozenset({TURN, ASK, CHECKS}),
-        ),
-    )
+class PlanningModel:
+    """Ops des Planungsablaufs: Wächter über den Laufdaten."""
+
+    def __init__(self, context: PlanningContext) -> None:
+        self.context = context
+
+    def full_checks(self) -> bool:
+        """Der Vorlauf lief vollständig (Tatsache der Operation)."""
+        return FULL_CHECKS in self.context.facts
+
+    def unchanged(self) -> bool:
+        return _unchanged(self.context)
 
 
 def _unchanged(context: PlanningContext) -> bool:
@@ -169,16 +159,103 @@ def with_facts(
     )
 
 
-def _context(
-    values: PlanningGraphState,
-    current: Mapping[str, str] | None = None,
-) -> PlanningContext:
-    return PlanningContext(
-        frozenset(values["facts"]),
-        checked=values.get("checked"),
-        current=current,
-        answer_file=values.get("answer_file"),
+_CHARTS: dict[str, Chart] = {}
+
+
+def _chart(flow: Flow) -> Chart:
+    """Gebundene Definition je Ablaufstand (Namen gegen
+    :class:`PlanningModel` geprüft)."""
+    digest = flow_digest(flow)
+    if digest not in _CHARTS:
+        _CHARTS[digest] = bind(flow.statechart, PlanningModel)
+    return _CHARTS[digest]
+
+
+def allows(
+    flow: Flow, state: str, event: str, context: PlanningContext
+) -> bool:
+    """Ob der Ablauf ``event`` in ``state`` mit diesen Laufdaten
+    annimmt (Wächter), ohne einen Lauf zu verändern."""
+    machine = Durable(
+        _chart(flow),
+        PlanningModel(context),
+        {"state": [state], "history": {}},
     )
+    try:
+        machine.send(event)
+    except TransitionNotAllowed:
+        return False
+    return True
+
+
+def _holds(context: PlanningContext) -> Callable[[str], bool]:
+    model = PlanningModel(context)
+    return lambda name: getattr(model, name)()
+
+
+_TEXTS = {"type": "object", "additionalProperties": {"type": "string"}}
+_NAME_OR_NULL = {"anyOf": [{"type": "null"}, {"type": "string"}]}
+_SCHEMA = {
+    "type": "object",
+    "required": [
+        "flow_digest",
+        "attempt",
+        "run",
+        "facts",
+        "checked",
+        "answer_file",
+        "waiting",
+    ],
+    "additionalProperties": False,
+    "properties": {
+        "flow_digest": {"type": "string"},
+        "attempt": {"type": "integer", "minimum": 1},
+        "run": RECORD_SCHEMA,
+        "facts": {"type": "array", "items": {"type": "string"}},
+        "checked": {"anyOf": [{"type": "null"}, _TEXTS]},
+        "answer_file": _NAME_OR_NULL,
+        "waiting": _NAME_OR_NULL,
+    },
+}
+_VALIDATOR = Draft202012Validator(_SCHEMA)
+
+
+def read_waiting(
+    flow: Flow, directory: Path
+) -> tuple[str, frozenset[str]] | None:
+    """Gespeicherter Halt (Zustand, Tatsachen) oder ``None``, rein
+    lesend; ein Halt aus einem anderen Ablaufstand ist ein Fehler."""
+    record = _checked(_read(directory / RECORD_FILE), flow_digest(flow))
+    if record is None:
+        return None
+    return record["run"]["state"][-1], frozenset(record["facts"])
+
+
+def _read(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise StaleHaltError(
+            "gespeicherter Halt ist unlesbar; mit --step neu beginnen"
+        ) from exc
+
+
+def _checked(record: dict | None, digest: str) -> dict | None:
+    """Ein Halt aus einem anderen Ablaufstand oder in einem anderen
+    Format ist veraltet: verständlicher Fehler statt KeyError."""
+    if record is None:
+        return None
+    if (
+        not _VALIDATOR.is_valid(record)
+        or record["flow_digest"] != digest
+    ):
+        raise StaleHaltError(
+            "gespeicherter Halt stammt aus einem anderen "
+            "Ablaufstand; mit --step neu beginnen"
+        )
+    return record
 
 
 @contextmanager
@@ -188,40 +265,40 @@ def planning_runtime(
     thread: str,
     machine: Mapping[str, MachineOperation] | None = None,
 ) -> Iterator[PlanningRuntime]:
-    """Ausführer mit Checkpoint ``directory/checkpoints.sqlite``; die
-    Verbindung wird auch bei Fehlern geschlossen."""
+    """Ausführer mit Datensatz ``directory/record.json`` als einziger
+    Schreiber dieses Beads; die Sperre fällt auch bei Fehlern."""
     directory.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(
-        directory / CHECKPOINT_FILE, check_same_thread=False
-    )
+    try:
+        store = RunStore(directory.parent, directory.name)
+        writer = store.acquire_writer()
+    except RunStoreError as exc:
+        raise FlowError(str(exc)) from exc
     try:
         yield PlanningRuntime(
-            flow, thread, dict(machine or {}), SqliteSaver(connection)
+            flow, directory, thread, dict(machine or {})
         )
     finally:
-        connection.close()
+        writer.close()
 
 
 class PlanningRuntime:
-    """Ein Thread je Bead über dem gemeinsamen Graph-Übersetzer."""
+    """Ein Lauf je Bead über dem erzeugten ``[statechart]``."""
 
     def __init__(
         self,
         flow: Flow,
+        directory: Path,
         thread: str,
         machine: Mapping[str, MachineOperation],
-        checkpointer: SqliteSaver,
     ) -> None:
         self.flow = flow
-        self.bound = bind_planning(flow)
+        self._chart = _chart(flow)
         self._machine = machine
         self._digest = flow_digest(flow)
-        self._checkpointer = checkpointer
+        self._file = directory / RECORD_FILE
+        self._directory = directory
         self._thread = thread
-        self._config = {"configurable": {"thread_id": thread}}
-        self._graph = compile_flow(
-            flow, PlanningGraphState, self._node, _route, checkpointer
-        )
+        self._record: dict = {}
         self._path: list[Transition] = []
         self._outcome: object = None
 
@@ -230,27 +307,7 @@ class PlanningRuntime:
     def waiting(self) -> tuple[str, frozenset[str]] | None:
         """Gespeicherter Halt (Zustand, Tatsachen) oder ``None``; ein
         Halt aus einem anderen Ablaufstand ist ein Fehler."""
-        if self._saved_digest() is None:
-            return None
-        values = self._graph.get_state(self._config).values
-        return values["state"], frozenset(values["facts"])
-
-    def _saved_digest(self) -> str | None:
-        """Fingerabdruck des gespeicherten Halts, geprüft, bevor der
-        Graph ihn liest (ein umbenannter Zustand wäre sonst ein
-        KeyError tief in LangGraph). Ein Halt aus der Zeit vor der
-        Versuchskennung gilt ebenso als veraltet."""
-        saved = self._checkpointer.get_tuple(self._config)
-        if saved is None:
-            return None
-        values = saved.checkpoint.get("channel_values", {})
-        digest = values.get("flow_digest")
-        if digest != self._digest or "attempt" not in values:
-            raise StaleHaltError(
-                "gespeicherter Halt stammt aus einem anderen "
-                "Ablaufstand; mit --step neu beginnen"
-            )
-        return digest
+        return read_waiting(self.flow, self._directory)
 
     def start(
         self,
@@ -262,18 +319,17 @@ class PlanningRuntime:
         ``event`` gleich die erste Antwort dort."""
         self.flow.state(state)
         self._path, self._outcome = [], None
-        self._graph.invoke(
-            {
-                "state": state,
-                "attempt": self._saved_attempt() + 1,
-                "facts": [],
-                "checked": None,
-                "answer_file": None,
-                "flow_digest": self._digest,
-                "final": False,
-            },
-            self._config,
-        )
+        self._record = {
+            "flow_digest": self._digest,
+            "attempt": self._saved_attempt() + 1,
+            "run": {"state": [state], "history": {}},
+            "facts": [],
+            "checked": None,
+            "answer_file": None,
+            "waiting": None,
+        }
+        self._drive()
+        self._save()
         if event is None:
             return self._halt()
         return self._answer(event, current, None)
@@ -288,7 +344,7 @@ class PlanningRuntime:
         """Antwort an den wartenden Zustand; anderswo nicht erlaubt.
         ``current`` ist der Stand beim Eingang der Antwort, ``attempt``
         die Kennung des Versuchs, für den die Übergabe ausgegeben
-        wurde; fehlt sie oder ist sie fremd, bleibt der Checkpoint
+        wurde; fehlt sie oder ist sie fremd, bleibt der Datensatz
         unverändert."""
         self._path, self._outcome = [], None
         return self._answer(
@@ -321,34 +377,29 @@ class PlanningRuntime:
         answer_file: str | None = None,
     ) -> Halt:
         """Antwort erst gegen den Ablauf prüfen, dann fortsetzen: eine
-        abgewiesene Antwort darf den Checkpoint nicht berühren (ein
-        einmal übergebener Resume-Wert bliebe sonst hängen). Eine
-        Antwort von außen beendet den Versuch, ein neuer beginnt."""
-        self._saved_digest()
-        snapshot = self._graph.get_state(self._config)
-        if not snapshot.interrupts:
+        abgewiesene Antwort berührt den Datensatz nicht (gespeichert
+        wird erst danach). Eine Antwort von außen beendet den Versuch,
+        ein neuer beginnt."""
+        record = _checked(_read(self._file), self._digest)
+        if record is None or record["waiting"] is None:
             raise FlowError("der Lauf wartet auf keine Antwort")
+        self._record = record
         if outside and check:
-            self._check_attempt(snapshot.values, attempt)
-        state = snapshot.values["state"]
-        context = _context(snapshot.values, current)
-        if self.bound.select(state, event, context) is None:
-            raise FlowError(
-                f"Ereignis {event} in {state} nicht erlaubt"
-            )
-        resume = {
-            "event": event,
-            "current": _plain(current),
-            "next_attempt": outside,
-            "answer_file": answer_file,
-        }
-        self._graph.invoke(Command(resume=resume), self._config)
+            self._check_attempt(record["attempt"], attempt)
+        context = replace(
+            self._context(),
+            current=current,
+            answer_file=answer_file or record["answer_file"],
+        )
+        self._take(self._state(), event, context)
+        if outside:
+            self._record["attempt"] += 1
+        self._drive()
+        self._save()
         return self._halt()
 
-    def _check_attempt(
-        self, values: PlanningGraphState, attempt: str | None
-    ) -> None:
-        waiting = self._attempt_id(values["attempt"])
+    def _check_attempt(self, number: int, attempt: str | None) -> None:
+        waiting = self._attempt_id(number)
         if attempt is None:
             raise StaleAnswerError(
                 f"attempt fehlt (wartend: Versuch {waiting})"
@@ -365,76 +416,87 @@ class PlanningRuntime:
     def _saved_attempt(self) -> int:
         """Zähler des gespeicherten Laufs (auch eines anderen
         Ablaufstands): ein neuer Beginn nutzt nie eine alte Kennung."""
-        saved = self._checkpointer.get_tuple(self._config)
-        if saved is None:
+        try:
+            saved = _read(self._file)
+        except StaleHaltError:
             return 0
-        values = saved.checkpoint.get("channel_values", {})
-        return int(values.get("attempt", 0))
+        if not isinstance(saved, dict):
+            return 0
+        attempt = saved.get("attempt", 0)
+        return attempt if isinstance(attempt, int) else 0
 
-    # --- Knoten ---
+    # --- Schritte ---
 
-    def _node(self, flow_state: State) -> Callable:
-        def run(values: PlanningGraphState) -> dict[str, object]:
-            context = _context(values)
-            operation = self.bound.operation(flow_state.id, context)
-            if operation is None:
-                return {"final": True}
-            if operation.do in self._machine:
-                event, context = self._machine[operation.do](
-                    flow_state.id, context
+    def _drive(self) -> None:
+        """Maschinenoperationen fahren, bis eine Antwort von außen
+        nötig ist (``turn``, ``ask``) oder der Ablauf endet."""
+        while True:
+            state = self._state()
+            context = self._context()
+            operation = self.flow.operation(state, _holds(context))
+            if operation is None or operation.do not in self._machine:
+                self._record["waiting"] = (
+                    None if operation is None else operation.do
                 )
-                self._outcome = context.outcome
-                return self._take(flow_state.id, event, context)
-            answer = interrupt(
-                {"state": flow_state.id, "operation": operation.do}
+                return
+            event, context = self._machine[operation.do](
+                state, context
             )
-            context = replace(
-                context,
-                current=answer.get("current"),
-                answer_file=(
-                    answer.get("answer_file") or context.answer_file
-                ),
-            )
-            update = self._take(flow_state.id, answer["event"], context)
-            if answer.get("next_attempt"):
-                update["attempt"] = values["attempt"] + 1
-            return update
-
-        return run
+            self._outcome = context.outcome
+            self._take(state, event, context)
 
     def _take(
         self, state: str, event: str, context: PlanningContext
-    ) -> dict[str, object]:
-        transition = self.bound.select(state, event, context)
-        if transition is None:
+    ) -> None:
+        machine = Durable(
+            self._chart, PlanningModel(context), self._record["run"]
+        )
+        try:
+            taken = machine.send(event)
+        except TransitionNotAllowed:
             raise FlowError(
                 f"Ereignis {event} in {state} nicht erlaubt"
-            )
-        self._path.append(transition)
-        return {
-            "state": transition.target,
-            "facts": sorted(context.facts),
-            "checked": _plain(context.checked),
-            "answer_file": context.answer_file,
-        }
+            ) from None
+        self._path.append(
+            self.flow.edge(taken.owner, taken.index, state)
+        )
+        self._record.update(
+            run=machine.record,
+            facts=sorted(context.facts),
+            checked=_plain(context.checked),
+            answer_file=context.answer_file,
+        )
+
+    def _save(self) -> None:
+        replace_json(self._file, self._record)
+
+    def _state(self) -> str:
+        return self._record["run"]["state"][-1]
+
+    def _context(self) -> PlanningContext:
+        return PlanningContext(
+            frozenset(self._record["facts"]),
+            checked=self._record["checked"],
+            answer_file=self._record["answer_file"],
+        )
 
     # --- Halt ---
 
     def _halt(self) -> Halt:
-        snapshot = self._graph.get_state(self._config)
-        values = snapshot.values
-        operation = None
-        for item in snapshot.interrupts:
-            operation = item.value["operation"]
-        context = replace(_context(values), outcome=self._outcome)
-        waiting = bool(snapshot.interrupts)
+        context = replace(self._context(), outcome=self._outcome)
+        waiting = self._record["waiting"]
+        state = self._state()
         return Halt(
-            values["state"],
-            operation,
+            state,
+            waiting,
             tuple(self._path),
             context,
-            self._turn(values["state"], context),
-            self._attempt_id(values["attempt"]) if waiting else None,
+            self._turn(state, context),
+            (
+                self._attempt_id(self._record["attempt"])
+                if waiting
+                else None
+            ),
         )
 
     def _turn(
@@ -443,14 +505,10 @@ class PlanningRuntime:
         for transition in reversed(self._path):
             if transition.turn is not None:
                 return transition.turn
-        operation = self.bound.operation(state, context)
+        operation = self.flow.operation(state, _holds(context))
         return None if operation is None else operation.turn
 
 
 def _plain(stand: Mapping[str, str] | None) -> dict[str, str] | None:
-    """Stand als einfaches dict für den Checkpoint (serialisierbar)."""
+    """Stand als einfaches dict für den Datensatz (serialisierbar)."""
     return None if stand is None else dict(stand)
-
-
-def _route(values: PlanningGraphState) -> str:
-    return END_ROUTE if values.get("final") else values["state"]

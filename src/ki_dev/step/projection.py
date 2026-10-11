@@ -24,7 +24,6 @@ from ki_dev.ops.context.blocks import TurnInput
 from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import GuidelineSection
 from ki_dev.ops.context.limit_config import load_base_max_chars
-from ki_dev.runner.interpreter import BoundFlow
 from ki_dev.runner.planning import (
     CHECKS,
     FULL_CHECKS,
@@ -33,7 +32,7 @@ from ki_dev.runner.planning import (
     MachineOperation,
     PlanningContext,
     StaleAnswerError,
-    bind_planning,
+    allows,
     planning_runtime,
     with_facts,
 )
@@ -137,17 +136,16 @@ def bead_output(
     ``--next-turn`` (Folgenachricht, eigener Vertrag); sonst wird sie
     vor jedem Beads-Zugriff und Vorlauf gelesen."""
     flow = planning_flow()
-    bound = bind_planning(flow.flow)
     run = planner(bead_id, flow, saved)
     if step is Step.REVIEW and next_turn:
         issue = read_issue(bead_id, Path.cwd())
         if inputs.decision is not None:
             text, code, halt = decision_turn(
-                issue, inputs.decision, flow, bound, run, saved
+                issue, inputs.decision, flow, run, saved
             )
             return Output(text, code, halt, flow)
         text, code, halt = next_turn_handoff(
-            issue, review_of, extra, inputs.feedback, flow, bound, run
+            issue, review_of, extra, inputs.feedback, flow, run
         )
         return Output(text, code, halt, flow)
     limit = load_base_max_chars(Path.cwd())
@@ -155,7 +153,7 @@ def bead_output(
     if step is Step.REVIEW:
         guidelines = selected_guidelines(step, review_of)
         text, code, halt = review_handoff(
-            issue, review_of, extra, guidelines, limit, flow, bound, run
+            issue, review_of, extra, guidelines, limit, flow, run
         )
         return Output(text, code, halt, flow)
     ensure_base_fits(flow, issue, step, None, limit)
@@ -164,7 +162,6 @@ def bead_output(
     subject = turn_input(
         issue,
         flow,
-        bound,
         halt,
         guidelines=selected_guidelines(step, None),
     )
@@ -178,7 +175,6 @@ def review_handoff(
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
     flow: PlanningFlow,
-    bound: BoundFlow[PlanningContext],
     run: Run,
 ) -> tuple[str, int, Halt]:
     """Übergabe für ``--step review``, Exitcode und Halt.
@@ -205,7 +201,7 @@ def review_handoff(
             f"{target.value}.review",
         )
         subject = turn_input(
-            issue, flow, bound, halt, guidelines=guidelines
+            issue, flow, halt, guidelines=guidelines
         )
         text = hand_over(flow, halt.turn, subject, base_max_chars)
         return text, 0, halt
@@ -214,7 +210,7 @@ def review_handoff(
     )
     halt = run(IMPLEMENT, DONE, machine_operations(extra, issue))
     subject = turn_input(
-        issue, flow, bound, halt, guidelines=guidelines
+        issue, flow, halt, guidelines=guidelines
     )
     text = hand_over(flow, halt.turn, subject, base_max_chars)
     return text, exit_code(subject), halt
@@ -249,7 +245,6 @@ def machine_operations(
 def turn_input(
     issue: BeadInput,
     flow: PlanningFlow,
-    bound: BoundFlow[PlanningContext],
     halt: Halt,
     **extra: Any,
 ) -> TurnInput:
@@ -267,7 +262,7 @@ def turn_input(
             report=None if outcome is None else outcome.report,
             finding=failure,
             feedback_limit=limit,
-            pass_allowed=pass_allowed(bound, halt),
+            pass_allowed=pass_allowed(flow, halt),
             attempt=halt.attempt,
         ),
         **extra,
@@ -293,7 +288,6 @@ def next_turn_handoff(
     extra: PreflightRequest,
     feedback_file: str | None,
     flow: PlanningFlow,
-    bound: BoundFlow[PlanningContext],
     run: Run,
 ) -> tuple[str, int, Halt]:
     """Nächste Nachricht nach einer Korrektur, Exitcode und Halt.
@@ -316,19 +310,16 @@ def next_turn_handoff(
     implement = target is ReviewTarget.IMPLEMENT
     machine = machine_operations(extra, issue) if implement else {}
     halt = run(f"{target.value}.correction", DONE, machine)
-    return after_preflight(issue, feedback, flow, bound, halt)
+    return after_preflight(issue, feedback, flow, halt)
 
-def pass_allowed(
-    bound: BoundFlow[PlanningContext], halt: Halt
-) -> bool:
+def pass_allowed(flow: PlanningFlow, halt: Halt) -> bool:
     """Ob der Ablauf im erreichten Review PASS zulässt (Wächter)."""
-    return bound.select(halt.state, PASS, halt.context) is not None
+    return allows(flow.flow, halt.state, PASS, halt.context)
 
 def decision_turn(
     issue: BeadInput,
     source: str,
     flow: PlanningFlow,
-    bound: BoundFlow[PlanningContext],
     run: Run,
     saved: SavedState | None,
 ) -> tuple[str, int, Halt]:
@@ -386,7 +377,7 @@ def decision_turn(
         answered = cast(Transition, halt.entry)
         args, skip = control_from(answer.extras)
         subject = replace(
-            turn_input(issue, flow, bound, halt),
+            turn_input(issue, flow, halt),
             state=answered.source,
             events=(answered.event,),
             verdict=answer.verdict,
@@ -398,7 +389,7 @@ def decision_turn(
         "Stand seit dem Vorlauf geändert (Arbeitsbaum oder Bead): "
         "PASS nicht angenommen, neuer Vorlauf"
     )
-    return after_preflight(issue, None, flow, bound, halt)
+    return after_preflight(issue, None, flow, halt)
 
 def parse_answer(
     raw: str, issue: BeadInput, flow: PlanningFlow
@@ -433,12 +424,11 @@ def after_preflight(
     issue: BeadInput,
     feedback: str | None,
     flow: PlanningFlow,
-    bound: BoundFlow[PlanningContext],
     halt: Halt,
 ) -> tuple[str, int, Halt]:
     """Nachricht nach der Korrektur oder nach einem neuen Vorlauf:
     die Übergabe des Halts laut Ablauf (Reparatur an den Umsetzer mit
     Exit 1 oder Folgerunde an das Review)."""
-    subject = turn_input(issue, flow, bound, halt, feedback=feedback)
+    subject = turn_input(issue, flow, halt, feedback=feedback)
     text = hand_over(flow, halt.turn, subject)
     return text, exit_code(subject), halt
