@@ -1,8 +1,12 @@
 """Ablauf als Mermaid-Zustandsdiagramm, erzeugt aus der Quelle.
 
+Gelesen wird die flache Sicht, die ``flow/statechart.py`` aus
+``[statechart]`` ableitet (bei Mustern aus der erzeugten Definition).
 Diagramme in README und Doku werden hiermit erzeugt statt gepflegt;
 ein Test vergleicht die eingebetteten Blöcke mit dieser Ausgabe. Die
-Reihenfolge folgt der Datei, damit die Ausgabe deterministisch ist.
+Reihenfolge folgt der Sicht, damit die Ausgabe deterministisch ist.
+Warum nicht ``statemachine.contrib.diagram``: Technikleitlinie,
+Abschnitt „Ausnahmen“.
 
 Eine Kante wird als ``event [cond] / actions`` beschriftet.
 ``@history`` erscheint als eigener Pseudozustand je wartendem Zustand,

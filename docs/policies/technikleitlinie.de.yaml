@@ -132,7 +132,7 @@ sections:
       betroffenen Grenze und einen Verweis aus dieser Leitlinie. Bequemlichkeit
       oder ein bestehender abweichender Aufruf begründen keine neue Ausnahme.
 
-      Bestehende Ausnahme:
+      Bestehende Ausnahmen:
 
       - **Pager von `ki-dev session show --pager`** (`session_output.py`):
         Rich `Console.pager()` über `pydoc.pager`, das `$MANPAGER` bzw.
@@ -144,3 +144,13 @@ sections:
         des eigenen Terminals, keine fremde Eingabe. Entscheidung des
         Menschen vom 2026-10-07. Folge: Start- und Exitfehler des Pagers meldet
         die Shell, nicht `ki-dev`; umgeleitete Ausgabe startet keinen Pager.
+      - **Mermaid-Diagramme der Abläufe** (`flow/diagram.py`) statt
+        `statemachine.contrib.diagram`. Technische Begründung: Die
+        Bibliothek beschriftet Kanten mit aufbereiteten Namen („Pass“ statt
+        `PASS`, gegen „Ein Vokabular“), fasst gleichgerichtete Kanten mit
+        verschiedenen Wächtern zu einer zusammen und zeigt weder Aktionen
+        noch Eskalationen; eine Sicht ohne Eskalationskanten bietet sie
+        nicht. `diagram.py` liest die aus `[statechart]` abgeleitete Sicht und
+        bleibt damit aus der einen Quelle erzeugt. Entscheidung in der
+        Umsetzung von `ki-dev-ablauf-9cn` vom 2026-10-11 (vom Menschen
+        übertragen).
