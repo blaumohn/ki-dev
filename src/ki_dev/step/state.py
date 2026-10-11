@@ -76,6 +76,7 @@ def remember(
         seq += 1
         store.append_event(
             event_record(
+                line=seq,
                 seq=seq,
                 ts=datetime.now(UTC).isoformat(),
                 flow=flow,

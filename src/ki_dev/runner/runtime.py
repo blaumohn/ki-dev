@@ -48,7 +48,6 @@ from ki_dev.deltas import (
 )
 from ki_dev.flow.model import (
     FlowError,
-    Transition,
     Verdict,
 )
 from ki_dev.flow.model import Operation as FlowOperation
@@ -60,7 +59,7 @@ from ki_dev.review_context import (
     project_review_context,
 )
 from ki_dev.run_store import RunStore, RunStoreError
-from ki_dev.runner.events import event_record
+from ki_dev.runner.events import ABLAUF, event_record, run_event_record
 from ki_dev.runner.implement_turns import review_prompt, work_prompt
 from ki_dev.runner.machine import (
     EVENT_TYPES,
@@ -91,7 +90,6 @@ from ki_dev.runner.machine import (
     RunState,
     RunStateFormatError,
     StepResultCaptured,
-    TransitionResult,
     WorkerCompleted,
     WorkerInputsPrepared,
     decode_run_state,
@@ -106,7 +104,7 @@ from ki_dev.runner.review_output import (
     bind_review_decision,
     parse_review_decision,
 )
-from ki_dev.runner.run_machine import Operation, RunMachine
+from ki_dev.runner.run_machine import Operation, RunMachine, Step
 from ki_dev.runner.run_record import (
     RunData,
     RunRecordError,
@@ -281,6 +279,7 @@ class RunRuntime:
             "decision": None,
             "decision_answer": None,
             "last_error": None,
+            "logged": 0,
         }
         self._drive()
         return self.result()
@@ -397,7 +396,47 @@ class RunRuntime:
             steps += 1
 
     def _save(self) -> None:
+        """Erst die genommenen Kanten ins Ereignisprotokoll, dann den
+        Datensatz: nach einem Absturz dazwischen schreibt die
+        Wiederholung dieselben Zeilen nicht doppelt (``line``)."""
+        run = decode_run_state(self._data["run_state"])
+        for step in self._lauf.drain_steps():
+            self._data["logged"] += 1
+            self._log_step(run.run_id, step)
         self.store.save_record(encode_record(self._lauf, self._data))
+
+    def _log_step(self, run_id: str, step: Step) -> None:
+        transition = step.transition
+        _log.info(
+            "%s: %s --%s--> %s",
+            step.region,
+            transition.source,
+            transition.event,
+            transition.target,
+        )
+        ts = datetime.now(UTC).isoformat()
+        line = self._data["logged"]
+        self.store.append_event(
+            event_record(
+                line=line,
+                seq=step.seq,
+                ts=ts,
+                flow=IMPLEMENT,
+                run_id=run_id,
+                transition=transition,
+                target=transition.target,
+                adapter=step.adapter,
+            )
+            if step.region == ABLAUF
+            else run_event_record(
+                line=line,
+                seq=step.seq,
+                ts=ts,
+                run_id=run_id,
+                region=step.region,
+                transition=transition,
+            )
+        )
 
     def _apply(self, update: dict[str, object]) -> None:
         self._data.update(cast(RunData, update))
@@ -1195,34 +1234,9 @@ class RunRuntime:
         das im Lauf auslöst (Pause bei Eskalation, Warten, Ende), nimmt
         die Bibliothek mit."""
         result = self._lauf.advance(
-            run.state, event, run.limits, facts=facts
+            run, event, facts=facts, adapter=self._adapter_of(run)
         )
-        self._log_transition(run, result)
         return self._replace_run(run, result.state, result.escalation)
-
-    def _log_transition(
-        self, run: RunState, result: TransitionResult
-    ) -> None:
-        """Genommene Kante ins Ereignisprotokoll (seq = neue Revision;
-        eine Wiederholung nach Absturz schreibt sie nicht doppelt)."""
-        transition = cast(Transition, result.transition)
-        _log.info(
-            "%s --%s--> %s",
-            transition.source,
-            transition.event,
-            result.phase.value,
-        )
-        self.store.append_event(
-            event_record(
-                seq=run.revision + 1,
-                ts=datetime.now(UTC).isoformat(),
-                flow=IMPLEMENT,
-                run_id=run.run_id,
-                transition=transition,
-                target=result.phase.value,
-                adapter=self._adapter_of(run),
-            )
-        )
 
     def _adapter_of(self, run: RunState) -> str:
         """Wer das Ereignis geliefert hat: der Adapter der Agenten-

@@ -67,10 +67,14 @@ class Chart:
 @dataclass(frozen=True)
 class Taken:
     """Genommene Kante: deklariert in ``owner`` an Stelle ``index``
-    seiner ``transitions``."""
+    seiner ``transitions``; ``event`` ist das Ereignis, mit dem sie
+    genommen wurde (auch ein mit ``raise`` erzeugtes), ``target`` ihr
+    Ziel (ohne Ziel: ``owner``)."""
 
     owner: str
     index: int
+    event: str = ""
+    target: str = ""
 
 
 def load_statechart(doc: Mapping[str, object]) -> type[StateChart]:
@@ -159,6 +163,9 @@ class Durable:
                 f"{type(model).__name__}"
             )
         self._taken: list[Taken] = []
+        self.journal: list[Taken] = []
+        """Alle genommenen Kanten in Reihenfolge, auch die mit
+        ``raise`` erzeugten; der Aufrufer leert es (Protokoll)."""
         if record is not None:
             check_record(record)
             state = cast(list[str], record["state"])
@@ -177,6 +184,7 @@ class Durable:
                 chart, self.machine, record
             )
         self._taken.clear()
+        self.journal.clear()
 
     def send(self, event: str, **kwargs: object) -> Taken:
         """Ereignis senden; die Kante des Ereignisses selbst (nicht die
@@ -186,9 +194,19 @@ class Durable:
         self.machine.send(event, **kwargs)
         return self._taken[0]
 
-    def after_transition(self, transition: object) -> None:
+    def after_transition(
+        self, transition: object, event: object, target: object
+    ) -> None:
         """Listener der Bibliothek: genommene Kanten mitschreiben."""
-        self._taken.append(self._origin[id(transition)])
+        origin = self._origin[id(transition)]
+        taken = Taken(
+            origin.owner,
+            origin.index,
+            str(event),
+            origin.owner if target is None else target.id,  # type: ignore[attr-defined]
+        )
+        self._taken.append(taken)
+        self.journal.append(taken)
 
     @property
     def configuration(self) -> list[str]:

@@ -39,6 +39,8 @@ class RunData(TypedDict):
     decision: dict[str, object] | None
     decision_answer: str | None
     last_error: str | None
+    logged: int
+    """Zeilen des Ereignisprotokolls, die dieser Stand abdeckt."""
 
 
 class RunRecordError(ValueError):
@@ -80,6 +82,7 @@ _DATA_PROPERTIES = {
     "decision": _nullable(_OBJECT),
     "decision_answer": _nullable({"type": "string"}),
     "last_error": _nullable({"type": "string"}),
+    "logged": {"type": "integer", "minimum": 0},
 }
 SCHEMA = {
     "type": "object",
@@ -121,6 +124,7 @@ def decode_record(document: object) -> tuple[RunMachine, RunData]:
         cast(dict[str, object], fields["run"]),
         cast(Operation | None, fields["pending"]),
         run.state,
+        run.revision,
     )
     return machine, data
 

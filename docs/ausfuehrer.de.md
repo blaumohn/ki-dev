@@ -251,15 +251,23 @@ fortsetzbar; das Kommando sagt das ausdrücklich.
 ## Ereignisprotokoll je Übergang
 
 Jeder genommene Übergang steht als eine Zeile in
-`<runs>/<RUN_ID>/events.jsonl`, mit den Namen des Ablaufs:
+`<runs>/<RUN_ID>/events.jsonl`, mit seiner Region: `ablauf` (Namen des
+Ablaufs) oder eine Region des Laufs (`operation`, `halt`,
+`runner/run.toml`):
 
 ```json
-{"seq": 7, "ts": "…", "flow": "implement", "run": "run-42", "state": "controller_step", "event": "fix", "target": "worker_step_prepare", "cond": ["checked_result"], "actions": ["begin_correction", "drop_result"], "escalation": null, "actor": "Controller (Review-Sitzung)", "adapter": "codex-cli"}
+{"line": 12, "region": "ablauf", "seq": 7, "ts": "…", "flow": "implement", "run": "run-42", "state": "controller_step", "event": "fix", "target": "worker_step_prepare", "cond": ["checked_result"], "actions": ["begin_correction", "drop_result"], "escalation": null, "actor": "Controller (Review-Sitzung)", "adapter": "codex-cli"}
+{"line": 13, "region": "operation", "seq": 7, "ts": "…", "flow": "run", "run": "run-42", "state": "idle", "event": "hold", "target": "prepared", "cond": ["is_running"], "actions": ["hold_operation"], "escalation": null, "actor": null, "adapter": "ki-dev"}
 ```
 
-`seq` ist die Laufrevision nach dem Übergang; nach einem Absturz wird
-dieselbe Zeile nicht doppelt geschrieben. `check_conformance`
-(`src/ki_dev/runner/events.py`) gleicht ein Protokoll gegen den Ablauf ab.
+`line` zählt alle Zeilen; nach einem Absturz wird dieselbe Zeile nicht
+doppelt geschrieben. `seq` ist die Revision des Ablaufs: nach einer
+Ablaufkante die neue, bei einer Kante des Laufs die, in der sie
+stattfand. So steht der Verlauf des Laufs (Operationen, Pausen,
+Antworten) neben dem des Ablaufs, ohne dessen Zählung zu stören.
+`check_conformance` (`src/ki_dev/runner/events.py`) gleicht jede Region
+gegen ihre Definition ab: den Ablauf gegen das Paket, `operation` und
+`halt` gegen `runner/run.toml`.
 XES (IEEE 1849) ist bewusst nur ein möglicher späterer Export; die Felder
 lassen sich direkt abbilden.
 

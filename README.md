@@ -356,7 +356,8 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
   gespeicherten Halt fort (`.local/handoff/steps/`), je Übergang steht eine
   Zeile in `events.jsonl`.
 - **Beobachtbar:** `ki-dev -f implement` schreibt je Übergang eine Zeile nach
-  `events.jsonl` ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
+  `events.jsonl`, für Ablauf und Lauf (Operation, Halt) je mit ihrer Region
+  ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
 - **Geprüfter Stand bei step:** Ein PASS gilt nur, wenn Arbeitsbaum und
   Bead seit dem Vorlauf unverändert sind; sonst läuft der Vorlauf erneut
   (Wächter `unchanged`, wie `freeze` bei `run`).

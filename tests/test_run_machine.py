@@ -17,6 +17,7 @@ from ki_dev.runner.machine import (
     IntegrationCompleted,
     MachineState,
     Phase,
+    RunState,
 )
 from ki_dev.runner.run_machine import RunMachine
 
@@ -75,7 +76,9 @@ _FLOW_HALTS = {
 def _halted_by_flow(halt: str) -> RunMachine:
     phase, event = _FLOW_HALTS[halt]
     machine = _flow_at(phase)
-    machine.advance(MachineState(phase=phase), event)
+    machine.advance(
+        RunState("r-1", 0, MachineState(phase=phase)), event
+    )
     return machine
 
 
@@ -223,6 +226,8 @@ def test_operation_waits_while_the_run_is_halted():
 def test_flow_state_and_run_data_must_agree():
     with pytest.raises(RuntimeError, match="Ablauf steht in start"):
         RunMachine().advance(
-            MachineState(phase=Phase.CONTROLLER_STEP),
+            RunState(
+                "r-1", 0, MachineState(phase=Phase.CONTROLLER_STEP)
+            ),
             ControllerEscalate("unklar"),
         )

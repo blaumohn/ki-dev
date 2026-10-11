@@ -632,10 +632,11 @@ def test_failed_operation_sends_its_declared_failure_event(tmp_path):
     assert result.status == "error"
     assert result.phase is Phase.ERROR
     events = [
-        json.loads(line)
-        for line in (
-            tmp_path / "run-broken-integration" / "events.jsonl"
-        ).read_text(encoding="utf-8").splitlines()
+        event
+        for event in RunStore(
+            tmp_path, "run-broken-integration"
+        ).load_events()
+        if event["region"] == "ablauf"
     ]
     assert events[-1]["event"] == "finalization_error"
     assert events[-1]["state"] == "fast_forward_integrate"
