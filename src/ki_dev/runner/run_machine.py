@@ -20,11 +20,8 @@ Ereignisprotokoll, bevor er den Datensatz ersetzt.
 
 from __future__ import annotations
 
-import copy
-import tomllib
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from importlib.resources import files
 
 from ki_dev.flow.model import Transition
 from ki_dev.fsm import (
@@ -48,6 +45,7 @@ from ki_dev.runner.machine import (
     phase_of,
     step,
 )
+from ki_dev.runner.protocol import RUN_DOC, RunModel, compose
 
 Operation = dict[str, object]
 """Offene Operation: ``id``, ``kind``, ``repeatable``, ``call_id``."""
@@ -57,32 +55,6 @@ _ROOT = "lauf"
 _HALT = "halt"
 
 
-class RunModel:
-    """Ops der Regionen ``operation`` und ``halt``: die offene
-    Operation."""
-
-    def __init__(self, pending: Operation | None = None) -> None:
-        self.pending = pending
-
-    def is_running(self, machine: object) -> bool:
-        """Region halt fährt (kein Halt)."""
-        return machine.running.is_active  # type: ignore[attr-defined]
-
-    def repeatable(self) -> bool:
-        """Die offene Operation darf nach Prozessende erneut laufen."""
-        return self.pending is not None and bool(
-            self.pending["repeatable"]
-        )
-
-    def hold_operation(self, operation: Operation) -> None:
-        self.pending = {**operation, "call_id": None}
-
-    def begin_operation(self, call_id: str | None = None) -> None:
-        """Absicht: die Wirkung beginnt (mit Budgetbuchung)."""
-        self.pending = {**self.pending, "call_id": call_id}
-
-    def drop_operation(self) -> None:
-        self.pending = None
 
 
 class LaufModel(RunModel, ImplementModel):
@@ -105,22 +77,6 @@ class LaufModel(RunModel, ImplementModel):
         ImplementModel.__init__(self, state, limits, facts)
 
 
-def compose(run: Mapping, flow: Mapping) -> dict:
-    """Lauf mit dem Ablauf als Region :data:`ABLAUF`."""
-    doc = copy.deepcopy(dict(run))
-    root = doc["states"][_ROOT]
-    root["states"] = {
-        ABLAUF: {"states": copy.deepcopy(flow["states"])},
-        **root["states"],
-    }
-    return doc
-
-
-def _load_doc() -> dict:
-    text = files("ki_dev.runner").joinpath("run.toml").read_text(
-        encoding="utf-8"
-    )
-    return tomllib.loads(text)["statechart"]
 
 
 def _ids(states: Mapping) -> Iterator[str]:
@@ -129,8 +85,6 @@ def _ids(states: Mapping) -> Iterator[str]:
         yield from _ids(state.get("states", {}))
 
 
-RUN_DOC = _load_doc()
-"""``[statechart]`` von ``run.toml``: die Regionen des Gerüsts."""
 LAUF_CHART = bind(
     compose(RUN_DOC, IMPLEMENT.statechart),
     LaufModel,

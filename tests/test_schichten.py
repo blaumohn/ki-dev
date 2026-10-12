@@ -179,3 +179,18 @@ def test_core_modules_never_import_runner_step_or_cli():
 def test_no_import_cycles():
     """Ein Modul erreicht sich über seine Importe nie selbst."""
     assert sorted(m for m in MODULES if m in _closure(m)) == []
+
+
+def test_generic_package_runner_knows_no_roles_or_catalog():
+    """Der generische Runner kennt Bindungen, keinen Fachkatalog."""
+    forbidden = (
+        "ki_dev.adapter",
+        "ki_dev.runner.implement_ops",
+        "ki_dev.runner.machine",
+        "ki_dev.runner.runtime",
+    )
+    assert not [
+        m
+        for m in _closure("ki_dev.runner.package")
+        if _within(m, forbidden)
+    ]

@@ -25,7 +25,7 @@ from ki_dev.deltas import (
 )
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
-from ki_dev.runner import runtime
+from ki_dev.runner import implement_ops
 from ki_dev.runner.machine import IMPLEMENT, Limits, Phase
 from ki_dev.runner.review_output import AgentProtocolError
 from ki_dev.runner.runtime import (
@@ -709,7 +709,7 @@ def test_manual_relay_halts_executor_not_flow_and_continues(tmp_path):
 def test_evidence_of_a_foreign_task_is_a_protocol_error():
     wrong = _context(1)
     with pytest.raises(AgentProtocolError, match="fremdem Auftrag"):
-        runtime._validate_context(
+        implement_ops._validate_context(
             ControllerContext(
                 "Fremder Auftrag", wrong.step_delta, wrong.round_status
             ),

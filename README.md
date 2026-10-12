@@ -336,6 +336,7 @@ src/ki_dev/
 ```
 
 Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
+[Bindungen und Muster](docs/ablaufpakete.de.md) ·
 [`ki-dev step` im Detail](docs/step.de.md) ·
 [CLI-Adapter](docs/cli-adapters.md) ·
 [Sitzungen lesen](docs/session.de.md) ·

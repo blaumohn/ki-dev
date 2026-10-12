@@ -13,8 +13,12 @@ den die Maschinenoperation geprüft hat; eine Antwort gilt nur dort, wo
 der Lauf wartet, und bringt den aktuellen Stand mit (Wächter
 ``unchanged``, synchron verglichen).
 
-Was eine Maschinenoperation tut, reicht der Aufrufer als benannte
-Implementierung herein (der Ausführer kennt step nicht). Der Halt nennt
+Was eine Maschinenoperation tut, reicht der Aufrufer als Katalog
+herein (Katalogname → Implementierung; der Ausführer kennt step
+nicht). Welcher Katalogname zu einer Operation gehört und welche
+Ereignisse sie liefern darf, sagt die Bindung des Ablaufs (``[op.*]``);
+ein anderes Ereignis ist ein Fehler. Operationen ohne Bindung oder ohne
+Katalogeintrag sind Halte (``turn``, ``ask``). Der Halt nennt
 Zustand, Operation und den in diesem Aufruf genommenen Weg; daraus
 wählt der Halt die Übergabe (``Halt.turn``: Vorlage am Übergang oder an
 der Operation des Zustands).
@@ -43,7 +47,6 @@ from ki_dev.run_store import RunStore, RunStoreError, replace_json
 
 TURN = "turn"
 ASK = "ask"
-CHECKS = "checks"
 FULL_CHECKS = "full_checks"
 UNCHANGED = "unchanged"
 RECORD_FILE = "record.json"
@@ -434,14 +437,22 @@ class PlanningRuntime:
             state = self._state()
             context = self._context()
             operation = self.flow.operation(state, _holds(context))
-            if operation is None or operation.do not in self._machine:
+            binding = (
+                None
+                if operation is None
+                else self.flow.bindings.get(operation.do)
+            )
+            if binding is None or binding.do not in self._machine:
                 self._record["waiting"] = (
                     None if operation is None else operation.do
                 )
                 return
-            event, context = self._machine[operation.do](
-                state, context
-            )
+            event, context = self._machine[binding.do](state, context)
+            if event not in binding.emitted:
+                raise FlowError(
+                    f"op.{operation.do}: Ereignis {event} "
+                    "nicht gebunden"
+                )
             self._outcome = context.outcome
             self._take(state, event, context)
 

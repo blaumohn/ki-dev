@@ -11,6 +11,7 @@ from typing import Any, NamedTuple, Protocol, cast
 
 from ki_dev.flow.model import PASS, FlowError, Transition
 from ki_dev.flow.planning import PlanningFlow
+from ki_dev.ops.checks import PREFLIGHT
 from ki_dev.ops.checks.options import (
     CONTROL_SCHEMA,
     check_control,
@@ -25,7 +26,6 @@ from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import GuidelineSection
 from ki_dev.ops.context.limit_config import load_base_max_chars
 from ki_dev.runner.planning import (
-    CHECKS,
     FULL_CHECKS,
     TURN,
     Halt,
@@ -240,7 +240,7 @@ def machine_operations(
             context, facts, outcome, checked
         )
 
-    return {CHECKS: checks}
+    return {PREFLIGHT: checks}
 
 def turn_input(
     issue: BeadInput,

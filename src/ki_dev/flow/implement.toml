@@ -392,3 +392,50 @@ final = true
 
 [statechart.states.error]
 final = true
+
+[op.work]
+role = "worker"
+do = "agent.work"
+input = ["task", "round_id", "open_objection", "operation_id"]
+output = { work_report = ["summary"] }
+success = "worker_completed"
+
+[op.evidence]
+do = "evidence.collect"
+input = ["task", "round_id", "work_report", "round_base", "run_base"]
+output = { evidence = ["projection"], reviewed_refs = ["reviewed_refs"] }
+payload = { assessment = ["assessment"] }
+success = "step_result_captured"
+
+[op.review]
+role = "review"
+do = "review.decide"
+input = ["task", "round_id", "evidence", "work_report", "decision_answer", "attempt_id"]
+output = { decision = ["decision"] }
+events = ["PASS", "fix", "decision", "escalate"]
+
+[op.freeze]
+do = "git.freeze"
+input = ["task", "run_base", "reviewed_refs"]
+output = "frozen_result"
+success = "reviewed_result_frozen"
+
+[op.finalize_history]
+do = "git.finalize_history"
+input = ["frozen_result"]
+output = "final_result"
+success = "history_finalized"
+
+[op.verify_final]
+do = "git.verify"
+input = ["frozen_result", "final_result"]
+output = {}
+payload = { ok = ["ok"] }
+success = "final_result_verified"
+
+[op.integrate]
+do = "git.integrate"
+input = ["frozen_result", "final_result"]
+output = {}
+payload = { ok = ["ok"] }
+success = "integration_completed"

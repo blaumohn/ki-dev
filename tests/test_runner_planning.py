@@ -10,6 +10,7 @@ from dataclasses import replace
 import pytest
 
 from ki_dev.flow.model import FlowError, load_flow, parse_flow, read_raw
+from ki_dev.ops.checks import PREFLIGHT
 from ki_dev.runner.planning import (
     ASK,
     TURN,
@@ -32,7 +33,7 @@ def _checks(event, facts=frozenset({"full_checks"})):
     def run(_state, context):
         return event, with_facts(context, facts, event, STAND)
 
-    return {"checks": run}
+    return {PREFLIGHT: run}
 
 
 def _edges(halt):
@@ -279,3 +280,27 @@ def test_halt_without_attempt_is_stale_not_a_keyerror(tmp_path):
         ):
             with pytest.raises(StaleHaltError, match="--step neu"):
                 call()
+
+
+def test_checks_event_outside_binding_is_rejected(tmp_path):
+    """Die Bindung [op.checks] nennt die erlaubten Ereignisse; ein
+    anderes Ergebnis der Katalogoperation ist ein sichtbarer Fehler."""
+    with (
+        planning_runtime(
+            FLOW, tmp_path, "b", _checks("PASS")
+        ) as runtime,
+        pytest.raises(FlowError, match="op.checks: Ereignis PASS"),
+    ):
+        runtime.start("implement", "done")
+
+
+def test_checks_resolve_through_the_catalog_name(tmp_path):
+    """Nur der gebundene Katalogname zählt; ein Eintrag unter dem
+    Operationsnamen läuft nicht, der Lauf hält am Vorlauf."""
+    stale = {"checks": _checks("checks_passed")[PREFLIGHT]}
+    with planning_runtime(FLOW, tmp_path, "b", stale) as runtime:
+        halt = runtime.start("implement", "done")
+    assert (halt.state, halt.operation) == (
+        "implement.preflight",
+        "checks",
+    )

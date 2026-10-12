@@ -24,6 +24,7 @@ from ki_dev.flow.model import (
     parse_flow,
     reaching_final,
     read_raw,
+    with_pattern_catalog,
 )
 from ki_dev.flow.pattern import expand
 from ki_dev.flow.planning import (
@@ -49,7 +50,9 @@ PROGRESS = ("PASS", "done", "checks_passed", "accept", "imported")
 def _raw() -> dict:
     """Expandierter Planungsablauf als Rohdaten: die Mutationen prüfen
     das flache Format, das der Lader nach den Mustern prüft."""
-    return expand(read_raw("planning"), "planning.toml")
+    return expand(
+        with_pattern_catalog(read_raw("planning")), "planning.toml"
+    )
 
 
 def test_shipped_table_is_valid_and_complete():

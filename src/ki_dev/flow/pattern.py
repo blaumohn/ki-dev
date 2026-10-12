@@ -116,6 +116,10 @@ def _instantiate(
         for item in pattern["transition"]
         if str(item.get("template", "")).startswith(REFERENCE)
     }
+    operations = dict(phase.get("operation", {}))
+    for local in operations:
+        if local not in locals_:
+            raise PatternError(f"{label}: operation.{local}: unbekannt")
     for local in turns:
         if local not in locals_ and local not in referenced:
             raise PatternError(
@@ -126,7 +130,14 @@ def _instantiate(
             state,
             phase_id,
             actors.get(state["local"]),
-            turns.get(str(state["local"]), {}),
+            {
+                **turns.get(str(state["local"]), {}),
+                **(
+                    {"do": operations[state["local"]]}
+                    if state["local"] in operations
+                    else {}
+                ),
+            },
             label,
         )
         for state in pattern["state"]

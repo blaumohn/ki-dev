@@ -45,6 +45,11 @@ from typing import cast
 
 from jsonschema import Draft202012Validator
 
+from ki_dev.flow.binding import (
+    BINDINGS_SCHEMA,
+    Binding,
+    parse_bindings,
+)
 from ki_dev.flow.pattern import PatternError, expand
 from ki_dev.flow.statechart import (
     StatechartError,
@@ -177,6 +182,8 @@ class Flow:
         default_factory=dict, compare=False, repr=False
     )
     """Kante der Sicht je Kante der Bibliothek (:meth:`edge`)."""
+
+    bindings: Mapping[str, Binding] = field(default_factory=dict)
 
     def outgoing(self, state: str) -> tuple[Transition, ...]:
         self.state(state)
@@ -311,6 +318,7 @@ def parse_flow(raw: object) -> Flow:
     flache Tabelle bilden, dann Schema, dann Beziehungen prüfen."""
     if isinstance(raw, dict) and "statechart" in raw:
         return _parse_statechart(raw)
+    raw = with_pattern_catalog(raw)
     _check_schema(raw, _PATTERN_VALIDATOR)
     where = f"{cast(dict, raw).get('name')}.toml"
     try:
@@ -318,6 +326,50 @@ def parse_flow(raw: object) -> Flow:
     except PatternError as exc:
         raise FlowError(str(exc)) from exc
     return _flow(table, where)
+
+
+def with_pattern_catalog(raw: object) -> object:
+    """Gemeinsame Muster aus ``flow/patterns`` einsetzen
+    (``pattern_catalog``); eigene Muster überschreiben sie nicht."""
+    if not isinstance(raw, dict) or "pattern_catalog" not in raw:
+        return raw
+    _check_schema(
+        raw["pattern_catalog"],
+        Draft202012Validator(
+            {
+                "type": "array",
+                "uniqueItems": True,
+                "items": {"type": "string", "pattern": r"^[a-z_]+$"},
+            }
+        ),
+    )
+    patterns = {}
+    for name in raw["pattern_catalog"]:
+        resource = files("ki_dev.flow").joinpath(
+            f"patterns/{name}.toml"
+        )
+        try:
+            library = tomllib.loads(
+                resource.read_text(encoding="utf-8")
+            )
+        except FileNotFoundError as exc:
+            raise FlowError(
+                f"pattern_catalog.{name}: unbekannt"
+            ) from exc
+        _check_schema(library, _PATTERN_VALIDATOR)
+        for key, value in library["pattern"].items():
+            if key in patterns:
+                raise FlowError(f"pattern_catalog.{key}: doppelt")
+            patterns[key] = value
+    local = raw.get("pattern", {})
+    if local:
+        _check_schema({"pattern": local}, _PATTERN_VALIDATOR)
+    if set(patterns) & set(local):
+        raise FlowError("pattern: überschreibt gemeinsames Muster")
+    return {
+        **{k: v for k, v in raw.items() if k != "pattern_catalog"},
+        "pattern": {**patterns, **local},
+    }
 
 
 def _parse_statechart(raw: dict) -> Flow:
@@ -364,6 +416,7 @@ def _flow(
         },
         priority=tuple(table.get("priority", ())),
         ops=table.get("ops"),
+        bindings=parse_bindings(table.get("op", {})),
     )
     _check_relations(flow, where)
     try:
@@ -499,6 +552,7 @@ _SCHEMA = {
     "properties": {
         "name": _ID,
         "ops": {"type": "string", "pattern": r"^[a-z_]+(\.[a-z_]+)*$"},
+        "op": BINDINGS_SCHEMA,
         "start": _ID,
         "final": {
             "type": "array",
@@ -676,6 +730,10 @@ _PATTERN_SCHEMA = {
                     "id": _NAME,
                     "use": _NAME,
                     "next": _ID,
+                    "operation": {
+                        "type": "object",
+                        "additionalProperties": _NAME,
+                    },
                     "actor": {
                         "type": "object",
                         "additionalProperties": _TEXT,
@@ -713,7 +771,13 @@ _CHART_SCHEMA = {
     "properties": {
         **{
             key: _SCHEMA["properties"][key]
-            for key in ("name", "ops", "finding_class", "priority")
+            for key in (
+                "name",
+                "ops",
+                "op",
+                "finding_class",
+                "priority",
+            )
         },
         "vocabulary": {
             "type": "object",
@@ -762,6 +826,7 @@ def _check_relations(flow: Flow, where: str) -> None:
     _check_classes(flow, where)
     _check_endpoints(flow, where)
     _check_operations(flow, where)
+    _check_bindings(flow, where)
     _check_transitions(flow, where)
     _check_guard_order(flow, where)
     _check_required_events(flow, where)
@@ -987,3 +1052,22 @@ def _check_end_reachable(flow: Flow, where: str) -> None:
             f"{where}: Sackgasse ohne Weg zu {', '.join(flow.final)}: "
             f"{', '.join(dead)}"
         )
+
+
+def _check_bindings(flow: Flow, where: str) -> None:
+    for name, binding in flow.bindings.items():
+        users = [
+            s
+            for s in flow.states.values()
+            if any(op.do == name for op in s.operations)
+        ]
+        if not users:
+            raise FlowError(f"{where}: op.{name}: ungenutzt")
+        for state in users:
+            events = {t.event for t in flow.outgoing(state.id)}
+            missing = set(binding.emitted) - events
+            if missing:
+                raise FlowError(
+                    f"{where}: op.{name}: Ereignis ohne Kante in "
+                    f"{state.id}: {', '.join(sorted(missing))}"
+                )

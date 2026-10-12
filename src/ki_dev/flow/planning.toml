@@ -13,11 +13,13 @@
 # nach `priority`; das Urteil (CHANGES/NEEDS_DECISION) folgt aus der
 # Klasse. `hint` ist die Übergabe an den Menschen als Boten
 # (Adapter manual, `ki-dev step`); {bead} setzt ki-dev ein.
-# Die vier Phasen teilen ein Muster (`pattern`, flow/pattern.py); jede
+# Die vier Phasen teilen gemeinsame Muster (`pattern_catalog`,
+# flow/patterns/review.toml, Expansion: flow/pattern.py); jede
 # Phase liefert nur ihre Parameter: nächste Phase, Akteure, Hinweise.
 # Format und Prüfung: src/ki_dev/flow/model.py.
 
 name = "planning"
+pattern_catalog = ["review"]
 start = "map"
 final = ["finished"]
 priority = ["decision", "source", "fix"]
@@ -73,6 +75,16 @@ decision = ["accept", "correct", "source"]
 source = ["imported"]
 machine = ["checks_passed", "checks_partial", "checks_failed"]
 
+# Bindung der Maschinenoperation an den Ops-Katalog: `checks` ruft
+# den Vorlauf `checks.preflight` (ki_dev.ops.checks); sein Ergebnis ist
+# eines der genannten Ereignisse. turn und ask sind Halte des
+# Ausführers, keine Katalogoperationen.
+[op.checks]
+do = "checks.preflight"
+input = []
+output = {}
+events = ["checks_passed", "checks_partial", "checks_failed"]
+
 [finding_class.fix]
 verdict = "CHANGES"
 text = "aus vorhandenen Quellen korrigierbar"
@@ -85,173 +97,8 @@ text = "offene Frage, braucht eine neue Quelle"
 verdict = "NEEDS_DECISION"
 text = "nur der Mensch kann entscheiden"
 
-# --- Muster: Schreiben, getrenntes Review, Korrektur, Entscheidung ----
-# Lokale Zustände: write heißt wie die Phase, die übrigen PHASE.LOKAL.
-# Kantenziele: lokaler Zustand, @next (nächste Phase) oder globals.
-# review_core trägt alles außer dem Weg ins Review und dem PASS; die
-# beiden Varianten unterscheiden sich genau darin (Muster statt Schalter).
-
-[pattern.review_core]
-globals = ["source"]
-
-[[pattern.review_core.state]]
-local = "write"
-kind = "write"
-operation = [{ do = "turn" }]
-
-[[pattern.review_core.state]]
-local = "review"
-kind = "review"
-operation = [{ do = "turn" }]
-
-# Befund des Reviews an den Schreibagenten (Nachricht der Kante
-# review --fix--> correction); der Vorlauf überschreibt sie am Übergang.
-[[pattern.review_core.state]]
-local = "correction"
-kind = "correction"
-operation = [
-  { do = "turn", template = "decision-changes", context = [
-    { use = "next_steps" }, { use = "control" }, { use = "attempt" },
-  ] },
-]
-
-[[pattern.review_core.state]]
-local = "decision"
-kind = "decision"
-actor = "Mensch"
-operation = [
-  { do = "ask", template = "decision-other", context = [
-    { use = "next_steps" }, { use = "control" }, { use = "attempt" },
-  ] },
-]
-
-[[pattern.review_core.transition]]
-source = "review"
-event = "fix"
-target = "correction"
-
-[[pattern.review_core.transition]]
-source = "review"
-event = "source"
-target = "source"
-hint = "offene Fragen in einer Planungssitzung klären"
-
-[[pattern.review_core.transition]]
-source = "review"
-event = "decision"
-target = "decision"
-hint = "du entscheidest: accept, correct oder source"
-
-[[pattern.review_core.transition]]
-source = "decision"
-event = "accept"
-target = "@next"
-
-[[pattern.review_core.transition]]
-source = "decision"
-event = "correct"
-target = "correction"
-
-[[pattern.review_core.transition]]
-source = "decision"
-event = "source"
-target = "source"
-hint = "Entscheidung in einer Planungssitzung festhalten"
-
-# Schreiben und Korrektur gehen direkt ins Review.
-[pattern.write_review]
-extends = "review_core"
-
-[[pattern.write_review.transition]]
-source = "write"
-event = "done"
-target = "review"
-
-[[pattern.write_review.transition]]
-source = "correction"
-event = "done"
-target = "review"
-template = "@again"
-context = [
-  { use = "report_followup" }, { use = "feedback_review" },
-  { use = "human_note" }, { use = "next_steps" }, { use = "attempt" },
-]
-
-[[pattern.write_review.transition]]
-source = "review"
-event = "PASS"
-target = "@next"
-template = "decision-other"
-context = [{ use = "next_steps" }, { use = "control" }, { use = "attempt" }]
-
-# Umsetzung: vor jedem Review ein deterministischer Vorlauf (checks);
-# ein Teillauf erreicht das Review, aber kein PASS.
-[pattern.write_review_preflight]
-extends = "review_core"
-
-[[pattern.write_review_preflight.state]]
-local = "preflight"
-kind = "machine"
-actor = "ki-dev (Vorlauf: Korrekturen und Prüfungen)"
-operation = [{ do = "checks" }]
-
-[[pattern.write_review_preflight.transition]]
-source = "write"
-event = "done"
-target = "preflight"
-
-[[pattern.write_review_preflight.transition]]
-source = "correction"
-event = "done"
-target = "preflight"
-template = "@again"
-context = [
-  { use = "report_followup" }, { use = "feedback_review" },
-  { use = "human_note" }, { use = "next_steps" }, { use = "attempt" },
-]
-
-[[pattern.write_review_preflight.transition]]
-source = "preflight"
-event = "checks_passed"
-target = "review"
-hint = "Prüfbericht geht mit der Übergabe an das Review"
-
-[[pattern.write_review_preflight.transition]]
-source = "preflight"
-event = "checks_partial"
-target = "review"
-hint = "Teillauf: Review mit Bericht, aber ohne PASS"
-
-[[pattern.write_review_preflight.transition]]
-source = "preflight"
-event = "checks_failed"
-target = "correction"
-hint = "Exit 1: Reparaturnachricht an den Umsetzer (implementer)"
-template = "repair-head"
-context = [
-  { use = "finding" }, { use = "feedback_repair" },
-  { use = "next_steps" }, { use = "attempt" },
-]
-
-[[pattern.write_review_preflight.transition]]
-source = "review"
-event = "PASS"
-cond = ["full_checks", "unchanged"]
-target = "@next"
-template = "decision-other"
-context = [{ use = "next_steps" }, { use = "control" }, { use = "attempt" }]
-
-[[pattern.write_review_preflight.transition]]
-source = "review"
-event = "PASS"
-cond = ["full_checks", "!unchanged"]
-target = "preflight"
-hint = "Stand seit dem Vorlauf geändert: neuer Vorlauf, dann neues Review"
-template = "@again"
-context = [
-  { use = "report_followup" }, { use = "feedback_review" },
-  { use = "human_note" }, { use = "next_steps" }, { use = "attempt" },
-]
+# --- Muster: flow/patterns/review.toml (review_core, write_review,
+# write_review_preflight) ------------------------------------------
 
 # --- Phasen -----------------------------------------------------------
 

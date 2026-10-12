@@ -8,7 +8,13 @@ import re
 
 import pytest
 
-from ki_dev.flow.model import FlowError, load_flow, parse_flow, read_raw
+from ki_dev.flow.model import (
+    FlowError,
+    load_flow,
+    parse_flow,
+    read_raw,
+    with_pattern_catalog,
+)
 
 
 def test_phases_expand_to_their_states_and_edges():
@@ -32,7 +38,7 @@ def test_phases_expand_to_their_states_and_edges():
 
 
 def _mutated(change) -> dict:
-    raw = copy.deepcopy(read_raw("planning"))
+    raw = copy.deepcopy(with_pattern_catalog(read_raw("planning")))
     change(raw)
     return raw
 
@@ -78,4 +84,35 @@ def test_parameter_typos_are_visible(change, message):
 def test_phase_needs_patterns():
     raw = _mutated(lambda r: r.pop("pattern"))
     with pytest.raises(FlowError, match="planning.toml: \\$"):
+        parse_flow(raw)
+
+
+def test_planning_loads_review_patterns_from_shared_catalog():
+    raw = read_raw("planning")
+    assert "pattern" not in raw
+    assert raw["pattern_catalog"] == ["review"]
+    assert {"review_core", "write_review"} <= set(
+        with_pattern_catalog(raw)["pattern"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (
+            lambda r: r.update(pattern_catalog=["gibt_es_nicht"]),
+            "pattern_catalog.gibt_es_nicht: unbekannt",
+        ),
+        (
+            lambda r: r.update(
+                pattern={"write_review": {"extends": "review_core"}}
+            ),
+            "überschreibt gemeinsames Muster",
+        ),
+    ],
+)
+def test_shared_catalog_errors_are_visible(change, message):
+    raw = copy.deepcopy(read_raw("planning"))
+    change(raw)
+    with pytest.raises(FlowError, match=re.escape(message)):
         parse_flow(raw)

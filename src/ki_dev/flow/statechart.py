@@ -65,7 +65,7 @@ def table_of(raw: Mapping, history: str) -> dict:
     by_id = {sid: state for _, sid, state in _walk(states, 0)}
     table = {
         key: raw[key]
-        for key in ("name", "ops", "priority", "finding_class")
+        for key in ("name", "ops", "op", "priority", "finding_class")
         if key in raw
     }
     return {

@@ -14,7 +14,6 @@ Aufruf, ``resume`` liest den Datensatz.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from dataclasses import asdict, dataclass, replace
@@ -30,11 +29,9 @@ from ki_dev.adapter.contract import (
     AgentTurnError,
     AnswerPending,
     Reviewer,
-    ReviewRequest,
     RunTask,
     Worker,
     WorkReport,
-    WorkRequest,
 )
 from ki_dev.adapter.executors.contract import (
     ContextStatus,
@@ -43,9 +40,8 @@ from ki_dev.adapter.executors.contract import (
 )
 from ki_dev.deltas import (
     ControllerContext,
-    StepDeltaAssessment,
-    assess_step_delta,
 )
+from ki_dev.flow.binding import project
 from ki_dev.flow.model import (
     FlowError,
     Verdict,
@@ -56,11 +52,14 @@ from ki_dev.repository_finalization import Finalizer
 from ki_dev.review_context import (
     DEFAULT_PROJECTION_LIMITS,
     ProjectionLimits,
-    project_review_context,
 )
 from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.bound import BoundOperations
 from ki_dev.runner.events import ABLAUF, event_record, run_event_record
-from ki_dev.runner.implement_turns import review_prompt, work_prompt
+from ki_dev.runner.implement_ops import (
+    ImplementationOperations,
+    decode_operation_event,
+)
 from ki_dev.runner.machine import (
     EVENT_TYPES,
     IMPLEMENT,
@@ -74,9 +73,6 @@ from ki_dev.runner.machine import (
     ControllerTask,
     Event,
     ExecutionStopped,
-    FinalResultVerified,
-    HistoryFinalized,
-    IntegrationCompleted,
     InvalidTransition,
     Limits,
     MachineEscalation,
@@ -85,12 +81,9 @@ from ki_dev.runner.machine import (
     Phase,
     ProtocolError,
     ResumeRequested,
-    ReviewedResultFrozen,
     RunStarted,
     RunState,
     RunStateFormatError,
-    StepResultCaptured,
-    WorkerCompleted,
     WorkerInputsPrepared,
     decode_run_state,
     encode_run_state,
@@ -98,11 +91,8 @@ from ki_dev.runner.machine import (
     operation_of,
 )
 from ki_dev.runner.review_output import (
-    REVIEW_VOCABULARY,
     AgentProtocolError,
     ReviewDecision,
-    bind_review_decision,
-    parse_review_decision,
 )
 from ki_dev.runner.run_machine import Operation, RunMachine, Step
 from ki_dev.runner.run_record import (
@@ -132,20 +122,11 @@ _log = logging.getLogger("ki_dev.run")
 _IMMEDIATE_OPERATIONS = frozenset(
     {"start", "task", "prepare", "checkpoint"}
 )
-_EXTERNAL_OPERATIONS = frozenset(
-    {
-        "work",
-        "review",
-        "evidence",
-        "freeze",
-        "finalize_history",
-        "verify_final",
-        "integrate",
-    }
-)
-if set(
-    IMPLEMENT.vocabulary.operations
-) != _IMMEDIATE_OPERATIONS | _EXTERNAL_OPERATIONS:
+_EXTERNAL_OPERATIONS = frozenset(IMPLEMENT.bindings)
+if (
+    set(IMPLEMENT.vocabulary.operations)
+    != _IMMEDIATE_OPERATIONS | _EXTERNAL_OPERATIONS
+):
     raise FlowError(
         "implement.toml: Operationen passen nicht zur Laufzeit"
     )
@@ -154,7 +135,11 @@ if set(
 # wird (Ereignis = Name des Zustands).
 # Agentenoperationen des Umsetzungsablaufs und die Rolle, die sie
 # ausführt (Konfigurationsschlüssel, Verbrauchsbuch, Budget).
-_AGENT_ROLES = {"work": "worker", "review": "review"}
+_AGENT_ROLES = {
+    name: b.role
+    for name, b in IMPLEMENT.bindings.items()
+    if b.role is not None
+}
 # Datensatz aus der Zeit vor python-statemachine (LangGraph).
 _LANGGRAPH_CHECKPOINT = "checkpoints.sqlite"
 
@@ -210,6 +195,16 @@ class RunRuntime:
             raise ValueError(
                 "Bau und Review brauchen unabhaengige Sitzungen"
             )
+        self._operations = BoundOperations(
+            IMPLEMENT.bindings,
+            ImplementationOperations(
+                self.worker,
+                self.reviewer,
+                self.evidence_collector,
+                self.finalizer,
+                self.limits,
+            ).catalog(),
+        )
         self._ledger = CallLedger(self.store)
         self._quota_baseline = QuotaBaseline(self.store)
         try:
@@ -473,7 +468,6 @@ class RunRuntime:
                 "hold", operation=self._operation(state, run, kind)
             )
 
-
     def _prepare_worker(
         self, state: RunData, run: RunState
     ) -> dict[str, object]:
@@ -619,9 +613,7 @@ class RunRuntime:
             attribution=self._usage_attribution(state, pending, actor),
         )
 
-    def _actor(
-        self, pending: dict[str, object]
-    ) -> Worker | Reviewer:
+    def _actor(self, pending: dict[str, object]) -> Worker | Reviewer:
         if pending["kind"] == "work":
             return self.worker
         return self.reviewer
@@ -795,7 +787,8 @@ class RunRuntime:
             family_id=binding.get("family_id"),
             family_revision=binding.get("family_revision"),
             parent_bead_id=binding.get("parent_bead_id"),
-            role=_AGENT_ROLES[pending["kind"]], purpose=purpose,
+            role=_AGENT_ROLES[pending["kind"]],
+            purpose=purpose,
             session_id=getattr(actor, "session_id", None),
         )
 
@@ -932,112 +925,15 @@ class RunRuntime:
     def _execute_operation(
         self, state: RunData, pending: dict[str, object]
     ) -> object:
-        kind = pending["kind"]
-        task = _task(state)
-        round_id = state["round_id"]
-        if kind == "work":
-            report = self.worker.work(
-                WorkRequest(
-                    task,
-                    round_id,
-                    work_prompt(
-                        task, round_id, state["open_objection"]
-                    ),
-                    cast(str, pending["id"]),
-                )
-            )
-            return {"summary": report.summary}
-        if kind == "evidence":
-            report = WorkReport(cast(str, state["work_report"]))
-            context = self.evidence_collector.collect(
-                task,
-                round_id,
-                state["round_base"],
-                state["run_base"],
-                report,
-            )
-            _validate_context(context, task, round_id)
-            projection = project_review_context(
-                context, limits=self.limits
-            )
-            return {
-                "context": _context_document(context),
-                "projection": {
-                    "text": projection.text,
-                    "omissions": [
-                        asdict(omission)
-                        for omission in projection.omissions
-                    ],
-                },
-                "assessment": assess_step_delta(
-                    context.step_delta
-                ).value,
-            }
-        if kind == "review":
-            evidence = cast(dict[str, object], state["evidence"])
-            summary = cast(str, state["work_report"])
-            answer = state["decision_answer"]
-            if answer:
-                summary += f"\n\nGebundene Entscheidung: {answer}"
-            from ki_dev.review_context import Omission, ReviewProjection
-
-            omissions = cast(
-                list[dict[str, str]], evidence["omissions"]
-            )
-
-            projection = ReviewProjection(
-                text=cast(str, evidence["text"]),
-                omissions=tuple(Omission(**item) for item in omissions),
-            )
-            raw = self.reviewer.review(
-                ReviewRequest(
-                    task,
-                    round_id,
-                    review_prompt(
-                        task,
-                        round_id,
-                        summary,
-                        projection,
-                        REVIEW_VOCABULARY,
-                    ),
-                    REVIEW_VOCABULARY,
-                    _review_attempt(state, pending),
-                )
-            )
-            decision = parse_review_decision(
-                raw, run_id=task.run_id, round_id=round_id
-            )
-            decision = bind_review_decision(decision, task)
-            return {
-                "raw": raw,
-                "decision": _decision_document(decision),
-            }
-        if kind == "freeze":
-            base_refs = cast(dict[str, object], state["run_base"])
-            reviewed_refs = cast(
-                dict[str, object], state["reviewed_refs"]
-            )
-            return self.finalizer.freeze(
-                source=task.workdir,
-                run_id=task.run_id,
-                base_refs=base_refs,
-                reviewed_refs=reviewed_refs,
-            )
-        if kind == "finalize_history":
-            return self.finalizer.finalize_history(
-                cast(dict[str, object], state["frozen_result"])
-            )
-        if kind == "verify_final":
-            return self.finalizer.verify(
-                cast(dict[str, object], state["frozen_result"]),
-                cast(dict[str, object], state["final_result"]),
-            )
-        if kind == "integrate":
-            return self.finalizer.integrate(
-                cast(dict[str, object], state["frozen_result"]),
-                cast(dict[str, object], state["final_result"]),
-            )
-        raise RuntimeError(f"unbekannte Operation {kind!r}")
+        data = {
+            **state,
+            "task": _task(state),
+            "operation_id": pending["id"],
+            "attempt_id": _review_attempt(state, pending),
+        }
+        return self._operations.execute(
+            cast(str, pending["kind"]), data
+        )
 
     def _accept_artifact(
         self,
@@ -1045,57 +941,21 @@ class RunRuntime:
         pending: Operation,
         artifact: object,
     ) -> dict[str, object]:
-        if not isinstance(artifact, dict):
-            raise RuntimeError("Operationsartefakt ist kein Objekt")
-        kind = pending["kind"]
+        name = cast(str, pending["kind"])
+        update, event_name = self._operations.accept(name, artifact)
+        binding = IMPLEMENT.bindings[name]
+        if binding.success is not None:
+            payload = project(artifact, binding.payload or {})
+            event = decode_operation_event(event_name, payload)
+            run = decode_run_state(state["run_state"])
+            moved = self._transition(run, event)
+            detail = artifact.get("detail")
+            return self._write_handoff_if_stopped(
+                state,
+                {**moved, **update, "last_error": detail},
+                detail or "Operation abgeschlossen",
+            )
         run = decode_run_state(state["run_state"])
-        if kind == "work":
-            return {
-                **self._transition(run, WorkerCompleted()),
-                "work_report": cast(str, artifact["summary"]),
-                "last_error": None,
-            }
-        if kind == "evidence":
-            assessment = StepDeltaAssessment(
-                cast(str, artifact["assessment"])
-            )
-            projection = cast(dict[str, object], artifact["projection"])
-            return {
-                **self._transition(run, StepResultCaptured(assessment)),
-                "evidence": projection,
-                "reviewed_refs": _result_refs(artifact),
-                "last_error": None,
-            }
-        if kind == "freeze":
-            return {
-                **self._transition(run, ReviewedResultFrozen()),
-                "frozen_result": artifact,
-                "last_error": None,
-            }
-        if kind == "finalize_history":
-            return {
-                **self._transition(run, HistoryFinalized()),
-                "final_result": artifact,
-                "last_error": None,
-            }
-        if kind == "verify_final":
-            ok = artifact.get("ok") is True
-            update = self._transition(run, FinalResultVerified(ok))
-            detail = cast(str | None, artifact.get("detail"))
-            return self._write_handoff_if_stopped(
-                state,
-                {**update, "last_error": detail},
-                detail or "Abschlusspruefung fehlgeschlagen",
-            )
-        if kind == "integrate":
-            ok = artifact.get("ok") is True
-            update = self._transition(run, IntegrationCompleted(ok))
-            detail = cast(str | None, artifact.get("detail"))
-            return self._write_handoff_if_stopped(
-                state,
-                {**update, "last_error": None if ok else detail},
-                detail or "Integration fehlgeschlagen",
-            )
         decision_doc = cast(dict[str, object], artifact["decision"])
         decision = _decode_decision(decision_doc)
         self.store.write_message(cast(str, pending["id"]), decision_doc)
@@ -1114,9 +974,7 @@ class RunRuntime:
     ) -> dict[str, object]:
         verdict = IMPLEMENT.verdict(decision.event)
         if verdict is Verdict.CHANGES:
-            facts, guard_detail = self._changes_facts(
-                run, decision
-            )
+            facts, guard_detail = self._changes_facts(run, decision)
             update = self._transition(
                 run, ControllerChanges(decision.detail), facts=facts
             )
@@ -1261,9 +1119,7 @@ class RunRuntime:
         return {"run_state": encode_run_state(changed)}
 
 
-def _review_attempt(
-    state: RunData, pending: dict[str, object]
-) -> str:
+def _review_attempt(state: RunData, pending: dict[str, object]) -> str:
     """Review-Operation plus Protokollversuch: eine Wiederholung nach
     ungültiger Antwort ist ein neuer Versuch."""
     counters = decode_run_state(state["run_state"]).state.counters
@@ -1392,17 +1248,6 @@ def _task(state: RunData) -> RunTask:
     )
 
 
-def _decision_document(decision: ReviewDecision) -> dict[str, object]:
-    return {
-        "run_id": decision.run_id,
-        "round_id": decision.round_id,
-        "event": decision.event,
-        "verdict": IMPLEMENT.verdict(decision.event).value,
-        "detail": decision.detail,
-        "requirement_ref": decision.requirement_ref,
-    }
-
-
 def _decode_decision(value: dict[str, object]) -> ReviewDecision:
     return ReviewDecision(
         cast(str, value["run_id"]),
@@ -1411,46 +1256,6 @@ def _decode_decision(value: dict[str, object]) -> ReviewDecision:
         cast(str, value["detail"]),
         cast("str | None", value["requirement_ref"]),
     )
-
-
-def _validate_context(
-    context: ControllerContext, task: RunTask, round_id: int
-) -> None:
-    if context.task != task.task:
-        raise AgentProtocolError(
-            "Nachweiskontext gehoert zu fremdem Auftrag"
-        )
-    if context.round_status.current != round_id:
-        raise AgentProtocolError(
-            "Nachweiskontext gehoert zu fremder Runde"
-        )
-
-
-def _context_document(context: ControllerContext) -> dict[str, object]:
-    """JSON-Nachweis mit Referenzen, Deltas, Checks und Runde."""
-    return cast(
-        dict[str, object], json.loads(json.dumps(asdict(context)))
-    )
-
-
-def _result_refs(artifact: dict[str, object]) -> dict[str, object]:
-    """Extrahiere die Referenzen des dem Reviewer gezeigten Deltas."""
-    try:
-        context = cast(dict[str, object], artifact["context"])
-        step = cast(dict[str, object], context["step_delta"])
-        result: dict[str, object] = {}
-        for medium in ("git", "beads"):
-            delta = cast(dict[str, object], step[medium])
-            boundary = cast(dict[str, object], delta["boundary"])
-            ref = boundary["result"]
-            if not isinstance(ref, dict):
-                raise TypeError
-            result[medium] = ref
-        return result
-    except (KeyError, TypeError) as exc:
-        raise AgentProtocolError(
-            "Nachweisartefakt enthaelt keine Ergebnisreferenzen"
-        ) from exc
 
 
 @dataclass(frozen=True)
