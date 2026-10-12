@@ -12,6 +12,7 @@ from ki_dev.cli import app
 from ki_dev.flow.model import load_flow
 from ki_dev.run_store import RunStore
 from ki_dev.runner.events import check_conformance
+from ki_dev.runner.protocol import RUN_DOC
 from ki_dev.step.state import load_state
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
@@ -47,19 +48,30 @@ def project(tmp_path, monkeypatch):
     return make
 
 
-# Kennung des ersten wartenden Reviews eines frischen Beads.
+# Kennung des ersten wartenden Reviews eines frischen Beads; die
+# Schreibübergabe davor (vorab mit done beantwortet) ist x-1:1.
 PASS_ANSWER = json.dumps(
     {
         "event": "PASS",
         "detail": "",
         "requirement_ref": None,
-        "attempt": "x-1:1",
+        "attempt": "x-1:2",
     }
 )
 
 
+def _number(attempt: str) -> int:
+    """Laufende Nummer einer Versuchskennung ``BEAD:N``."""
+    return int(attempt.rpartition(":")[2])
+
+
 def _events(root):
     return RunStore(root, "x-1").load_events()
+
+
+def _flow_rows(events):
+    """Zeilen des Ablaufs (ohne die Regionen des Laufs)."""
+    return [e for e in events if e["region"] == "ablauf"]
 
 
 def test_continue_after_writing_runs_preflight_and_hands_to_review(
@@ -75,11 +87,14 @@ def test_continue_after_writing_runs_preflight_and_hands_to_review(
     assert result.stdout.startswith("Schritt: review\n")
     assert load_state("x-1").state == "implement.review"
     events = _events(step_state_root)
-    assert [(e["state"], e["event"], e["adapter"]) for e in events] == [
+    assert [
+        (e["state"], e["event"], e["adapter"])
+        for e in _flow_rows(events)
+    ] == [
         ("implement", "done", "manual"),
         ("implement.preflight", "checks_passed", "ki-dev"),
     ]
-    assert check_conformance(IMPLEMENT_REVIEW, events) == []
+    assert check_conformance(IMPLEMENT_REVIEW, events, RUN_DOC) == []
 
 
 def test_continue_after_red_preflight_is_the_next_turn(
@@ -100,7 +115,7 @@ def test_continue_after_red_preflight_is_the_next_turn(
 
 
 def test_pass_after_partial_run_is_refused_from_saved_state(
-    bd, project, tmp_path
+    bd, project, tmp_path, step_state_root
 ):
     project()
     partial = runner.invoke(
@@ -115,7 +130,8 @@ def test_pass_after_partial_run_is_refused_from_saved_state(
         ],
     )
     assert partial.exit_code == 0
-    assert load_state("x-1").facts == frozenset()
+    record = RunStore(step_state_root, "x-1").load_record()
+    assert record["data"]["facts"] == []
     answer = tmp_path / "antwort.json"
     answer.write_text(
         PASS_ANSWER
@@ -166,10 +182,12 @@ def test_jump_is_noted_and_visible_in_the_log(
     result = runner.invoke(app, ["step", "x-1", "--step", "map"])
     assert result.exit_code == 0
     assert "letzter Halt map.review" in result.stderr
-    problems = check_conformance(
-        load_flow("map"), _events(step_state_root)
-    )
-    assert problems == ["1: keine Kante map.review --@jump--> map"]
+    events = _events(step_state_root)
+    jump = [i for i, e in enumerate(events) if e["event"] == "@jump"]
+    problems = check_conformance(load_flow("map"), events, RUN_DOC)
+    assert problems == [
+        f"{jump[0]}: keine Kante map.review --@jump--> map"
+    ]
 
 
 def test_other_flow_is_a_new_run_not_a_jump(
@@ -182,7 +200,8 @@ def test_other_flow_is_a_new_run_not_a_jump(
     result = runner.invoke(app, ["step", "x-1", "--step", "map"])
     assert result.exit_code == 0
     assert "letzter Halt" not in result.stderr
-    assert _events(step_state_root) == []
+    events = _events(step_state_root)
+    assert [e for e in events if e["event"] == "@jump"] == []
     assert load_state("x-1").flow == "map"
 
 
@@ -292,11 +311,13 @@ def test_pass_after_change_runs_preflight_again(
         result.stdout
     )
     assert load_state("x-1").state == "implement.review"
-    assert [(e["state"], e["event"]) for e in events][-2:] == [
+    assert [
+        (e["state"], e["event"]) for e in _flow_rows(events)
+    ][-2:] == [
         ("implement.review", "PASS"),
         ("implement.preflight", "checks_passed"),
     ]
-    assert check_conformance(IMPLEMENT_REVIEW, events) == []
+    assert check_conformance(IMPLEMENT_REVIEW, events, RUN_DOC) == []
 
 
 def test_answer_file_in_project_is_not_a_change(
@@ -336,7 +357,7 @@ def test_halt_from_other_flow_needs_explicit_step(
     first = runner.invoke(app, ["step", "x-1", "--step", "map"])
     assert first.exit_code == 0, first.stderr
     monkeypatch.setattr(
-        "ki_dev.runner.planning.flow_digest", lambda _flow: "anders"
+        "ki_dev.runner.package.flow_digest", lambda _flow: "anders"
     )
     result = runner.invoke(app, ["step", "x-1"])
     assert result.exit_code == 2
@@ -478,7 +499,7 @@ def test_overlong_handoff_preserves_checkpoint_and_attempt(
     root = project()
     first = runner.invoke(app, ["step", "x-1", *first_args])
     assert first.exit_code == 0, first.stderr
-    assert attempt_of(first.stdout) == "x-1:1"
+    attempt = _number(attempt_of(first.stdout))
     before = load_state("x-1")
     events = _events(step_state_root)
     config = root / "pyproject.toml"
@@ -495,4 +516,4 @@ def test_overlong_handoff_preserves_checkpoint_and_attempt(
     config.write_text(original)
     retry = runner.invoke(app, ["step", "x-1", *rejected_args])
     assert retry.exit_code == 0, retry.stderr
-    assert attempt_of(retry.stdout) == "x-1:2"
+    assert _number(attempt_of(retry.stdout)) > attempt

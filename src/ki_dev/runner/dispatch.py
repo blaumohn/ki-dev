@@ -61,7 +61,11 @@ class Dispatch:
         except AnswerPending as exc:
             raise AwaitingAnswer(str(exc)) from exc
         update, event = self.read(handoff, answer)
-        return {"event": event, "update": update}
+        return {
+            "event": event,
+            "update": update,
+            "adapter": executor.spec.name,
+        }
 
 
 def role_of(flow: Flow, state: str) -> str | None:

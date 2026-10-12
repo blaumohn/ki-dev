@@ -9,8 +9,9 @@ Umweg über ein Hilfsmodul ist ebenso eine Abhängigkeit.
 - ``ki_dev.adapter`` kennt weder Ausführer noch Ablauf: ein Adapter
   transportiert Eingabe und formale Ausgabe, mehr nicht.
 - ``ki_dev.step`` ist die Projektion des Ausführers mit dem Adapter
-  manual: es nutzt ``ki_dev.runner`` (Planungsschleife), der Ausführer
-  kennt step nie; Maschinenoperationen reicht step als Bindung herein.
+  manual: es nutzt ``ki_dev.runner`` (den einen Ausführer), der
+  Ausführer kennt step nie; Maschinenoperationen reicht step als
+  Bindung herein.
 - ``ki_dev.ops`` setzt deklarierte Operationen um (``checks``) und
   liefert Kontextquellen (``context``: Bead-Eingabe, Leitlinien,
   Grenzen, Beads-Leser); es kennt weder Ausführer noch Adapter noch

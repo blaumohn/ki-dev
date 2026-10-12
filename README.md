@@ -312,14 +312,14 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 - **Benutzbar:** `ki-dev step` (ein Turn eines Ablaufs von Hand), `ki-dev -f implement` mit
   allen vier Adaptern (Bauablauf).
 - **Abläufe von Hand:** `step` fährt den gewählten Ablauf (`map`,
-  `graph`, `materialize`, `implement_review`) als Lauf je Bead
-  (`runner/planning.py`, auf python-statemachine wie `run`) bis zum
-  nächsten `turn`/`ask`; nur `implement_review` bindet den Vorlauf
+  `graph`, `materialize`, `implement_review`) als Lauf je Bead auf dem
+  einen Ausführer (`runner/package.py`, Executor `manual`) bis zur
+  nächsten Übergabe (`turn`/`ask`); nur `implement_review` bindet den Vorlauf
   `implement.preflight`. `implement_review` und `implement` werden ein
   Ablauf (ki-dev-ablauf-ige.6).
 - **Laufzustand je Bead:** `ki-dev step BEAD_ID` ohne `--step` setzt den
   gespeicherten Halt fort (`.local/handoff/steps/`), je Übergang steht eine
-  Zeile in `events.jsonl`.
+  Zeile in `events.jsonl` (Ablauf und Regionen des Laufs).
 - **Beobachtbar:** `ki-dev -f implement` schreibt je Übergang eine Zeile nach
   `events.jsonl`, für Ablauf und Lauf (Operation, Halt) je mit ihrer Region
   ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).

@@ -25,13 +25,20 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from ki_dev.flow.binding import OperationFailure, validate
 from ki_dev.flow.model import Flow, Transition
 from ki_dev.fsm import Durable, bind, configuration_of
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.bound import BoundOperations
-from ki_dev.runner.events import event_record, run_event_record
+from ki_dev.runner.events import (
+    LAUF,
+    MACHINE,
+    RESTART,
+    event_record,
+    run_event_record,
+)
 from ki_dev.runner.protocol import (
     RUN_DOC,
     AwaitingAnswer,
@@ -39,20 +46,26 @@ from ki_dev.runner.protocol import (
     compose,
 )
 
+JUMP = "@jump"
+"""Ereignis der Protokollzeile eines Neubeginns an anderer Stelle."""
+
 
 @dataclass(frozen=True)
 class Handoff:
     """Eine Übergabe des Laufs: Zustand, Kennung des Versuchs (bindet
-    die Antwort) und die Laufdaten."""
+    die Antwort), die Laufdaten und der Weg dieses Aufrufs bis zu ihr
+    (eine Kante kann die Übergabe bestimmen)."""
 
     state: str
     attempt: str
     data: Mapping[str, object]
+    path: tuple[Transition, ...] = ()
 
 
 TurnRun = Callable[[Handoff], Mapping[str, object]]
 """Bearbeitet eine Übergabe und liefert ``{"event": …, "update": …}``:
-das Ereignis der Antwort und die neuen Laufdaten."""
+das Ereignis der Antwort und die neuen Laufdaten, dazu wahlweise
+``"adapter"``: wer antwortete (Name des Executors, im Protokoll)."""
 
 
 class PackageRunner:
@@ -111,10 +124,7 @@ class PackageRunner:
                     item.get("transitions", ())
                 ):
                     self.items[(sid, index)] = transition
-        document = asdict(flow)
-        document.pop("edges")
-        encoded = json.dumps([document, RUN_DOC], sort_keys=True)
-        self.digest = hashlib.sha256(encoded.encode()).hexdigest()
+        self.digest = flow_digest(flow)
         self.path: list[Transition] = []
 
     def start(
@@ -149,6 +159,8 @@ class PackageRunner:
             else:
                 self.line = int(previous.get("line", 0))
                 self.attempts = int(previous.get("attempts", 0))
+                self._restart()
+                self._jump(previous)
             self._save()
             return self._drive()
 
@@ -177,6 +189,66 @@ class PackageRunner:
             self._send("reconcile")
             self._save()
             return self._drive()
+
+    def allows(self, event: str, update: Mapping[str, object]) -> bool:
+        """Ob der gespeicherte Lauf ``event`` mit diesen zusätzlichen
+        Laufdaten annähme (Wächter), ohne ihn zu verändern."""
+        self._load()
+        model = self.model_type(None, {**self.data, **update})
+        return any(
+            all(
+                bool(getattr(model, name.removeprefix("!"))())
+                != name.startswith("!")
+                for name in transition.cond
+            )
+            for transition in self.flow.candidates(self.state, event)
+        )
+
+    def _restart(self) -> None:
+        """Ein neuer Lauf im selben Protokoll: die Regionen des Laufs
+        beginnen wieder im Anfangszustand (Zeile
+        ``lauf --@start--> lauf``)."""
+        self.line += 1
+        self.store.append_event(
+            run_event_record(
+                line=self.line,
+                seq=self.revision,
+                ts=datetime.now(UTC).isoformat(),
+                run_id=self.store.run_id,
+                region=LAUF,
+                transition=Transition(LAUF, RESTART, LAUF),
+            )
+        )
+
+    def _jump(self, previous: Mapping[str, object]) -> None:
+        """Beginnt ein neuer Lauf desselben Ablaufs woanders, als der
+        letzte hielt, steht ``letzter Halt --@jump--> Start`` im
+        Protokoll; ``check_conformance`` meldet es als Abweichung."""
+        if (
+            previous.get("flow") != self.flow.name
+            or "machine" not in previous
+        ):
+            return
+        machine = cast(Mapping[str, list[str]], previous["machine"])
+        last = next(
+            (s for s in machine["state"] if s in self.flow.states),
+            None,
+        )
+        if last is None or last == self.state:
+            return
+        self.line += 1
+        self.store.append_event(
+            event_record(
+                line=self.line,
+                seq=self.revision,
+                ts=datetime.now(UTC).isoformat(),
+                flow=self.flow,
+                run_id=self.store.run_id,
+                transition=Transition(last, JUMP, self.state),
+                target=self.state,
+                adapter=MACHINE,
+            )
+        )
 
     @property
     def status(self) -> str:
@@ -243,7 +315,10 @@ class PackageRunner:
             self._send(
                 "hold",
                 operation={
-                    "id": f"op-{self.revision:08d}",
+                    # Protokollzeile des Halts: sie läuft auch über
+                    # einen Neubeginn (again) weiter, eine Kennung
+                    # trifft also nie ein Artefakt eines alten Laufs.
+                    "id": f"op-{self.line + 1:08d}",
                     "kind": operation.do,
                     "repeatable": operation.repeatable,
                     "attempt": attempt,
@@ -295,7 +370,12 @@ class PackageRunner:
         update, event = self._accept(pending, artifact)
         self._send("artifact_saved")
         self.data.update(update)
-        self._send(event, payload=artifact)
+        by = (
+            MACHINE
+            if pending["kind"] in self.operations.bindings
+            else _answered_by(artifact)
+        )
+        self._send(event, by=by, payload=artifact)
 
     def _execute(self, pending: Mapping[str, object]) -> object:
         kind = str(pending["kind"])
@@ -303,7 +383,10 @@ class PackageRunner:
             return self.operations.execute(kind, self.data)
         assert self.turns is not None
         handoff = Handoff(
-            self.state, str(pending["attempt"]), dict(self.data)
+            self.state,
+            str(pending["attempt"]),
+            dict(self.data),
+            tuple(self.path),
         )
         return dict(self.turns(handoff))
 
@@ -321,7 +404,12 @@ class PackageRunner:
         self._send("failed")
         self._send(event)
 
-    def _send(self, event: str, **kwargs: object) -> None:
+    def _send(
+        self, event: str, by: str = MACHINE, **kwargs: object
+    ) -> None:
+        """Ereignis an die Lauf-Maschine; jede genommene Kante wird
+        protokolliert, die des Ablaufs mit ``by`` (wer das Ereignis
+        brachte)."""
         source = self.state
         self.machine.send(event, **kwargs)
         for taken in self.machine.journal:
@@ -344,7 +432,7 @@ class PackageRunner:
                     flow=self.flow,
                     transition=self.flow.edges[key],
                     target=self.state,
-                    adapter="ki-dev",
+                    adapter=by,
                 )
             else:
                 item = self.items[(taken.owner, taken.index)]
@@ -372,6 +460,7 @@ class PackageRunner:
     def _save(self) -> None:
         self.store.save_record(
             {
+                "flow": self.flow.name,
                 "digest": self.digest,
                 "machine": self.machine.record,
                 "pending": self.model.pending,
@@ -399,6 +488,45 @@ class PackageRunner:
         self.max_steps = record["max_steps"]
 
 
+def _answered_by(answer: object) -> str:
+    """Wer eine Übergabe beantwortete (geprüfte Antwort): der
+    Executor, sonst ki-dev selbst."""
+    by = answer.get("adapter") if isinstance(answer, Mapping) else None
+    return by if isinstance(by, str) else MACHINE
+
+
+def flow_digest(flow: Flow) -> str:
+    """Fingerabdruck von Ablauf und Lauf-Maschine: ändert er sich,
+    passt ein gespeicherter Lauf nicht mehr."""
+    document = asdict(flow)
+    document.pop("edges")
+    encoded = json.dumps([document, RUN_DOC], sort_keys=True)
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def waiting_of(flow: Flow, record: Mapping[str, object]) -> tuple[
+    str, str, str | None
+]:
+    """Zustand des Ablaufs, Halt des Laufs und wartender Versuch eines
+    gespeicherten Laufs, rein lesend; ein Datensatz aus einem anderen
+    Ablaufstand oder Format ist ein Fehler."""
+    validate(record, _RECORD, "record")
+    if record["digest"] != flow_digest(flow):
+        raise RunStoreError("Paket wurde seit Laufbeginn verändert")
+    states = cast(Mapping[str, list[str]], record["machine"])["state"]
+    halts = RUN_DOC["states"]["lauf"]["states"]["halt"]["states"]
+    pending = cast(Mapping[str, object] | None, record["pending"])
+    return (
+        next(s for s in states if s in flow.states),
+        next(s for s in states if s in halts),
+        (
+            None
+            if pending is None
+            else cast(str | None, pending["attempt"])
+        ),
+    )
+
+
 _ANSWER = {
     "type": "object",
     "required": ["event", "update"],
@@ -406,6 +534,7 @@ _ANSWER = {
     "properties": {
         "event": {"type": "string", "minLength": 1},
         "update": {"type": "object"},
+        "adapter": {"type": "string", "minLength": 1},
     },
 }
 _ARTIFACT = {
@@ -426,6 +555,7 @@ _RECORD = {
     "type": "object",
     "additionalProperties": False,
     "required": [
+        "flow",
         "digest",
         "machine",
         "pending",
@@ -436,6 +566,7 @@ _RECORD = {
         "max_steps",
     ],
     "properties": {
+        "flow": {"type": "string"},
         "digest": {"type": "string"},
         "machine": {"type": "object"},
         "data": {"type": "object"},

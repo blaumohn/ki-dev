@@ -571,8 +571,9 @@ def _review_first() -> None:
     assert f"Versuch: {ATTEMPT} " in result.stdout
 
 
-# Kennung des ersten wartenden Reviews eines frischen Beads.
-ATTEMPT = "x-1:1"
+# Kennung des ersten wartenden Reviews eines frischen Beads; die
+# Schreibübergabe davor (vorab mit done beantwortet) ist x-1:1.
+ATTEMPT = "x-1:2"
 
 
 def _decision(tmp_path: Path, **fields) -> str:

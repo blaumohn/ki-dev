@@ -101,5 +101,5 @@ Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
 ## Q2 map-review
 
 - Q2:map-review
-Versuch: x-1:1 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
+Versuch: x-1:2 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

@@ -35,6 +35,14 @@ RUN_FLOW = "run"
 MACHINE = "ki-dev"
 """Adapter eines Ereignisses, das ki-dev selbst erzeugt."""
 
+LAUF = "lauf"
+"""Wurzel der Lauf-Maschine: ihre einzige Zeile ist der Neubeginn."""
+
+RESTART = "@start"
+"""Ereignis der Zeile ``lauf --@start--> lauf``: ein neuer Lauf im
+selben Protokoll (``again``); die Regionen des Laufs beginnen wieder
+in ihrem Anfangszustand."""
+
 _NAME = {"type": "string", "minLength": 1, "pattern": r"\S"}
 _NAMES = {"type": "array", "items": _NAME}
 EVENT_SCHEMA = {
@@ -169,9 +177,20 @@ def check_conformance(
     problems = _check_flow(
         flow, [(i, r) for i, r in lines if r["region"] == ABLAUF]
     )
-    regions = sorted({str(r["region"]) for _, r in lines} - {ABLAUF})
+    problems += [
+        f"{i}: keine Kante {r['state']} --{r['event']}--> {r['target']}"
+        for i, r in lines
+        if r["region"] == LAUF
+        and (r["state"], r["event"], r["target"])
+        != (LAUF, RESTART, LAUF)
+    ]
+    regions = sorted(
+        {str(r["region"]) for _, r in lines} - {ABLAUF, LAUF}
+    )
     for region in regions:
-        rows = [(i, r) for i, r in lines if r["region"] == region]
+        rows = [
+            (i, r) for i, r in lines if r["region"] in (region, LAUF)
+        ]
         if run is None:
             problems.append(
                 f"{rows[0][0]}: Region {region} ohne Definition"
@@ -228,6 +247,9 @@ def _check_run(
     problems: list[str] = []
     previous: str | None = None
     for index, record in records:
+        if record["region"] == LAUF:
+            previous = None  # Neubeginn: Anfangszustand
+            continue
         state, event = str(record["state"]), str(record["event"])
         target = str(record["target"])
         if previous is not None and state not in _chain(

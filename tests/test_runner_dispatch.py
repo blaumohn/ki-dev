@@ -1,8 +1,9 @@
-"""Übergaben im einen Ausführer (ki-dev-ablauf-ige.6.1, 6.2).
+"""Übergaben im einen Ausführer (ki-dev-ablauf-ige.6.1–6.3).
 
 Derselbe Ablauf läuft mit Agenten (hier mock) ohne Halt bis zum Ende;
 mit dem Boten hält er in ``awaiting_input`` und setzt mit der Antwort
-fort, wie ``ki-dev step``.
+fort, wie ``ki-dev step``. Ein neuer Lauf im selben Protokoll beginnt
+mit ``lauf --@start--> lauf``.
 """
 
 from __future__ import annotations
@@ -19,7 +20,9 @@ from ki_dev.flow.model import parse_flow, read_raw
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.bound import BoundOperations
 from ki_dev.runner.dispatch import Dispatch, role_of
-from ki_dev.runner.package import PackageRunner
+from ki_dev.runner.events import check_conformance
+from ki_dev.runner.package import PackageRunner, waiting_of
+from ki_dev.runner.protocol import RUN_DOC
 from ki_dev.runner.review_model import ReviewModel
 from tests.executor_specs import LOCAL
 
@@ -30,6 +33,7 @@ def _flow():
     """implement_review mit einem Vorlauf, dessen Ergebnis in die
     Laufdaten geht (Tatsachen, geprüfter Stand)."""
     raw = copy.deepcopy(read_raw("implement_review"))
+    raw["op"]["checks"]["input"] = []
     raw["op"]["checks"]["output"] = {
         "facts": ["facts"],
         "checked": ["checked"],
@@ -40,11 +44,11 @@ def _flow():
 FLOW = _flow()
 
 
-def _catalog():
+def _catalog(facts=("full_checks",)):
     def checks():
         return {
             "event": "checks_passed",
-            "facts": ["full_checks"],
+            "facts": list(facts),
             "checked": STAND,
         }
 
@@ -62,7 +66,7 @@ def _read(handoff, answer):
     return {"current": STAND}, value["event"]
 
 
-def _runner(tmp_path, executors):
+def _runner(tmp_path, executors, catalog=None):
     turns = Dispatch(
         FLOW,
         executors,
@@ -72,7 +76,7 @@ def _runner(tmp_path, executors):
     )
     return PackageRunner(
         FLOW,
-        BoundOperations(FLOW.bindings, _catalog()),
+        BoundOperations(FLOW.bindings, catalog or _catalog()),
         RunStore(tmp_path, "b"),
         model=ReviewModel,
         turns=turns,
@@ -156,3 +160,97 @@ def test_role_without_executor_is_a_visible_error(tmp_path):
     run = _runner(tmp_path, {"review": Inbox()})
     with pytest.raises(RunStoreError, match="kein Executor"):
         run.start({})
+
+
+def _review_waits(tmp_path, catalog=None):
+    """Lauf ab dem Vorlauf, der Bote hält im Review."""
+    run = _runner(
+        tmp_path, {"worker": Inbox(), "review": Inbox()}, catalog
+    )
+    halt = run.start({}, "implement.preflight")
+    assert (halt["status"], halt["state"]) == (
+        "awaiting_input",
+        "implement.review",
+    )
+    return run
+
+
+def test_answer_names_the_executor_in_the_log(tmp_path):
+    review = MockAnswers(LOCAL, [_answer("PASS")])
+    run = _runner(tmp_path, {"worker": Inbox(), "review": review})
+    run.start({}, "implement.preflight")
+    rows = [
+        (e["state"], e["adapter"])
+        for e in run.store.load_events()
+        if e["region"] == "ablauf"
+    ]
+    assert rows == [
+        ("implement.preflight", "ki-dev"),
+        ("implement.review", LOCAL.name),
+    ]
+
+
+def test_new_run_starts_again_with_fresh_operations(tmp_path):
+    """again: Neubeginn im selben Protokoll; der Vorlauf läuft erneut,
+    statt das Ergebnis des alten Laufs wiederzuverwenden."""
+    _review_waits(tmp_path)
+    artifacts = tmp_path / "b" / "artifacts"
+    assert len(list(artifacts.iterdir())) == 1
+    run = _review_waits_again(tmp_path)
+    assert len(list(artifacts.iterdir())) == 2
+    events = run.store.load_events()
+    assert [e["event"] for e in events if e["region"] == "lauf"] == [
+        "@start"
+    ]
+    # Die Regionen des Laufs beginnen neu (konform); nur der Ablauf
+    # springt vom Review zurück in den Vorlauf.
+    problems = check_conformance(FLOW, events, RUN_DOC)
+    assert [p.split(": ")[1] for p in problems] == [
+        "keine Kante implement.review --@jump--> implement.preflight"
+    ]
+
+
+def _review_waits_again(tmp_path):
+    run = _runner(tmp_path, {"worker": Inbox(), "review": Inbox()})
+    halt = run.start({}, "implement.preflight", again=True)
+    assert halt["state"] == "implement.review"
+    return run
+
+
+def test_new_run_elsewhere_is_a_jump(tmp_path):
+    _review_waits(tmp_path)
+    run = _runner(tmp_path, {"worker": Inbox(), "review": Inbox()})
+    run.start({}, "implement", again=True)
+    events = run.store.load_events()
+    jump = [i for i, e in enumerate(events) if e["event"] == "@jump"]
+    assert check_conformance(FLOW, events, RUN_DOC) == [
+        f"{jump[0]}: keine Kante implement.review --@jump--> implement"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("facts", "allowed"), [(("full_checks",), True), ((), False)]
+)
+def test_allows_checks_the_guards_without_a_change(
+    tmp_path, facts, allowed
+):
+    """Nach einem Teillauf (ohne full_checks) nimmt das Review kein
+    PASS an; die Prüfung ändert den Lauf nicht."""
+    run = _review_waits(tmp_path, _catalog(facts))
+    record = run.store.load_record()
+    assert run.allows("PASS", {"current": STAND}) is allowed
+    assert run.allows("fix", {}) is True
+    assert run.store.load_record() == record
+
+
+def test_waiting_of_reads_state_halt_and_attempt(tmp_path):
+    run = _review_waits(tmp_path)
+    record = run.store.load_record()
+    assert waiting_of(FLOW, record) == (
+        "implement.review",
+        "awaiting_input",
+        "b:1",
+    )
+    other = parse_flow({**read_raw("implement_review"), "name": "x"})
+    with pytest.raises(RunStoreError, match="verändert"):
+        waiting_of(other, record)

@@ -14,12 +14,13 @@ start = "implement"
 
 # Bindung der Maschinenoperation an den Ops-Katalog: `checks` ruft
 # den Vorlauf `checks.preflight` (ki_dev.ops.checks); sein Ergebnis ist
-# eines der genannten Ereignisse. turn und ask sind Halte des
-# Ausführers, keine Katalogoperationen.
+# eines der genannten Ereignisse, Tatsachen, geprüfter Stand, Bericht
+# und Befund gehen in die Laufdaten. turn und ask sind Übergaben an
+# den Executor ihrer Rolle.
 [op.checks]
 do = "checks.preflight"
-input = []
-output = {}
+input = ["answer_file"]
+output = { facts = ["facts"], checked = ["checked"], report = ["report"], finding = ["finding"] }
 events = ["checks_passed", "checks_partial", "checks_failed"]
 
 [[phase]]

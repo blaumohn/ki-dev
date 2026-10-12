@@ -132,9 +132,11 @@ Muster mit `extends`, kein Schalter.
 
 ## Ausführer
 
-- `ki-dev step` (`runner/planning.py`): ein Turn des gewählten Ablaufs
-  mit dem Executor `manual`; `turn` und `ask` sind Halte, `checks`
-  läuft über `[op.checks]` und den Katalog, den `step` einsteckt.
+- `ki-dev step` (`runner/package.py`): ein Turn des gewählten Ablaufs
+  mit dem Executor `manual`; jede Übergabe (`turn`, `ask`) geht über
+  `runner/dispatch.py` an den Boten, ohne Antwort hält der Lauf in
+  `awaiting_input`; `checks` läuft über `[op.checks]` und den Katalog,
+  den `step` einsteckt.
 - `ki-dev -f implement` (Paket `flow_ops/implement/`, eigener Ausführer
   `runtime.py`): die sieben externen Operationen (Arbeit, Nachweise,
   Review, Einfrieren, Historie, Prüfung, Integration) laufen über ihre

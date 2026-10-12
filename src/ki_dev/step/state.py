@@ -1,47 +1,52 @@
 """Laufzustand je Bead für ``ki-dev step`` (lokal, nicht in bd/Dolt).
 
 Der Zustand ist der Datensatz des Ausführers
-(:mod:`ki_dev.runner.planning`) für den zuletzt gelaufenen step-Ablauf
-(``flow/step/<ABLAUF>.toml``) unter
-``.local/handoff/steps/<BEAD>/record.json``: wartender Zustand und
-Tatsachen für Wächter (z. B. kein PASS nach Teillauf). Daneben
-steht ``events.jsonl``, dasselbe Ereignisprotokoll wie bei
-``ki-dev -f implement``. Beads bleiben Auftrag und PM-Sicht; der
-Laufzustand ist Arbeitsstand dieses Arbeitsbaums wie die
-Vorlaufartefakte.
+(:mod:`ki_dev.runner.package`) für den zuletzt gelaufenen Ablauf
+unter ``.local/handoff/steps/<BEAD>/record.json``: Zustand des
+Ablaufs, Halt des Laufs, wartender Versuch und Laufdaten für die
+Wächter (z. B. kein PASS nach Teillauf). Daneben steht
+``events.jsonl``, das Protokoll des Ausführers (Regionen). Beads
+bleiben Auftrag und PM-Sicht; der Laufzustand ist Arbeitsstand
+dieses Arbeitsbaums wie die Vorlaufartefakte.
 
 Ein ausdrückliches ``--step`` beginnt dort, ohne ``--step`` setzt step
-den wartenden Zustand fort. Beginnt ein Aufruf woanders, als der letzte
-endete, steht davor eine Zeile ``letzter Halt --@jump--> Start``, die
+den wartenden Zustand fort. Beginnt ein Aufruf im selben Ablauf
+woanders, als der letzte endete, protokolliert der Ausführer davor
+``letzter Halt --@jump--> Start``, was
 :func:`~ki_dev.runner.events.check_conformance` als Abweichung meldet.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
-from ki_dev.flow.model import Flow, Transition
+from ki_dev.flow.binding import BindingError
+from ki_dev.flow.model import FlowError
 from ki_dev.flow.review_flow import load_review_flow
-from ki_dev.run_store import RunStore
-from ki_dev.runner.events import event_record
-from ki_dev.runner.planning import Halt, read_waiting, recorded_flow
+from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.package import waiting_of
 
 STATE_DIR = Path(".local") / "handoff" / "steps"
-MANUAL = "manual"
-JUMP = "@jump"
-MACHINE = "ki-dev"
+
 
 class StepStateError(ValueError):
     """Ort des Laufzustands ist für diese BEAD_ID ungültig."""
+
+
+class StaleHaltError(FlowError):
+    """Der gespeicherte Halt stammt aus einem anderen Ablaufstand."""
 
 
 @dataclass(frozen=True)
 class SavedState:
     flow: str
     state: str
-    facts: frozenset[str]
+    status: str
+    """Halt des Laufs (z. B. ``awaiting_input``, ``finished``)."""
+    attempt: str | None
+    """Kennung des wartenden Versuchs (``None``: nichts wartet)."""
 
 
 def state_root() -> Path:
@@ -49,59 +54,35 @@ def state_root() -> Path:
 
 
 def step_dir(bead_id: str) -> Path:
-    return _store(bead_id).run_dir
+    return run_store(bead_id).run_dir
 
 
-def load_state(bead_id: str) -> SavedState | None:
-    """Wartender Ablauf und Zustand aus dem Datensatz oder ``None``."""
-    directory = step_dir(bead_id)
-    name = recorded_flow(directory)
-    if name is None:
-        return None
-    waiting = read_waiting(load_review_flow(name).flow, directory)
-    return None if waiting is None else SavedState(name, *waiting)
-
-
-def remember(
-    bead_id: str, halt: Halt, flow: Flow, previous: str | None
-) -> None:
-    """Genommene Kanten protokollieren, dann den Halt speichern.
-
-    Beginnt der Aufruf woanders als ``previous`` (letzter Halt), steht
-    davor eine Zeile ``previous --@jump--> start``: kein Übergang des
-    Ablaufs, darum meldet check_conformance sie als Abweichung."""
-    store = _store(bead_id)
-    seq = len(store.load_events())
-    start = halt.entry.source if halt.entry is not None else halt.state
-    jumps = []
-    if previous is not None and previous != start:
-        jumps.append(
-            Transition(source=previous, event=JUMP, target=start)
-        )
-    for transition in (*jumps, *halt.path):
-        seq += 1
-        store.append_event(
-            event_record(
-                line=seq,
-                seq=seq,
-                ts=datetime.now(UTC).isoformat(),
-                flow=flow,
-                run_id=bead_id,
-                transition=transition,
-                target=transition.target,
-                adapter=_adapter(flow, transition.source),
-            )
-        )
-
-
-def _adapter(flow: Flow, state: str) -> str:
-    """Maschinenzustände erzeugen ihr Ereignis selbst; sonst trägt der
-    Mensch die Antwort als Bote herein."""
-    return MACHINE if flow.state(state).kind == "machine" else MANUAL
-
-
-def _store(bead_id: str) -> RunStore:
+def run_store(bead_id: str) -> RunStore:
+    """Ablage des Laufs dieses Beads (Datensatz, Protokoll)."""
     try:
         return RunStore(state_root(), bead_id)
     except ValueError as exc:
         raise StepStateError(f"BEAD_ID {bead_id!r}: {exc}") from exc
+
+
+def load_state(bead_id: str) -> SavedState | None:
+    """Ablauf, Zustand, Halt und Versuch aus dem Datensatz oder
+    ``None`` ohne Lauf; ein Datensatz aus einem anderen Ablaufstand
+    ist :class:`StaleHaltError`."""
+    try:
+        record = run_store(bead_id).load_record()
+        if record is None:
+            return None
+        name = (
+            record.get("flow") if isinstance(record, Mapping) else None
+        )
+        if not isinstance(name, str):
+            raise RunStoreError("Datensatz ohne Ablauf")
+        flow = load_review_flow(name).flow
+        return SavedState(name, *waiting_of(flow, record))
+    except (RunStoreError, BindingError, FlowError) as exc:
+        raise StaleHaltError(
+            "gespeicherter Halt stammt aus einem anderen "
+            f"Ablaufstand; mit --step neu beginnen ({exc})"
+        ) from exc
+

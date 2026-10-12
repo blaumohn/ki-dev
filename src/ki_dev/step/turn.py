@@ -20,15 +20,20 @@ from ki_dev.ops.context.blocks import (
     state_turn,
 )
 from ki_dev.ops.context.limit import check_base_length
-from ki_dev.runner.planning import ASK, TURN
 from ki_dev.runner.turns import Plug, bind_turns, render_turn
 
 PLUG = Plug(FIELDS, BLOCKS)
 
 
 def bind_flow(flow: ReviewFlow) -> None:
-    """Ablauf und eingesteckte Felder und Bausteine passen."""
-    bind_turns(flow.flow, PLUG, (TURN, ASK))
+    """Ablauf und eingesteckte Felder und Bausteine passen; Übergaben
+    sind wie beim Ausführer die Operationen ohne Bindung."""
+    used = {
+        operation.do
+        for state in flow.flow.states.values()
+        for operation in state.operations
+    }
+    bind_turns(flow.flow, PLUG, used - set(flow.flow.bindings))
 
 
 def require_valid(

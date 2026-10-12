@@ -24,7 +24,6 @@ from ki_dev.ops.context.limit_config import (
     LimitConfigInvalidError,
     LimitConfigReadError,
 )
-from ki_dev.runner.planning import Halt, StaleHaltError
 from ki_dev.step.boundary import CONSOLE, bound_flow
 from ki_dev.step.choices import ReviewTarget, Step
 from ki_dev.step.exits import fail
@@ -39,13 +38,16 @@ from ki_dev.step.options import (
     review_options,
     review_target,
 )
-from ki_dev.step.projection import bead_output
+from ki_dev.step.projection import Output, bead_output
 from ki_dev.step.state import (
     SavedState,
+    StaleHaltError,
     StepStateError,
     load_state,
-    remember,
 )
+
+AWAITING = "awaiting_input"
+"""Halt des Laufs, in dem eine Übergabe auf ihre Antwort wartet."""
 
 
 def handoff(
@@ -253,14 +255,8 @@ def _bead_form(
         fail(f"Vorlauf-Konfiguration ungültig: {exc}", code=2)
     except (TransportReadError, LimitConfigReadError) as exc:
         fail(str(exc), code=1)
-    _note_jump(saved, output.halt)
-    remember(
-        bead_id,
-        output.halt,
-        output.flow.flow,
-        None if saved is None else saved.state,
-    )
-    send(CONSOLE, output.halt.attempt or "", output.text)
+    _note_jump(saved, output)
+    send(CONSOLE, output.attempt or "", output.text)
     if output.exit_code:
         raise typer.Exit(code=output.exit_code)
 
@@ -305,7 +301,7 @@ def _continue(
         )
     flow = bound_flow(saved.flow)
     kind = flow.flow.state(saved.state).kind
-    if kind in ("write", "correction"):
+    if saved.status == AWAITING and kind in ("write", "correction"):
         _bead_form(
             bead_id,
             Step.REVIEW,
@@ -318,14 +314,14 @@ def _continue(
     lines = next_step_lines(flow.flow, saved.state, one_line(bead_id))
     typer.echo("\n".join(lines) + "\n", nl=False)
 
-def _note_jump(saved: SavedState | None, halt: Halt) -> None:
+def _note_jump(saved: SavedState | None, output: Output) -> None:
     """Beginnt ein Aufruf woanders, als der letzte endete, steht das im
     Protokoll (check_conformance) und hier als Hinweis auf stderr."""
-    start = halt.entry.source if halt.entry is not None else halt.state
-    if saved is not None and saved.state != start:
+    if saved is not None and saved.state != output.start:
         typer.echo(
             f"Hinweis: letzter Halt {saved.state}, dieser Aufruf "
-            f"beginnt in {start} (im Protokoll als Sprung sichtbar).",
+            f"beginnt in {output.start} (im Protokoll als Sprung "
+            "sichtbar).",
             err=True,
         )
 

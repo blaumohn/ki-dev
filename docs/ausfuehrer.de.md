@@ -265,9 +265,17 @@ doppelt geschrieben. `seq` ist die Revision des Ablaufs: nach einer
 Ablaufkante die neue, bei einer Kante des Laufs die, in der sie
 stattfand. So steht der Verlauf des Laufs (Operationen, Pausen,
 Antworten) neben dem des Ablaufs, ohne dessen Zählung zu stören.
+`adapter` nennt, wer das Ereignis brachte: bei einer Übergabe der
+Executor, der antwortete (etwa `manual`), sonst `ki-dev`.
+Beginnt ein neuer Lauf im selben Protokoll (`start` mit `again`, etwa
+jedes ausdrückliche `ki-dev step --step`), steht davor die Zeile
+`lauf --@start--> lauf` (Region `lauf`): die Regionen des Laufs beginnen
+wieder im Anfangszustand. Beginnt der neue Lauf im selben Ablauf an
+anderer Stelle, als der alte hielt, folgt `letzter Halt --@jump--> Start`.
 `check_conformance` (`src/ki_dev/runner/events.py`) gleicht jede Region
 gegen ihre Definition ab: den Ablauf gegen das Paket, `operation` und
-`halt` gegen `runner/run.toml`.
+`halt` gegen `runner/run.toml`; der Neubeginn ist konform, ein Sprung
+nicht.
 XES (IEEE 1849) ist bewusst nur ein möglicher späterer Export; die Felder
 lassen sich direkt abbilden.
 

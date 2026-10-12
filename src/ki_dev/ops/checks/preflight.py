@@ -30,8 +30,8 @@ import re
 import shlex
 import shutil
 import tomllib
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -159,6 +159,43 @@ class PreflightReport:
         Teillauf erlaubt ein Zwischenreview, aber keinen PASS.
         """
         return is_partial(self.commands)
+
+
+def report_data(report: PreflightReport) -> dict[str, object]:
+    """Bericht als JSON-Daten (dauerhaftes Ergebnis der Operation)."""
+    return {
+        "started_at": report.started_at,
+        "commands": [
+            {
+                **asdict(item),
+                "argv": list(item.argv),
+                "added": list(item.added),
+            }
+            for item in report.commands
+        ],
+        "valid": report.valid,
+        "artifact": str(report.artifact),
+    }
+
+
+def report_of(data: Mapping[str, object]) -> PreflightReport:
+    """Bericht aus seinen JSON-Daten (:func:`report_data`)."""
+    commands = cast(list[dict], data["commands"])
+    return PreflightReport(
+        str(data["started_at"]),
+        tuple(
+            CommandResult(
+                **{
+                    **item,
+                    "argv": tuple(item["argv"]),
+                    "added": tuple(item["added"]),
+                }
+            )
+            for item in commands
+        ),
+        bool(data["valid"]),
+        Path(str(data["artifact"])),
+    )
 
 
 def is_partial(commands: Iterable[CommandResult]) -> bool:
