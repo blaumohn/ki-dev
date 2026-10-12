@@ -17,10 +17,10 @@ Namensregeln, ohne Ausdrücke in Strings:
   Ereignis) für die Kanten ohne eigenen Hinweis im Muster (so behält
   eine zweite Kante desselben Ereignisses, etwa PASS bei geändertem
   Stand, ihren Hinweis).
-- ``template``, ``context`` und ``require`` der Phase setzen je
-  lokalem Zustand Rollenvorlage, Kontextbausteine und benötigte
-  Bead-Felder seiner einzigen Operation (der Übergabe); so trägt jede
-  Phase ihre Übergabe als Daten.
+- ``template``, ``context``, ``require`` und ``role`` der Phase setzen
+  je lokalem Zustand Rollenvorlage, Kontextbausteine, benötigte
+  Bead-Felder und Rolle seiner einzigen Operation (der Übergabe); so
+  trägt jede Phase ihre Übergabe als Daten.
 - Eine Kante des Musters kann die Übergabe selbst bestimmen
   (``template``, ``context``: Nachricht am Übergang). ``@NAME`` als
   Vorlage nennt den Eintrag ``template.NAME`` der Phase, so wie
@@ -160,9 +160,9 @@ def _turns(
     phase: Mapping[str, object],
 ) -> dict[str, dict[str, object]]:
     """Übergabe-Parameter je lokalem Zustand (template, context,
-    require)."""
+    require, role)."""
     turns: dict[str, dict[str, object]] = {}
-    for key in ("template", "context", "require"):
+    for key in ("template", "context", "require", "role"):
         for local, value in dict(phase.get(key, {})).items():
             turns.setdefault(local, {})[key] = value
     return turns

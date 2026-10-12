@@ -169,3 +169,24 @@ class Reviewer(Protocol):
     spec: ExecutorSpec
 
     def review(self, request: ReviewRequest) -> str: ...
+
+
+@dataclass(frozen=True)
+class TurnPrompt:
+    """Eine Übergabe an eine Sitzung, unabhängig von Rolle und Ablauf:
+    ``key`` ist die Kennung des Versuchs (bindet die Antwort),
+    ``prompt`` der fertige Text aus der Deklaration des Ablaufs."""
+
+    key: str
+    prompt: str
+    workdir: Path
+    env: Mapping[str, str] = field(default_factory=dict)
+
+
+class TurnExecutor(Protocol):
+    """Bearbeitet eine Übergabe und liefert die formale Antwort als
+    Text; fehlt sie noch (Bote), meldet er :class:`AnswerPending`."""
+
+    spec: ExecutorSpec
+
+    def ask(self, request: TurnPrompt) -> str: ...

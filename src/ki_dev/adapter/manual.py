@@ -30,6 +30,7 @@ from typing import BinaryIO
 from ki_dev.adapter.contract import (
     AnswerPending,
     ReviewRequest,
+    TurnPrompt,
     WorkReport,
     WorkRequest,
 )
@@ -156,13 +157,18 @@ class ManualRelay:
     def review(self, request: ReviewRequest) -> str:
         return self._relay(request)
 
+    def ask(self, request: TurnPrompt) -> str:
+        return self._ask(request.key, request.prompt)
+
     def _relay(self, request: WorkRequest | ReviewRequest) -> str:
-        prompt = request.prompt
+        return self._ask(request.attempt_id, request.prompt)
+
+    def _ask(self, attempt: str, prompt: str) -> str:
         digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
         # Je Versuch eine eigene Datei: nach einem Protokollfehler
         # wartet der neue Versuch auf eine neue Antwort, statt die
         # abgewiesene erneut zu lesen.
-        key = f"{request.attempt_id}-{self.role}-{digest}"
+        key = f"{attempt}-{self.role}-{digest}"
         if isinstance(self.transport, Console):
             return _ask_console(self.transport, key, prompt)
         return _ask_inbox(self.transport, key, prompt)

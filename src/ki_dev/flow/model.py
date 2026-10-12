@@ -116,6 +116,9 @@ class Operation:
     require: tuple[str, ...] = ()
     """Bead-Felder, ohne die die Übergabe dieses Zustands formal
     unvollständig ist (z. B. ``source_refs``); prüft der Aufrufer."""
+    role: str | None = None
+    """Rolle, die die Übergabe bearbeitet; welcher Executor das ist,
+    sagt das Profil (Rolle → Executor), nicht der Ablauf."""
 
     @property
     def turn(self) -> Turn | None:
@@ -500,6 +503,7 @@ def _operation(item: dict) -> Operation:
         item.get("repeatable", False),
         item.get("failure"),
         tuple(item.get("require", ())),
+        item.get("role"),
     )
 
 
@@ -653,6 +657,7 @@ _SCHEMA = {
                                 "template": _TEMPLATE,
                                 "context": _CONTEXT,
                                 "require": _NAMES,
+                                "role": _NAME,
                                 "repeatable": {"type": "boolean"},
                                 "failure": _NAME,
                             },
@@ -776,6 +781,10 @@ _PATTERN_SCHEMA = {
                     "require": {
                         "type": "object",
                         "additionalProperties": _NAMES,
+                    },
+                    "role": {
+                        "type": "object",
+                        "additionalProperties": _NAME,
                     },
                     "hint": {
                         "type": "object",

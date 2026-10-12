@@ -38,6 +38,13 @@ review = [
 write = ["source_refs"]
 review = ["source_refs"]
 
+# Rollen der Sitzungen; welcher Executor (Agent, manual, mock) eine
+# Rolle bearbeitet, sagt das Profil.
+[phase.role]
+write = "worker"
+review = "review"
+correction = "worker"
+
 [phase.actor]
 write = "Auflösungsagent"
 review = "Review-Agent (Graphprüfung)"

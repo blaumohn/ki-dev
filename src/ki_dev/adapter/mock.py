@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ki_dev.adapter.contract import (
     ReviewRequest,
+    TurnPrompt,
     WorkReport,
     WorkRequest,
 )
@@ -63,3 +64,21 @@ class MockReviewer:
                 "requirement_ref": refs[0] if changes else None,
             }
         )
+
+
+@dataclass
+class MockAnswers:
+    """Spielt vorgegebene Antworten auf Übergaben ab; ``{attempt}``
+    setzt die Kennung des Versuchs ein. Eine erschöpfte Liste ist ein
+    sichtbarer Fehler."""
+
+    spec: ExecutorSpec
+    answers: list[str] = field(default_factory=list)
+    prompts: list[str] = field(default_factory=list)
+
+    def ask(self, request: TurnPrompt) -> str:
+        if len(self.prompts) >= len(self.answers):
+            raise RuntimeError("mock: keine Antwort mehr vorgegeben")
+        answer = self.answers[len(self.prompts)]
+        self.prompts.append(request.prompt)
+        return answer.replace("{attempt}", request.key)

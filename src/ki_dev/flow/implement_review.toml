@@ -51,6 +51,13 @@ review = [
 write = ["design", "acceptance_criteria"]
 review = ["design", "acceptance_criteria"]
 
+# Rollen der Sitzungen; welcher Executor (Agent, manual, mock) eine
+# Rolle bearbeitet, sagt das Profil.
+[phase.role]
+write = "worker"
+review = "review"
+correction = "worker"
+
 [phase.actor]
 write = "Umsetzer (implementer)"
 review = "Review-Agent (nach deterministischem Vorlauf)"
