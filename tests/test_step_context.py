@@ -1,6 +1,6 @@
 """Kontext der Übergabe als Ablaufdaten (ki-dev-ablauf-twa).
 
-planning.toml deklariert je Übergabezustand Rollenvorlage und
+Jeder Review-Ablauf deklariert je Übergabezustand Rollenvorlage und
 Kontextbausteine; step setzt die Bausteine unter ihrem Namen um.
 """
 
@@ -11,14 +11,14 @@ import copy
 import pytest
 
 from ki_dev.flow.model import FlowError, parse_flow, read_raw
-from ki_dev.flow.planning import PlanningFlow, load_planning_flow
+from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.context import bead_input
-from ki_dev.ops.context.blocks import BLOCKS, flow_state, state_turn
+from ki_dev.ops.context.blocks import BLOCKS, state_turn
 from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.step.turn import bind_flow
-from tests.turn_helpers import render_handoff
+from tests.turn_helpers import handoff_state, phase_flow, render_handoff
 
-FLOW = load_planning_flow()
+FLOW = load_review_flow("implement_review")
 
 FORMS = [
     *((step, None) for step in Step if step is not Step.REVIEW),
@@ -38,21 +38,21 @@ def test_missing_block_is_named(monkeypatch):
 
 
 def test_unknown_context_name_is_rejected_at_load():
-    raw = copy.deepcopy(read_raw("planning"))
+    raw = copy.deepcopy(read_raw("implement_review"))
     raw["phase"][0]["context"]["write"].append({"use": "orakel"})
     with pytest.raises(FlowError, match="unbekannte Kontextbausteine"):
         parse_flow(raw)
 
 
 def test_missing_template_file_is_rejected_at_load():
-    raw = copy.deepcopy(read_raw("planning"))
+    raw = copy.deepcopy(read_raw("implement_review"))
     raw["phase"][0]["template"]["write"] = "role-fehlt"
     with pytest.raises(FlowError, match="role-fehlt.txt fehlt"):
         parse_flow(raw)
 
 
 def test_context_on_unknown_local_state_is_rejected():
-    raw = copy.deepcopy(read_raw("planning"))
+    raw = copy.deepcopy(read_raw("implement_review"))
     raw["phase"][0]["context"]["nirgends"] = [{"use": "criteria"}]
     with pytest.raises(FlowError, match="context.nirgends: unbekannt"):
         parse_flow(raw)
@@ -64,7 +64,8 @@ def test_context_on_unknown_local_state_is_rejected():
 def test_validation_rules_match_the_declared_context(step, target):
     """Pflichtfeld-Verträge der Validierung und deklarierter Kontext
     sind dieselbe Aussage: ein Test hält sie deckungsgleich."""
-    context = state_turn(FLOW, flow_state(step, target)).context
+    state = handoff_state(step, target)
+    context = state_turn(phase_flow(state), state).context
     refs = "source_refs" in context
     assert bead_input._needs_refs(step, target) is refs
     assert bead_input._is_build_review(step, target) is (
@@ -75,13 +76,13 @@ def test_validation_rules_match_the_declared_context(step, target):
 def test_declared_order_drives_the_rendered_order():
     """Eine andere Reihenfolge im Ablauf ändert die Übergabe ohne
     Codeänderung."""
-    raw = copy.deepcopy(read_raw("planning"))
-    implement = next(p for p in raw["phase"] if p["id"] == "implement")
+    raw = copy.deepcopy(read_raw("implement_review"))
+    (implement,) = raw["phase"]
     implement["context"]["review"] = [
         {"use": "criteria"},
         {"use": "finding_classes"},
     ]
-    other = PlanningFlow(parse_flow(raw))
+    other = ReviewFlow(parse_flow(raw))
     issue = bead_input.BeadInput(
         id="x-1",
         title="T",

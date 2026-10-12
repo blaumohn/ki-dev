@@ -1,6 +1,6 @@
 """Felder und Kontextbausteine der Übergaben des Planungsablaufs.
 
-Der Ablauf (``planning.toml``) deklariert je Übergabe eine Vorlage und
+Der Ablauf (z. B. ``map.toml``) deklariert je Übergabe eine Vorlage und
 die Kontextbausteine in ihrer Reihenfolge. Was ein Platzhalter der
 Vorlage (:data:`FIELDS`) und was ein Baustein (:data:`BLOCKS`) unter
 seinem Namen liefert, steht hier; der Aufrufer steckt beides in den
@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from ki_dev.flow.model import FlowError, Turn
-from ki_dev.flow.planning import NAME, PlanningFlow
+from ki_dev.flow.review_flow import TEMPLATES, ReviewFlow
 from ki_dev.flow.templates import lines as lines_of
 from ki_dev.flow.templates import render, text
 from ki_dev.ops.checks.options import ARGS_OPTION, SKIP_OPTION
@@ -25,7 +25,7 @@ from ki_dev.ops.checks.preflight import (
     format_command_result,
 )
 from ki_dev.ops.context.bead_input import BeadInput, criterion_line
-from ki_dev.ops.context.contract import ReviewTarget, Step, one_line
+from ki_dev.ops.context.contract import one_line
 from ki_dev.ops.context.guidelines import (
     GuidelineSection,
     guideline_lines,
@@ -44,7 +44,7 @@ class TurnInput:
     aus ``state`` führen, bei ``events`` nur die dieser Ereignisse."""
 
     issue: BeadInput
-    flow: PlanningFlow
+    flow: ReviewFlow
     state: str
     events: tuple[str, ...] | None = None
     guidelines: Sequence[GuidelineSection] = ()
@@ -70,7 +70,7 @@ def _bead(turn: TurnInput) -> str:
 
 def _output(turn: TurnInput) -> str:
     name = "verdict" if turn.pass_allowed else "verdict-partial"
-    return text(NAME, name)
+    return text(TEMPLATES, name)
 
 
 def _verdict(turn: TurnInput) -> ReviewVerdict:
@@ -89,8 +89,8 @@ def _detail(turn: TurnInput) -> str:
 
 FIELDS: dict[str, Callable[[TurnInput], object]] = {
     "bead": _bead,
-    "common": lambda _turn: text(NAME, "common"),
-    "rules": lambda _turn: text(NAME, "review-rules"),
+    "common": lambda _turn: text(TEMPLATES, "common"),
+    "rules": lambda _turn: text(TEMPLATES, "review-rules"),
     "output": _output,
     "limit": lambda turn: turn.feedback_limit,
     "event": lambda turn: _verdict(turn).event,
@@ -113,12 +113,12 @@ def _finding_classes(turn: TurnInput) -> list[str]:
 def _epic_sections(turn: TurnInput) -> list[str]:
     if not turn.issue.epic_context:
         return []
-    lines = ["", *lines_of(NAME, "epic-intro")]
+    lines = ["", *lines_of(TEMPLATES, "epic-intro")]
     for epic_id, epic_context in turn.issue.epic_context:
         lines += [
             "",
             render(
-                NAME,
+                TEMPLATES,
                 "epic-hint",
                 id=one_line(epic_id),
                 context=one_line(epic_context),
@@ -154,7 +154,7 @@ def _attempt(turn: TurnInput) -> list[str]:
     eine Antwort trägt sie zurück. Leer, wenn nichts wartet."""
     if turn.attempt is None:
         return []
-    return [render(NAME, "attempt-line", attempt=turn.attempt)]
+    return [render(TEMPLATES, "attempt-line", attempt=turn.attempt)]
 
 
 def _reading_hint(turn: TurnInput) -> list[str]:
@@ -173,8 +173,8 @@ def _report(turn: TurnInput) -> list[str]:
     lines += [format_command_result(item) for item in report.commands]
     lines.append(artifact_line(report))
     if report.partial:
-        lines.append(text(NAME, "partial-run-note"))
-    lines.append(text(NAME, "pass-note"))
+        lines.append(text(TEMPLATES, "partial-run-note"))
+    lines.append(text(TEMPLATES, "pass-note"))
     return lines
 
 
@@ -195,7 +195,7 @@ def _feedback(header: str) -> Callable[[TurnInput], list[str]]:
             f"| {_quoted(line)}".rstrip()
             for line in turn.feedback.splitlines()
         ]
-        return ["", text(NAME, header), *quoted]
+        return ["", text(TEMPLATES, header), *quoted]
 
     return lines
 
@@ -212,7 +212,7 @@ def _quoted(line: str) -> str:
 
 
 def _human_note(_turn: TurnInput) -> list[str]:
-    return ["", text(NAME, "human-note")]
+    return ["", text(TEMPLATES, "human-note")]
 
 
 def _finding(turn: TurnInput) -> list[str]:
@@ -239,7 +239,7 @@ def _control(turn: TurnInput) -> list[str]:
     ):
         for name, value in values.items():
             argv += [option, f"{name}={value}"]
-    return ["", text(NAME, "control-intro"), shlex.join(argv)]
+    return ["", text(TEMPLATES, "control-intro"), shlex.join(argv)]
 
 
 BLOCKS: dict[str, Callable[[TurnInput], Sequence[str]]] = {
@@ -259,28 +259,18 @@ BLOCKS: dict[str, Callable[[TurnInput], Sequence[str]]] = {
     "finding": _finding,
     "control": _control,
 }
-"""Kontextbausteine, je Name aus ``planning.toml``."""
+"""Kontextbausteine, je Name aus dem Vokabular des Ablaufs."""
 
 
 # --- Zuordnung Schritt → Übergabe -------------------------------------
 
 
-def flow_state(step: Step, review_target: ReviewTarget | None) -> str:
-    """Zustand der Tabelle flow/planning.toml, in dem diese Übergabe
-    entsteht (Schreibschritt oder Review der jeweiligen Phase)."""
-    if step is Step.REVIEW:
-        return (
-            f"{(review_target or ReviewTarget.IMPLEMENT).value}.review"
-        )
-    return step.value
-
-
-def state_turn(flow: PlanningFlow, state: str) -> Turn:
+def state_turn(flow: ReviewFlow, state: str) -> Turn:
     """Die Übergabe des Zustands laut Ablauf: Vorlage und Kontext."""
     for operation in flow.flow.state(state).operations:
         if operation.turn is not None:
             return operation.turn
-    raise FlowError(f"planning.toml: {state} hat keine Übergabevorlage")
+    raise FlowError(f"{flow.file}: {state} hat keine Übergabevorlage")
 
 
 # --- Basisgrenze ------------------------------------------------------

@@ -1,6 +1,7 @@
-"""Planungsablauf (planning.toml): Gültigkeit, Erreichbarkeit, Läufe.
+"""Abläufe auf dem Review-Muster (map, graph, materialize,
+implement_review): Gültigkeit, Erreichbarkeit, Läufe.
 
-Die Tabelle ist endlich; deshalb wird die Erreichbarkeit des Endes
+Jede Tabelle ist endlich; deshalb wird die Erreichbarkeit des Endes
 erschöpfend geprüft. Hypothesis simuliert Agentenausgaben (Befundlisten
 und beliebige Ereignisfolgen) und prüft die Bedeutung der Klassen und
 die Rückkehr jedes Laufs zum Ende.
@@ -10,7 +11,6 @@ from __future__ import annotations
 
 import copy
 import re
-from functools import partial
 
 import pytest
 from hypothesis import given
@@ -27,52 +27,60 @@ from ki_dev.flow.model import (
     with_pattern_catalog,
 )
 from ki_dev.flow.pattern import expand
-from ki_dev.flow.planning import (
-    PlanningFlow,
-    load_planning_flow,
-)
+from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.ops.context.blocks import flow_state
 from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.step import boundary, projection
-from tests.turn_helpers import render_handoff as _render_handoff
+from tests.turn_helpers import handoff_state, phase_flow, render_handoff
 
-FLOW = load_planning_flow()
+NAMES = ("map", "graph", "materialize", "implement_review")
+FLOWS = {name: load_review_flow(name) for name in NAMES}
+FLOW = FLOWS["implement_review"]
 A = FLOW.flow
 END = A.final[0]
-render_handoff = partial(_render_handoff, flow=FLOW)
 CLASSES = list(A.priority)
 # Ereignisse, mit denen ein Lauf vorankommt: Review besteht, Schreiber
 # ist fertig, Mensch nimmt an, neue Quelle ist importiert.
 PROGRESS = ("PASS", "done", "checks_passed", "accept", "imported")
 
 
-def _raw() -> dict:
-    """Expandierter Planungsablauf als Rohdaten: die Mutationen prüfen
-    das flache Format, das der Lader nach den Mustern prüft."""
+def _raw(name: str = "implement_review") -> dict:
+    """Expandierter Ablauf als Rohdaten: die Mutationen prüfen das
+    flache Format, das der Lader nach den Mustern prüft."""
     return expand(
-        with_pattern_catalog(read_raw("planning")), "planning.toml"
+        with_pattern_catalog(read_raw(name)), f"{name}.toml"
     )
 
 
-def test_shipped_table_is_valid_and_complete():
-    assert A.start == "map"
-    assert END == "finished"
-    phases = ("map", "graph", "materialize", "implement")
-    for phase in phases:
-        for suffix in ("", ".review", ".correction", ".decision"):
-            assert f"{phase}{suffix}" in A.states
-    assert {"source", "finished"} <= set(A.states)
+@pytest.mark.parametrize("name", NAMES)
+def test_shipped_table_is_valid_and_complete(name):
+    flow = FLOWS[name].flow
+    phase = flow.start
+    assert flow.final == ("finished",)
+    for suffix in ("", ".review", ".correction", ".decision"):
+        assert f"{phase}{suffix}" in flow.states
+    assert {"source", "finished"} <= set(flow.states)
 
 
-def test_every_state_reaches_the_end_exhaustively():
-    assert reaching_final(A) == set(A.states)
+@pytest.mark.parametrize("name", NAMES)
+def test_every_state_reaches_the_end_exhaustively(name):
+    flow = FLOWS[name].flow
+    assert reaching_final(flow) == set(flow.states)
 
 
-def test_new_source_always_returns_through_the_existing_map():
-    (transition,) = FLOW.outgoing("source")
-    assert transition.target == "map"
+@pytest.mark.parametrize("name", NAMES)
+def test_new_source_starts_again_at_the_existing_map(name):
+    (transition,) = FLOWS[name].outgoing("source")
+    assert transition.target == "finished"
+    assert "ki-dev step map" in transition.hint
     assert "keine zweite" in transition.hint
+
+
+def test_catalog_part_must_not_be_overridden():
+    raw = read_raw("map")
+    raw["final"] = ["anders"]
+    with pytest.raises(FlowError, match="final: überschreibt"):
+        parse_flow(raw)
 
 
 @pytest.mark.parametrize("step", list(Step))
@@ -86,23 +94,26 @@ def test_every_handoff_ends_with_its_flow_hint(step):
         source_refs=["a.md"],
     )
     text = render_handoff(issue, step)
-    state = flow_state(step, None)
+    state = handoff_state(step)
     assert text.rstrip().endswith(
-        "\n".join(FLOW.hint_lines(state, "x-1"))
+        "\n".join(phase_flow(state).hint_lines(state, "x-1"))
     )
     assert ("Befundklassen:" in text) is (step is Step.REVIEW)
 
 
 @pytest.mark.parametrize("target", list(ReviewTarget))
 def test_review_targets_map_to_review_states(target):
-    assert flow_state(Step.REVIEW, target) == f"{target.value}.review"
-    assert A.states[f"{target.value}.review"].kind == "review"
+    state = handoff_state(Step.REVIEW, target)
+    flow = phase_flow(state)
+    assert flow.state_of("review") == state == f"{target.value}.review"
 
 
 def test_hint_inserts_bead_and_lists_every_transition():
-    lines = FLOW.hint_lines("graph.review", "b-7")
+    graph = FLOWS["graph"]
+    lines = graph.hint_lines("graph.review", "b-7")
     assert lines[0].startswith("Hinweis für den Menschen: Zustand")
-    assert len(lines) == 1 + len(FLOW.outgoing("graph.review"))
+    assert "laut graph.toml" in lines[0]
+    assert len(lines) == 1 + len(graph.outgoing("graph.review"))
     assert "`ki-dev step b-7 --step materialize`" in "\n".join(lines)
     assert "{bead}" not in "\n".join(lines)
 
@@ -131,7 +142,7 @@ def _mutations():
         raw["transition"][0]["target"] = "nirgends"
 
     def missing_review_event(raw):
-        _drop_transition(raw, "graph.review", "source")
+        _drop_transition(raw, "implement.review", "source")
 
     def dead_end(raw):
         # implement.correction kommt nur noch zu sich selbst zurück.
@@ -158,7 +169,8 @@ def _mutations():
         raw["priority"] = ["fix", "source"]
 
     def duplicate_transition(raw):
-        raw["transition"].append(dict(_edge(raw, "map", "done")[1]))
+        _, edge = _edge(raw, "implement", "done")
+        raw["transition"].append(dict(edge))
 
     def unknown_event(raw):
         raw["transition"][0]["event"] = "vielleicht"
@@ -168,7 +180,7 @@ def _mutations():
             {
                 "source": "finished",
                 "event": "done",
-                "target": "map",
+                "target": "implement",
                 "hint": "x",
             }
         )
@@ -177,7 +189,7 @@ def _mutations():
         raw["transition"][0]["cond"] = ["irgendwas"]
 
     def unguarded_before_guarded(raw):
-        index, edge = _edge(raw, "map", "done")
+        index, edge = _edge(raw, "implement", "done")
         raw["vocabulary"]["guards"].append("irgendwas")
         raw["transition"].insert(
             index + 1, dict(edge, cond=["irgendwas"])
@@ -196,21 +208,21 @@ def _mutations():
         ),
         (
             unguarded_before_guarded,
-            "doppelter Übergang map bei done",
+            "doppelter Übergang implement bei done",
         ),
         (history_outside_wait, "@history nur aus kind wait"),
-        (unknown_kind, "state map: unbekannte kind traeumen"),
+        (unknown_kind, "state implement: unbekannte kind traeumen"),
         (unknown_target, "transition.0.target: unbekannter Zustand"),
         (
             missing_review_event,
-            "graph.review: fehlende Ereignisse source",
+            "implement.review: fehlende Ereignisse source",
         ),
         (dead_end, "Sackgasse"),
         (extra_key, "$: additionalProperties"),
         (bad_verdict, "finding_class.fix.verdict: enum"),
-        (duplicate_state, ".id: doppelt (map)"),
+        (duplicate_state, ".id: doppelt (implement)"),
         (precedence_mismatch, "priority: muss genau die Befundklassen"),
-        (duplicate_transition, "doppelter Übergang map bei done"),
+        (duplicate_transition, "doppelter Übergang implement bei done"),
         (unknown_event, "unbekanntes Ereignis vielleicht"),
         (end_with_exit, "Ende ohne Übergänge"),
     ]
@@ -254,7 +266,7 @@ def test_review_event_and_verdict_follow_precedence(findings):
 def test_random_walk_ends_once_agents_make_progress(choices):
     """Beliebige Ereignisse (auch source, fix, preflight_failed), danach
     nur noch Fortschritt: Jeder Lauf erreicht finished, und jeder Weg
-    über source führt zurück zur bestehenden Karte (map)."""
+    über source endet (neuer Lauf map)."""
     state = A.start
     for choice in choices:
         if state == END:
@@ -262,7 +274,7 @@ def test_random_walk_ends_once_agents_make_progress(choices):
         options = FLOW.outgoing(state)
         transition = options[choice % len(options)]
         if transition.source == "source":
-            assert transition.target == "map"
+            assert transition.target == END
         state = transition.target
     for _ in range(len(A.states)):
         if state == END:
@@ -300,7 +312,7 @@ def test_renderer_uses_the_flow_it_is_given():
     for transition in raw["transition"]:
         if transition["source"] == "implement":
             transition["hint"] = "EIGENER-BEFEHL {bead}"
-    other = PlanningFlow(parse_flow(raw))
+    other = ReviewFlow(parse_flow(raw))
     issue = BeadInput(
         id="x-1",
         title="T",
@@ -309,16 +321,16 @@ def test_renderer_uses_the_flow_it_is_given():
         acceptance_criteria="AC",
         source_refs=["a.md"],
     )
-    text = _render_handoff(issue, Step.IMPLEMENT, flow=other)
+    text = render_handoff(issue, Step.IMPLEMENT, flow=other)
     assert "EIGENER-BEFEHL x-1" in text
     assert "EIGENER-BEFEHL" not in render_handoff(issue, Step.IMPLEMENT)
 
 
 def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
-    def broken():
-        raise FlowError("planning.toml: $: additionalProperties")
+    def broken(_name):
+        raise FlowError("implement_review.toml: $: zusätzlich")
 
-    monkeypatch.setattr(boundary, "load_planning_flow", broken)
+    monkeypatch.setattr(boundary, "load_review_flow", broken)
     monkeypatch.setattr(
         projection,
         "read_issue",
@@ -331,4 +343,4 @@ def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
         app, ["step", "x-1", "--step", "implement"]
     )
     assert result.exit_code == 1
-    assert "Planungsablauf ungültig" in result.stderr
+    assert "Ablauf implement_review ungültig" in result.stderr

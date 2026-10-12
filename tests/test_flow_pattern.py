@@ -18,12 +18,11 @@ from ki_dev.flow.model import (
 
 
 def test_phases_expand_to_their_states_and_edges():
-    flow = load_flow("planning")
-    for phase in ("map", "graph", "materialize", "implement"):
-        for local in ("", ".review", ".correction", ".decision"):
-            assert f"{phase}{local}" in flow.states
+    flow = load_flow("implement_review")
+    for local in ("", ".review", ".correction", ".decision"):
+        assert f"implement{local}" in flow.states
     assert "implement.preflight" in flow.states
-    assert "map.preflight" not in flow.states
+    assert "map.preflight" not in load_flow("map").states
     unchanged, changed = flow.candidates("implement.review", "PASS")
     assert (unchanged.cond, unchanged.target) == (
         ("full_checks", "unchanged"),
@@ -33,12 +32,12 @@ def test_phases_expand_to_their_states_and_edges():
         ("full_checks", "!unchanged"),
         "implement.preflight",
     )
-    (map_pass,) = flow.candidates("map.review", "PASS")
-    assert (map_pass.cond, map_pass.target) == ((), "graph")
+    (map_pass,) = load_flow("map").candidates("map.review", "PASS")
+    assert (map_pass.cond, map_pass.target) == ((), "finished")
 
 
 def _mutated(change) -> dict:
-    raw = copy.deepcopy(with_pattern_catalog(read_raw("planning")))
+    raw = copy.deepcopy(with_pattern_catalog(read_raw("map")))
     change(raw)
     return raw
 
@@ -55,12 +54,12 @@ def _mutated(change) -> dict:
             "phase.0 (map): hint.review.done: keine Kante",
         ),
         (
-            lambda r: r["phase"][1].update(use="gibt_es_nicht"),
-            "phase.1 (graph): unbekanntes Muster gibt_es_nicht",
+            lambda r: r["phase"][0].update(use="gibt_es_nicht"),
+            "phase.0 (map): unbekanntes Muster gibt_es_nicht",
         ),
         (
-            lambda r: r["phase"][2].pop("next"),
-            "phase.2 (materialize): @next ohne next",
+            lambda r: r["phase"][0].pop("next"),
+            "phase.0 (map): @next ohne next",
         ),
         (
             lambda r: r["pattern"]["review_core"].update(
@@ -83,12 +82,12 @@ def test_parameter_typos_are_visible(change, message):
 
 def test_phase_needs_patterns():
     raw = _mutated(lambda r: r.pop("pattern"))
-    with pytest.raises(FlowError, match="planning.toml: \\$"):
+    with pytest.raises(FlowError, match="map.toml: \\$"):
         parse_flow(raw)
 
 
-def test_planning_loads_review_patterns_from_shared_catalog():
-    raw = read_raw("planning")
+def test_flow_loads_review_patterns_from_shared_catalog():
+    raw = read_raw("map")
     assert "pattern" not in raw
     assert raw["pattern_catalog"] == ["review"]
     assert {"review_core", "write_review"} <= set(
@@ -112,7 +111,7 @@ def test_planning_loads_review_patterns_from_shared_catalog():
     ],
 )
 def test_shared_catalog_errors_are_visible(change, message):
-    raw = copy.deepcopy(read_raw("planning"))
+    raw = copy.deepcopy(read_raw("map"))
     change(raw)
     with pytest.raises(FlowError, match=re.escape(message)):
         parse_flow(raw)

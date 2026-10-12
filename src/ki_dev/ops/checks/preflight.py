@@ -1,10 +1,11 @@
 """Operation ``checks``: deterministischer Vorlauf eines Projekts.
 
-Umsetzung der im Ablauf deklarierten Operation (``planning.toml``,
-Zustand ``implement.preflight``); der Aufrufer steckt sie beim Start in
-den Ausführer (``MachineOperation``). Datenfluss:
-``load_preflight_config`` und ``run_preflight`` (Schreibwirkung:
-Prozessaufrufe, Prüfartefakt) liefern einen ``PreflightReport``;
+Umsetzung der im Ablauf deklarierten Operation
+(``implement_review.toml``, Zustand ``implement.preflight``); der
+Aufrufer steckt sie beim Start in den Ausführer
+(``MachineOperation``). Datenfluss: ``load_preflight_config`` und
+``run_preflight`` (Schreibwirkung: Prozessaufrufe, Prüfartefakt)
+liefern einen ``PreflightReport``;
 ``format_command_result`` und ``artifact_line`` formatieren ihn.
 Die Übergabe rendert der Ausführer (``ki_dev.runner.turns``, Baustein
 ``report`` in ``ki_dev.ops.context.blocks``).

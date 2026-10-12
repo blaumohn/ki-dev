@@ -5,7 +5,7 @@ Bead: x-1 - Titel [red]rot[/red]
 
 Review-Urteil NEEDS_DECISION (decision): CHANGES abgewiesen (unbekanntes oder fremdes Abnahmekriterium 'AC9'); Klaerung noetig statt automatischer Baurunde. Ursprungsbegruendung: Test fehlt
 
-Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
 - decision → implement.decision: du entscheidest: accept, correct oder source
 Versuch: x-1:2 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

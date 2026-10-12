@@ -14,7 +14,7 @@ Die drei Bausteine teilen sich die Verantwortung:
 
 | Baustein | Legt fest | Inhalt / Aufgabe |
 | --- | --- | --- |
-| `flow/implement.toml`, `flow/planning.toml` | **Was** passieren darf | Daten: Zustände, Übergänge, Wächter und Aktionen |
+| `flow/*.toml` (`implement`, `map`, `graph`, …) | **Was** passieren darf | Daten: Zustände, Übergänge, Wächter und Aktionen |
 | `runner/` | **Wie** der Ablauf ausgeführt wird | Formale Antwort → Ereignis → Kante wählen (python-statemachine) → nächste Eingabe; Datensatz je Schritt, Halt beendet den Prozess |
 | `adapter/` | **Wer** die Eingabe bearbeitet | Anbindung von Claude, Codex, einem Menschen (`manual`) oder einer Simulation (`mock`) |
 
@@ -148,7 +148,7 @@ Echte Ausgabe (gekürzt) für einen Bead dieses Repositorys:
 Schritt: materialize
 Bead: ki-dev-ablauf-5we - Vor GitHub: begrenzte Reviewer-Prüfsteuerung in step anschließen
 …
-Hinweis für den Menschen: Zustand materialize; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand materialize; Folgeschritte laut materialize.toml (Adapter manual, du trägst sie weiter):
 - done → materialize.review: `ki-dev step ki-dev-ablauf-5we --step review --review-of materialize`
 ```
 
@@ -206,68 +206,28 @@ stateDiagram-v2
     error --> [*]
 ```
 
-**Planungsablauf** ([`planning.toml`](src/ki_dev/flow/planning.toml),
-vollständig):
+**Kartierung** ([`map.toml`](src/ki_dev/flow/map.toml), vollständig;
+`graph` und `materialize` sind gleich gebaut, `implement_review` hat
+vor jedem Review den Vorlauf `implement.preflight`):
 
-<!-- ki-dev flow show planning -->
+<!-- ki-dev flow show map -->
 ```mermaid
 stateDiagram-v2
     direction LR
     state "map.review" as map_review
     state "map.correction" as map_correction
     state "map.decision" as map_decision
-    state "graph.review" as graph_review
-    state "graph.correction" as graph_correction
-    state "graph.decision" as graph_decision
-    state "materialize.review" as materialize_review
-    state "materialize.correction" as materialize_correction
-    state "materialize.decision" as materialize_decision
-    state "implement.review" as implement_review
-    state "implement.correction" as implement_correction
-    state "implement.decision" as implement_decision
-    state "implement.preflight" as implement_preflight
     [*] --> map
     map_review --> map_correction: fix
     map_review --> source: source
     map_review --> map_decision: decision
-    map_decision --> graph: accept
+    map_decision --> finished: accept
     map_decision --> map_correction: correct
     map_decision --> source: source
     map --> map_review: done
     map_correction --> map_review: done
-    map_review --> graph: PASS
-    graph_review --> graph_correction: fix
-    graph_review --> source: source
-    graph_review --> graph_decision: decision
-    graph_decision --> materialize: accept
-    graph_decision --> graph_correction: correct
-    graph_decision --> source: source
-    graph --> graph_review: done
-    graph_correction --> graph_review: done
-    graph_review --> materialize: PASS
-    materialize_review --> materialize_correction: fix
-    materialize_review --> source: source
-    materialize_review --> materialize_decision: decision
-    materialize_decision --> implement: accept
-    materialize_decision --> materialize_correction: correct
-    materialize_decision --> source: source
-    materialize --> materialize_review: done
-    materialize_correction --> materialize_review: done
-    materialize_review --> implement: PASS
-    implement_review --> implement_correction: fix
-    implement_review --> source: source
-    implement_review --> implement_decision: decision
-    implement_decision --> finished: accept
-    implement_decision --> implement_correction: correct
-    implement_decision --> source: source
-    implement --> implement_preflight: done
-    implement_correction --> implement_preflight: done
-    implement_preflight --> implement_review: checks_passed
-    implement_preflight --> implement_review: checks_partial
-    implement_preflight --> implement_correction: checks_failed
-    implement_review --> finished: PASS [full_checks, unchanged]
-    implement_review --> implement_preflight: PASS [full_checks, !unchanged]
-    source --> map: imported
+    map_review --> finished: PASS
+    source --> finished: imported
     finished --> [*]
 ```
 
@@ -316,11 +276,14 @@ src/ki_dev/
                Datensatz (Konfiguration, History)
   flow/        model.py (Schema, Prüfung), statechart.py ([statechart] ↔
                flache Sicht), pattern.py (Muster), diagram.py (Mermaid),
-               templates/ (Rollentexte), implement.toml, planning.toml
+               templates/ (Rollentexte), patterns/ (gemeinsame Muster),
+               implement.toml, map.toml, graph.toml, materialize.toml,
+               implement_review.toml
   runner/      machine/ (Ops des Umsetzungsablaufs, advance), run.toml +
                run_machine.py (Lauf: Regionen ablauf, operation, halt),
                runtime.py (Schleife,
-               Datensatz je Schritt), planning.py (Planungslauf je Bead),
+               Datensatz je Schritt), planning.py (Lauf je Bead mit
+               Halt bei turn/ask),
                turns.py (jede Übergabe aus ihrer
                Deklaration), implement_turns.py (Felder des Umsetzungsablaufs),
                events.py (Protokoll), cli.py,
@@ -330,8 +293,8 @@ src/ki_dev/
   adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),
                executors.toml + registry.py (Executor = Transport + measures),
                executors/ (Claude- und Codex-CLI, Transkripte, Messung)
-  step/        Adapter manual für den Planungsablauf: Bedienung,
-               Laufzustand je Bead, Quellenimport
+  step/        ein Turn eines Paketablaufs mit dem Executor manual:
+               Bedienung, Laufzustand je Bead, Quellenimport
   pilot/, safety_profile/   abgelegt, noch nicht angebunden (urq, wu0.10.5)
 ```
 
@@ -346,13 +309,14 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 
 ## Stand und offene Punkte
 
-- **Benutzbar:** `ki-dev step` (Planungsablauf von Hand), `ki-dev -f implement` mit
+- **Benutzbar:** `ki-dev step` (ein Turn eines Ablaufs von Hand), `ki-dev -f implement` mit
   allen vier Adaptern (Bauablauf).
-- **Planungsablauf:** `step` fährt `planning.toml` als Lauf je Bead
+- **Abläufe von Hand:** `step` fährt den gewählten Ablauf (`map`,
+  `graph`, `materialize`, `implement_review`) als Lauf je Bead
   (`runner/planning.py`, auf python-statemachine wie `run`) bis zum
-  nächsten `turn`/`ask`; `map`, `graph` und
-  `materialize` laufen ohne Vorlauf (Stub), `implement` mit
-  `implement.preflight`.
+  nächsten `turn`/`ask`; nur `implement_review` bindet den Vorlauf
+  `implement.preflight`. `implement_review` und `implement` werden ein
+  Ablauf (ki-dev-ablauf-ige.6).
 - **Laufzustand je Bead:** `ki-dev step BEAD_ID` ohne `--step` setzt den
   gespeicherten Halt fort (`.local/handoff/steps/`), je Übergang steht eine
   Zeile in `events.jsonl`.

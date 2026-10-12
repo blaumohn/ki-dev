@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ki_dev.flow.planning import NAME
+from ki_dev.flow.review_flow import TEMPLATES
 from ki_dev.flow.templates import text
 from ki_dev.ops.context.guidelines import (
     GuidelineSection,
@@ -24,6 +24,6 @@ def render_local_handoff(
 ) -> str:
     """Feste Basis (Grenze gilt nur für sie), danach der gesonderte
     Leitlinienblock; zu lange Basis wird abgelehnt, nie gekürzt."""
-    base = text(NAME, "local") + "\n"
+    base = text(TEMPLATES, "local") + "\n"
     check_base_length(base, base_max_chars, ())
     return base + render_guideline_block(guidelines)

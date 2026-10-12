@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from jsonschema import Draft202012Validator
 
-from ki_dev.flow.planning import NAME
+from ki_dev.flow.review_flow import TEMPLATES
 from ki_dev.flow.templates import render
 from ki_dev.ops.context.contract import (
     NONEMPTY_TEXT_SCHEMA,
@@ -236,7 +236,7 @@ def _is_build_review(
 def criterion_line(issue: BeadInput) -> str:
     """Nur die Referenzen; den Text liest der Reviewer im Bead."""
     refs = ", ".join(ref for ref, _ in criteria_with_refs(issue))
-    return render(NAME, "criterion-line", refs=refs)
+    return render(TEMPLATES, "criterion-line", refs=refs)
 
 
 def criteria_with_refs(issue: BeadInput) -> list[tuple[str, str]]:

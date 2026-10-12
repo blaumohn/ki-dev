@@ -1,18 +1,13 @@
-from functools import partial
 
 import pytest
 
-from ki_dev.flow.planning import load_planning_flow
 from ki_dev.ops.context.bead_input import (
     BeadInput,
     BeadInputInvalidError,
     validate_bead_input,
 )
 from ki_dev.ops.context.contract import ReviewTarget, Step
-from tests.turn_helpers import render_handoff as _render_handoff
-
-FLOW = load_planning_flow()
-render_handoff = partial(_render_handoff, flow=FLOW)
+from tests.turn_helpers import render_handoff
 
 REFS = ["docs/design/a.md#L12-L40", "bd:karte"]
 

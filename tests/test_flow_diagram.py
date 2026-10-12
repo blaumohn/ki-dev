@@ -18,12 +18,12 @@ from ki_dev.flow.model import load_flow, parse_flow, read_raw
 
 ROOT = Path(__file__).parent.parent
 IMPLEMENT = load_flow("implement")
-PLANNING = load_flow("planning")
+MAP = load_flow("map")
 
 
 def test_every_transition_is_an_edge_with_its_label():
-    text = render_mermaid(PLANNING)
-    for t in PLANNING.transitions:
+    text = render_mermaid(MAP)
+    for t in MAP.transitions:
         source = t.source.replace(".", "_")
         target = t.target.replace(".", "_")
         assert f"    {source} --> {target}: {t.event}" in text
@@ -60,14 +60,14 @@ def test_history_is_a_pseudo_state_not_a_guess():
 
 
 def test_output_is_deterministic():
-    assert render_mermaid(PLANNING) == render_mermaid(
-        load_flow("planning")
+    assert render_mermaid(MAP) == render_mermaid(
+        load_flow("map")
     )
 
 
 def test_readme_diagrams_equal_generated_output():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert diagram_markers(text) == ["implement", "planning"]
+    assert diagram_markers(text) == ["implement", "map"]
     assert sync_diagrams(text, load_flow) == text
 
 

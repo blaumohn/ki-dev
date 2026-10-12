@@ -32,11 +32,11 @@ Quellenreferenzen (unaufgelöst):
 - a.md#L1-L2
 - bd:k
 
-Hinweis für den Menschen: Zustand graph.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand graph.review; Folgeschritte laut graph.toml (Adapter manual, du trägst sie weiter):
 - fix → graph.correction: Befunde an den Auflösungsagenten (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → graph.decision: du entscheidest: accept, correct oder source
-- PASS → materialize: `ki-dev step x-1 --step materialize`
+- PASS → finished: `ki-dev step x-1 --step materialize`
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt

@@ -13,7 +13,7 @@ Hinweis: PASS gilt nur, wenn Arbeitsbaum und Bead seit diesem Vorlauf unverände
 
 Empfänger und Befundkontext verantwortest du (den Stand seit dem Vorlauf prüft ki-dev beim PASS); Schließen und weitere Schritte entscheidest du selbst.
 
-Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
 - fix → implement.correction: Befunde an den Umsetzer (implementer) (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → implement.decision: du entscheidest: accept, correct oder source

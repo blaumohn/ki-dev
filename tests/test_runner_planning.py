@@ -23,7 +23,8 @@ from ki_dev.runner.planning import (
     with_facts,
 )
 
-FLOW = load_flow("planning")
+FLOW = load_flow("implement_review")
+MAP = load_flow("map")
 
 
 STAND = {"tree": "a1b2c3d", "bead": "40"}
@@ -83,7 +84,7 @@ def test_checkpoint_survives_the_process_and_keeps_the_guard(tmp_path):
 
 
 def test_phases_without_checks_are_stubs_that_stop_at_review(tmp_path):
-    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+    with planning_runtime(MAP, tmp_path, "b") as runtime:
         halt = runtime.start("map", "done")
     assert (halt.state, halt.operation) == ("map.review", TURN)
 
@@ -164,12 +165,8 @@ def test_unchanged_guard_compares_without_io():
 
 
 def _renamed_graph_phase() -> object:
-    raw = copy.deepcopy(read_raw("planning"))
-    for phase in raw["phase"]:
-        if phase["id"] == "graph":
-            phase["id"] = "plan"
-        if phase.get("next") == "graph":
-            phase["next"] = "plan"
+    raw = copy.deepcopy(read_raw("map"))
+    raw["phase"][0]["id"] = raw["start"] = "plan"
     return parse_flow(raw)
 
 
@@ -178,7 +175,7 @@ def test_halt_from_other_flow_is_named_not_a_keyerror(tmp_path):
     Halt nicht mehr: verständlicher Fehler; --step beginnt neu."""
     with planning_runtime(_renamed_graph_phase(), tmp_path, "b") as old:
         old.start("plan", None)
-    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+    with planning_runtime(MAP, tmp_path, "b") as runtime:
         for call in (runtime.waiting, lambda: runtime.resume("done")):
             with pytest.raises(StaleHaltError, match="--step neu"):
                 call()
@@ -187,14 +184,14 @@ def test_halt_from_other_flow_is_named_not_a_keyerror(tmp_path):
 
 
 def test_hint_texts_do_not_change_the_flow_digest():
-    raw = copy.deepcopy(read_raw("planning"))
+    raw = copy.deepcopy(read_raw("map"))
     raw["phase"][0]["hint"]["review"]["fix"] = "anderer Text"
-    assert flow_digest(parse_flow(raw)) == flow_digest(FLOW)
-    assert flow_digest(_renamed_graph_phase()) != flow_digest(FLOW)
+    assert flow_digest(parse_flow(raw)) == flow_digest(MAP)
+    assert flow_digest(_renamed_graph_phase()) != flow_digest(MAP)
 
 
 def test_unknown_event_is_visible_and_changes_nothing(tmp_path):
-    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+    with planning_runtime(MAP, tmp_path, "b") as runtime:
         attempt = runtime.start("map", None).attempt
         with pytest.raises(FlowError, match="vielleicht in map"):
             runtime.resume("vielleicht", attempt=attempt)
@@ -206,7 +203,7 @@ def test_answer_needs_the_waiting_attempt(tmp_path):
     """Eine Antwort gilt nur für den Versuch, für den die Übergabe
     ausgegeben wurde: fehlt die Kennung oder ist sie fremd, bleibt der
     Checkpoint unverändert."""
-    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+    with planning_runtime(MAP, tmp_path, "b") as runtime:
         first = runtime.start("map", None)
         before = runtime.waiting()
         with pytest.raises(StaleAnswerError, match="attempt fehlt"):
@@ -220,7 +217,7 @@ def test_answer_needs_the_waiting_attempt(tmp_path):
 
 
 def test_new_start_never_reuses_an_old_attempt(tmp_path):
-    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+    with planning_runtime(MAP, tmp_path, "b") as runtime:
         old = runtime.start("map", None).attempt
         new = runtime.start("map", None).attempt
         assert new != old
@@ -244,12 +241,12 @@ def test_generated_statechart_has_exactly_the_planning_states():
 
 
 def test_record_survives_the_process_boundary(tmp_path):
-    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+    with planning_runtime(MAP, tmp_path, "b") as runtime:
         attempt = runtime.start("map", None).attempt
     record = json.loads((tmp_path / "record.json").read_text())
     assert record["run"]["state"] == ["map"]
     assert record["waiting"] == TURN
-    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+    with planning_runtime(MAP, tmp_path, "b") as runtime:
         assert runtime.resume("done", attempt=attempt).state == (
             "map.review"
         )
@@ -267,7 +264,7 @@ def test_a_second_writer_is_rejected(tmp_path):
 def test_halt_without_attempt_is_stale_not_a_keyerror(tmp_path):
     """Ein Halt aus der Zeit vor der Versuchskennung: verständlicher
     Fehler wie bei einem anderen Ablaufstand; --step beginnt neu."""
-    with planning_runtime(FLOW, tmp_path, "b") as runtime:
+    with planning_runtime(MAP, tmp_path, "b") as runtime:
         runtime.start("map", None)
         path = tmp_path / "record.json"
         record = json.loads(path.read_text())

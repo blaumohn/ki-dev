@@ -2,7 +2,7 @@
 
 ``ki-dev step`` ist eine Projektion dieses Ausführers mit dem Adapter
 ``manual``. Kanten wählt python-statemachine aus dem ``[statechart]``,
-das die Mustererweiterung aus ``planning.toml`` erzeugt
+das die Mustererweiterung des Ablaufs erzeugt
 (:mod:`ki_dev.flow.statechart`); die Wächter sind Methoden von
 :class:`PlanningModel`. Maschinenzustände (``checks``) führt der
 Ausführer selbst aus; bei ``turn`` (Übergabe an eine Sitzung) und
@@ -115,6 +115,7 @@ def flow_digest(flow: Flow) -> str:
     ändert sich er, passt ein gespeicherter Halt nicht mehr. Texte wie
     Hinweise gehören nicht dazu."""
     shape = {
+        "name": flow.name,
         "states": sorted(
             (state.id, state.kind) for state in flow.states.values()
         ),
@@ -170,7 +171,13 @@ def _chart(flow: Flow) -> Chart:
     :class:`PlanningModel` geprüft)."""
     digest = flow_digest(flow)
     if digest not in _CHARTS:
-        _CHARTS[digest] = bind(flow.statechart, PlanningModel)
+        # Wächter aus dem Vokabular (gemeinsamer Katalog) darf ein
+        # Ablauf ungenutzt lassen.
+        _CHARTS[digest] = bind(
+            flow.statechart,
+            PlanningModel,
+            also=frozenset(flow.vocabulary.guards),
+        )
     return _CHARTS[digest]
 
 
@@ -201,6 +208,7 @@ _NAME_OR_NULL = {"anyOf": [{"type": "null"}, {"type": "string"}]}
 _SCHEMA = {
     "type": "object",
     "required": [
+        "flow",
         "flow_digest",
         "attempt",
         "run",
@@ -211,6 +219,7 @@ _SCHEMA = {
     ],
     "additionalProperties": False,
     "properties": {
+        "flow": {"type": "string"},
         "flow_digest": {"type": "string"},
         "attempt": {"type": "integer", "minimum": 1},
         "run": RECORD_SCHEMA,
@@ -221,6 +230,21 @@ _SCHEMA = {
     },
 }
 _VALIDATOR = Draft202012Validator(_SCHEMA)
+
+
+def recorded_flow(directory: Path) -> str | None:
+    """Name des Ablaufs, dessen Lauf hier gespeichert ist (``None``
+    ohne Lauf); ein Datensatz ohne Namen ist veraltet."""
+    record = _read(directory / RECORD_FILE)
+    if record is None:
+        return None
+    name = record.get("flow") if isinstance(record, dict) else None
+    if not isinstance(name, str):
+        raise StaleHaltError(
+            "gespeicherter Halt stammt aus einem anderen "
+            "Ablaufstand; mit --step neu beginnen"
+        )
+    return name
 
 
 def read_waiting(
@@ -323,6 +347,7 @@ class PlanningRuntime:
         self.flow.state(state)
         self._path, self._outcome = [], None
         self._record = {
+            "flow": self.flow.name,
             "flow_digest": self._digest,
             "attempt": self._saved_attempt() + 1,
             "run": {"state": [state], "history": {}},

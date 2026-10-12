@@ -1,7 +1,8 @@
 """Laufzustand je Bead für ``ki-dev step`` (lokal, nicht in bd/Dolt).
 
-Der Zustand ist der Datensatz des Planungsablaufs
-(:mod:`ki_dev.runner.planning`) unter
+Der Zustand ist der Datensatz des Ausführers
+(:mod:`ki_dev.runner.planning`) für den zuletzt gelaufenen step-Ablauf
+(``flow/step/<ABLAUF>.toml``) unter
 ``.local/handoff/steps/<BEAD>/record.json``: wartender Zustand und
 Tatsachen für Wächter (z. B. kein PASS nach Teillauf). Daneben
 steht ``events.jsonl``, dasselbe Ereignisprotokoll wie bei
@@ -21,11 +22,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ki_dev.flow.model import Flow, Transition, load_flow
-from ki_dev.flow.planning import NAME as PLANNING
+from ki_dev.flow.model import Flow, Transition
+from ki_dev.flow.review_flow import load_review_flow
 from ki_dev.run_store import RunStore
 from ki_dev.runner.events import event_record
-from ki_dev.runner.planning import Halt, read_waiting
+from ki_dev.runner.planning import Halt, read_waiting, recorded_flow
 
 STATE_DIR = Path(".local") / "handoff" / "steps"
 MANUAL = "manual"
@@ -38,6 +39,7 @@ class StepStateError(ValueError):
 
 @dataclass(frozen=True)
 class SavedState:
+    flow: str
     state: str
     facts: frozenset[str]
 
@@ -51,9 +53,13 @@ def step_dir(bead_id: str) -> Path:
 
 
 def load_state(bead_id: str) -> SavedState | None:
-    """Wartender Zustand aus dem Datensatz oder ``None``."""
-    waiting = read_waiting(load_flow(PLANNING), step_dir(bead_id))
-    return None if waiting is None else SavedState(*waiting)
+    """Wartender Ablauf und Zustand aus dem Datensatz oder ``None``."""
+    directory = step_dir(bead_id)
+    name = recorded_flow(directory)
+    if name is None:
+        return None
+    waiting = read_waiting(load_review_flow(name).flow, directory)
+    return None if waiting is None else SavedState(name, *waiting)
 
 
 def remember(

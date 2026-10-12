@@ -4,7 +4,7 @@ Diese Seite sammelt Begründung und **Zielbild** von ki-dev. Was heute
 läuft, beschreibt die [README](../README.md): Abläufe als Daten
 (`src/ki_dev/flow/`), ein Ausführer ohne eigene Topologie (`ki-dev -f implement`)
 und Adapter (`claude`, `codex`, `manual`, `mock`). Alles hier, was über
-`implement.toml` und `planning.toml` hinausgeht (adaptive Schnitte mit `PASS_STEP`,
+`implement.toml` und die Review-Abläufe (`map.toml` …) hinausgeht (adaptive Schnitte mit `PASS_STEP`,
 Größen-Gate, Vorgangsauswahl aus bd, Messprofile), ist Entwurf. Wo es
 umgesetzt wird, dann als weitere Zustände und Kanten eines Ablaufs, nicht als
 eigene Schleifen-Schicht.

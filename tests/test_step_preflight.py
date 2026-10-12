@@ -6,7 +6,6 @@ import shlex
 import subprocess
 import sys
 from datetime import UTC, datetime
-from functools import partial
 from pathlib import Path
 
 import pytest
@@ -14,7 +13,6 @@ from plumbum import local
 from plumbum.machines.local import LocalMachine
 
 from ki_dev.flow import templates
-from ki_dev.flow.planning import load_planning_flow
 from ki_dev.ops.checks.options import (
     PreflightOptionError,
     apply_preflight_options,
@@ -36,13 +34,10 @@ from ki_dev.ops.checks.preflight import (
 )
 from ki_dev.ops.context.bead_input import BeadInput
 from tests.turn_helpers import (
-    render_review_handoff as _render_review_handoff,
+    render_review_handoff,
 )
 
-FLOW = load_planning_flow()
-render_review_handoff = partial(_render_review_handoff, flow=FLOW)
-
-PARTIAL_RUN_NOTE = templates.text("planning", "partial-run-note")
+PARTIAL_RUN_NOTE = templates.text("review", "partial-run-note")
 
 
 def _git(repo: Path, *args: str) -> str:

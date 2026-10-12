@@ -1,13 +1,17 @@
 # Manuelle Arbeitsübergaben mit `ki-dev step`
 
-`ki-dev step` ist eine Projektion des Ausführers für den Planungsablauf
-([`src/ki_dev/flow/planning.toml`](../src/ki_dev/flow/planning.toml)) mit dem
-Adapter `manual`: Ein Aufruf nimmt die Kante seines Startereignisses, fährt
+`ki-dev step` führt einen Turn eines Paketablaufs mit dem Executor
+`manual` aus. Die Abläufe gehören zum Paket, nicht zu step:
+[`map`](../src/ki_dev/flow/map.toml), [`graph`](../src/ki_dev/flow/graph.toml),
+[`materialize`](../src/ki_dev/flow/materialize.toml) und
+[`implement_review`](../src/ki_dev/flow/implement_review.toml) (bis
+ki-dev-ablauf-ige.6 neben `implement.toml`); `--step` bzw. `--review-of`
+wählt den Ablauf. Ein Aufruf nimmt die Kante seines Startereignisses, fährt
 Maschinenzustände wie den Vorlauf (`implement.preflight`) selbst und hält beim
 nächsten `turn` (Übergabe an eine Sitzung) oder `ask` (der Mensch entscheidet).
 Der Ausführer ist ein Lauf je Bead (`src/ki_dev/runner/planning.py`) auf
 python-statemachine wie `ki-dev -f implement`; das `[statechart]` erzeugt die
-Mustererweiterung aus `planning.toml`. Bei `turn` und `ask` hält er, der
+Mustererweiterung des gewählten Ablaufs. Bei `turn` und `ask` hält er, der
 Prozess endet. step wählt aus Halt und
 genommenem Weg die Vorlage und gibt sie aus, der Mensch trägt sie als Bote
 weiter (den Umsetzungsablauf fährt `ki-dev -f implement`, siehe [Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
@@ -32,9 +36,10 @@ Teillauf“) und protokolliert jede genommene Kante in `events.jsonl` (wie
 Thread wartet; nach rotem Vorlauf beendet ein PASS den Lauf nicht. `ki-dev step BEAD_ID`
 ohne `--step` setzt fort: nach dem Schreiben folgt das Review, nach der
 Korrektur die Folgerunde; in Review, Entscheidung und Quelle nennt step die
-Folgeschritte. Ein ausdrückliches `--step` beginnt dort; weicht das vom
-letzten Halt ab, steht ein Hinweis auf stderr und im Protokoll die Zeile
-`letzter Halt --@jump--> Start`, die `check_conformance` meldet.
+Folgeschritte. Ein ausdrückliches `--step` beginnt dort; weicht das im
+selben Ablauf vom letzten Halt ab, steht ein Hinweis auf stderr und im
+Protokoll die Zeile `letzter Halt --@jump--> Start`, die
+`check_conformance` meldet. Ein anderer Ablauf beginnt einen neuen Lauf.
 Der Zustand ist lokaler Arbeitsstand, nicht Teil von bd/Dolt.
 
 **Transport.** step und `ki-dev -f implement` übergeben an den Boten über dieselbe
@@ -42,7 +47,7 @@ Funktion des Adapters `manual` (`ki_dev.adapter.manual.send`); nur die
 Transportart unterscheidet sich: `run` legt die Eingabe im Posteingang ab
 (`ki-dev -f implement resume`), step gibt sie auf stdout aus und liest die Antwort aus
 `--decision-file DATEI|-`. Gerendert wird jede Übergabe vom Ausführer
-(`ki_dev.runner.turns`) aus der Deklaration in `planning.toml`: Vorlage und
+(`ki_dev.runner.turns`) aus der Deklaration im Ablauf: Vorlage und
 Kontextbausteine je Zustand oder, wenn die Kante sie bestimmt, je Übergang.
 Jede Übergabe nennt am Ende ihre Versuchskennung (`Versuch: …`).
 
@@ -239,7 +244,7 @@ Versuch, wie `run_id` und `round_id` bei `ki-dev -f implement`: fehlt `attempt` 
 gehört es zu einem früheren Versuch (etwa nach einem neuen Vorlauf oder einer
 Korrekturrunde), ist das Exit 2 und der Lauf bleibt unverändert.
 
-`event` ist ein Review-Ereignis von `planning.toml`: `PASS` oder eine
+`event` ist ein Review-Ereignis des Ablaufs: `PASS` oder eine
 Befundklasse (`fix`, `source`, `decision`); das Urteil (`CHANGES`,
 `NEEDS_DECISION`) folgt aus der Klasse (`escalate` gibt es nur in
 `implement.toml`). Nicht-PASS braucht `detail`. `requirement_ref` ist immer
@@ -415,18 +420,21 @@ Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen
 
 Der Block „Hinweis für den Menschen“ am Ende jeder Übergabe nennt die
 Folgeschritte des aktuellen Zustands aus der
-[Planungsablauf](#zustände-und-befundklassen-planningtoml); du trägst sie
+[Ablaufs](#zustände-und-befundklassen); du trägst sie
 weiter.
 
-## Zustände und Befundklassen (`planning.toml`)
+## Zustände und Befundklassen
 
-Jede Phase hat eigene Zustände; der Ablauf
-[`src/ki_dev/flow/planning.toml`](../src/ki_dev/flow/planning.toml) ist
-Daten, kein Code. Das gemeinsame Ablaufformat
+Jeder Ablauf ist eine Phase mit eigenen Zuständen aus dem Muster
+[`flow/patterns/review.toml`](../src/ki_dev/flow/patterns/review.toml);
+der Katalog liefert auch Vokabular, Befundklassen und die Zustände
+`source` und `finished`. Abläufe sind Daten, kein Code. Das gemeinsame
+Ablaufformat
 (`src/ki_dev/flow/model.py`) prüft ihn per JSON Schema und mit benannten
 Regeln: Jedes Ziel existiert, jedes Review kennt die Pflichtereignisse seiner
-Art (`[pflicht]` in der Datei), und von jedem Zustand führt ein Weg zu
-`finished`.
+Art (`[required]` im Katalog), und von jedem Zustand führt ein Weg zu
+`finished`. PASS führt nach `finished`; der Hinweis nennt den nächsten
+Ablauf (`ki-dev step BEAD --step graph`).
 
 | Zustand | Wer | Bedeutung |
 | --- | --- | --- |
@@ -449,12 +457,12 @@ Review-Befunde tragen eine Klasse. Das Urteil folgt der stärksten Klasse
 Beispiel: Ein Graph-Review findet eine offene Frage.
 
 ```text
-graph.review --quelle--> quelle          Planungssitzung mit dem Menschen
-quelle --importiert--> map               ki-dev step map --agent claude --session S2 --title T
-                                         Agent ergänzt die bestehende Karte K
-map --erledigt--> map.review             ki-dev step K --step review --review-of map
-map.review --PASS--> graph               ki-dev step K --step graph
-                                         Agent ergänzt die bestehenden Vorgänge
+graph.review --source--> source          Planungssitzung mit dem Menschen
+source --imported--> finished            ki-dev step map --agent claude --session S2 --title T
+map (neuer Lauf)                         Agent ergänzt die bestehende Karte K
+map --done--> map.review                 ki-dev step K --step review --review-of map
+map.review --PASS--> finished            ki-dev step K --step graph
+graph (neuer Lauf)                       Agent ergänzt die bestehenden Vorgänge
 ```
 
 Eine Entscheidung ohne erneutes Review (`accept`) hält der Mensch im Bead

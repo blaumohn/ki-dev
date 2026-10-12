@@ -7,6 +7,7 @@ from typing import Annotated, NoReturn
 import typer
 
 from ki_dev.adapter.manual import TransportReadError, send
+from ki_dev.ops.checks import PREFLIGHT
 from ki_dev.ops.checks.options import PreflightOptionError
 from ki_dev.ops.checks.preflight import PreflightConfigError
 from ki_dev.ops.checks.stand import StandError
@@ -23,7 +24,7 @@ from ki_dev.ops.context.limit_config import (
     LimitConfigReadError,
 )
 from ki_dev.runner.planning import Halt, StaleHaltError
-from ki_dev.step.boundary import CONSOLE, planning_flow
+from ki_dev.step.boundary import CONSOLE, bound_flow
 from ki_dev.step.exits import fail
 from ki_dev.step.feedback import DecisionInputError, NextTurnInputError
 from ki_dev.step.forms import LOCAL_WORD, MAP_WORD, local_form, map_form
@@ -32,7 +33,9 @@ from ki_dev.step.options import (
     Inputs,
     PreflightValues,
     check_decision_options,
+    flow_name,
     review_options,
+    review_target,
 )
 from ki_dev.step.projection import bead_output
 from ki_dev.step.state import (
@@ -209,13 +212,25 @@ def _bead_form(
     if step is None:
         _continue(bead_id, saved, review_of, options, next_turn, inputs)
         return
+    flow = bound_flow(flow_name(step, review_of))
+    if saved is not None and saved.flow != flow.flow.name:
+        # Ein anderer Ablauf ist ein neuer Lauf, kein Sprung.
+        saved = None
+    preflight = flow.binds(PREFLIGHT)
     extra = review_options(
-        step, review_of, options, next_turn, inputs.feedback
+        step, review_of, preflight, options, next_turn, inputs.feedback
     )
-    check_decision_options(review_of, options, next_turn, inputs)
+    check_decision_options(preflight, options, next_turn, inputs)
     try:
         output = bead_output(
-            bead_id, step, review_of, extra, next_turn, inputs, saved
+            bead_id,
+            flow,
+            step,
+            review_of,
+            extra,
+            next_turn,
+            inputs,
+            saved,
         )
     except (
         InvalidBeadIdError,
@@ -287,14 +302,13 @@ def _continue(
             "--step STEP",
             code=2,
         )
-    flow = planning_flow()
+    flow = bound_flow(saved.flow)
     kind = flow.flow.state(saved.state).kind
-    phase = saved.state.partition(".")[0]
     if kind in ("write", "correction"):
         _bead_form(
             bead_id,
             Step.REVIEW,
-            ReviewTarget(phase),
+            review_target(saved.flow),
             PreflightValues([], []),
             kind == "correction",
             Inputs(None, None),

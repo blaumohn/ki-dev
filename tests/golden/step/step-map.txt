@@ -27,7 +27,7 @@ Quellenreferenzen (unaufgelöst):
 - a.md#L1-L2
 - bd:k
 
-Hinweis für den Menschen: Zustand map; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand map; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
 - done → map.review: `ki-dev step KARTE --step review --review-of map` (KARTE = erstellte oder ergänzte Karte)
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)

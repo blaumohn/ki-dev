@@ -36,9 +36,28 @@ class PreflightRequest(NamedTuple):
 
 NO_PREFLIGHT_OPTIONS = PreflightRequest({}, {})
 
+# Übergang bis ki-dev-ablauf-ige.6: der Handablauf implement liegt in
+# implement_review.toml neben dem Agentenablauf implement.toml.
+_FILES = {ReviewTarget.IMPLEMENT.value: "implement_review"}
+
+def flow_name(step: Step, review_of: ReviewTarget | None) -> str:
+    """Ablauf des Aufrufs (``flow/<NAME>.toml``): bei ``--step review``
+    der Prüfgegenstand (ohne Angabe implement), sonst der Schritt."""
+    if step is Step.REVIEW:
+        target = (review_of or ReviewTarget.IMPLEMENT).value
+    else:
+        target = step.value
+    return _FILES.get(target, target)
+
+def review_target(flow: str) -> ReviewTarget:
+    """Prüfgegenstand eines gespeicherten Ablaufs (Umkehrung)."""
+    names = {name: target for target, name in _FILES.items()}
+    return ReviewTarget(names.get(flow, flow))
+
 def review_options(
     step: Step,
     review_of: ReviewTarget | None,
+    preflight: bool,
     options: PreflightValues,
     next_turn: bool,
     feedback_file: str | None,
@@ -47,7 +66,7 @@ def review_options(
     Lesen prüfen.
 
     Gibt die zerlegten Vorlauf-Optionen zurück; sie gelten nur für den
-    Vorlauf (Prüfgegenstand implement).
+    Vorlauf (``preflight``: der Ablauf bindet ihn).
     """
     if review_of is not None and step is not Step.REVIEW:
         fail(
@@ -66,10 +85,7 @@ def review_options(
         )
     if not options:
         return NO_PREFLIGHT_OPTIONS
-    if step is not Step.REVIEW or review_of not in (
-        None,
-        ReviewTarget.IMPLEMENT,
-    ):
+    if step is not Step.REVIEW or not preflight:
         fail(
             "--preflight-args/--preflight-skip gelten nur für den "
             "Vorlauf: --step review (Prüfgegenstand implement)",
@@ -84,7 +100,7 @@ def review_options(
         fail(f"Aufruf ungültig: {exc}", code=2)
 
 def check_decision_options(
-    review_of: ReviewTarget | None,
+    preflight: bool,
     options: PreflightValues,
     next_turn: bool,
     inputs: Inputs,
@@ -98,7 +114,7 @@ def check_decision_options(
             "--decision-file ist nur zusammen mit --next-turn zulässig",
             code=2,
         )
-    if review_of not in (None, ReviewTarget.IMPLEMENT) or options:
+    if not preflight or options:
         fail(
             "--decision-file gilt nur für die Umsetzungs-Review, ohne "
             "--preflight-args/--preflight-skip",

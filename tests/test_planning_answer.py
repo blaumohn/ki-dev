@@ -8,7 +8,7 @@ import json
 import pytest
 
 from ki_dev.adapter.contract import RunTask
-from ki_dev.flow.planning import load_planning_flow
+from ki_dev.flow.review_flow import load_review_flow
 from ki_dev.ops.checks.options import CONTROL_SCHEMA, check_control
 from ki_dev.review_decision import ReviewContractError
 from ki_dev.runner import review_output
@@ -19,7 +19,7 @@ from ki_dev.runner.review_output import (
     parse_review_decision,
 )
 
-FLOW = load_planning_flow().flow
+FLOW = load_review_flow("implement_review").flow
 REFS = ["AC1", "AC2"]
 
 

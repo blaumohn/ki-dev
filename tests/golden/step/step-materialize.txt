@@ -22,7 +22,7 @@ Quellenreferenzen (unaufgelöst):
 - a.md#L1-L2
 - bd:k
 
-Hinweis für den Menschen: Zustand materialize; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand materialize; Folgeschritte laut materialize.toml (Adapter manual, du trägst sie weiter):
 - done → materialize.review: `ki-dev step x-1 --step review --review-of materialize`
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)

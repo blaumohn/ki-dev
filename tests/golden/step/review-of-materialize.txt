@@ -37,11 +37,11 @@ Quellenreferenzen (unaufgelöst):
 - a.md#L1-L2
 - bd:k
 
-Hinweis für den Menschen: Zustand materialize.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand materialize.review; Folgeschritte laut materialize.toml (Adapter manual, du trägst sie weiter):
 - fix → materialize.correction: Befunde an den Materialisierungsagenten (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → materialize.decision: du entscheidest: accept, correct oder source
-- PASS → implement: `ki-dev step x-1 --step implement`
+- PASS → finished: `ki-dev step x-1 --step implement`
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt

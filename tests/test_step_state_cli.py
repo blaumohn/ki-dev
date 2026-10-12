@@ -19,7 +19,7 @@ from tests.test_step_cli import FULL, _command, _preflight_project
 from tests.turn_helpers import attempt_of
 
 runner = CliRunner()
-PLANNING = load_flow("planning")
+IMPLEMENT_REVIEW = load_flow("implement_review")
 FAIL = "import sys; sys.exit(1)"
 
 
@@ -79,7 +79,7 @@ def test_continue_after_writing_runs_preflight_and_hands_to_review(
         ("implement", "done", "manual"),
         ("implement.preflight", "checks_passed", "ki-dev"),
     ]
-    assert check_conformance(PLANNING, events) == []
+    assert check_conformance(IMPLEMENT_REVIEW, events) == []
 
 
 def test_continue_after_red_preflight_is_the_next_turn(
@@ -158,34 +158,32 @@ def test_continue_at_review_lists_the_next_steps(bd, project):
 def test_jump_is_noted_and_visible_in_the_log(
     bd, project, step_state_root
 ):
+    """Innerhalb eines Ablaufs: Review von map, dann neu bei map."""
     project()
     runner.invoke(
         app, ["step", "x-1", "--step", "review", "--review-of", "map"]
     )
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = runner.invoke(app, ["step", "x-1", "--step", "map"])
     assert result.exit_code == 0
     assert "letzter Halt map.review" in result.stderr
-    problems = check_conformance(PLANNING, _events(step_state_root))
-    assert problems == [
-        "1: keine Kante map.review --@jump--> implement"
-    ]
+    problems = check_conformance(
+        load_flow("map"), _events(step_state_root)
+    )
+    assert problems == ["1: keine Kante map.review --@jump--> map"]
 
 
-def test_jump_without_any_edge_is_still_logged(
+def test_other_flow_is_a_new_run_not_a_jump(
     bd, project, step_state_root
 ):
-    """--step implement, dann --step map: keiner der Aufrufe nimmt eine
-    Kante, der Sprung steht trotzdem im Protokoll."""
+    """--step implement, dann --step map: ein anderer Ablauf beginnt
+    einen neuen Lauf; kein Sprung im Protokoll."""
     project()
     runner.invoke(app, ["step", "x-1", "--step", "implement"])
-    runner.invoke(app, ["step", "x-1", "--step", "map"])
-    events = _events(step_state_root)
-    assert [(e["state"], e["event"], e["target"]) for e in events] == [
-        ("implement", "@jump", "map")
-    ]
-    assert check_conformance(PLANNING, events) == [
-        "0: keine Kante implement --@jump--> map"
-    ]
+    result = runner.invoke(app, ["step", "x-1", "--step", "map"])
+    assert result.exit_code == 0
+    assert "letzter Halt" not in result.stderr
+    assert _events(step_state_root) == []
+    assert load_state("x-1").flow == "map"
 
 
 def test_pass_while_waiting_in_correction_is_refused(
@@ -298,7 +296,7 @@ def test_pass_after_change_runs_preflight_again(
         ("implement.review", "PASS"),
         ("implement.preflight", "checks_passed"),
     ]
-    assert check_conformance(PLANNING, events) == []
+    assert check_conformance(IMPLEMENT_REVIEW, events) == []
 
 
 def test_answer_file_in_project_is_not_a_change(

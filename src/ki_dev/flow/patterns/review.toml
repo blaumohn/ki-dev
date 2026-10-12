@@ -1,8 +1,112 @@
 # Gemeinsame Review-Muster: Schreiben, getrenntes Review, Korrektur,
-# Entscheidung. Ein Ablauf lädt sie mit `pattern_catalog = ["review"]`;
-# Zustandsarten, Ereignisse, Vorlagen und Kontextbausteine prüft der
-# ladende Ablauf gegen sein Vokabular (flow/model.py).
+# Entscheidung. Ein Ablauf lädt sie mit `pattern_catalog = ["review"]`
+# und erhält dazu die gemeinsamen Teile dieser Datei: Vokabular,
+# Pflichtereignisse, Befundklassen und die Zustände source und
+# finished. Ein Ablauf darf sie nicht überschreiben; er liefert nur
+# Phasen, Bindungen und Parameter (flow/model.py).
 #
+# Jede Phase hat eigene Zustände:
+#   P             Schreibsitzung (erstellt oder ergänzt das Ergebnis)
+#   P.review      getrennte Review-Sitzung
+#   P.correction  Schreibagent behebt Befunde der Klasse fix
+#   P.decision    der Mensch entscheidet
+# Die Korrekturschleife ist nur eine Rückkante
+# (P.review --fix--> P.correction --done--> P.review), keine eigene
+# Ebene. Ein Review endet mit PASS oder mit der stärksten Befundklasse
+# nach `priority`; das Urteil (CHANGES/NEEDS_DECISION) folgt aus der
+# Klasse. `hint` ist die Übergabe an den Menschen als Boten
+# (Adapter manual, `ki-dev step`); {bead} setzt ki-dev ein.
+#
+final = ["finished"]
+priority = ["decision", "source", "fix"]
+
+[vocabulary]
+kinds = [
+  "write", "review", "correction", "decision", "source", "machine", "final",
+]
+events = [
+  "PASS", "done", "fix", "source", "decision",
+  "accept", "correct", "imported",
+  "checks_passed", "checks_partial", "checks_failed",
+]
+# full_checks: der letzte Vorlauf lief vollständig (kein Teillauf);
+# ohne ihn gibt es kein PASS. unchanged: Arbeitsbaum und Bead sind
+# seit dem Vorlauf unverändert (synchron verglichen, wie freeze bei run).
+guards = ["full_checks", "unchanged"]
+# Was der Ausführer beim Betreten tut: turn = Übergabe an eine Sitzung
+# (Adapter manual: Ausgabe für den Menschen als Boten), ask = der Mensch
+# entscheidet, checks = deterministischer Vorlauf (läuft automatisch).
+# Vorlage und Kontext einer Übergabe stehen an der Operation des
+# Zustands oder, wenn die Kante sie bestimmt (Nachricht am Übergang),
+# an der Kante; gilt die letzte Kante des Weges mit Vorlage, sonst die
+# Operation des Haltezustands.
+operations = ["turn", "ask", "checks"]
+# Kontextbausteine einer Übergabe (turn), in der deklarierten
+# Reihenfolge nach der Rollenvorlage: finding_classes = Befundklassen
+# für Review-Rollen, epic_sections = Hinweise der Eltern-Epics,
+# source_refs = Quellenreferenzen (unaufgelöst), criteria = Referenzen
+# der Abnahmekriterien, next_steps = Folgeschritte laut Kanten dieses
+# Ablaufs, reading_hint = Lesehinweis des Sitzungsimports, report =
+# Vorlaufbericht (report_followup: mit Leerzeile davor), guidelines =
+# Leitlinien (docs/policies, je Phase), feedback_review/feedback_repair
+# = Rückmeldung des Schreibagenten, human_note = Hinweis an den
+# Menschen, finding = Befund des Vorlaufs, control = vorgeschlagene
+# Prüfsteuerung. Was ein Baustein liefert, steckt der Aufrufer ein
+# (ki-dev step: ki_dev.ops.context.blocks). Die Kopfzeilen und gemeinsamen
+# Regeln stehen in der Vorlage.
+context = [
+  "finding_classes", "epic_sections", "source_refs", "criteria",
+  "next_steps", "attempt", "reading_hint", "report", "report_followup",
+  "guidelines", "feedback_review", "feedback_repair", "human_note",
+  "finding", "control",
+]
+
+# Pflichtereignisse je Zustandsart: jeder Zustand dieser Art muss sie
+# behandeln, sonst bleibt ein Ausgang einer Sitzung ohne Folge.
+[required]
+write = ["done"]
+review = ["PASS", "fix", "source", "decision"]
+correction = ["done"]
+decision = ["accept", "correct", "source"]
+source = ["imported"]
+machine = ["checks_passed", "checks_partial", "checks_failed"]
+
+[finding_class.fix]
+verdict = "CHANGES"
+text = "aus vorhandenen Quellen korrigierbar"
+
+[finding_class.source]
+verdict = "NEEDS_DECISION"
+text = "offene Frage, braucht eine neue Quelle"
+
+[finding_class.decision]
+verdict = "NEEDS_DECISION"
+text = "nur der Mensch kann entscheiden"
+
+# --- gemeinsame Zustände ----------------------------------------------
+
+[[state]]
+id = "source"
+kind = "source"
+actor = "Mensch (Planungssitzung)"
+operation = [
+  { do = "ask", template = "decision-other", context = [
+    { use = "next_steps" }, { use = "control" }, { use = "attempt" },
+  ] },
+]
+
+[[state]]
+id = "finished"
+kind = "final"
+actor = "Mensch"
+
+# Neue Quelle: immer über die bestehende Karte (neuer Lauf map).
+[[transition]]
+source = "source"
+event = "imported"
+target = "finished"
+hint = "`ki-dev step map --agent AGENT --session SITZUNG --title TITEL`; bestehende Karte ergänzen, keine zweite"
+
 # --- Muster: Schreiben, getrenntes Review, Korrektur, Entscheidung ----
 # Lokale Zustände: write heißt wie die Phase, die übrigen PHASE.LOKAL.
 # Kantenziele: lokaler Zustand, @next (nächste Phase) oder globals.

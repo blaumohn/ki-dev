@@ -1,12 +1,10 @@
 """Einheiten für Grenze, Leser und Vorlagen von ``--next-turn``."""
 
 import io
-from functools import partial
 
 import pytest
 
 from ki_dev.adapter.manual import Console, TransportReadError
-from ki_dev.flow.planning import load_planning_flow
 from ki_dev.ops.context.bead_input import BeadInput
 from ki_dev.ops.context.contract import ReviewTarget
 from ki_dev.step.feedback import (
@@ -17,12 +15,7 @@ from ki_dev.step.feedback import (
     load_feedback_max_chars,
     read_feedback,
 )
-from tests.turn_helpers import render_repair_turn as _render_repair_turn
-from tests.turn_helpers import render_review_turn as _render_review_turn
-
-FLOW = load_planning_flow()
-render_repair_turn = partial(_render_repair_turn, flow=FLOW)
-render_review_turn = partial(_render_review_turn, flow=FLOW)
+from tests.turn_helpers import render_repair_turn, render_review_turn
 
 ISSUE = BeadInput(
     id="x-1",

@@ -59,8 +59,9 @@ def bind_turns[T](
     """Ablauf und Aufrufer sprechen dieselben Namen.
 
     Jede Operation aus ``turn_operations`` nennt eine Vorlage; die
-    Kontextbausteine des Ablaufs sind genau die eingesteckten; die
-    Felder sind genau die Platzhalter der genannten Vorlagen."""
+    Kontextbausteine des Ablaufs sind genau die eingesteckten; jeder
+    Platzhalter der genannten Vorlagen ist eingesteckt. Ein Satz Felder
+    dient mehreren Abläufen; jeder nutzt davon, was er braucht."""
     wanted = set(turn_operations)
     declared = set(flow.vocabulary.context)
     _same(flow, "Kontextbausteine", declared, set(plug.blocks))
@@ -74,7 +75,12 @@ def bind_turns[T](
                 )
     for turn in declared_turns(flow):
         used |= _identifiers(flow, turn)
-    _same(flow, "Felder", used, set(plug.fields))
+    missing = sorted(used - set(plug.fields))
+    if missing:
+        raise FlowError(
+            f"{flow.name}.toml: Felder fehlen beim Aufrufer: "
+            f"{', '.join(missing)}"
+        )
 
 
 def declared_turns(flow: Flow) -> list[Turn]:
@@ -94,7 +100,7 @@ def render_turn[T](
 ) -> Rendered:
     """Vorlage füllen, danach die Bausteine in deklarierter
     Reihenfolge."""
-    source = Template(text(flow.name, turn.template))
+    source = Template(text(flow.templates, turn.template))
     values = {
         name: plug.fields[name](subject)
         for name in source.get_identifiers()
@@ -109,7 +115,7 @@ def render_turn[T](
 
 
 def _identifiers(flow: Flow, turn: Turn) -> set[str]:
-    source = Template(text(flow.name, turn.template))
+    source = Template(text(flow.templates, turn.template))
     return set(source.get_identifiers())
 
 

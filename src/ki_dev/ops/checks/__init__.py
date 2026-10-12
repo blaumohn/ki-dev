@@ -2,5 +2,5 @@
 (Vorlauf), Konfiguration in ``[tool.ki-dev.handoff.preflight]``."""
 
 PREFLIGHT = "checks.preflight"
-"""Katalogname des Vorlaufs; ``planning.toml`` bindet ihn an
+"""Katalogname des Vorlaufs; ``implement_review.toml`` bindet ihn an
 ``[op.checks]``."""

@@ -11,7 +11,7 @@ import typer
 
 from ki_dev.adapter.manual import Console
 from ki_dev.flow.model import FlowError
-from ki_dev.flow.planning import PlanningFlow, load_planning_flow
+from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.checks.preflight import (
     PreflightConfig,
     load_preflight_config,
@@ -37,16 +37,16 @@ from ki_dev.step.feedback import load_feedback_max_chars
 from ki_dev.step.turn import bind_flow
 
 
-def planning_flow() -> PlanningFlow:
-    """Zustandstabelle an der I/O-Grenze laden und an die eingesteckten
-    Felder und Kontextbausteine binden; eine ungültige mitgelieferte
-    Tabelle ist ein Programmfehler (Exit 1)."""
+def bound_flow(name: str) -> ReviewFlow:
+    """step-Ablauf an der I/O-Grenze laden und an die eingesteckten
+    Felder und Kontextbausteine binden; ein ungültiger mitgelieferter
+    Ablauf ist ein Programmfehler (Exit 1)."""
     try:
-        flow = load_planning_flow()
+        flow = load_review_flow(name)
         bind_flow(flow)
         return flow
     except FlowError as exc:
-        fail(f"Planungsablauf ungültig: {exc}", code=1)
+        fail(f"Ablauf {name} ungültig: {exc}", code=1)
 
 def base_limit() -> int:
     """Basisgrenze vor jeder Schreibwirkung lesen (Exit 2 ungültig,

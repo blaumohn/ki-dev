@@ -13,10 +13,10 @@ from ki_dev.adapter.executors.session_transcript import (
     SessionTranscript,
 )
 from ki_dev.adapter.executors.transcript import read_session_transcript
-from ki_dev.flow.planning import NAME, PlanningFlow
+from ki_dev.flow.review_flow import TEMPLATES, ReviewFlow
 from ki_dev.flow.templates import render, text
 from ki_dev.ops.context.beads_reader import read_issue
-from ki_dev.ops.context.blocks import TurnInput, flow_state, state_turn
+from ki_dev.ops.context.blocks import TurnInput, state_turn
 from ki_dev.ops.context.contract import Step
 from ki_dev.ops.context.guidelines import GuidelineSection
 from ki_dev.step.beads_source import (
@@ -40,7 +40,7 @@ def map_handoff(
     workdir: Path,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
-    flow: PlanningFlow,
+    flow: ReviewFlow,
 ) -> str:
     """Kurzer map-Auftrag; schreibt Snapshot und Quellen-Bead.
 
@@ -67,13 +67,13 @@ def map_handoff(
             "Quellen-Bead verweist nicht auf das lokale Artefakt"
         )
     require_valid(issue, Step.MAP, None)
-    state = flow_state(Step.MAP, None)
+    state = flow.flow.start
     subject = TurnInput(
         issue,
         flow,
         state,
         guidelines=guidelines,
-        reading_hint=text(NAME, "map-reading-hint"),
+        reading_hint=text(TEMPLATES, "map-reading-hint"),
     )
     return hand_over(
         flow, state_turn(flow, state), subject, base_max_chars
@@ -89,9 +89,9 @@ def _source_bead(
     }
     return SourceBead(
         key=source_key(transcript),
-        title=render(NAME, "source-bead-title", **values),
+        title=render(TEMPLATES, "source-bead-title", **values),
         description=render(
-            NAME,
+            TEMPLATES,
             "source-bead",
             **values,
             digest=transcript.source_digest,

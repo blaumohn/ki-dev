@@ -8,16 +8,34 @@ import re
 from collections.abc import Sequence
 
 from ki_dev.flow.model import Turn
-from ki_dev.flow.planning import PlanningFlow
+from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.checks.preflight import PreflightReport
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.ops.context.blocks import TurnInput, flow_state, state_turn
+from ki_dev.ops.context.blocks import TurnInput, state_turn
 from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import GuidelineSection
+from ki_dev.step.options import _FILES as FILES
 from ki_dev.step.turn import hand_over, require_valid
 
 
-def turn_after(flow: PlanningFlow, source: str, event: str) -> Turn:
+def phase_flow(state: str) -> ReviewFlow:
+    """Der Ablauf, zu dem ein Zustand gehört (``map.review`` →
+    ``flow/map.toml``)."""
+    phase = state.partition(".")[0]
+    return load_review_flow(FILES.get(phase, phase))
+
+
+def handoff_state(
+    step: Step, review_target: ReviewTarget | None = None
+) -> str:
+    """Zustand der ersten Übergabe eines step-Aufrufs."""
+    if step is Step.REVIEW:
+        target = review_target or ReviewTarget.IMPLEMENT
+        return f"{target.value}.review"
+    return step.value
+
+
+def turn_after(flow: ReviewFlow, source: str, event: str) -> Turn:
     """Übergabe nach genau dieser Kante (ohne Wächter)."""
     edge = flow.flow.candidates(source, event)[0]
     return edge.turn or state_turn(flow, edge.target)
@@ -30,13 +48,15 @@ def render_handoff(
     guidelines: Sequence[GuidelineSection] = (),
     base_max_chars: int | None = None,
     *,
-    flow: PlanningFlow,
+    flow: ReviewFlow | None = None,
     reading_hint: str | None = None,
     report: PreflightReport | None = None,
 ) -> str:
-    """Erste Übergabe eines Schritts (validiert wie step)."""
+    """Erste Übergabe eines Schritts (validiert wie step); ohne
+    ``flow`` der mitgelieferte Ablauf des Zustands."""
     require_valid(issue, step, review_target)
-    state = flow_state(step, review_target)
+    state = handoff_state(step, review_target)
+    flow = flow or phase_flow(state)
     subject = TurnInput(
         issue,
         flow,
@@ -55,7 +75,6 @@ def render_base_handoff(
     step: Step,
     review_target: ReviewTarget | None = None,
     *,
-    flow: PlanningFlow,
     reading_hint: str | None = None,
     max_chars: int | None = None,
 ) -> str:
@@ -65,7 +84,6 @@ def render_base_handoff(
         step,
         review_target,
         base_max_chars=max_chars,
-        flow=flow,
         reading_hint=reading_hint,
     )
 
@@ -74,14 +92,11 @@ def render_review_handoff(
     issue: BeadInput,
     report: PreflightReport,
     guidelines: Sequence[GuidelineSection] = (),
-    *,
-    flow: PlanningFlow,
 ) -> str:
     return render_handoff(
         issue,
         Step.REVIEW,
         guidelines=guidelines,
-        flow=flow,
         report=report,
     )
 
@@ -92,10 +107,10 @@ def render_review_turn(
     report: PreflightReport | None,
     feedback: str | None,
     *,
-    flow: PlanningFlow,
     pass_allowed: bool,
 ) -> str:
     """Folgenachricht an das Review nach einer Korrektur."""
+    flow = load_review_flow(FILES.get(target.value, target.value))
     subject = TurnInput(
         issue,
         flow,
@@ -113,10 +128,9 @@ def render_repair_turn(
     finding: str,
     limit: int,
     feedback: str | None,
-    *,
-    flow: PlanningFlow,
 ) -> str:
     """Reparaturnachricht an den Umsetzer nach rotem Vorlauf."""
+    flow = load_review_flow("implement_review")
     subject = TurnInput(
         issue,
         flow,

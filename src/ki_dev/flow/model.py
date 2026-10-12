@@ -172,6 +172,9 @@ class Flow:
     transitions: tuple[Transition, ...]
     finding_classes: Mapping[str, FindingClass]
     priority: tuple[str, ...]
+    templates: str = ""
+    """Vorlagensatz unter ``flow/templates/<SATZ>/``; leer = ``name``.
+    Mehrere Abläufe eines Pakets teilen einen Satz."""
     # Modul, das die Operationen dieses Ablaufs umsetzt (Ops des
     # Pakets); fehlt es, ist der Ablauf nur Daten (z. B. Diagramm).
     ops: str | None = None
@@ -329,10 +332,14 @@ def parse_flow(raw: object) -> Flow:
 
 
 def with_pattern_catalog(raw: object) -> object:
-    """Gemeinsame Muster aus ``flow/patterns`` einsetzen
-    (``pattern_catalog``); eigene Muster überschreiben sie nicht."""
+    """Gemeinsame Muster und Teile aus ``flow/patterns`` einsetzen
+    (``pattern_catalog``). Ein Katalog darf neben ``[pattern]``
+    gemeinsame Abschnitte tragen (Vokabular, Befundklassen, Zustände):
+    Listen (``state``, ``transition``) werden angehängt, alles andere
+    darf der Ablauf nicht überschreiben."""
     if not isinstance(raw, dict) or "pattern_catalog" not in raw:
         return raw
+    raw = dict(raw)
     _check_schema(
         raw["pattern_catalog"],
         Draft202012Validator(
@@ -357,10 +364,20 @@ def with_pattern_catalog(raw: object) -> object:
                 f"pattern_catalog.{name}: unbekannt"
             ) from exc
         _check_schema(library, _PATTERN_VALIDATOR)
-        for key, value in library["pattern"].items():
+        for key, value in library.pop("pattern").items():
             if key in patterns:
                 raise FlowError(f"pattern_catalog.{key}: doppelt")
             patterns[key] = value
+        for key, value in library.items():
+            if key in _SHARED_LISTS:
+                raw[key] = [*raw.get(key, ()), *value]
+            elif key in raw:
+                raise FlowError(
+                    f"{key}: überschreibt gemeinsamen Teil aus "
+                    f"pattern_catalog.{name}"
+                )
+            else:
+                raw[key] = value
     local = raw.get("pattern", {})
     if local:
         _check_schema({"pattern": local}, _PATTERN_VALIDATOR)
@@ -370,6 +387,9 @@ def with_pattern_catalog(raw: object) -> object:
         **{k: v for k, v in raw.items() if k != "pattern_catalog"},
         "pattern": {**patterns, **local},
     }
+
+
+_SHARED_LISTS = ("state", "transition")
 
 
 def _parse_statechart(raw: dict) -> Flow:
@@ -415,6 +435,7 @@ def _flow(
             for name, item in table.get("finding_class", {}).items()
         },
         priority=tuple(table.get("priority", ())),
+        templates=table.get("templates", table["name"]),
         ops=table.get("ops"),
         bindings=parse_bindings(table.get("op", {})),
     )
@@ -551,6 +572,7 @@ _SCHEMA = {
     },
     "properties": {
         "name": _ID,
+        "templates": _ID,
         "ops": {"type": "string", "pattern": r"^[a-z_]+(\.[a-z_]+)*$"},
         "op": BINDINGS_SCHEMA,
         "start": _ID,
@@ -913,7 +935,7 @@ def _check_operations(flow: Flow, where: str) -> None:
                 "Kontextbausteine",
             )
             if op.template is not None:
-                _require_template(flow.name, op.template, label)
+                _require_template(flow.templates, op.template, label)
             if op.failure is not None and not any(
                 t.source == state.id and t.event == op.failure
                 for t in flow.transitions
@@ -973,7 +995,7 @@ def _check_transitions(flow: Flow, where: str) -> None:
                 f"{label}.context",
                 "Kontextbausteine",
             )
-            _require_template(flow.name, t.turn.template, label)
+            _require_template(flow.templates, t.turn.template, label)
 
 
 def _require_state(flow: Flow, state: str, label: str) -> None:

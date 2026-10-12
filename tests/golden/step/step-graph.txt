@@ -21,7 +21,7 @@ Quellenreferenzen (unaufgelöst):
 - a.md#L1-L2
 - bd:k
 
-Hinweis für den Menschen: Zustand graph; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand graph; Folgeschritte laut graph.toml (Adapter manual, du trägst sie weiter):
 - done → graph.review: je dünnem Vorgang `ki-dev step VORGANG --step review --review-of graph`
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)

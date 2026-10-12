@@ -1,0 +1,53 @@
+# Auflösung: Karte → dünne Vorgänge.
+# Paketablauf auf dem Review-Muster: Zustände und Kanten aus dem
+# Muster, gemeinsame Teile aus dem Katalog flow/patterns/review.toml;
+# hier stehen nur Parameter. PASS führt nach finished, der Hinweis
+# nennt den nächsten Schritt. `ki-dev step` führt einen Turn mit dem
+# Executor manual aus.
+
+name = "graph"
+templates = "review"
+pattern_catalog = ["review"]
+start = "graph"
+
+[[phase]]
+id = "graph"
+use = "write_review"
+next = "finished"
+
+[phase.template]
+write = "role-graph"
+review = "review-graph"
+again = "again-graph"
+
+[phase.context]
+write = [
+  { use = "epic_sections" }, { use = "source_refs" },
+  { use = "next_steps" }, { use = "guidelines" }, { use = "attempt" },
+]
+review = [
+  { use = "finding_classes" },
+  { use = "epic_sections" },
+  { use = "source_refs" },
+  { use = "next_steps" },
+  { use = "guidelines" }, { use = "attempt" },
+]
+
+[phase.actor]
+write = "Auflösungsagent"
+review = "Review-Agent (Graphprüfung)"
+correction = "Auflösungsagent (bisherige Sitzung)"
+
+[phase.hint.write]
+done = "je dünnem Vorgang `ki-dev step VORGANG --step review --review-of graph`"
+
+[phase.hint.review]
+PASS = "`ki-dev step {bead} --step materialize`"
+fix = "Befunde an den Auflösungsagenten (bisherige Sitzung)"
+
+[phase.hint.correction]
+done = "`ki-dev step {bead} --step review --review-of graph --next-turn`"
+
+[phase.hint.decision]
+accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step materialize`"
+correct = "Entscheidung an den Auflösungsagenten (bisherige Sitzung)"

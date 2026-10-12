@@ -26,7 +26,7 @@ keine Executor-Aufträge.
 Quellenreferenzen (unaufgelöst):
 - .local/var/transcripts/260917T09_test-import_0199aaaa.jsonl
 
-Hinweis für den Menschen: Zustand map; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand map; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
 - done → map.review: `ki-dev step KARTE --step review --review-of map` (KARTE = erstellte oder ergänzte Karte)
 
 Quelle: normalisiertes Transkript; Zeile 1 ist der Kopf (transcript_meta mit Titel und Sitzungsbeginn), danach eine Nachricht je Zeile (position, ordinal, role, text, source_line, timestamp); ältere Quellen unter .local/handoff haben keinen Kopf. Abschnittsweise lesen und Fundstellen über source_line angeben; ordinal ist die Herkunftsnummer und kann fehlen (null). Wiederholte Rollen und offene Eingaben sind gültig. Wiederholungen, Präzisierungen und Widersprüche gehören in die Karte; die Quelle wurde nicht inhaltlich bereinigt.

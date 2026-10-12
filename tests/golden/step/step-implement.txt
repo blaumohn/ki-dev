@@ -20,7 +20,7 @@ Melde kurz Ergebnis, Prüfungen und Blocker. Durchsuche
 keine allgemeinen ADR-Sammlungen, um den Auftrag zu
 rekonstruieren; melde konkrete Vertragslücken zurück.
 
-Hinweis für den Menschen: Zustand implement; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand implement; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
 - done → implement.preflight: `ki-dev step x-1 --step review` (mit Vorlauf)
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)

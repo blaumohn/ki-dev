@@ -11,7 +11,7 @@ und setzt Läufe fort.
 
 | Schicht | Aufgabe | Ort |
 |---|---|---|
-| Ablauf | Zustände, Kanten, Bindungen `[op.*]` | `flow/planning.toml`, `flow/implement.toml` |
+| Ablauf | Zustände, Kanten, Bindungen `[op.*]` | `flow/map.toml`, `flow/implement_review.toml`, `flow/implement.toml` |
 | Gemeinsame Muster | wiederkehrende Abschnitte | `flow/patterns/review.toml` |
 | Ops-Katalog | Arbeit, Eingabeaufbereitung, Ergebnisdeutung | `ops/checks`, `runner/implement_ops.py` |
 | Ausführer | Op starten, Ergebnis sichern, Ereignis senden | `runner/` |
@@ -58,7 +58,9 @@ die Folgeschritte einen Commit erwarten.
 
 ## Gemeinsame Muster
 
-`planning.toml` lädt seine Review-Topologie aus dem Katalog:
+Jeder Review-Ablauf (`map`, `graph`, `materialize`, `implement_review`)
+lädt seine Review-Topologie und die gemeinsamen Teile (Vokabular,
+Befundklassen, `source`/`finished`) aus dem Katalog:
 
 ```toml
 pattern_catalog = ["review"]

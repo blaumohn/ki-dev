@@ -1,11 +1,9 @@
 """Basisgrenze: reiner Kern, Rendering und Konfigurationsgrenze."""
 
-from functools import partial
 from pathlib import Path
 
 import pytest
 
-from ki_dev.flow.planning import load_planning_flow
 from ki_dev.ops.context.bead_input import BeadInput
 from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import GuidelineSection
@@ -22,13 +20,9 @@ from ki_dev.ops.context.limit_config import (
     load_base_max_chars,
 )
 from tests.turn_helpers import (
-    render_base_handoff as _render_base_handoff,
+    render_base_handoff,
+    render_handoff,
 )
-from tests.turn_helpers import render_handoff as _render_handoff
-
-FLOW = load_planning_flow()
-render_handoff = partial(_render_handoff, flow=FLOW)
-render_base_handoff = partial(_render_base_handoff, flow=FLOW)
 
 SECRET = "GEHEIMER-ROHWERT"
 

@@ -3,12 +3,10 @@ import copy
 import pathlib
 import subprocess
 import sys
-from functools import partial
 from pathlib import Path
 
 import pytest
 
-from ki_dev.flow.planning import load_planning_flow
 from ki_dev.ops.checks.preflight import (
     PreflightReport,
 )
@@ -30,17 +28,10 @@ from ki_dev.ops.context.guidelines_source import (
 )
 from tests.guideline_fixtures import guideline_data, write_guidelines
 from tests.turn_helpers import (
-    render_base_handoff as _render_base_handoff,
+    render_base_handoff,
+    render_handoff,
+    render_review_handoff,
 )
-from tests.turn_helpers import render_handoff as _render_handoff
-from tests.turn_helpers import (
-    render_review_handoff as _render_review_handoff,
-)
-
-FLOW = load_planning_flow()
-render_base_handoff = partial(_render_base_handoff, flow=FLOW)
-render_handoff = partial(_render_handoff, flow=FLOW)
-render_review_handoff = partial(_render_review_handoff, flow=FLOW)
 
 REPO = Path(__file__).resolve().parents[1]
 SOURCE = GUIDELINE_SOURCES[0]

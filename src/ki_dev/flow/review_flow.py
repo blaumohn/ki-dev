@@ -1,10 +1,9 @@
-"""Planungsablauf (``planning.toml``): Review-Semantik, Übergaben.
+"""Abläufe auf dem Review-Muster (``flow/patterns/review.toml``).
 
-Fachliche Sicht auf den allgemeinen
-:class:`~ki_dev.flow.model.Flow` für die Phasen map, graph,
-materialize und implement: welche Befundklasse ein Review-Ereignis ist,
-welches Urteil daraus folgt und welche Folgeschritte der Mensch als
-Bote (Adapter ``manual``, ``ki-dev step``) erhält.
+Fachliche Sicht auf den allgemeinen :class:`~ki_dev.flow.model.Flow`:
+welche Befundklasse ein Review-Ereignis ist, welches Urteil daraus
+folgt und welche Folgeschritte der Mensch als Bote (Executor
+``manual``, ``ki-dev step``) erhält.
 """
 
 from __future__ import annotations
@@ -19,13 +18,37 @@ from ki_dev.flow.model import (
     load_flow,
 )
 
-NAME = "planning"
-FILE_NAME = f"{NAME}.toml"
+TEMPLATES = "review"
+"""Vorlagensatz der Review-Abläufe (``flow/templates/review``)."""
 
 
 @dataclass(frozen=True)
-class PlanningFlow:
+class ReviewFlow:
     flow: Flow
+
+    @property
+    def file(self) -> str:
+        return f"{self.flow.name}.toml"
+
+    def state_of(self, kind: str) -> str:
+        """Der eine Zustand dieser Art (``review``, ``correction``)."""
+        found = [
+            state.id
+            for state in self.flow.states.values()
+            if state.kind == kind
+        ]
+        if len(found) != 1:
+            raise FlowError(
+                f"{self.file}: {len(found)} Zustände der Art {kind}"
+            )
+        return found[0]
+
+    def binds(self, operation: str) -> bool:
+        """Ob ein Zustand die Katalogoperation ``operation`` nutzt."""
+        return any(
+            binding.do == operation
+            for binding in self.flow.bindings.values()
+        )
 
     def outgoing(self, state: str) -> tuple[Transition, ...]:
         return self.flow.outgoing(state)
@@ -42,7 +65,7 @@ class PlanningFlow:
         wanted = None if events is None else set(events)
         lines = [
             f"Hinweis für den Menschen: Zustand {state}; Folgeschritte "
-            f"laut {FILE_NAME} (Adapter manual, du trägst sie weiter):"
+            f"laut {self.file} (Adapter manual, du trägst sie weiter):"
         ]
         for transition in self.outgoing(state):
             if wanted is not None and transition.event not in wanted:
@@ -68,15 +91,15 @@ class PlanningFlow:
         ]
 
 
-def load_planning_flow() -> PlanningFlow:
-    """Mitgelieferten Planungsablauf laden und prüfen; er muss
-    Befundklassen und für jeden Übergang einen Befehl tragen."""
-    flow = load_flow(NAME)
+def load_review_flow(name: str) -> ReviewFlow:
+    """Mitgelieferten Ablauf laden und prüfen; er muss Befundklassen
+    und für jeden Übergang einen Befehl tragen."""
+    flow = load_flow(name)
     if not flow.finding_classes:
-        raise FlowError(f"{FILE_NAME}: befundklasse fehlt")
+        raise FlowError(f"{name}.toml: befundklasse fehlt")
     for index, transition in enumerate(flow.transitions):
         if transition.hint is None:
             raise FlowError(
-                f"{FILE_NAME}: transition.{index}.hint fehlt"
+                f"{name}.toml: transition.{index}.hint fehlt"
             )
-    return PlanningFlow(flow)
+    return ReviewFlow(flow)

@@ -20,8 +20,8 @@ from ki_dev.session_snapshot import SnapshotTitleError, validate_title
 from ki_dev.step.beads_source import BeadsSourceError
 from ki_dev.step.boundary import (
     base_limit,
+    bound_flow,
     guideline_documents,
-    planning_flow,
     selected_guidelines,
 )
 from ki_dev.step.exits import fail
@@ -123,7 +123,7 @@ def map_text(agent: str, session: str, title: str) -> str:
     jeder Schreibwirkung."""
     limit = base_limit()
     guidelines = selected_guidelines(Step.MAP, None)
-    flow = planning_flow()
+    flow = bound_flow(MAP_WORD)
     try:
         text = map_handoff(
             agent, session, title, Path.cwd(), guidelines, limit, flow

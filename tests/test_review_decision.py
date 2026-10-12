@@ -20,7 +20,7 @@ from ki_dev.review_decision import (
     split_acceptance_criteria,
 )
 
-PLANNING = load_flow("planning")
+MAP = load_flow("map")
 IMPLEMENT = load_flow("implement")
 
 
@@ -31,18 +31,18 @@ def _core(event="fix", detail="x", ref="AC1") -> dict:
 def test_allowed_events_come_from_the_flow():
     """Ein Vokabular: das event-enum ist PASS plus die Befundklassen
     des jeweiligen Ablaufs, keine Code-Konstante."""
-    for flow in (PLANNING, IMPLEMENT):
+    for flow in (MAP, IMPLEMENT):
         enum = review_schema(flow)["properties"]["event"]["enum"]
         assert enum == ["PASS", *flow.priority]
 
 
-def test_planning_rejects_escalate_but_implement_accepts_it():
+def test_map_rejects_escalate_but_implement_accepts_it():
     value = _core("escalate", "Grenze", None)
     verdict = parse_verdict(value, IMPLEMENT)
     assert verdict.event == "escalate"
     assert IMPLEMENT.verdict(verdict.event) == "ESCALATE"
     with pytest.raises(ReviewContractError, match="event: ungültiger"):
-        parse_verdict(value, PLANNING)
+        parse_verdict(value, MAP)
 
 
 @pytest.mark.parametrize(
@@ -66,7 +66,7 @@ def test_planning_rejects_escalate_but_implement_accepts_it():
 )
 def test_invalid_core_names_field_without_raw_value(value, message):
     with pytest.raises(ReviewContractError, match=message) as excinfo:
-        parse_verdict(value, PLANNING)
+        parse_verdict(value, MAP)
     assert "MAYBE" not in str(excinfo.value)
 
 
@@ -77,7 +77,7 @@ def test_only_a_single_json_object_is_accepted(raw):
 
 
 @given(
-    event=st.sampled_from(PLANNING.review_events()),
+    event=st.sampled_from(MAP.review_events()),
     detail=st.text(max_size=40),
     ref=st.one_of(st.none(), st.sampled_from(["AC1", "AC2", "AC9"])),
 )
@@ -87,14 +87,14 @@ def test_valid_answers_parse_and_bind_like_the_loop(event, detail, ref):
     ein automatischer Auftrag."""
     value = _core(event, detail, ref)
     try:
-        verdict = parse_verdict(json.loads(json.dumps(value)), PLANNING)
+        verdict = parse_verdict(json.loads(json.dumps(value)), MAP)
     except ReviewContractError:
         needs_detail = event != "PASS"
         assert (needs_detail and not detail.strip()) or (
             event != "fix" and ref is not None
         )
         return
-    bound = bind_requirement(verdict, ("AC1", "AC2"), PLANNING)
+    bound = bind_requirement(verdict, ("AC1", "AC2"), MAP)
     if event == "fix" and ref not in ("AC1", "AC2"):
         assert bound.event == "decision"
         assert bound.requirement_ref is None
@@ -125,5 +125,5 @@ def test_gaps_or_duplicates_are_visible_errors(text):
 
 def test_bind_keeps_bound_changes():
     verdict = ReviewVerdict("fix", "x", "AC2")
-    bound = bind_requirement(verdict, ("AC1", "AC2"), PLANNING)
+    bound = bind_requirement(verdict, ("AC1", "AC2"), MAP)
     assert bound is verdict

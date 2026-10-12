@@ -1,0 +1,53 @@
+# Materialisierung: Vorgang → umsetzbarer Bead.
+# Paketablauf auf dem Review-Muster: Zustände und Kanten aus dem
+# Muster, gemeinsame Teile aus dem Katalog flow/patterns/review.toml;
+# hier stehen nur Parameter. PASS führt nach finished, der Hinweis
+# nennt den nächsten Schritt. `ki-dev step` führt einen Turn mit dem
+# Executor manual aus.
+
+name = "materialize"
+templates = "review"
+pattern_catalog = ["review"]
+start = "materialize"
+
+[[phase]]
+id = "materialize"
+use = "write_review"
+next = "finished"
+
+[phase.template]
+write = "role-materialize"
+review = "review-materialize"
+again = "again-materialize"
+
+[phase.context]
+write = [
+  { use = "epic_sections" }, { use = "source_refs" },
+  { use = "next_steps" }, { use = "guidelines" }, { use = "attempt" },
+]
+review = [
+  { use = "finding_classes" },
+  { use = "epic_sections" },
+  { use = "source_refs" },
+  { use = "next_steps" },
+  { use = "guidelines" }, { use = "attempt" },
+]
+
+[phase.actor]
+write = "Materialisierungsagent"
+review = "Review-Agent (Materialisierungsprüfung)"
+correction = "Materialisierungsagent (bisherige Sitzung)"
+
+[phase.hint.write]
+done = "`ki-dev step {bead} --step review --review-of materialize`"
+
+[phase.hint.review]
+PASS = "`ki-dev step {bead} --step implement`"
+fix = "Befunde an den Materialisierungsagenten (bisherige Sitzung)"
+
+[phase.hint.correction]
+done = "`ki-dev step {bead} --step review --review-of materialize --next-turn`"
+
+[phase.hint.decision]
+accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step implement`"
+correct = "Entscheidung an den Materialisierungsagenten (bisherige Sitzung)"

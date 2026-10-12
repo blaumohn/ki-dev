@@ -1,8 +1,7 @@
-"""`ki-dev step`: Projektion des Planungsablaufs auf genau einen
-Übergang.
+"""`ki-dev step`: ein Turn eines Paketablaufs mit dem Executor manual.
 
-Für einen Zustand von ``flow/planning.toml`` wird die Übergabe an die
-nächste Sitzung erzeugt (Adapter manual: der Mensch trägt sie weiter);
-danach hält ki-dev an. Prüfungen (Vorlauf) und Rollenrechte gehören zur
-Übergabe, nicht zu einer Schleife.
+Für einen Zustand eines Ablaufs (``flow/map.toml`` …) wird die
+Übergabe an die nächste Sitzung erzeugt (Adapter manual: der Mensch
+trägt sie weiter); danach hält ki-dev an. Prüfungen (Vorlauf) und
+Rollenrechte gehören zur Übergabe, nicht zu einer Schleife.
 """

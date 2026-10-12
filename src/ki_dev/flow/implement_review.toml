@@ -1,0 +1,66 @@
+# Umsetzung mit Vorlauf (checks) vor jedem Review.
+# Übergang bis ki-dev-ablauf-ige.6: wird mit implement.toml ein
+# Ablauf (eine Datei, Turns für manual und Agenten).
+# Paketablauf auf dem Review-Muster: Zustände und Kanten aus dem
+# Muster, gemeinsame Teile aus dem Katalog flow/patterns/review.toml;
+# hier stehen nur Parameter. PASS führt nach finished, der Hinweis
+# nennt den nächsten Schritt. `ki-dev step` führt einen Turn mit dem
+# Executor manual aus.
+
+name = "implement_review"
+templates = "review"
+pattern_catalog = ["review"]
+start = "implement"
+
+# Bindung der Maschinenoperation an den Ops-Katalog: `checks` ruft
+# den Vorlauf `checks.preflight` (ki_dev.ops.checks); sein Ergebnis ist
+# eines der genannten Ereignisse. turn und ask sind Halte des
+# Ausführers, keine Katalogoperationen.
+[op.checks]
+do = "checks.preflight"
+input = []
+output = {}
+events = ["checks_passed", "checks_partial", "checks_failed"]
+
+[[phase]]
+id = "implement"
+use = "write_review_preflight"
+next = "finished"
+
+[phase.template]
+write = "role-implement"
+review = "review-implement"
+again = "again-implement"
+
+[phase.context]
+write = [
+  { use = "epic_sections" }, { use = "next_steps" },
+  { use = "guidelines" }, { use = "attempt" },
+]
+review = [
+  { use = "finding_classes" },
+  { use = "epic_sections" },
+  { use = "criteria" },
+  { use = "next_steps" },
+  { use = "report" },
+  { use = "guidelines" }, { use = "attempt" },
+]
+
+[phase.actor]
+write = "Umsetzer (implementer)"
+review = "Review-Agent (nach deterministischem Vorlauf)"
+correction = "Umsetzer (implementer, bisherige Sitzung)"
+
+[phase.hint.write]
+done = "`ki-dev step {bead} --step review` (mit Vorlauf)"
+
+[phase.hint.review]
+PASS = "Schließen entscheidest du (`bd close {bead}`)"
+fix = "Befunde an den Umsetzer (implementer) (bisherige Sitzung)"
+
+[phase.hint.correction]
+done = "`ki-dev step {bead} --step review --next-turn` (Vorlauf, optional `--feedback-file DATEI|-`)"
+
+[phase.hint.decision]
+accept = "Entscheidung im Bead festhalten (kein PASS); Schließen entscheidest du"
+correct = "Entscheidung an den Umsetzer (implementer) (bisherige Sitzung)"

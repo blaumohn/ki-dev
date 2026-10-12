@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, NamedTuple, Protocol, cast
 
 from ki_dev.flow.model import PASS, FlowError, Transition
-from ki_dev.flow.planning import PlanningFlow
+from ki_dev.flow.review_flow import ReviewFlow
 from ki_dev.ops.checks import PREFLIGHT
 from ki_dev.ops.checks.options import (
     CONTROL_SCHEMA,
@@ -44,7 +44,6 @@ from ki_dev.runner.review_output import (
 from ki_dev.step.boundary import (
     CONSOLE,
     feedback_limit,
-    planning_flow,
     progress,
     project_preflight_config,
     selected_guidelines,
@@ -63,11 +62,12 @@ from ki_dev.step.options import (
 from ki_dev.step.state import SavedState, step_dir
 from ki_dev.step.turn import ensure_base_fits, hand_over, require_valid
 
-IMPLEMENT = "implement"
-
-IMPLEMENT_REVIEW = "implement.review"
+REVIEW_KIND = "review"
+CORRECTION_KIND = "correction"
 
 DONE = "done"
+"""Ereignis „Schreiben bzw. Korrektur getan“ des Review-Musters:
+``--step review`` beginnt mit ihm am Start des Ablaufs."""
 
 class Output(NamedTuple):
     """Ausgabe eines Bead-Aufrufs: Text, Exitcode, Halt des Ablaufs."""
@@ -75,7 +75,7 @@ class Output(NamedTuple):
     text: str
     exit_code: int
     halt: Halt
-    flow: PlanningFlow
+    flow: ReviewFlow
 
 class Run(Protocol):
     def __call__(
@@ -89,7 +89,7 @@ class Run(Protocol):
     ) -> Halt: ...
 
 def planner(
-    bead_id: str, flow: PlanningFlow, saved: SavedState | None
+    bead_id: str, flow: ReviewFlow, saved: SavedState | None
 ) -> Run:
     """Ein Schritt des Planungs-Threads dieses Beads: wartet der Lauf
     genau in ``state``, ist ``event`` seine Antwort (resume); sonst
@@ -125,6 +125,7 @@ def planner(
 
 def bead_output(
     bead_id: str,
+    flow: ReviewFlow,
     step: Step,
     review_of: ReviewTarget | None,
     extra: PreflightRequest,
@@ -135,7 +136,6 @@ def bead_output(
     """Übergabetext, Exitcode und Halt. Die Basisgrenze gilt nicht für
     ``--next-turn`` (Folgenachricht, eigener Vertrag); sonst wird sie
     vor jedem Beads-Zugriff und Vorlauf gelesen."""
-    flow = planning_flow()
     run = planner(bead_id, flow, saved)
     if step is Step.REVIEW and next_turn:
         issue = read_issue(bead_id, Path.cwd())
@@ -156,9 +156,10 @@ def bead_output(
             issue, review_of, extra, guidelines, limit, flow, run
         )
         return Output(text, code, halt, flow)
-    ensure_base_fits(flow, issue, step, None, limit)
-    # Projektion: Der Ablauf hält im Zustand der Phase bei ihrem turn.
-    halt = expect_turn(run(step.value, None, {}), step.value)
+    start = flow.flow.start
+    ensure_base_fits(flow, issue, step, None, start, limit)
+    # Projektion: Der Ablauf hält im Startzustand bei seinem turn.
+    halt = expect_turn(run(start, None, {}), start)
     subject = turn_input(
         issue,
         flow,
@@ -174,41 +175,30 @@ def review_handoff(
     extra: PreflightRequest,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
-    flow: PlanningFlow,
+    flow: ReviewFlow,
     run: Run,
 ) -> tuple[str, int, Halt]:
     """Übergabe für ``--step review``, Exitcode und Halt.
 
-    Nur für den (Standard- oder ausdrücklichen) Prüfgegenstand implement
-    läuft der deterministische Vorlauf (Zustand implement.preflight):
-    Bead und Konfiguration werden vollständig validiert, bevor der
-    erste Korrekturbefehl läuft (kein Schreibeffekt vor dieser
-    Prüfung). Die Kante aus implement.preflight wählt die Nachricht:
-    Review-Übergabe oder, bei checks_failed, die Reparaturnachricht an
-    den Umsetzer (Exit 1). Für
-    map/graph/materialize ist das Review eine reine Quellenprüfung:
-    kein Vorlauf, keine Vorlauf-Konfiguration, keine Prozessaufrufe.
-    Die Basisgrenze wird vor dem Vorlauf geprüft, denn Korrekturen
-    können Dateien ändern.
+    ``done`` am Start des Ablaufs; was danach geschieht, sagt der
+    Ablauf. Bindet er den Vorlauf (Zustand ``P.preflight``), werden
+    Bead und Konfiguration vollständig validiert, bevor der erste
+    Korrekturbefehl läuft, und die Kante aus dem Vorlauf wählt die
+    Nachricht: Review-Übergabe oder, bei checks_failed, die
+    Reparaturnachricht an den Umsetzer (Exit 1). Ohne Bindung ist das
+    Review eine reine Quellenprüfung ohne Prozessaufrufe. Die
+    Basisgrenze wird vorher geprüft, denn Korrekturen können Dateien
+    ändern.
     """
-    if review_of not in (None, ReviewTarget.IMPLEMENT):
-        target = cast(ReviewTarget, review_of)
-        ensure_base_fits(
-            flow, issue, Step.REVIEW, target, base_max_chars
-        )
-        halt = expect_turn(
-            run(target.value, DONE, {}),
-            f"{target.value}.review",
-        )
-        subject = turn_input(
-            issue, flow, halt, guidelines=guidelines
-        )
-        text = hand_over(flow, halt.turn, subject, base_max_chars)
-        return text, 0, halt
     ensure_base_fits(
-        flow, issue, Step.REVIEW, review_of, base_max_chars
+        flow,
+        issue,
+        Step.REVIEW,
+        review_of,
+        flow.state_of(REVIEW_KIND),
+        base_max_chars,
     )
-    halt = run(IMPLEMENT, DONE, machine_operations(extra, issue))
+    halt = run(flow.flow.start, DONE, machine_operations(extra, issue))
     subject = turn_input(
         issue, flow, halt, guidelines=guidelines
     )
@@ -244,7 +234,7 @@ def machine_operations(
 
 def turn_input(
     issue: BeadInput,
-    flow: PlanningFlow,
+    flow: ReviewFlow,
     halt: Halt,
     **extra: Any,
 ) -> TurnInput:
@@ -287,39 +277,40 @@ def next_turn_handoff(
     review_of: ReviewTarget | None,
     extra: PreflightRequest,
     feedback_file: str | None,
-    flow: PlanningFlow,
+    flow: ReviewFlow,
     run: Run,
 ) -> tuple[str, int, Halt]:
     """Nächste Nachricht nach einer Korrektur, Exitcode und Halt.
 
     Alle Eingaben (Bead, Grenze, Rückmeldung) sind geprüft, bevor der
-    Vorlauf startet. Nur der Prüfgegenstand implement läuft durch den
-    Vorlauf: Fehlschlag -> Umsetzer (Exit 1, Nachricht auf stdout),
-    Erfolg -> Reviewer. map/graph/materialize gehen ohne Vorlauf zur
-    erneuten Review-Übergabe. Die Grenze wird für jedes Ziel gelesen
-    und geprüft (ungültiges TOML oder ein ungültiger Wert wird
-    abgelehnt); eine fehlende Vorlauf-Konfiguration bleibt für
-    map/graph/materialize erlaubt.
+    Vorlauf startet. ``done`` an der Korrektur; bindet der Ablauf den
+    Vorlauf, folgt er: Fehlschlag -> Umsetzer (Exit 1, Nachricht auf
+    stdout), Erfolg -> Reviewer; sonst geht es direkt zur erneuten
+    Review-Übergabe. Die Grenze wird für jeden Ablauf gelesen und
+    geprüft (ungültiges TOML oder ein ungültiger Wert wird
+    abgelehnt); eine fehlende Vorlauf-Konfiguration bleibt ohne
+    Bindung erlaubt.
     """
-    target = review_of or ReviewTarget.IMPLEMENT
-    require_valid(issue, Step.REVIEW, target)
+    require_valid(issue, Step.REVIEW, review_of)
     limit = load_feedback_max_chars(Path.cwd())
     feedback = None
     if feedback_file is not None:
         feedback = read_feedback(feedback_file, limit, CONSOLE)
-    implement = target is ReviewTarget.IMPLEMENT
-    machine = machine_operations(extra, issue) if implement else {}
-    halt = run(f"{target.value}.correction", DONE, machine)
+    halt = run(
+        flow.state_of(CORRECTION_KIND),
+        DONE,
+        machine_operations(extra, issue),
+    )
     return after_preflight(issue, feedback, flow, halt)
 
-def pass_allowed(flow: PlanningFlow, halt: Halt) -> bool:
+def pass_allowed(flow: ReviewFlow, halt: Halt) -> bool:
     """Ob der Ablauf im erreichten Review PASS zulässt (Wächter)."""
     return allows(flow.flow, halt.state, PASS, halt.context)
 
 def decision_turn(
     issue: BeadInput,
     source: str,
-    flow: PlanningFlow,
+    flow: ReviewFlow,
     run: Run,
     saved: SavedState | None,
 ) -> tuple[str, int, Halt]:
@@ -330,6 +321,7 @@ def decision_turn(
     mit; hat er sich seit dem Vorlauf geändert, führt PASS zurück in
     den Vorlauf und die nächste Nachricht geht an das Review."""
     require_valid(issue, Step.REVIEW, ReviewTarget.IMPLEMENT)
+    review = flow.state_of(REVIEW_KIND)
     raw = read_decision(source, CONSOLE)
     answer = parse_answer(raw, issue, flow)
     # Die Antwort gilt nur dort, wo der Lauf auf sie wartet: ohne
@@ -340,10 +332,10 @@ def decision_turn(
             "Review-Antwort ungültig: kein Vorlauf in diesem Lauf; "
             f"zuerst `ki-dev step {issue.id} --step review`"
         )
-    if saved.state != IMPLEMENT_REVIEW:
+    if (saved.flow, saved.state) != (flow.flow.name, review):
         raise DecisionInputError(
             f"Review-Antwort ungültig: der Lauf wartet in "
-            f"{saved.state}, nicht in {IMPLEMENT_REVIEW}"
+            f"{saved.state}, nicht in {review}"
         )
     answer_file = None if source == "-" else Path(source)
     current = current_stand(Path.cwd(), issue, exclude=answer_file)
@@ -358,7 +350,7 @@ def decision_turn(
     # Das gebundene Ereignis nimmt die Kante aus implement.review.
     try:
         halt = run(
-            IMPLEMENT_REVIEW,
+            review,
             answer.verdict.event,
             machine,
             current,
@@ -392,7 +384,7 @@ def decision_turn(
     return after_preflight(issue, None, flow, halt)
 
 def parse_answer(
-    raw: str, issue: BeadInput, flow: PlanningFlow
+    raw: str, issue: BeadInput, flow: ReviewFlow
 ) -> PlanningAnswer:
     """Antwort prüfen und an die Abnahmekriterien binden; die
     Steuerfelder prüft die Operation ``checks`` (eingesteckt)."""
@@ -412,7 +404,7 @@ def parse_answer(
             f"Review-Antwort ungültig: {exc}"
         ) from exc
 
-def changed_since_preflight(flow: PlanningFlow, halt: Halt) -> bool:
+def changed_since_preflight(flow: ReviewFlow, halt: Halt) -> bool:
     """Die Antwort nahm die Kante zurück in den Vorlauf."""
     entry = halt.entry
     return (
@@ -423,7 +415,7 @@ def changed_since_preflight(flow: PlanningFlow, halt: Halt) -> bool:
 def after_preflight(
     issue: BeadInput,
     feedback: str | None,
-    flow: PlanningFlow,
+    flow: ReviewFlow,
     halt: Halt,
 ) -> tuple[str, int, Halt]:
     """Nachricht nach der Korrektur oder nach einem neuen Vorlauf:

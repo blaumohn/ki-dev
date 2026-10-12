@@ -31,11 +31,11 @@ Quellenreferenzen (unaufgelöst):
 - a.md#L1-L2
 - bd:k
 
-Hinweis für den Menschen: Zustand map.review; Folgeschritte laut planning.toml (Adapter manual, du trägst sie weiter):
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
 - fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → map.decision: du entscheidest: accept, correct oder source
-- PASS → graph: `ki-dev step x-1 --step graph`
+- PASS → finished: `ki-dev step x-1 --step graph`
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt

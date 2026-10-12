@@ -51,7 +51,7 @@ def test_unknown_flow_names_every_place_searched(
 
 
 def test_flow_without_ops_is_data_only(capsys):
-    code, _, err = _main(capsys, "-f", "planning", "x")
+    code, _, err = _main(capsys, "-f", "map", "x")
     assert code == 2
     assert "kein ops-Modul" in err
 
