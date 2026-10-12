@@ -9,7 +9,12 @@ from ki_dev.ops.checks.options import (
     parse_preflight_args,
     parse_preflight_skip,
 )
-from ki_dev.step.choices import ReviewTarget, Step
+from ki_dev.step.choices import (
+    DEFAULT_REVIEW,
+    FLOWS,
+    ReviewTarget,
+    Step,
+)
 from ki_dev.step.exits import fail
 
 
@@ -36,23 +41,20 @@ class PreflightRequest(NamedTuple):
 
 NO_PREFLIGHT_OPTIONS = PreflightRequest({}, {})
 
-# Übergang bis ki-dev-ablauf-ige.6: der Handablauf implement liegt in
-# implement_review.toml neben dem Agentenablauf implement.toml.
-_FILES = {ReviewTarget.IMPLEMENT.value: "implement_review"}
-
 def flow_name(step: Step, review_of: ReviewTarget | None) -> str:
     """Ablauf des Aufrufs (``flow/<NAME>.toml``): bei ``--step review``
-    der Prüfgegenstand (ohne Angabe implement), sonst der Schritt."""
+    der Prüfgegenstand (ohne Angabe :data:`DEFAULT_REVIEW`), sonst der
+    Schritt."""
     if step is Step.REVIEW:
-        target = (review_of or ReviewTarget.IMPLEMENT).value
+        target = review_of or ReviewTarget(DEFAULT_REVIEW)
     else:
-        target = step.value
-    return _FILES.get(target, target)
+        target = step
+    return FLOWS[target.value]
 
 def review_target(flow: str) -> ReviewTarget:
     """Prüfgegenstand eines gespeicherten Ablaufs (Umkehrung)."""
-    names = {name: target for target, name in _FILES.items()}
-    return ReviewTarget(names.get(flow, flow))
+    phases = {name: phase for phase, name in FLOWS.items()}
+    return ReviewTarget(phases[flow])
 
 def review_options(
     step: Step,

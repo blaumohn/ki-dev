@@ -194,3 +194,97 @@ def test_generic_package_runner_knows_no_roles_or_catalog():
         for m in _closure("ki_dev.runner.package")
         if _within(m, forbidden)
     ]
+
+
+# --- Grenze Gerüst/Paket ----------------------------------------------
+
+# Gerüstwörter, die auch als Rolle oder Zustandsart vorkommen: review
+# ist Modus von ``--step review``, Zustandsart des Review-Katalogs und
+# Schlüssel der Leitlinienquelle; source und finished sind Zustände des
+# gemeinsamen Katalogs.
+_FRAMEWORK_WORDS = {"review", "source", "finished"}
+# Bedienvorgaben der CLI mit Begründung (``ki_dev.step``): Vorgabe von
+# ``--step review`` und die Form ``ki-dev step map --agent`` des
+# Sitzungsimports.
+_ALLOWED = {
+    ("ki_dev.step.choices", "implement"),
+    ("ki_dev.step.forms", "map"),
+}
+
+
+def _package_words() -> set[str]:
+    """Ablauf-, Phasen- und Rollennamen der mitgelieferten Pakete und
+    ihre zusammengesetzten Zustandsnamen (``worker_step``,
+    ``map.review``), aus den Abläufen selbst gelesen. Einfache
+    Zustandswörter wie ``start`` oder ``error`` sind kein
+    Paketwissen."""
+    from ki_dev.flow.model import load_flow
+    from ki_dev.flow.review_flow import review_flow_files
+
+    words: set[str] = set(review_flow_files())
+    for path in (SRC / "ki_dev" / "flow").glob("*.toml"):
+        flow = load_flow(path.stem)
+        words.add(flow.name)
+        words |= {s for s in flow.states if "_" in s or "." in s}
+        words |= {
+            b.role for b in flow.bindings.values() if b.role is not None
+        }
+    return words - _FRAMEWORK_WORDS
+
+
+def _literals(module: str) -> set[str]:
+    """Zeichenketten im Code eines Moduls, ohne Docstrings."""
+    path = SRC / Path(*module.split("."))
+    if path.is_dir():
+        path = path / "__init__.py"
+    else:
+        path = path.with_suffix(".py")
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docs = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(
+            node,
+            (
+                ast.Module,
+                ast.ClassDef,
+                ast.FunctionDef,
+                ast.AsyncFunctionDef,
+            ),
+        )
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+    }
+    return {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docs
+    }
+
+
+@pytest.mark.parametrize(
+    "layer", ["ki_dev.runner", "ki_dev.ops", "ki_dev.step"]
+)
+def test_framework_knows_no_package_names(layer):
+    """Das Gerüst kennt keine Rollen- und Phasennamen; sie stehen nur
+    als Daten in den Abläufen (Paket → Gerüst, nie umgekehrt)."""
+    words = _package_words()
+    found = {
+        (module, value)
+        for module in _layer(layer)
+        for value in _literals(module)
+        if value in words or value.partition(".")[0] in words
+    }
+    assert found - _ALLOWED == set()
+
+
+def test_package_words_cover_phases_roles_and_flows():
+    """Die Prüfung oben greift: Phasen, Rollen und Abläufe stehen in
+    der Wortliste, Gerüstwörter nicht."""
+    words = _package_words()
+    assert {"map", "implement", "implement_review", "worker"} <= words
+    assert {"worker_step", "map.review"} <= words
+    assert not words & _FRAMEWORK_WORDS

@@ -1,30 +1,28 @@
 """Auswahl von ``ki-dev step``: ``--step`` und ``--review-of``.
 
-Bedienwörter der CLI; welcher Ablauf dazu gehört, bestimmt
-:func:`ki_dev.step.options.flow_name`."""
+Bedienwörter der CLI, erzeugt aus den mitgelieferten Abläufen auf dem
+Review-Muster (Phase = ihr Start, z. B. ``map``); dazu ``review``
+(``done`` am Start des Ablaufs, :mod:`ki_dev.step.projection`).
+"""
 
 from __future__ import annotations
 
 from enum import StrEnum
 
+from ki_dev.flow.review_flow import review_flow_files
 
-class Step(StrEnum):
-    MAP = "map"
-    GRAPH = "graph"
-    MATERIALIZE = "materialize"
-    IMPLEMENT = "implement"
-    REVIEW = "review"
+FLOWS = review_flow_files()
+"""Phase → Ablauf (Dateiname unter ``flow/``)."""
 
+REVIEW = "review"
 
-class ReviewTarget(StrEnum):
-    """Prüfgegenstand von ``Step.REVIEW``; nur dieser wertet es aus.
+DEFAULT_REVIEW = "implement"
+"""Prüfgegenstand von ``--step review`` ohne ``--review-of``
+(Bedienvorgabe der CLI)."""
 
-    Fehlt ``review_target`` bei ``Step.REVIEW``, bleibt das
-    Verhalten die bisherige Umsetzungs-Review (Rückwärtskompatibilität
-    von ``--step review`` ohne ``--review-of``).
-    """
-
-    MAP = "map"
-    GRAPH = "graph"
-    MATERIALIZE = "materialize"
-    IMPLEMENT = "implement"
+Step = StrEnum(
+    "Step", [(name.upper(), name) for name in (*FLOWS, REVIEW)]
+)
+ReviewTarget = StrEnum(
+    "ReviewTarget", [(name.upper(), name) for name in FLOWS]
+)

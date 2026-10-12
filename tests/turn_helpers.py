@@ -17,16 +17,14 @@ from ki_dev.ops.context.guidelines import (
     GuidelineSection,
     select_guidelines,
 )
-from ki_dev.step.choices import ReviewTarget, Step
-from ki_dev.step.options import _FILES as FILES
+from ki_dev.step.choices import FLOWS, ReviewTarget, Step
 from ki_dev.step.turn import hand_over, require_valid
 
 
 def phase_flow(state: str) -> ReviewFlow:
     """Der Ablauf, zu dem ein Zustand gehört (``map.review`` →
     ``flow/map.toml``)."""
-    phase = state.partition(".")[0]
-    return load_review_flow(FILES.get(phase, phase))
+    return load_review_flow(FLOWS[state.partition(".")[0]])
 
 
 def handoff_state(
@@ -144,7 +142,7 @@ def render_review_turn(
     pass_allowed: bool,
 ) -> str:
     """Folgenachricht an das Review nach einer Korrektur."""
-    flow = load_review_flow(FILES.get(target.value, target.value))
+    flow = load_review_flow(FLOWS[target.value])
     subject = TurnInput(
         issue,
         flow,

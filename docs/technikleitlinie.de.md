@@ -82,6 +82,16 @@ Plumbum mit getrennten Argumenten, angegebenem Arbeitsverzeichnis und
   (Prozess abgestürzt, Kontextgrenze) in den Ausführer.
 - Schichtrichtung: Ablauf kennt weder Ausführer noch Adapter, Adapter
   kennen keinen Ablauf (`tests/test_schichten.py`).
+- Gerüst und Paket: Das Gerüst (`runner/`, `ops/`, `step/`, Adapter,
+  Executoren) ist Mechanik und kennt keine Rollen- und Phasennamen
+  wie `implement`, `map` oder `worker`; sie stehen nur als Daten im
+  Ablauf. Ein Paket (`flow/<ablauf>.toml`, seine Ops unter
+  `flow_ops/`, Profil Rolle → Executor) setzt Teile des Gerüsts
+  zusammen; Abhängigkeit nur Paket → Gerüst. `ki-dev step` führt
+  einen Turn eines Paketablaufs mit dem Executor `manual` aus.
+  Gemeinsame Teile (Muster, Vokabular, Bausteine der Übergaben)
+  liegen einmal im Gerüst-Katalog. Der Schichtentest prüft die
+  Grenze an den Literalen.
 - Ein Zustandsmodell: Zustände und Kanten stehen im nativen Format von
   python-statemachine (`[statechart]` der Ablaufdatei, bei Mustern
   daraus erzeugt); Kantenwahl, History und `raise` übernimmt die

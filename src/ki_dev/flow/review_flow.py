@@ -8,8 +8,10 @@ folgt und welche Folgeschritte der Mensch als Bote (Executor
 
 from __future__ import annotations
 
+import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
+from importlib.resources import files
 
 from ki_dev.flow.model import (
     Flow,
@@ -89,6 +91,20 @@ class ReviewFlow:
             f"stärksten Klasse ({' > '.join(self.flow.priority)}), "
             "ohne Befund PASS.",
         ]
+
+
+def review_flow_files() -> dict[str, str]:
+    """Phase (Start) → Name der mitgelieferten Abläufe auf dem
+    Review-Muster, nach Phase sortiert; was es gibt, sagen die Dateien
+    unter ``flow/``."""
+    found = {}
+    for item in files("ki_dev.flow").iterdir():
+        if not item.name.endswith(".toml"):
+            continue
+        raw = tomllib.loads(item.read_text(encoding="utf-8"))
+        if "review" in raw.get("pattern_catalog", ()):
+            found[raw["start"]] = raw["name"]
+    return dict(sorted(found.items()))
 
 
 def load_review_flow(name: str) -> ReviewFlow:

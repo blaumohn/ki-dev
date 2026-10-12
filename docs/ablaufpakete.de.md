@@ -16,6 +16,27 @@ und setzt Läufe fort.
 | Ops-Katalog | Arbeit, Eingabeaufbereitung, Ergebnisdeutung | `ops/checks`, `flow_ops/implement/ops.py` |
 | Ausführer | Op starten, Ergebnis sichern, Ereignis senden | `runner/` |
 
+## Gerüst und Paket
+
+Das **Gerüst** ist Mechanik: Kern (`fsm.py`, `flow/model.py`),
+Lauf-Maschine `runner/run.toml` mit ihren Ops, Ausführer, gemeinsame
+Ops (`ops/`), Übergaben (`runner/turns.py`), Adapter und Executoren
+(`adapter/executors.toml`). Es kennt keine Rollen- und Phasennamen.
+Ein **Paket** setzt das Gerüst zusammen: Ablauf (`flow/<ablauf>.toml`),
+seine Ops (`flow_ops/<paket>/`) und das Profil (Rolle → Executor).
+
+```text
+Gerüst sieht:  state="s7", op="op3" → event="e2", executor="claude"
+Paket meint:   implement.review, checks → checks_passed, reviewer → claude
+```
+
+Abhängigkeit nur Paket → Gerüst. Gemeinsame Teile wie das Review-Muster
+mit Vokabular und Befundklassen liegen einmal im Katalog
+(`flow/patterns/`). `ki-dev step` ist kein Ablauf: Es führt einen Turn
+eines Paketablaufs mit dem Executor `manual` aus. Der Schichtentest
+(`tests/test_schichten.py`) weist Ablauf-, Phasen- und Rollennamen als
+Literale in `runner/`, `ops/` und `step/` ab.
+
 ## Eine Bindung
 
 ```toml
