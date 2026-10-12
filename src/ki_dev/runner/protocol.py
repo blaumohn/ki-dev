@@ -12,12 +12,24 @@ _ROOT = "lauf"
 ABLAUF = "ablauf"
 
 
+class AwaitingAnswer(Exception):
+    """Die Übergabe ist ausgegeben, die Antwort fehlt noch (Bote): der
+    Lauf hält in ``awaiting_input``; ``resume`` führt die Übergabe
+    erneut aus."""
+
+
 class RunModel:
     """Ops der Regionen ``operation`` und ``halt``: die offene
-    Operation."""
+    Operation. Ein Paket erweitert sie um die Wächter und Aktionen
+    seines Ablaufs; sie lesen die Laufdaten (``data``)."""
 
-    def __init__(self, pending: Operation | None = None) -> None:
+    def __init__(
+        self,
+        pending: Operation | None = None,
+        data: dict[str, object] | None = None,
+    ) -> None:
         self.pending = pending
+        self.data = {} if data is None else data
 
     def is_running(self, machine: object) -> bool:
         """Region halt fährt (kein Halt)."""

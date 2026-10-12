@@ -36,7 +36,8 @@ def test_two_flows_share_runner_and_pattern(
     result = run.start({"source": "  Hallo   Welt  "})
     assert result["state"] == "accepted"
     assert result["data"]["text"] == expected
-    assert run.resume() == result
+    again = run.resume()
+    assert again == {**result, "path": []}
     assert (
         check_conformance(run.flow, run.store.load_events(), RUN_DOC)
         == []

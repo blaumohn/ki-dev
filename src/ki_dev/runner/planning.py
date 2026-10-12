@@ -101,11 +101,6 @@ MachineOperation = Callable[
 """Führt eine Maschinenoperation im Zustand aus und liefert Ereignis und
 neue Laufdaten."""
 
-TurnCall = Callable[["Halt"], tuple[str, PlanningContext] | None]
-"""Bearbeitet die Übergabe eines Halts (Executor der Rolle) und liefert
-Ereignis und Laufdaten der Antwort; ``None``: der Lauf hält (Bote
-manual, Antwort fehlt)."""
-
 
 class StaleHaltError(FlowError):
     """Der gespeicherte Halt stammt aus einem anderen Ablaufstand."""
@@ -296,7 +291,6 @@ def planning_runtime(
     directory: Path,
     thread: str,
     machine: Mapping[str, MachineOperation] | None = None,
-    turns: TurnCall | None = None,
 ) -> Iterator[PlanningRuntime]:
     """Ausführer mit Datensatz ``directory/record.json`` als einziger
     Schreiber dieses Beads; die Sperre fällt auch bei Fehlern."""
@@ -308,7 +302,7 @@ def planning_runtime(
         raise FlowError(str(exc)) from exc
     try:
         yield PlanningRuntime(
-            flow, directory, thread, dict(machine or {}), turns
+            flow, directory, thread, dict(machine or {})
         )
     finally:
         writer.close()
@@ -323,10 +317,8 @@ class PlanningRuntime:
         directory: Path,
         thread: str,
         machine: Mapping[str, MachineOperation],
-        turns: TurnCall | None = None,
     ) -> None:
         self.flow = flow
-        self._turns = turns
         self._chart = _chart(flow)
         self._machine = machine
         self._digest = flow_digest(flow)
@@ -464,11 +456,8 @@ class PlanningRuntime:
     # --- Schritte ---
 
     def _drive(self) -> None:
-        """Maschinenoperationen und Übergaben mit Executor fahren, bis
-        eine Antwort von außen nötig ist (``turn`` ohne Executor,
-        ``ask``) oder der Ablauf endet. Vor jeder Übergabe an einen
-        Executor ist der Halt gespeichert: nach einem Abbruch beginnt
-        der Lauf dort neu."""
+        """Maschinenoperationen fahren, bis eine Antwort von außen
+        nötig ist (``turn``, ``ask``) oder der Ablauf endet."""
         while True:
             state = self._state()
             context = self._context()
@@ -482,17 +471,7 @@ class PlanningRuntime:
                 self._record["waiting"] = (
                     None if operation is None else operation.do
                 )
-                if operation is None or self._turns is None:
-                    return
-                self._save()
-                answered = self._turns(self._halt())
-                if answered is None:
-                    return
-                event, context = answered
-                self._outcome = None
-                self._take(state, event, context)
-                self._record["attempt"] += 1
-                continue
+                return
             event, context = self._machine[binding.do](state, context)
             if event not in binding.emitted:
                 raise FlowError(
