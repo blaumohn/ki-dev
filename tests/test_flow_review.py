@@ -29,8 +29,8 @@ from ki_dev.flow.model import (
 from ki_dev.flow.pattern import expand
 from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.step import boundary, projection
+from ki_dev.step.choices import ReviewTarget, Step
 from tests.turn_helpers import handoff_state, phase_flow, render_handoff
 
 NAMES = ("map", "graph", "materialize", "implement_review")

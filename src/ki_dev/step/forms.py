@@ -13,7 +13,6 @@ from ki_dev.adapter.executors.session_transcript import (
 from ki_dev.adapter.executors.transcript import validate_session_request
 from ki_dev.ops.context.bead_input import BeadInputInvalidError
 from ki_dev.ops.context.beads_reader import BeadsReadError
-from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import select_common_guidelines
 from ki_dev.ops.context.limit import HandoffBaseTooLongError
 from ki_dev.session_snapshot import SnapshotTitleError, validate_title
@@ -24,6 +23,7 @@ from ki_dev.step.boundary import (
     guideline_documents,
     selected_guidelines,
 )
+from ki_dev.step.choices import ReviewTarget, Step
 from ki_dev.step.exits import fail
 from ki_dev.step.local import render_local_handoff
 from ki_dev.step.map import map_handoff
@@ -122,8 +122,8 @@ def map_text(agent: str, session: str, title: str) -> str:
     """Sitzungsimport mit Konfigurations- und Leitlinienprüfung vor
     jeder Schreibwirkung."""
     limit = base_limit()
-    guidelines = selected_guidelines(Step.MAP, None)
     flow = bound_flow(MAP_WORD)
+    guidelines = selected_guidelines(flow, review=False)
     try:
         text = map_handoff(
             agent, session, title, Path.cwd(), guidelines, limit, flow

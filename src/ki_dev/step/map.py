@@ -17,7 +17,6 @@ from ki_dev.flow.review_flow import TEMPLATES, ReviewFlow
 from ki_dev.flow.templates import render, text
 from ki_dev.ops.context.beads_reader import read_issue
 from ki_dev.ops.context.blocks import TurnInput, state_turn
-from ki_dev.ops.context.contract import Step
 from ki_dev.ops.context.guidelines import GuidelineSection
 from ki_dev.step.beads_source import (
     SourceBead,
@@ -66,8 +65,8 @@ def map_handoff(
         raise HandoffSourceError(
             "Quellen-Bead verweist nicht auf das lokale Artefakt"
         )
-    require_valid(issue, Step.MAP, None)
     state = flow.flow.start
+    require_valid(issue, flow, state)
     subject = TurnInput(
         issue,
         flow,

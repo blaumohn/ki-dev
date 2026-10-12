@@ -13,8 +13,8 @@ import pytest
 from ki_dev.flow.model import FlowError, parse_flow, read_raw
 from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.context import bead_input
-from ki_dev.ops.context.blocks import BLOCKS, state_turn
-from ki_dev.ops.context.contract import ReviewTarget, Step
+from ki_dev.ops.context.blocks import BLOCKS
+from ki_dev.step.choices import ReviewTarget, Step
 from ki_dev.step.turn import bind_flow
 from tests.turn_helpers import handoff_state, phase_flow, render_handoff
 
@@ -65,12 +65,11 @@ def test_validation_rules_match_the_declared_context(step, target):
     """Pflichtfeld-Verträge der Validierung und deklarierter Kontext
     sind dieselbe Aussage: ein Test hält sie deckungsgleich."""
     state = handoff_state(step, target)
-    context = state_turn(phase_flow(state), state).context
-    refs = "source_refs" in context
-    assert bead_input._needs_refs(step, target) is refs
-    assert bead_input._is_build_review(step, target) is (
-        "criteria" in context
+    (operation,) = phase_flow(state).flow.state(state).operations
+    assert ("source_refs" in operation.require) is (
+        "source_refs" in operation.context
     )
+    assert set(operation.require) <= set(bead_input.REQUIRABLE)
 
 
 def test_declared_order_drives_the_rendered_order():

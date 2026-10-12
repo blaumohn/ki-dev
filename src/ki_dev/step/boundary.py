@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, NoReturn
 
 import typer
 
@@ -16,7 +16,6 @@ from ki_dev.ops.checks.preflight import (
     PreflightConfig,
     load_preflight_config,
 )
-from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import (
     GuidelineContractError,
     GuidelineDocument,
@@ -59,10 +58,16 @@ def base_limit() -> int:
         fail(str(exc), code=1)
 
 def selected_guidelines(
-    step: Step, review_of: ReviewTarget | None
+    flow: ReviewFlow, review: bool
 ) -> tuple[GuidelineSection, ...]:
-    """Leitlinien vor Vorlauf und Schreibwirkungen laden, auswählen."""
-    return select_guidelines(guideline_documents(), step, review_of)
+    """Leitlinien vor Vorlauf und Schreibwirkungen laden und für die
+    Phase des Ablaufs (sein Start) auswählen."""
+    try:
+        return select_guidelines(
+            guideline_documents(), flow.flow.start, review
+        )
+    except GuidelineContractError as exc:
+        _contract_failure(exc)
 
 def guideline_documents() -> tuple[GuidelineDocument, ...]:
     """Quellen laden. Fehlend/unlesbar: Exit 1; kein UTF-8, ungültiges
@@ -74,11 +79,14 @@ def guideline_documents() -> tuple[GuidelineDocument, ...]:
     except GuidelineSourceError as exc:
         fail(f"Leitlinienquelle nicht lesbar: {exc}", code=1)
     except GuidelineContractError as exc:
-        problems = "\n".join(f"  {problem}" for problem in exc.problems)
-        fail(
-            f"Leitlinienquelle ungültig: {exc.source}\n{problems}",
-            code=2,
-        )
+        _contract_failure(exc)
+
+def _contract_failure(exc: GuidelineContractError) -> NoReturn:
+    problems = "\n".join(f"  {problem}" for problem in exc.problems)
+    fail(
+        f"Leitlinienquelle ungültig: {exc.source}\n{problems}",
+        code=2,
+    )
 
 def feedback_limit() -> int:
     return load_feedback_max_chars(Path.cwd())

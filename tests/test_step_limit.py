@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import GuidelineSection
 from ki_dev.ops.context.limit import (
     DEFAULT_BASE_MAX_CHARS,
@@ -19,6 +18,7 @@ from ki_dev.ops.context.limit_config import (
     base_max_chars_from,
     load_base_max_chars,
 )
+from ki_dev.step.choices import ReviewTarget, Step
 from tests.turn_helpers import (
     render_base_handoff,
     render_handoff,

@@ -18,8 +18,6 @@ from ki_dev.flow.review_flow import TEMPLATES
 from ki_dev.flow.templates import lines as lines_of
 from ki_dev.ops.context.contract import (
     NONEMPTY_TEXT_SCHEMA,
-    ReviewTarget,
-    Step,
     one_line,
 )
 
@@ -83,14 +81,13 @@ class GuidelineContractError(ValueError):
         self.problems = problems
 
 
-_STAGES = (Step.MAP, Step.GRAPH, Step.MATERIALIZE, Step.IMPLEMENT)
-
 _SINGLE_LINE_SCHEMA = {
     "type": "string",
     "pattern": r"^[^\r\n]*\S[^\r\n]*$",
 }
 _ID_SCHEMA = {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]*$"}
 _ID_LIST_SCHEMA = {"type": "array", "items": _ID_SCHEMA}
+_PHASE_SCHEMA = {"type": "string", "pattern": r"^[a-z_]+$"}
 _STAGE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -115,13 +112,13 @@ GUIDELINE_SCHEMA = {
         "title": _SINGLE_LINE_SCHEMA,
         "permalink": _SINGLE_LINE_SCHEMA,
         "common": _ID_LIST_SCHEMA,
+        # Je Phase eines Ablaufs (Name = Phase, z. B. map); welche
+        # es gibt, sagen die Abläufe, nicht dieser Code.
         "stages": {
             "type": "object",
-            "additionalProperties": False,
-            "required": [stage.value for stage in _STAGES],
-            "properties": {
-                stage.value: _STAGE_SCHEMA for stage in _STAGES
-            },
+            "minProperties": 1,
+            "propertyNames": _PHASE_SCHEMA,
+            "additionalProperties": _STAGE_SCHEMA,
         },
         "sections": {
             "type": "array",
@@ -187,6 +184,8 @@ def _reason(error: ValidationError) -> str:
         return "unbekanntes Feld"
     if error.schema is _ID_SCHEMA:
         return "ungültige Abschnitts-ID (erlaubt: a-z, 0-9, -)"
+    if error.schema is _PHASE_SCHEMA:
+        return "ungültiger Phasenname (erlaubt: a-z, _)"
     if error.schema is _SINGLE_LINE_SCHEMA:
         return "muss nichtleerer einzeiliger Text sein"
     if error.validator in ("minLength", "minItems", "pattern"):
@@ -220,25 +219,28 @@ def _reference_problems(data: dict) -> list[str]:
 
 def select_guidelines(
     documents: tuple[GuidelineDocument, ...],
-    step: Step,
-    review_target: ReviewTarget | None = None,
+    stage: str,
+    review: bool,
 ) -> tuple[GuidelineSection, ...]:
-    """Feste Auswahl: common + task des Ziels, bei Review + review.
+    """Feste Auswahl: common + task der Phase ``stage``, bei Review
+    + review.
 
-    Ein optionales ``common`` des Schritts ersetzt das gemeinsame
+    Ein optionales ``common`` der Phase ersetzt das gemeinsame
     ``common`` der Quelle (z. B. ``map``: bereichsneutral, nur
-    Arbeitsregeln). ``Step.REVIEW`` ohne ``review_target`` bleibt die
-    Umsetzungs-Review. Reihenfolge aus ``sections``, je Quelle jede ID
-    einmal.
+    Arbeitsregeln). Reihenfolge aus ``sections``, je Quelle jede ID
+    einmal. Eine Quelle ohne diese Phase verletzt den Vertrag.
     """
-    target, is_review = _target(step, review_target)
     selected = []
     for document in documents:
-        stage = document.stages[target.value]
-        common = stage.get("common", document.common)
-        wanted = set(common) | set(stage["task"])
-        if is_review:
-            wanted |= set(stage["review"])
+        if stage not in document.stages:
+            raise GuidelineContractError(
+                document.source.path, (f"stages.{stage}: fehlt",)
+            )
+        part = document.stages[stage]
+        common = part.get("common", document.common)
+        wanted = set(common) | set(part["task"])
+        if review:
+            wanted |= set(part["review"])
         selected += _sections_of(document, wanted)
     return tuple(selected)
 
@@ -262,14 +264,6 @@ def _sections_of(
         for section_id, text in document.sections
         if section_id in wanted
     ]
-
-
-def _target(
-    step: Step, review_target: ReviewTarget | None
-) -> tuple[Step, bool]:
-    if step is not Step.REVIEW:
-        return step, False
-    return Step((review_target or ReviewTarget.IMPLEMENT).value), True
 
 
 def render_guideline_documents(

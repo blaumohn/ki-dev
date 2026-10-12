@@ -1,10 +1,8 @@
-"""Gemeinsame Begriffe von ``ki-dev step``: Schritte, Prüfgegenstände,
-Textregeln. Ohne Abhängigkeit auf Übergabe oder Leitlinien, damit beide
-sie nutzen, ohne einander zu importieren."""
+"""Gemeinsame Textregeln der Kontextbausteine. Ohne Abhängigkeit auf
+Übergabe oder Leitlinien, damit beide sie nutzen, ohne einander zu
+importieren."""
 
 from __future__ import annotations
-
-from enum import StrEnum
 
 # Nichtleerer Text als gemeinsamer Schema-Baustein (Technikleitlinie:
 # einmal je Regel definiert und wiederverwendet).
@@ -13,28 +11,6 @@ NONEMPTY_TEXT_SCHEMA = {
     "minLength": 1,
     "pattern": r"\S",
 }
-
-
-class Step(StrEnum):
-    MAP = "map"
-    GRAPH = "graph"
-    MATERIALIZE = "materialize"
-    IMPLEMENT = "implement"
-    REVIEW = "review"
-
-
-class ReviewTarget(StrEnum):
-    """Prüfgegenstand von ``Step.REVIEW``; nur dieser wertet es aus.
-
-    Fehlt ``review_target`` bei ``Step.REVIEW``, bleibt das
-    Verhalten die bisherige Umsetzungs-Review (Rückwärtskompatibilität
-    von ``--step review`` ohne ``--review-of``).
-    """
-
-    MAP = "map"
-    GRAPH = "graph"
-    MATERIALIZE = "materialize"
-    IMPLEMENT = "implement"
 
 
 def one_line(value: object) -> str:

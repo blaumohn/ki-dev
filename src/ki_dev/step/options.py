@@ -9,7 +9,7 @@ from ki_dev.ops.checks.options import (
     parse_preflight_args,
     parse_preflight_skip,
 )
-from ki_dev.ops.context.contract import ReviewTarget, Step
+from ki_dev.step.choices import ReviewTarget, Step
 from ki_dev.step.exits import fail
 
 

@@ -6,7 +6,7 @@ import pytest
 
 from ki_dev.adapter.manual import Console, TransportReadError
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.ops.context.contract import ReviewTarget
+from ki_dev.step.choices import ReviewTarget
 from ki_dev.step.feedback import (
     DEFAULT_FEEDBACK_MAX_CHARS as DEFAULT_MAX,
 )

@@ -10,10 +10,14 @@ from collections.abc import Sequence
 from ki_dev.flow.model import Turn
 from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.checks.preflight import PreflightReport
-from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.bead_input import BeadInput, validate_bead_input
 from ki_dev.ops.context.blocks import TurnInput, state_turn
-from ki_dev.ops.context.contract import ReviewTarget, Step
-from ki_dev.ops.context.guidelines import GuidelineSection
+from ki_dev.ops.context.guidelines import (
+    GuidelineDocument,
+    GuidelineSection,
+    select_guidelines,
+)
+from ki_dev.step.choices import ReviewTarget, Step
 from ki_dev.step.options import _FILES as FILES
 from ki_dev.step.turn import hand_over, require_valid
 
@@ -35,6 +39,36 @@ def handoff_state(
     return step.value
 
 
+def validate_for(
+    issue: BeadInput,
+    step: Step,
+    review_target: ReviewTarget | None = None,
+) -> tuple[str, ...]:
+    """Formale Prüfung wie step: ``require`` und Baustein ``criteria``
+    der Übergabe aus dem mitgelieferten Ablauf."""
+    state = handoff_state(step, review_target)
+    (operation,) = phase_flow(state).flow.state(state).operations
+    return validate_bead_input(
+        issue,
+        operation.require,
+        criteria="criteria" in operation.context,
+    )
+
+
+def select_for(
+    documents: Sequence[GuidelineDocument],
+    step: Step,
+    review_target: ReviewTarget | None = None,
+) -> tuple[GuidelineSection, ...]:
+    """Leitlinienwahl wie step: Phase des Ablaufs, Review oder nicht."""
+    state = handoff_state(step, review_target)
+    return select_guidelines(
+        tuple(documents),
+        phase_flow(state).flow.start,
+        step is Step.REVIEW,
+    )
+
+
 def turn_after(flow: ReviewFlow, source: str, event: str) -> Turn:
     """Übergabe nach genau dieser Kante (ohne Wächter)."""
     edge = flow.flow.candidates(source, event)[0]
@@ -54,9 +88,9 @@ def render_handoff(
 ) -> str:
     """Erste Übergabe eines Schritts (validiert wie step); ohne
     ``flow`` der mitgelieferte Ablauf des Zustands."""
-    require_valid(issue, step, review_target)
     state = handoff_state(step, review_target)
     flow = flow or phase_flow(state)
+    require_valid(issue, flow, state)
     subject = TurnInput(
         issue,
         flow,

@@ -9,13 +9,12 @@ import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
-from ki_dev.ops.context.contract import Step
 from ki_dev.ops.context.guidelines import (
     render_guideline_block,
-    select_guidelines,
 )
 from ki_dev.ops.context.guidelines_source import load_guidelines
 from ki_dev.ops.context.limit import MAX_DIAGNOSIS_CHARS
+from ki_dev.step.choices import Step
 from ki_dev.step.help import HELP
 from tests.codex_session_fixtures import (
     SECRET,
@@ -26,7 +25,7 @@ from tests.codex_session_fixtures import (
 from tests.fake_bd import FakeBd
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
-from tests.turn_helpers import without_attempt
+from tests.turn_helpers import select_for, without_attempt
 
 runner = CliRunner()
 ROOT = Path(__file__).resolve().parent.parent
@@ -279,7 +278,7 @@ def test_review_base_at_limit_keeps_large_report_and_guidelines(
         "Hinweis: PASS gilt nur, wenn Arbeitsbaum",
     ):
         assert line in out[4000:]
-    sections = select_guidelines(
+    sections = select_for(
         load_guidelines(project), Step.REVIEW, None
     )
     block = render_guideline_block(sections)

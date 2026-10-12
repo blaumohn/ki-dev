@@ -113,6 +113,9 @@ class Operation:
     context: tuple[str, ...] = ()
     repeatable: bool = False
     failure: str | None = None
+    require: tuple[str, ...] = ()
+    """Bead-Felder, ohne die die Übergabe dieses Zustands formal
+    unvollständig ist (z. B. ``source_refs``); prüft der Aufrufer."""
 
     @property
     def turn(self) -> Turn | None:
@@ -496,6 +499,7 @@ def _operation(item: dict) -> Operation:
         tuple(use["use"] for use in item.get("context", ())),
         item.get("repeatable", False),
         item.get("failure"),
+        tuple(item.get("require", ())),
     )
 
 
@@ -648,6 +652,7 @@ _SCHEMA = {
                                 "cond": _GUARDS,
                                 "template": _TEMPLATE,
                                 "context": _CONTEXT,
+                                "require": _NAMES,
                                 "repeatable": {"type": "boolean"},
                                 "failure": _NAME,
                             },
@@ -767,6 +772,10 @@ _PATTERN_SCHEMA = {
                     "context": {
                         "type": "object",
                         "additionalProperties": _CONTEXT,
+                    },
+                    "require": {
+                        "type": "object",
+                        "additionalProperties": _NAMES,
                     },
                     "hint": {
                         "type": "object",

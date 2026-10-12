@@ -22,7 +22,6 @@ from ki_dev.ops.checks.stand import current_stand
 from ki_dev.ops.context.bead_input import BeadInput, criteria_with_refs
 from ki_dev.ops.context.beads_reader import read_issue
 from ki_dev.ops.context.blocks import TurnInput
-from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import GuidelineSection
 from ki_dev.ops.context.limit_config import load_base_max_chars
 from ki_dev.runner.planning import (
@@ -48,6 +47,7 @@ from ki_dev.step.boundary import (
     project_preflight_config,
     selected_guidelines,
 )
+from ki_dev.step.choices import Step
 from ki_dev.step.feedback import (
     DecisionInputError,
     load_feedback_max_chars,
@@ -127,7 +127,6 @@ def bead_output(
     bead_id: str,
     flow: ReviewFlow,
     step: Step,
-    review_of: ReviewTarget | None,
     extra: PreflightRequest,
     next_turn: bool,
     inputs: Inputs,
@@ -145,33 +144,32 @@ def bead_output(
             )
             return Output(text, code, halt, flow)
         text, code, halt = next_turn_handoff(
-            issue, review_of, extra, inputs.feedback, flow, run
+            issue, extra, inputs.feedback, flow, run
         )
         return Output(text, code, halt, flow)
     limit = load_base_max_chars(Path.cwd())
     issue = read_issue(bead_id, Path.cwd())
     if step is Step.REVIEW:
-        guidelines = selected_guidelines(step, review_of)
+        guidelines = selected_guidelines(flow, review=True)
         text, code, halt = review_handoff(
-            issue, review_of, extra, guidelines, limit, flow, run
+            issue, extra, guidelines, limit, flow, run
         )
         return Output(text, code, halt, flow)
     start = flow.flow.start
-    ensure_base_fits(flow, issue, step, None, start, limit)
+    ensure_base_fits(flow, issue, start, limit)
     # Projektion: Der Ablauf hält im Startzustand bei seinem turn.
     halt = expect_turn(run(start, None, {}), start)
     subject = turn_input(
         issue,
         flow,
         halt,
-        guidelines=selected_guidelines(step, None),
+        guidelines=selected_guidelines(flow, review=False),
     )
     text = hand_over(flow, halt.turn, subject, limit)
     return Output(text, 0, halt, flow)
 
 def review_handoff(
     issue: BeadInput,
-    review_of: ReviewTarget | None,
     extra: PreflightRequest,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
@@ -191,12 +189,7 @@ def review_handoff(
     ändern.
     """
     ensure_base_fits(
-        flow,
-        issue,
-        Step.REVIEW,
-        review_of,
-        flow.state_of(REVIEW_KIND),
-        base_max_chars,
+        flow, issue, flow.state_of(REVIEW_KIND), base_max_chars
     )
     halt = run(flow.flow.start, DONE, machine_operations(extra, issue))
     subject = turn_input(
@@ -274,7 +267,6 @@ def expect_turn(halt: Halt, state: str) -> Halt:
 
 def next_turn_handoff(
     issue: BeadInput,
-    review_of: ReviewTarget | None,
     extra: PreflightRequest,
     feedback_file: str | None,
     flow: ReviewFlow,
@@ -291,7 +283,7 @@ def next_turn_handoff(
     abgelehnt); eine fehlende Vorlauf-Konfiguration bleibt ohne
     Bindung erlaubt.
     """
-    require_valid(issue, Step.REVIEW, review_of)
+    require_valid(issue, flow, flow.state_of(REVIEW_KIND))
     limit = load_feedback_max_chars(Path.cwd())
     feedback = None
     if feedback_file is not None:
@@ -320,8 +312,8 @@ def decision_turn(
     weist der Ablauf PASS ab. Die Antwort bringt den aktuellen Stand
     mit; hat er sich seit dem Vorlauf geändert, führt PASS zurück in
     den Vorlauf und die nächste Nachricht geht an das Review."""
-    require_valid(issue, Step.REVIEW, ReviewTarget.IMPLEMENT)
     review = flow.state_of(REVIEW_KIND)
+    require_valid(issue, flow, review)
     raw = read_decision(source, CONSOLE)
     answer = parse_answer(raw, issue, flow)
     # Die Antwort gilt nur dort, wo der Lauf auf sie wartet: ohne

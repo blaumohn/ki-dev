@@ -17,7 +17,7 @@ from ki_dev.ops.context.beads_reader import (
     InvalidBeadIdError,
     check_bead_id,
 )
-from ki_dev.ops.context.contract import ReviewTarget, Step, one_line
+from ki_dev.ops.context.contract import one_line
 from ki_dev.ops.context.limit import HandoffBaseTooLongError
 from ki_dev.ops.context.limit_config import (
     LimitConfigInvalidError,
@@ -25,6 +25,7 @@ from ki_dev.ops.context.limit_config import (
 )
 from ki_dev.runner.planning import Halt, StaleHaltError
 from ki_dev.step.boundary import CONSOLE, bound_flow
+from ki_dev.step.choices import ReviewTarget, Step
 from ki_dev.step.exits import fail
 from ki_dev.step.feedback import DecisionInputError, NextTurnInputError
 from ki_dev.step.forms import LOCAL_WORD, MAP_WORD, local_form, map_form
@@ -226,7 +227,6 @@ def _bead_form(
             bead_id,
             flow,
             step,
-            review_of,
             extra,
             next_turn,
             inputs,

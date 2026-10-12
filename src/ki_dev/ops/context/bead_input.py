@@ -1,23 +1,22 @@
-"""Bead-Eingabe der Übergaben: Typ, formale Prüfung je Schritt,
-Abnahmekriterien mit Referenz.
+"""Bead-Eingabe der Übergaben: Typ, formale Prüfung, Abnahmekriterien
+mit Referenz.
 
-Die Prüfung kennt nur Schritt und Prüfgegenstand; Rendering und
-Ablauf liegen bei den Aufrufern.
+Welche Felder eine Übergabe braucht, sagt der Ablauf (``require`` am
+Zustand); die Prüfung kennt keine Phase. Rendering und Ablauf liegen
+bei den Aufrufern.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import cache
 
 from jsonschema import Draft202012Validator
 
 from ki_dev.flow.review_flow import TEMPLATES
 from ki_dev.flow.templates import render
-from ki_dev.ops.context.contract import (
-    NONEMPTY_TEXT_SCHEMA,
-    ReviewTarget,
-    Step,
-)
+from ki_dev.ops.context.contract import NONEMPTY_TEXT_SCHEMA
 from ki_dev.review_decision import (
     ReviewContractError,
     criterion_refs,
@@ -47,35 +46,6 @@ class BeadInputInvalidError(ValueError):
 
 
 _SOURCE_REFS_PATH = "metadata.handoff.source_refs"
-_REFS_STEPS = {Step.MAP, Step.GRAPH, Step.MATERIALIZE}
-_CONTRACT_STEPS = {Step.IMPLEMENT}
-# Ein fehlender review_target bei Step.REVIEW bleibt die bisherige
-# Umsetzungs-Review (Rückwärtskompatibilität von --step review ohne
-# --review-of).
-_REVIEW_TARGET_REFS = {
-    ReviewTarget.MAP,
-    ReviewTarget.GRAPH,
-    ReviewTarget.MATERIALIZE,
-}
-_REVIEW_TARGET_CONTRACT = {
-    None,
-    ReviewTarget.MATERIALIZE,
-    ReviewTarget.IMPLEMENT,
-}
-
-
-def _needs_refs(step: Step, review_target: ReviewTarget | None) -> bool:
-    if step is Step.REVIEW:
-        return review_target in _REVIEW_TARGET_REFS
-    return step in _REFS_STEPS
-
-
-def _needs_contract(
-    step: Step, review_target: ReviewTarget | None
-) -> bool:
-    if step is Step.REVIEW:
-        return review_target in _REVIEW_TARGET_CONTRACT
-    return step in _CONTRACT_STEPS
 
 
 # Gemeinsame Schema-Bausteine (Technikleitlinie: Draft202012Validator,
@@ -95,54 +65,43 @@ _BASE_PROPERTIES = {
 }
 _BASE_REQUIRED = ("id", "title", "description")
 
-_CONTRACT_PROPERTIES = {
-    "acceptance_criteria": NONEMPTY_TEXT_SCHEMA,
-    "design": NONEMPTY_TEXT_SCHEMA,
-}
-_CONTRACT_REQUIRED = ("acceptance_criteria", "design")
-
-_REFS_PROPERTIES = {
-    "metadata": {
-        "type": "object",
-        "required": ["handoff"],
-        "properties": {
-            "handoff": {
-                "type": "object",
-                "required": ["source_refs"],
-                "properties": {"source_refs": _SOURCE_REFS_SCHEMA},
-            },
+_REFS_SCHEMA = {
+    "type": "object",
+    "required": ["handoff"],
+    "properties": {
+        "handoff": {
+            "type": "object",
+            "required": ["source_refs"],
+            "properties": {"source_refs": _SOURCE_REFS_SCHEMA},
         },
     },
 }
-_REFS_REQUIRED = ("metadata",)
+# Bead-Felder, die ein Ablauf je Übergabe verlangen kann
+# (``require`` am Zustand) und ihr Schema in der Bead-Eingabe.
+REQUIRABLE = {
+    "source_refs": ("metadata", _REFS_SCHEMA),
+    "design": ("design", NONEMPTY_TEXT_SCHEMA),
+    "acceptance_criteria": (
+        "acceptance_criteria",
+        NONEMPTY_TEXT_SCHEMA,
+    ),
+}
 
 
-def _issue_schema(*, needs_refs: bool, needs_contract: bool) -> dict:
+@cache
+def _issue_schema(require: frozenset[str]) -> dict:
     properties = dict(_BASE_PROPERTIES)
     required = list(_BASE_REQUIRED)
-    if needs_contract:
-        properties |= _CONTRACT_PROPERTIES
-        required += _CONTRACT_REQUIRED
-    if needs_refs:
-        properties |= _REFS_PROPERTIES
-        required += _REFS_REQUIRED
+    for name in sorted(require):
+        field, schema = REQUIRABLE[name]
+        properties[field] = schema
+        required.append(field)
     return {
         "type": "object",
         "required": required,
         "properties": properties,
     }
 
-
-# Die vier (step, review_target)-Verträge reduzieren sich auf zwei
-# Booleans (_needs_refs/_needs_contract); die Varianten werden beim
-# Laden einmal zusammengesetzt statt je Aufruf neu gebaut.
-_ISSUE_SCHEMAS = {
-    (needs_refs, needs_contract): _issue_schema(
-        needs_refs=needs_refs, needs_contract=needs_contract
-    )
-    for needs_refs in (False, True)
-    for needs_contract in (False, True)
-}
 
 # Reihenfolge der Feldpfade in der Ausgabe, unabhängig von der
 # (undefinierten) Reihenfolge, in der Draft202012Validator Fehler über
@@ -160,26 +119,27 @@ _FIELD_RANK = {
 
 def validate_bead_input(
     issue: BeadInput,
-    step: Step,
-    review_target: ReviewTarget | None = None,
+    require: Iterable[str] = (),
+    *,
+    criteria: bool = False,
 ) -> tuple[str, ...]:
     """Formale Lücken als Feldpfade; leer heißt vollständig.
 
-    ``review_target`` wirkt nur bei ``step is Step.REVIEW``: er wählt,
-    welcher Prüfgegenstand (map/graph/materialize/implement) benötigt
-    wird. Für andere Schritte wird er ignoriert.
-    """
-    refs = _needs_refs(step, review_target)
-    contract = _needs_contract(step, review_target)
-    schema = _ISSUE_SCHEMAS[(refs, contract)]
-    validator = Draft202012Validator(schema)
+    ``require`` nennt die Bead-Felder, die der Ablauf für diese
+    Übergabe verlangt (:data:`REQUIRABLE`); ``criteria`` prüft
+    zusätzlich die Zerlegung der Abnahmekriterien (Übergabe mit dem
+    Baustein ``criteria``)."""
+    unknown = sorted(set(require) - set(REQUIRABLE))
+    if unknown:
+        raise ValueError(f"require: unbekannt {', '.join(unknown)}")
+    validator = Draft202012Validator(_issue_schema(frozenset(require)))
     paths = {
         tuple(error.absolute_path)
         for error in validator.iter_errors(_issue_payload(issue))
     }
     ordered = sorted(paths, key=_path_sort_key)
     problems = tuple(_field_path(path) for path in ordered)
-    if not problems and _is_build_review(step, review_target):
+    if not problems and criteria:
         problems = _criterion_problems(issue)
     return problems
 
@@ -222,15 +182,6 @@ def _field_path(path: tuple) -> str:
             return _SOURCE_REFS_PATH
         return f"{_SOURCE_REFS_PATH}[{path[3]}]"
     return str(path[0])
-
-
-def _is_build_review(
-    step: Step, review_target: ReviewTarget | None
-) -> bool:
-    return step is Step.REVIEW and review_target in (
-        None,
-        ReviewTarget.IMPLEMENT,
-    )
 
 
 def criterion_line(issue: BeadInput) -> str:

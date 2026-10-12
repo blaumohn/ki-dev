@@ -11,7 +11,6 @@ from ki_dev.ops.checks.preflight import (
     PreflightReport,
 )
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.guidelines import (
     GUIDELINE_SOURCES,
     GuidelineContractError,
@@ -26,11 +25,13 @@ from ki_dev.ops.context.guidelines_source import (
     load_guidelines,
     sync_guideline_documents,
 )
+from ki_dev.step.choices import ReviewTarget, Step
 from tests.guideline_fixtures import guideline_data, write_guidelines
 from tests.turn_helpers import (
     render_base_handoff,
     render_handoff,
     render_review_handoff,
+    select_for,
 )
 
 REPO = Path(__file__).resolve().parents[1]
@@ -67,7 +68,7 @@ def _issue():
 
 @pytest.mark.parametrize("step", NON_REVIEW)
 def test_productive_step_selects_common_and_task(step):
-    selected = select_guidelines(_documents(), step)
+    selected = select_for(_documents(), step)
     for source in GUIDELINE_SOURCES:
         assert _ids(selected, source) == [
             "common",
@@ -78,7 +79,7 @@ def test_productive_step_selects_common_and_task(step):
 
 @pytest.mark.parametrize("target", list(ReviewTarget))
 def test_review_selects_common_task_and_review_of_target(target):
-    selected = select_guidelines(_documents(), Step.REVIEW, target)
+    selected = select_for(_documents(), Step.REVIEW, target)
     for source in GUIDELINE_SOURCES:
         assert _ids(selected, source) == [
             "common",
@@ -96,18 +97,18 @@ def _with_map_common(ids):
 
 def test_stage_common_replaces_source_common():
     documents = (_with_map_common(["shared"]),)
-    assert _ids(select_guidelines(documents, Step.MAP)) == [
+    assert _ids(select_for(documents, Step.MAP)) == [
         "shared",
         "map-task",
     ]
     assert _ids(
-        select_guidelines(documents, Step.REVIEW, ReviewTarget.MAP)
+        select_for(documents, Step.REVIEW, ReviewTarget.MAP)
     ) == ["shared", "map-task", "map-review"]
 
 
 def test_stage_common_leaves_other_steps_and_local_unchanged():
     documents = (_with_map_common([]),)
-    assert _ids(select_guidelines(documents, Step.GRAPH)) == [
+    assert _ids(select_for(documents, Step.GRAPH)) == [
         "common",
         "shared",
         "graph-task",
@@ -131,7 +132,7 @@ def test_stage_common_with_unknown_id_is_reference_problem():
 def test_repository_map_gets_only_neutral_work_rules():
     """Kartierung ist bereichsneutral: keine Architektur-,
     Programmier- oder Technikregeln, nur Arbeitsregeln."""
-    selected = select_guidelines(load_guidelines(REPO), Step.MAP)
+    selected = select_for(load_guidelines(REPO), Step.MAP)
     assert [(Path(s.source).name, s.id) for s in selected] == [
         ("arbeitsregeln.de.yaml", "beads-lesen"),
         ("arbeitsregeln.de.yaml", "rollenrechte"),
@@ -141,9 +142,9 @@ def test_repository_map_gets_only_neutral_work_rules():
 
 def test_review_without_target_stays_build_review():
     documents = _documents()
-    assert select_guidelines(
+    assert select_for(
         documents, Step.REVIEW
-    ) == select_guidelines(
+    ) == select_for(
         documents, Step.REVIEW, ReviewTarget.IMPLEMENT
     )
 
@@ -171,7 +172,7 @@ def test_repository_common_sections_cover_former_entry_texts():
 
 
 def test_sources_keep_fixed_order_and_markdown():
-    selected = select_guidelines(_documents(), Step.IMPLEMENT)
+    selected = select_for(_documents(), Step.IMPLEMENT)
     sources = [s.source for s in selected]
     assert sources == sorted(sources, key=sources.index)
     assert sources[0] == "docs/policies/programmierleitlinie.de.yaml"
@@ -210,7 +211,7 @@ def _effective(step, target):
 @pytest.mark.parametrize(("step", "target"), _TARGETS)
 def test_repository_mapping_keeps_full_reach(step, target):
     documents = load_guidelines(REPO)
-    selected = select_guidelines(documents, step, target)
+    selected = select_for(documents, step, target)
     for document in documents:
         expected = [
             sid
@@ -320,14 +321,10 @@ def _mutated(change):
             "stages.implement: Pflichtfeld review fehlt",
         ),
         (
-            lambda d: d["stages"].pop("graph"),
-            "stages: Pflichtfeld graph fehlt",
-        ),
-        (
             lambda d: d["stages"].update(
-                review={"task": [], "review": []}
+                Karte={"task": [], "review": []}
             ),
-            "stages: unbekanntes Feld",
+            "stages: ungültiger Phasenname (erlaubt: a-z, _)",
         ),
         (
             lambda d: d.update(extra="GEHEIM"),
@@ -391,8 +388,16 @@ def test_core_does_no_file_access(monkeypatch):
     monkeypatch.setattr(pathlib.Path, "read_text", forbidden)
     monkeypatch.setattr(pathlib.Path, "read_bytes", forbidden)
     documents = _documents()
-    select_guidelines(documents, Step.REVIEW, ReviewTarget.MATERIALIZE)
+    select_guidelines(documents, "materialize", True)
     render_guideline_documents(documents)
+
+
+def test_stage_names_come_from_the_flows():
+    """Welche Phasen es gibt, sagen die Abläufe; eine Quelle ohne die
+    Phase eines Ablaufs fällt bei der Auswahl auf."""
+    documents = _documents()
+    with pytest.raises(GuidelineContractError, match="stages.nirgends"):
+        select_guidelines(documents, "nirgends", False)
 
 
 # ---------------------------------------------------------------------

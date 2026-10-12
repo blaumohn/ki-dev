@@ -34,6 +34,11 @@ review = [
   { use = "guidelines" }, { use = "attempt" },
 ]
 
+# Bead-Felder, ohne die eine Übergabe formal unvollständig ist (Exit 2).
+[phase.require]
+write = ["source_refs"]
+review = ["source_refs"]
+
 [phase.actor]
 write = "Kartierungsagent"
 review = "Review-Agent (Kartenprüfung)"

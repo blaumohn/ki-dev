@@ -46,6 +46,11 @@ review = [
   { use = "guidelines" }, { use = "attempt" },
 ]
 
+# Bead-Felder, ohne die eine Übergabe formal unvollständig ist (Exit 2).
+[phase.require]
+write = ["design", "acceptance_criteria"]
+review = ["design", "acceptance_criteria"]
+
 [phase.actor]
 write = "Umsetzer (implementer)"
 review = "Review-Agent (nach deterministischem Vorlauf)"

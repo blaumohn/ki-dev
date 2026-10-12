@@ -4,7 +4,7 @@ und prüft die Basisgrenze."""
 
 from __future__ import annotations
 
-from ki_dev.flow.model import FlowError, Turn
+from ki_dev.flow.model import FlowError, Operation, Turn
 from ki_dev.flow.review_flow import ReviewFlow
 from ki_dev.ops.context.bead_input import (
     BeadInput,
@@ -19,7 +19,6 @@ from ki_dev.ops.context.blocks import (
     base_fields,
     state_turn,
 )
-from ki_dev.ops.context.contract import ReviewTarget, Step
 from ki_dev.ops.context.limit import check_base_length
 from ki_dev.runner.planning import ASK, TURN
 from ki_dev.runner.turns import Plug, bind_turns, render_turn
@@ -33,10 +32,17 @@ def bind_flow(flow: ReviewFlow) -> None:
 
 
 def require_valid(
-    issue: BeadInput, step: Step, review_target: ReviewTarget | None
+    issue: BeadInput, flow: ReviewFlow, state: str
 ) -> None:
-    """Formal unvollständige Beads lehnt jede erste Übergabe ab."""
-    problems = validate_bead_input(issue, step, review_target)
+    """Formal unvollständige Beads lehnt jede erste Übergabe ab: der
+    Ablauf nennt am Zustand die Bead-Felder (``require``), der
+    Baustein ``criteria`` verlangt zerlegbare Abnahmekriterien."""
+    operation = _turn_operation(flow, state)
+    problems = validate_bead_input(
+        issue,
+        operation.require,
+        criteria="criteria" in operation.context,
+    )
     if problems:
         raise BeadInputInvalidError(problems)
 
@@ -66,17 +72,23 @@ def hand_over(
 def ensure_base_fits(
     flow: ReviewFlow,
     issue: BeadInput,
-    step: Step,
-    review_target: ReviewTarget | None,
     state: str,
     base_max_chars: int,
 ) -> None:
     """Basisgrenze der Übergabe in ``state`` prüfen, ohne den Text zu
     verwenden (vor einem Vorlauf, der Dateien ändern kann)."""
-    require_valid(issue, step, review_target)
+    require_valid(issue, flow, state)
     hand_over(
         flow,
         state_turn(flow, state),
         TurnInput(issue, flow, state),
         base_max_chars,
     )
+
+
+def _turn_operation(flow: ReviewFlow, state: str) -> Operation:
+    """Die Operation des Zustands, die seine Übergabe trägt."""
+    for operation in flow.flow.state(state).operations:
+        if operation.turn is not None:
+            return operation
+    raise FlowError(f"{flow.file}: {state} hat keine Übergabevorlage")

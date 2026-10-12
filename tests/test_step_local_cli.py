@@ -9,8 +9,8 @@ from typer.testing import CliRunner
 from ki_dev.cli import app
 from ki_dev.ops.context import beads_reader
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.ops.context.contract import Step
 from ki_dev.ops.context.guidelines import GUIDELINE_SOURCES
+from ki_dev.step.choices import Step
 from tests.guideline_fixtures import write_guidelines
 from tests.turn_helpers import (
     render_base_handoff,

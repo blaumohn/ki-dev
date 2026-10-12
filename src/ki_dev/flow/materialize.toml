@@ -33,6 +33,11 @@ review = [
   { use = "guidelines" }, { use = "attempt" },
 ]
 
+# Bead-Felder, ohne die eine Übergabe formal unvollständig ist (Exit 2).
+[phase.require]
+write = ["source_refs"]
+review = ["source_refs", "design", "acceptance_criteria"]
+
 [phase.actor]
 write = "Materialisierungsagent"
 review = "Review-Agent (Materialisierungsprüfung)"

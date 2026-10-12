@@ -34,7 +34,6 @@ from ki_dev.ops.context.bead_input import (
     validate_bead_input,
 )
 from ki_dev.ops.context.beads_reader import BeadsReadError, read_issue
-from ki_dev.ops.context.contract import Step
 from ki_dev.run_store import RunStoreError
 from ki_dev.runner.cli import (
     DEFAULT_PROFILE,
@@ -51,6 +50,9 @@ from ki_dev.runner.cli import (
 from ki_dev.runner.machine import IMPLEMENT
 from ki_dev.runner.runtime import RunResult, RunResumeError
 
+# Bead-Felder, die ein Umsetzungsauftrag braucht (wie ``require`` am
+# Schreibzustand von implement_review.toml; ein Ablauf ab ige.6).
+_REQUIRE = ("design", "acceptance_criteria")
 _ERRORS = (
     RunConfigError,
     RunResumeError,
@@ -169,7 +171,7 @@ def status(
 def _bead_task(bead_id: str, cwd: Path) -> dict[str, object]:
     """Auftrag, Abnahmekriterien und Quellen aus dem Bead."""
     issue = read_issue(bead_id, cwd)
-    problems = validate_bead_input(issue, Step.IMPLEMENT)
+    problems = validate_bead_input(issue, _REQUIRE)
     if problems:
         raise BeadInputInvalidError(problems)
     refs = issue.source_refs

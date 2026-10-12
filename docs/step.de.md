@@ -107,6 +107,11 @@ soll, sagt das in der Sitzung selbst.
 
 ## Pflichtfelder je Schritt
 
+Welche Bead-Felder eine Übergabe braucht, steht im Ablauf am Zustand
+(`[phase.require]`, z. B. `review = ["source_refs"]`); die Prüfung in
+`ops/context` kennt keine Phase. Die Tabellen unten zeigen die Werte
+der mitgelieferten Abläufe.
+
 ### Geerbte Epic-Hinweise
 
 Ein Epic-Hinweis vermittelt Ziel, Zusammenhang und begründende Entscheidungen
