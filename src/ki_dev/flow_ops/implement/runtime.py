@@ -1,11 +1,11 @@
 """Laufzeit des Ausführers: fährt implement.toml bis zum Halt.
 
 Eine deklarierte Maschine: der Lauf (``runner/run.toml``,
-:class:`~ki_dev.runner.run_machine.RunMachine`) als parallele
-Statechart mit dem Ablauf (``implement.toml``) als Region neben der
-offenen Operation und dem Halt. Die Schleife ist synchron: ein Schritt
-sendet Ereignisse an die Maschine, externe
-Wirkung (Agent, Nachweis, Abschlussweg) läuft außerhalb davon. Vor der
+:class:`~ki_dev.flow_ops.implement.run_machine.RunMachine`) als
+parallele Statechart mit dem Ablauf (``implement.toml``) als Region
+neben der offenen Operation und dem Halt. Die Schleife ist synchron:
+ein Schritt sendet Ereignisse an die Maschine, externe Wirkung
+(Agent, Nachweis, Abschlussweg) läuft außerhalb davon. Vor der
 Wirkung wird die Absicht gespeichert, danach das Ergebnis
 (Zwei-Schreib-Protokoll); nach jedem Schritt ersetzt
 ``RunStore.save_record`` den Datensatz atomar. Ein Halt beendet den
@@ -47,20 +47,7 @@ from ki_dev.flow.model import (
     Verdict,
 )
 from ki_dev.flow.model import Operation as FlowOperation
-from ki_dev.fsm import RecordError, TransitionNotAllowed
-from ki_dev.repository_finalization import Finalizer
-from ki_dev.review_context import (
-    DEFAULT_PROJECTION_LIMITS,
-    ProjectionLimits,
-)
-from ki_dev.run_store import RunStore, RunStoreError
-from ki_dev.runner.bound import BoundOperations
-from ki_dev.runner.events import ABLAUF, event_record, run_event_record
-from ki_dev.runner.implement_ops import (
-    ImplementationOperations,
-    decode_operation_event,
-)
-from ki_dev.runner.machine import (
+from ki_dev.flow_ops.implement.machine import (
     EVENT_TYPES,
     IMPLEMENT,
     WAITING_PHASES,
@@ -90,16 +77,35 @@ from ki_dev.runner.machine import (
     operation,
     operation_of,
 )
-from ki_dev.runner.review_output import (
-    AgentProtocolError,
-    ReviewDecision,
+from ki_dev.flow_ops.implement.ops import (
+    ImplementationOperations,
+    decode_operation_event,
 )
-from ki_dev.runner.run_machine import Operation, RunMachine, Step
-from ki_dev.runner.run_record import (
+from ki_dev.flow_ops.implement.record import (
     RunData,
     RunRecordError,
     decode_record,
     encode_record,
+)
+from ki_dev.flow_ops.implement.review_output import (
+    ReviewDecision,
+)
+from ki_dev.flow_ops.implement.run_machine import (
+    Operation,
+    RunMachine,
+    Step,
+)
+from ki_dev.fsm import RecordError, TransitionNotAllowed
+from ki_dev.repository_finalization import Finalizer
+from ki_dev.review_context import (
+    DEFAULT_PROJECTION_LIMITS,
+    ProjectionLimits,
+)
+from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.bound import BoundOperations
+from ki_dev.runner.events import ABLAUF, event_record, run_event_record
+from ki_dev.runner.review_output import (
+    AgentProtocolError,
 )
 from ki_dev.runner.safety import (
     CallLedger,

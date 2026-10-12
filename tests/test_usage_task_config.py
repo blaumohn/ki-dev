@@ -19,17 +19,17 @@ from ki_dev.adapter.agent import (
 )
 from ki_dev.adapter.executors import Effort
 from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
-from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.run_store import RunStore
-from ki_dev.runner.cli import (
+from ki_dev.flow_ops.implement.cli import (
     RunConfigError,
     resume_run,
     start_run,
 )
-from ki_dev.runner.runtime import (
+from ki_dev.flow_ops.implement.runtime import (
     RunRuntime,
     StaticEvidenceCollector,
 )
+from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.run_store import RunStore
 from ki_dev.runner.safety import CallLedger
 from tests.executor_specs import spec_for
 from tests.test_runner_runtime import (
@@ -83,7 +83,7 @@ def _patch_runtime(monkeypatch, worker, reviewer=None):
         )
 
     monkeypatch.setattr(
-        "ki_dev.runner.cli._runtime", build_runtime
+        "ki_dev.flow_ops.implement.cli._runtime", build_runtime
     )
 
 
@@ -298,7 +298,7 @@ def test_resume_keeps_revisions_from_manifest(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(
-        "ki_dev.runner.cli._runtime", build_runtime
+        "ki_dev.flow_ops.implement.cli._runtime", build_runtime
     )
     runs = tmp_path / "runs"
     paused = start_run(

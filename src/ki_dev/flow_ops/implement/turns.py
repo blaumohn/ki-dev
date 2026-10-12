@@ -16,8 +16,8 @@ from dataclasses import dataclass
 
 from ki_dev.adapter.contract import ReviewVocabulary, RunTask
 from ki_dev.flow.model import FlowError, Turn
+from ki_dev.flow_ops.implement.machine import IMPLEMENT
 from ki_dev.review_context import ReviewProjection
-from ki_dev.runner.machine import IMPLEMENT
 from ki_dev.runner.turns import Plug, bind_turns, render_turn
 
 WORK = "work"

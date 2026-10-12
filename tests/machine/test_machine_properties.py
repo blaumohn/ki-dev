@@ -22,7 +22,7 @@ from itertools import pairwise
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ki_dev.runner.machine import (
+from ki_dev.flow_ops.implement.machine import (
     STOPPED_PHASES,
     Event,
     InvalidTransition,

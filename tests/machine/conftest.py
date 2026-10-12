@@ -10,7 +10,7 @@ welche Ereignistypen je Zustand ueberhaupt eine Kante haben.
 from __future__ import annotations
 
 from ki_dev.deltas import StepDeltaAssessment
-from ki_dev.runner.machine import (
+from ki_dev.flow_ops.implement.machine import (
     EVENT_TYPES,
     IMPLEMENT,
     CheckpointRecorded,

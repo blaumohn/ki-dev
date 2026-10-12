@@ -24,19 +24,19 @@ from ki_dev.adapter.executors.contract import (
     TurnStatus,
 )
 from ki_dev.adapter.registry import executor_specs
-from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.run_store import RunStore, RunStoreError
-from ki_dev.runner.cli import (
+from ki_dev.flow_ops.implement.cli import (
     RunConfigError,
     _role,
     start_run,
 )
-from ki_dev.runner.machine import Limits
-from ki_dev.runner.runtime import (
+from ki_dev.flow_ops.implement.machine import Limits
+from ki_dev.flow_ops.implement.runtime import (
     RunResumeError,
     RunRuntime,
     StaticEvidenceCollector,
 )
+from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.safety import (
     CallLedger,
     QuotaBaseline,
@@ -736,7 +736,7 @@ def test_start_pins_effective_role_budgets(monkeypatch, tmp_path):
             seen.update(manifest_extra)
 
     monkeypatch.setattr(
-        "ki_dev.runner.cli._runtime", lambda *_: Runtime()
+        "ki_dev.flow_ops.implement.cli._runtime", lambda *_: Runtime()
     )
     start_run(config, run_id="pin", runs_dir=tmp_path)
     for role in ("worker", "review"):

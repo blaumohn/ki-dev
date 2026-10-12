@@ -24,15 +24,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
 from ki_dev.flow.model import Transition
-from ki_dev.fsm import (
-    Durable,
-    Taken,
-    bind,
-    check_record,
-    configuration_of,
-)
-from ki_dev.runner.events import ABLAUF, MACHINE
-from ki_dev.runner.machine import (
+from ki_dev.flow_ops.implement.machine import (
     IMPLEMENT,
     OPERATION_GUARDS,
     Event,
@@ -45,6 +37,14 @@ from ki_dev.runner.machine import (
     phase_of,
     step,
 )
+from ki_dev.fsm import (
+    Durable,
+    Taken,
+    bind,
+    check_record,
+    configuration_of,
+)
+from ki_dev.runner.events import ABLAUF, MACHINE
 from ki_dev.runner.protocol import RUN_DOC, RunModel, compose
 
 Operation = dict[str, object]

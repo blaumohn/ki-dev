@@ -18,7 +18,7 @@
 # - FSM-Kern (`[statechart]`): Zustände und Kanten im nativen Format von
 #   python-statemachine; Kantenwahl, History und `raise` übernimmt die
 #   Bibliothek (src/ki_dev/fsm.py). Wächter und Aktionen sind Namen der
-#   Ops-Klasse `ImplementModel` (src/ki_dev/runner/machine/model.py).
+#   Ops-Klasse `ImplementModel` (src/ki_dev/flow_ops/implement/machine/model.py).
 #
 # Lesart einer Kante (UML-Schreibweise):
 #   source --event [cond] / on--> target
@@ -30,7 +30,7 @@
 # (runner/run.toml), nach der Antwort geht es dort weiter.
 
 name = "implement"
-ops = "ki_dev.flow_ops.implement"
+ops = "ki_dev.flow_ops.implement.commands"
 # Review-Antworten des Controllers: PASS oder eine Befundklasse; das
 # Urteil folgt aus der Klasse (ein Vokabular für step und run).
 priority = ["escalate", "decision", "fix"]

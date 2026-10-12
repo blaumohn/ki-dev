@@ -26,13 +26,13 @@ from ki_dev.adapter.executors.contract import (
     TurnResult,
     TurnStatus,
 )
-from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.run_store import RunStore
-from ki_dev.runner.machine import Limits
-from ki_dev.runner.runtime import (
+from ki_dev.flow_ops.implement.machine import Limits
+from ki_dev.flow_ops.implement.runtime import (
     RunRuntime,
     StaticEvidenceCollector,
 )
+from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.run_store import RunStore
 from tests.executor_specs import spec_for
 from tests.test_runner_runtime import _context
 

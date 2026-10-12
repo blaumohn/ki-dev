@@ -2,7 +2,7 @@
 
 ``--adapter [ROLLE=]NAME`` ist nicht ablaufabhängig: jedes Paket bindet
 die Option ein und reicht die Werte an
-:func:`ki_dev.runner.cli.adapter_overrides`, das sie prüft.
+:func:`ki_dev.flow_ops.implement.cli.adapter_overrides`, das sie prüft.
 """
 
 from __future__ import annotations

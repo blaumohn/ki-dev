@@ -87,7 +87,7 @@ max_total_bytes = 65536
 `worker` und `review` müssen verschiedene vorbereitete Sitzungen benutzen.
 Optionale Felder dürfen entfallen; für Grenzen gelten dann die eingebauten
 Werte. Geprüft wird das Profil per JSON Schema
-([`runner/run_config.py`](../src/ki_dev/runner/run_config.py)); die
+([`flow_ops/implement/config.py`](../src/ki_dev/flow_ops/implement/config.py)); die
 Felder einer Rolle folgen aus dem Transport ihres Executors (siehe
 [Executoren](#executoren)). Fehler nennen den Feldpfad, nie den Wert:
 
@@ -363,7 +363,7 @@ Vor jedem Bau-/Review-Aufruf eines Executors mit `context` und bei
 Resume misst der zustaendige Adapter
 (`Executor.measure_context(session_id)`) den zuletzt bekannten
 Sitzungskontext; **Freigabe, Halt und Persistenz entscheidet
-ausschliesslich die Orchestrierung** (`runner.runtime._context_guard`),
+ausschliesslich die Orchestrierung** (`flow_ops.implement.runtime._context_guard`),
 nie eine Selbsteinschaetzung des Agenten oder eine Prompt-Anweisung.
 Ein Adapter liefert nur den Messwert.
 
@@ -403,13 +403,13 @@ Resume misst der zustaendige Adapter
 (`Executor.measure_quota(session_id)`) den zuletzt bekannten
 Verbrauchsanteil des rollierenden Fuenfstundenfensters des
 Kontokontingents; **Freigabe, Halt und Persistenz entscheidet
-ausschliesslich die Orchestrierung** (`runner.runtime._quota_guard`),
+ausschliesslich die Orchestrierung** (`flow_ops.implement.runtime._quota_guard`),
 nie eine Selbsteinschaetzung des Agenten. Ein Adapter liefert nur den
 Messwert.
 
 Zwei unabhaengige, gemeinsam ausgegebene Pausengruende (keine
 Kurzschluss-Auswertung -- eine erreichte Grenze verdeckt nicht, dass
-auch die andere greift, `runner.runtime._call_guards`):
+auch die andere greift, `flow_ops.implement.runtime._call_guards`):
 
 1. **Aufgaben-Delta-Budget** (`budget.max_usage_delta_percentage_points`,
    je Rolle): wie viele Prozentpunkte das beobachtete, kontoweite

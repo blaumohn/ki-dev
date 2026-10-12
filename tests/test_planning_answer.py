@@ -9,14 +9,17 @@ import pytest
 
 from ki_dev.adapter.contract import RunTask
 from ki_dev.flow.review_flow import load_review_flow
+from ki_dev.flow_ops.implement import review_output as implement_output
+from ki_dev.flow_ops.implement.review_output import (
+    bind_review_decision,
+    parse_review_decision,
+)
 from ki_dev.ops.checks.options import CONTROL_SCHEMA, check_control
 from ki_dev.review_decision import ReviewContractError
 from ki_dev.runner import review_output
 from ki_dev.runner.review_output import (
     AgentProtocolError,
-    bind_review_decision,
     parse_planning_answer,
-    parse_review_decision,
 )
 
 FLOW = load_review_flow("implement_review").flow
@@ -125,14 +128,15 @@ def test_both_wrappers_check_through_the_same_core_functions(
     """Umsetzungs- und Planungsablauf prüfen und binden Antworten über
     dieselben Funktionen des gemeinsamen Kerns."""
     seen = []
-    for name in ("parse_verdict", "bind_requirement"):
-        original = getattr(review_output, name)
+    for module in (review_output, implement_output):
+        for name in ("parse_verdict", "bind_requirement"):
+            original = getattr(module, name)
 
-        def spy(*args, _name=name, _original=original, **kwargs):
-            seen.append(_name)
-            return _original(*args, **kwargs)
+            def spy(*args, _name=name, _original=original, **kwargs):
+                seen.append(_name)
+                return _original(*args, **kwargs)
 
-        monkeypatch.setattr(review_output, name, spy)
+            monkeypatch.setattr(module, name, spy)
 
     raw = json.dumps(
         {

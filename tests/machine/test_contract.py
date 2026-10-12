@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from ki_dev.deltas import StepDeltaAssessment
-from ki_dev.runner.machine import (
+from ki_dev.flow_ops.implement.machine import (
     AgentEscalation,
     ControllerChanges,
     ControllerEscalate,

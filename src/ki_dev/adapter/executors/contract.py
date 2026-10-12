@@ -69,7 +69,7 @@ class TurnBudget:
     dieser Rolle seit ihrer Baseline (``runner.safety.QuotaBaseline``),
     in Prozentpunkten -- ein kontoweiter, konservativer Naeherungswert
     fuer den Verbrauch dieser Aufgabe, keine exakte Zurechnung (siehe
-    ``runner.runtime._quota_guard``, ki-dev-ablauf-dqv).
+    ``flow_ops.implement.runtime._quota_guard``, ki-dev-ablauf-dqv).
     """
 
     max_turns: int = 12

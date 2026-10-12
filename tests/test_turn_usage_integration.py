@@ -27,8 +27,8 @@ from ki_dev.adapter.executors.contract import (
     QuotaMeasurement,
     QuotaStatus,
 )
+from ki_dev.flow_ops.implement.machine import Limits
 from ki_dev.run_store import RunStore
-from ki_dev.runner.machine import Limits
 from ki_dev.runner.safety import CallLedger
 from ki_dev.usage import CounterScope, TokenCounts, UsageStatus
 from tests.executor_specs import spec_for

@@ -219,7 +219,7 @@ Vorhanden sind bereits:
   vorhandenen Claude-Laufs, einschließlich Deduplizierung von Modellantworten.
 - `CallLedger` und `QuotaBaseline` in `src/ki_dev/runner/safety.py`: persistierte
   Laufbilanz, Aufrufreservierungen und Kontingentbasislinien.
-- Guards in `src/ki_dev/runner/runtime.py`: technische Freigabe/Pause, getrennte
+- Guards in `src/ki_dev/flow_ops/implement/runtime.py`: technische Freigabe/Pause, getrennte
   Aufgabenbudgets und Kontingentreserve sowie Kontextprüfung.
 
 Diese Grundlagen werden erweitert. Der vorhandene Analyseskript ist eine
@@ -256,7 +256,7 @@ Komplexität. Es entstehen kein zusätzlicher Dienst und keine zweite Safety-Bil
 | Verbrauchsbilanz | Ereignisse genau einmal einem Auftrag/Aufruf zurechnen, Gesamtsummen abgleichen, Sitzungswechsel und Teilaufgaben zusammenführen | `CallLedger`/`RunStore` erweitern |
 | Estimatoren | Aufgabengröße, Unsicherheit, Kontextbedarf, Schnittvorschläge und Verbrauchsintervalle beurteilen | vorgeschlagenes `estimation.py`; bestehende Executor-Verträge und Materialisierung nutzen |
 | Kalibrierung | Schätzfehler und Token-Kontingent-Beziehung getrennt lernen, Modellstände und Gültigkeit versionieren | vorgeschlagenes `calibration.py`; rein datenbasierte Auswertung ohne Modellpflicht |
-| Budgetsteuerung | Prognose und Messung gegen wirksame Grenzen prüfen, Reservierungen koordinieren, Pause/Handoff begründen | vorhandene `runner/safety.py`/`runner/runtime.py` |
+| Budgetsteuerung | Prognose und Messung gegen wirksame Grenzen prüfen, Reservierungen koordinieren, Pause/Handoff begründen | vorhandene `runner/safety.py`/`flow_ops/implement/runtime.py` |
 
 Beads bleibt die Wahrheit für Aufgaben, Abhängigkeiten und Zustand. Messreihen,
 Schätzungen und Kalibrierungsstände sind strukturierte versionierte Artefakte

@@ -25,17 +25,7 @@ from rich.text import Text
 from ki_dev.adapter.executors import Executor
 from ki_dev.flow.model import Flow, FlowError
 from ki_dev.flow.templates import render, text
-from ki_dev.flow_ops.live import LiveExecutor
-from ki_dev.flow_ops.options import ADAPTER_OPTION
-from ki_dev.ops.context.bead_input import (
-    BeadInput,
-    BeadInputInvalidError,
-    criteria_with_refs,
-    validate_bead_input,
-)
-from ki_dev.ops.context.beads_reader import BeadsReadError, read_issue
-from ki_dev.run_store import RunStoreError
-from ki_dev.runner.cli import (
+from ki_dev.flow_ops.implement.cli import (
     DEFAULT_PROFILE,
     ExecutorWrap,
     RunConfigError,
@@ -47,8 +37,18 @@ from ki_dev.runner.cli import (
     start_run,
     status_document,
 )
-from ki_dev.runner.machine import IMPLEMENT
-from ki_dev.runner.runtime import RunResult, RunResumeError
+from ki_dev.flow_ops.implement.machine import IMPLEMENT
+from ki_dev.flow_ops.implement.runtime import RunResult, RunResumeError
+from ki_dev.flow_ops.live import LiveExecutor
+from ki_dev.flow_ops.options import ADAPTER_OPTION
+from ki_dev.ops.context.bead_input import (
+    BeadInput,
+    BeadInputInvalidError,
+    criteria_with_refs,
+    validate_bead_input,
+)
+from ki_dev.ops.context.beads_reader import BeadsReadError, read_issue
+from ki_dev.run_store import RunStoreError
 
 # Bead-Felder, die ein Umsetzungsauftrag braucht (wie ``require`` am
 # Schreibzustand von implement_review.toml; ein Ablauf ab ige.6).

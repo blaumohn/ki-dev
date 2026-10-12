@@ -3,10 +3,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-import ki_dev.flow_ops.implement as implement_ops
+import ki_dev.flow_ops.implement.commands as implement_ops
 from ki_dev.cli import app, main
-from ki_dev.runner.machine import Phase
-from ki_dev.runner.runtime import RunResult
+from ki_dev.flow import model
+from ki_dev.flow_ops.implement.machine import Phase
+from ki_dev.flow_ops.implement.runtime import RunResult
 
 runner = CliRunner()
 
@@ -59,7 +60,7 @@ def test_flow_without_ops_is_data_only(capsys):
 def test_flow_file_in_cwd_wins_and_must_match_bound_flow(
     capsys, monkeypatch, tmp_path
 ):
-    shipped = Path(implement_ops.__file__).parent.parent / "flow"
+    shipped = Path(model.__file__).parent
     text = (shipped / "implement.toml").read_text(encoding="utf-8")
     (tmp_path / "implement.toml").write_text(
         text.replace("nur der Mensch kann entscheiden", "anders"),

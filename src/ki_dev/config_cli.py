@@ -12,9 +12,9 @@ from rich.text import Text
 from ki_dev import tool_versions
 from ki_dev.config_sources import ConfigSource
 from ki_dev.flow import package
+from ki_dev.flow_ops.implement import cli as runner_cli
 from ki_dev.ops.checks import preflight
 from ki_dev.ops.context import limit_config
-from ki_dev.runner import cli as runner_cli
 from ki_dev.step import feedback
 
 # Reihenfolge der Ausgabe; die Orte selbst definieren die Module.

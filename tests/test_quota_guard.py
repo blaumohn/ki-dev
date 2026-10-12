@@ -32,7 +32,7 @@ from ki_dev.adapter.executors.contract import (
     QuotaMeasurement,
     QuotaStatus,
 )
-from ki_dev.runner.machine import Limits
+from ki_dev.flow_ops.implement.machine import Limits
 from ki_dev.runner.safety import SafetyLimits
 from tests.test_context_guard import (
     ControlledExecutor,

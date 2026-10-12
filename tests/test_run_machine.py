@@ -9,8 +9,7 @@ import json
 
 import pytest
 
-from ki_dev.fsm import TransitionNotAllowed
-from ki_dev.runner.machine import (
+from ki_dev.flow_ops.implement.machine import (
     ControllerEscalate,
     ControllerNeedsDecision,
     FinalizationError,
@@ -19,7 +18,8 @@ from ki_dev.runner.machine import (
     Phase,
     RunState,
 )
-from ki_dev.runner.run_machine import RunMachine
+from ki_dev.flow_ops.implement.run_machine import RunMachine
+from ki_dev.fsm import TransitionNotAllowed
 
 _WORK = {"id": "r0001-work", "kind": "work", "repeatable": False}
 _FINAL = {

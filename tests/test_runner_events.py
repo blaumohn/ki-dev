@@ -6,6 +6,8 @@ from __future__ import annotations
 import pytest
 
 from ki_dev.flow.model import Transition, load_flow
+from ki_dev.flow_ops.implement.machine import Limits
+from ki_dev.flow_ops.implement.run_machine import RUN_DOC
 from ki_dev.run_store import RunStore
 from ki_dev.runner.events import (
     EventLogError,
@@ -14,8 +16,6 @@ from ki_dev.runner.events import (
     run_event_record,
     validate_record,
 )
-from ki_dev.runner.machine import Limits
-from ki_dev.runner.run_machine import RUN_DOC
 from tests.test_runner_runtime import (
     FakeReviewer,
     FakeWorker,

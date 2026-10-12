@@ -279,15 +279,15 @@ src/ki_dev/
                templates/ (Rollentexte), patterns/ (gemeinsame Muster),
                implement.toml, map.toml, graph.toml, materialize.toml,
                implement_review.toml
-  runner/      machine/ (Ops des Umsetzungsablaufs, advance), run.toml +
-               run_machine.py (Lauf: Regionen ablauf, operation, halt),
-               runtime.py (Schleife,
-               Datensatz je Schritt), planning.py (Lauf je Bead mit
-               Halt bei turn/ask),
-               turns.py (jede Übergabe aus ihrer
-               Deklaration), implement_turns.py (Felder des Umsetzungsablaufs),
-               events.py (Protokoll), cli.py,
-               safety.py (Kontext-, Kontingent-, Aufrufgrenzen)
+  runner/      Gerüst ohne Rollen- und Phasennamen: run.toml +
+               protocol.py (Lauf: Regionen ablauf, operation, halt),
+               package.py (gemeinsamer Ausführer), bound.py
+               (Bindungen), planning.py (Lauf je Bead mit Halt bei
+               turn/ask), turns.py (jede Übergabe aus ihrer
+               Deklaration), events.py (Protokoll), safety.py
+               (Kontext-, Kontingent-, Aufrufgrenzen)
+  flow_ops/    Pakete: implement/ (Ops, Rollenprofil, eigener Ausführer
+               runtime.py bis ki-dev-ablauf-ige.6)
   ops/         checks/ (Vorlauf), context/ (Bead-Eingabe, Leitlinien,
                Grenzen, Kontextbausteine); kennt weder runner noch adapter
   adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),

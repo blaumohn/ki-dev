@@ -3,7 +3,7 @@
 # Konfiguration ist ein Tupel, z. B. (review, started, running).
 #
 # - `ablauf`: der `[statechart]` des Pakets; das Gerüst setzt ihn beim
-#   Laden ein (src/ki_dev/runner/run_machine.py, `compose`). Diese
+#   Laden ein (src/ki_dev/flow_ops/implement/run_machine.py, `compose`). Diese
 #   Datei nennt ihn nur über `done.state.ablauf`.
 # - `operation`: die offene Operation als Zwei-Schreib-Protokoll.
 #   Absicht speichern (`prepared` → `started`), externe Wirkung
@@ -21,7 +21,7 @@
 #
 # Format: [statechart] von python-statemachine (src/ki_dev/fsm.py); die
 # Namen in `cond`/`on`/`enter` sind Methoden von RunModel
-# (src/ki_dev/runner/run_machine.py).
+# (src/ki_dev/flow_ops/implement/run_machine.py).
 
 [statechart]
 name = "run"

@@ -14,9 +14,9 @@ from typing import TypedDict, cast
 
 from jsonschema import Draft202012Validator
 
+from ki_dev.flow_ops.implement.machine import decode_run_state
+from ki_dev.flow_ops.implement.run_machine import Operation, RunMachine
 from ki_dev.fsm import RECORD_SCHEMA
-from ki_dev.runner.machine import decode_run_state
-from ki_dev.runner.run_machine import Operation, RunMachine
 
 SCHEMA_VERSION = 2
 

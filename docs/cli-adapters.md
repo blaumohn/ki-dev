@@ -30,7 +30,7 @@ Typen und keinerlei Claude-/Codex-spezifische Argumente.
 Ein Adapter liefert mit `measure_context`/`measure_quota` nur den
 Messwert. Freigabe, Halt und Persistenz einer erreichten Kontext- oder
 Kontingentgrenze entscheidet ausschliesslich die Orchestrierung
-(`runner.runtime._context_guard`/`_quota_guard`, siehe
+(`flow_ops.implement.runtime._context_guard`/`_quota_guard`, siehe
 [ausfuehrer.de.md](ausfuehrer.de.md#kontextvorpruefung) und
 [ausfuehrer.de.md](ausfuehrer.de.md#fuenfstundenkontingent-vorpruefung)),
 nie der Adapter selbst und nie eine Selbsteinschaetzung des Agenten.

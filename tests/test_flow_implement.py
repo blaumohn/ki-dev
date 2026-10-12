@@ -20,8 +20,8 @@ from ki_dev.flow.model import (
     parse_flow,
     read_raw,
 )
+from ki_dev.flow_ops.implement.machine import ImplementModel, Phase
 from ki_dev.fsm import FsmError, bind
-from ki_dev.runner.machine import ImplementModel, Phase
 
 IMPLEMENT = load_flow("implement")
 COUNTING = {

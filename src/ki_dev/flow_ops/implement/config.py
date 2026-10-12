@@ -33,8 +33,8 @@ from ki_dev.adapter.executors import (
 )
 from ki_dev.adapter.executors.contract import TurnBudget
 from ki_dev.adapter.registry import executor_specs
+from ki_dev.flow_ops.implement.machine import IMPLEMENT, Limits
 from ki_dev.review_context import ProjectionLimits
-from ki_dev.runner.machine import IMPLEMENT, Limits
 from ki_dev.runner.safety import SafetyLimits
 
 ROLES = ("worker", "review")

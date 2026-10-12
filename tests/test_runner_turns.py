@@ -16,11 +16,12 @@ import pytest
 from ki_dev.adapter.contract import ReviewVocabulary, RunTask
 from ki_dev.flow.model import FlowError, load_flow, parse_flow, read_raw
 from ki_dev.flow.review_flow import load_review_flow
+from ki_dev.flow_ops.implement import turns as implement_turns
+from ki_dev.flow_ops.implement.machine import IMPLEMENT
 from ki_dev.ops.context.bead_input import BeadInput
 from ki_dev.ops.context.blocks import TurnInput, state_turn
 from ki_dev.review_context import ReviewProjection
-from ki_dev.runner import implement_turns, turns
-from ki_dev.runner.machine import IMPLEMENT
+from ki_dev.runner import turns
 from ki_dev.runner.turns import Plug, bind_turns
 from ki_dev.step import turn as step_turn
 from ki_dev.step.choices import Step

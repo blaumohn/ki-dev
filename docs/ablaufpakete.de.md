@@ -13,7 +13,7 @@ und setzt Läufe fort.
 |---|---|---|
 | Ablauf | Zustände, Kanten, Bindungen `[op.*]` | `flow/map.toml`, `flow/implement_review.toml`, `flow/implement.toml` |
 | Gemeinsame Muster | wiederkehrende Abschnitte | `flow/patterns/review.toml` |
-| Ops-Katalog | Arbeit, Eingabeaufbereitung, Ergebnisdeutung | `ops/checks`, `runner/implement_ops.py` |
+| Ops-Katalog | Arbeit, Eingabeaufbereitung, Ergebnisdeutung | `ops/checks`, `flow_ops/implement/ops.py` |
 | Ausführer | Op starten, Ergebnis sichern, Ereignis senden | `runner/` |
 
 ## Eine Bindung
@@ -80,17 +80,18 @@ Muster mit `extends`, kein Schalter.
 
 ## Ausführer
 
-- `ki-dev step` (Planungsablauf, `runner/planning.py`): `turn` und
-  `ask` sind Halte; `checks` läuft über `[op.checks]` und den Katalog,
-  den `step` einsteckt.
-- `ki-dev -f implement` (`runner/runtime.py`): die sieben externen
-  Operationen (Arbeit, Nachweise, Review, Einfrieren, Historie, Prüfung,
-  Integration) laufen über ihre Bindungen in `implement.toml`.
+- `ki-dev step` (`runner/planning.py`): ein Turn des gewählten Ablaufs
+  mit dem Executor `manual`; `turn` und `ask` sind Halte, `checks`
+  läuft über `[op.checks]` und den Katalog, den `step` einsteckt.
+- `ki-dev -f implement` (Paket `flow_ops/implement/`, eigener Ausführer
+  `runtime.py`): die sieben externen Operationen (Arbeit, Nachweise,
+  Review, Einfrieren, Historie, Prüfung, Integration) laufen über ihre
+  Bindungen in `implement.toml`.
 - `runner/package.py` ist der generische Ausführer ohne Fachwissen:
   Regionen aus `runner/run.toml`, `RunStore`, Abbruchfenster
   (`repeatable`, `uncertain`, `reconcile`). Ihn prüfen die Tests mit
   einem Testablauf (`tests/package_fixtures.py`).
 
-Noch offen: Ein Ausführer für beide Abläufe, `implement` auf den
-gemeinsamen Mustern und die Implementierungsoperationen aus `runner/` in
-den Katalog (`ki-dev-ablauf-5ch.4`).
+Noch offen: `implement` und `implement_review` werden ein Ablauf auf
+dem gemeinsamen Ausführer mit parametrisierten Übergaben für manual und
+Agenten (`ki-dev-ablauf-ige.6`, `ki-dev-ablauf-ige.7`).

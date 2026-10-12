@@ -22,15 +22,17 @@ from ki_dev.deltas import (
     assess_step_delta,
 )
 from ki_dev.flow.binding import OperationSpec
-from ki_dev.review_context import project_review_context
-from ki_dev.runner.implement_turns import review_prompt, work_prompt
-from ki_dev.runner.machine import EVENT_TYPES, IMPLEMENT
-from ki_dev.runner.review_output import (
+from ki_dev.flow_ops.implement.machine import EVENT_TYPES, IMPLEMENT
+from ki_dev.flow_ops.implement.review_output import (
     REVIEW_VOCABULARY,
-    AgentProtocolError,
     ReviewDecision,
     bind_review_decision,
     parse_review_decision,
+)
+from ki_dev.flow_ops.implement.turns import review_prompt, work_prompt
+from ki_dev.review_context import project_review_context
+from ki_dev.runner.review_output import (
+    AgentProtocolError,
 )
 
 

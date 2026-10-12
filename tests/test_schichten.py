@@ -185,9 +185,9 @@ def test_generic_package_runner_knows_no_roles_or_catalog():
     """Der generische Runner kennt Bindungen, keinen Fachkatalog."""
     forbidden = (
         "ki_dev.adapter",
-        "ki_dev.runner.implement_ops",
-        "ki_dev.runner.machine",
-        "ki_dev.runner.runtime",
+        "ki_dev.flow_ops.implement.ops",
+        "ki_dev.flow_ops.implement.machine",
+        "ki_dev.flow_ops.implement.runtime",
     )
     assert not [
         m

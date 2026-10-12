@@ -8,16 +8,16 @@ import pytest
 from ki_dev.adapter.contract import (
     RunTask,
 )
-from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.run_store import RunStore, RunStoreError
-from ki_dev.runner.cli import RunConfigError, status_run
-from ki_dev.runner.machine import Limits, Phase
-from ki_dev.runner.run_config import check_run_config
-from ki_dev.runner.runtime import (
+from ki_dev.flow_ops.implement.cli import RunConfigError, status_run
+from ki_dev.flow_ops.implement.config import check_run_config
+from ki_dev.flow_ops.implement.machine import Limits, Phase
+from ki_dev.flow_ops.implement.runtime import (
     RunResumeError,
     RunRuntime,
     StaticEvidenceCollector,
 )
+from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.run_store import RunStore, RunStoreError
 from tests.test_runner_runtime import (
     FakeReviewer,
     FakeWorker,
@@ -270,7 +270,7 @@ def test_configured_manual_relay_round_trip(monkeypatch, tmp_path):
     """Adapter manual über die echte Konfiguration: Start hält
     mit ``awaiting_input``, der Bote legt die Antwort ab, ``resume``
     fährt dieselbe Operation weiter bis ``passed``."""
-    from ki_dev.runner import cli as runner_cli
+    from ki_dev.flow_ops.implement import cli as runner_cli
 
     monkeypatch.setattr(
         runner_cli,
@@ -316,7 +316,7 @@ def test_resume_override_replaces_role_only_for_this_call(
 ):
     """``resume --adapter worker=mock``: die Rolle läuft mit dem Ersatz,
     die Kante nennt ihn; das Manifest behält die Profilrolle."""
-    from ki_dev.runner import cli as runner_cli
+    from ki_dev.flow_ops.implement import cli as runner_cli
 
     monkeypatch.setattr(
         runner_cli,
@@ -369,7 +369,7 @@ def test_resume_override_replaces_role_only_for_this_call(
 
 
 def test_manifest_and_status_name_the_profile(monkeypatch, tmp_path):
-    from ki_dev.runner import cli as runner_cli
+    from ki_dev.flow_ops.implement import cli as runner_cli
 
     monkeypatch.setattr(
         runner_cli,
@@ -420,7 +420,7 @@ def test_manifest_and_status_name_the_profile(monkeypatch, tmp_path):
     ],
 )
 def test_adapter_overrides_are_checked(values, message):
-    from ki_dev.runner import cli as runner_cli
+    from ki_dev.flow_ops.implement import cli as runner_cli
 
     with pytest.raises(RunConfigError, match=message):
         runner_cli.adapter_overrides(values)

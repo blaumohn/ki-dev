@@ -8,9 +8,9 @@ from ki_dev import (
 from ki_dev.cli import app
 from ki_dev.config_cli import SOURCES
 from ki_dev.flow import package
+from ki_dev.flow_ops.implement import cli as runner_cli
 from ki_dev.ops.checks import preflight
 from ki_dev.ops.context import limit_config
-from ki_dev.runner import cli as runner_cli
 from ki_dev.step import feedback
 
 runner = CliRunner()

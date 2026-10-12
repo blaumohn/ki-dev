@@ -10,8 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.runner.cli import load_profile
-from ki_dev.runner.run_config import RunConfigError, check_run_config
+from ki_dev.flow_ops.implement.cli import load_profile
+from ki_dev.flow_ops.implement.config import (
+    RunConfigError,
+    check_run_config,
+)
 
 DOC = Path(__file__).parent.parent / "docs" / "ausfuehrer.de.md"
 SECRET = "geheim-4711"

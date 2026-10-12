@@ -23,16 +23,16 @@ from ki_dev.deltas import (
     RoundStatus,
     VcsRef,
 )
-from ki_dev.repository_finalization import StaticFinalizer
-from ki_dev.run_store import RunStore
-from ki_dev.runner import implement_ops
-from ki_dev.runner.machine import IMPLEMENT, Limits, Phase
-from ki_dev.runner.review_output import AgentProtocolError
-from ki_dev.runner.runtime import (
+from ki_dev.flow_ops.implement import ops as implement_ops
+from ki_dev.flow_ops.implement.machine import IMPLEMENT, Limits, Phase
+from ki_dev.flow_ops.implement.runtime import (
     RunResumeError,
     RunRuntime,
     StaticEvidenceCollector,
 )
+from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.run_store import RunStore
+from ki_dev.runner.review_output import AgentProtocolError
 from tests.executor_specs import LOCAL
 
 SPECS = executor_specs()
