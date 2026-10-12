@@ -37,7 +37,7 @@ from tests.turn_helpers import (
     render_review_handoff,
 )
 
-PARTIAL_RUN_NOTE = templates.text("review", "partial-run-note")
+PARTIAL_RUN_NOTE = templates.text("turns", "partial-run-note")
 
 
 def _git(repo: Path, *args: str) -> str:

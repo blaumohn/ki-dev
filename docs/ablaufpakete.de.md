@@ -37,6 +37,37 @@ eines Paketablaufs mit dem Executor `manual` aus. Der Schichtentest
 (`tests/test_schichten.py`) weist Ablauf-, Phasen- und Rollennamen als
 Literale in `runner/`, `ops/` und `step/` ab.
 
+## Parametrisierte Übergaben
+
+Eine Übergabe an eine Sitzung (Agent oder Mensch als Bote) entsteht aus
+ihrer Deklaration am Zustand oder an der Kante: Vorlage und
+Kontextbausteine in ihrer Reihenfolge. So baut ki-dev einen wichtigen
+Teil der Anfangsbedingungen einer Sitzung deterministisch aus Ablauf,
+Rolle und Bead (Ort im Bead-Graph), für jeden Executor gleich.
+
+```toml
+[vocabulary]
+context = ["epic_sections", "criteria", "attempt"]
+
+[[state]]
+id = "schreiben"
+kind = "write"
+operation = [{ do = "turn", template = "role-implement", context = [
+  { use = "epic_sections" }, { use = "criteria" }, { use = "attempt" },
+] }]
+```
+
+| Teil | Ort | Beispiel |
+|---|---|---|
+| Rendern | `runner/turns.py` (`render_turn`) | Vorlage füllen, Bausteine anhängen |
+| Gemeinsame Bausteine | `ops/context/blocks.py` (`BLOCKS`) | `epic_sections` (Eltern-Epics), `criteria`, `source_refs`, `guidelines`, `next_steps`, `attempt` |
+| Gemeinsame Texte | `flow/templates/turns/` | `epic-intro`, `attempt-line` |
+| Rollenvorlagen | `flow/templates/<satz>/` des Pakets | `review/role-implement.txt` |
+
+Ein Paket steckt `Plug(FIELDS, {**BLOCKS, **eigene})` ein und nutzt davon,
+was es deklariert; `bind_turns` prüft beim Laden, dass jeder deklarierte
+Baustein und jeder Platzhalter eingesteckt ist.
+
 ## Eine Bindung
 
 ```toml

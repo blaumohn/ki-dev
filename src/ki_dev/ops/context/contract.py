@@ -4,6 +4,11 @@ importieren."""
 
 from __future__ import annotations
 
+TEXTS = "turns"
+"""Vorlagensatz der gemeinsamen Übergabetexte
+(``flow/templates/turns``): Texte der Felder und Kontextbausteine, die
+jeder Ablauf nutzen kann."""
+
 # Nichtleerer Text als gemeinsamer Schema-Baustein (Technikleitlinie:
 # einmal je Regel definiert und wiederverwendet).
 NONEMPTY_TEXT_SCHEMA = {

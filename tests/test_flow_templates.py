@@ -13,12 +13,12 @@ STEP = Path(__file__).parent.parent / "src" / "ki_dev" / "step"
 
 def test_missing_placeholder_value_is_an_error():
     with pytest.raises(KeyError, match="context"):
-        templates.render("review", "epic-hint", id="e-1")
+        templates.render("turns", "epic-hint", id="e-1")
 
 
 def test_render_fills_every_placeholder():
     text = templates.render(
-        "review", "epic-hint", id="e-1", context="Ziel"
+        "turns", "epic-hint", id="e-1", context="Ziel"
     )
     assert text == "Epic-Hinweis (e-1):\nZiel"
 

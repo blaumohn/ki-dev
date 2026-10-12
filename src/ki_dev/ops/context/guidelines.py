@@ -14,10 +14,10 @@ from pathlib import PurePosixPath
 
 from jsonschema import Draft202012Validator, ValidationError
 
-from ki_dev.flow.review_flow import TEMPLATES
 from ki_dev.flow.templates import lines as lines_of
 from ki_dev.ops.context.contract import (
     NONEMPTY_TEXT_SCHEMA,
+    TEXTS,
     one_line,
 )
 
@@ -298,7 +298,7 @@ def guideline_lines(
     Zeilenumbrüche) und werden weder gekürzt noch zur Basis gezählt."""
     if not guidelines:
         return []
-    lines = ["", *lines_of(TEMPLATES, "guideline-intro")]
+    lines = ["", *lines_of(TEXTS, "guideline-intro")]
     for section in guidelines:
         lines += [
             "",

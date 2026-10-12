@@ -1,4 +1,4 @@
-"""Felder und Kontextbausteine der Übergaben des Planungsablaufs.
+"""Gemeinsame Felder und Kontextbausteine der Übergaben (Gerüst).
 
 Der Ablauf (z. B. ``map.toml``) deklariert je Übergabe eine Vorlage und
 die Kontextbausteine in ihrer Reihenfolge. Was ein Platzhalter der
@@ -11,11 +11,10 @@ Ausführer (``runner.turns``). Beide erhalten dieselbe Eingabe,
 from __future__ import annotations
 
 import shlex
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-from ki_dev.flow.model import FlowError, Turn
-from ki_dev.flow.review_flow import TEMPLATES, ReviewFlow
+from ki_dev.flow.model import Flow, FlowError, Turn
 from ki_dev.flow.templates import lines as lines_of
 from ki_dev.flow.templates import render, text
 from ki_dev.ops.checks.options import ARGS_OPTION, SKIP_OPTION
@@ -25,7 +24,7 @@ from ki_dev.ops.checks.preflight import (
     format_command_result,
 )
 from ki_dev.ops.context.bead_input import BeadInput, criterion_line
-from ki_dev.ops.context.contract import one_line
+from ki_dev.ops.context.contract import TEXTS, one_line
 from ki_dev.ops.context.guidelines import (
     GuidelineSection,
     guideline_lines,
@@ -44,7 +43,7 @@ class TurnInput:
     aus ``state`` führen, bei ``events`` nur die dieser Ereignisse."""
 
     issue: BeadInput
-    flow: ReviewFlow
+    flow: Flow
     state: str
     events: tuple[str, ...] | None = None
     guidelines: Sequence[GuidelineSection] = ()
@@ -70,7 +69,7 @@ def _bead(turn: TurnInput) -> str:
 
 def _output(turn: TurnInput) -> str:
     name = "verdict" if turn.pass_allowed else "verdict-partial"
-    return text(TEMPLATES, name)
+    return text(TEXTS, name)
 
 
 def _verdict(turn: TurnInput) -> ReviewVerdict:
@@ -80,7 +79,7 @@ def _verdict(turn: TurnInput) -> ReviewVerdict:
 
 
 def _judgement(turn: TurnInput) -> str:
-    return turn.flow.flow.verdict(_verdict(turn).event).value
+    return turn.flow.verdict(_verdict(turn).event).value
 
 
 def _detail(turn: TurnInput) -> str:
@@ -89,8 +88,8 @@ def _detail(turn: TurnInput) -> str:
 
 FIELDS: dict[str, Callable[[TurnInput], object]] = {
     "bead": _bead,
-    "common": lambda _turn: text(TEMPLATES, "common"),
-    "rules": lambda _turn: text(TEMPLATES, "review-rules"),
+    "common": lambda _turn: text(TEXTS, "common"),
+    "rules": lambda _turn: text(TEXTS, "review-rules"),
     "output": _output,
     "limit": lambda turn: turn.feedback_limit,
     "event": lambda turn: _verdict(turn).event,
@@ -107,18 +106,33 @@ FIELDS: dict[str, Callable[[TurnInput], object]] = {
 
 def _finding_classes(turn: TurnInput) -> list[str]:
     """Schließt ohne Leerzeile an die Rollenvorlage an."""
-    return list(turn.flow.class_lines())
+    return finding_class_lines(turn.flow)
+
+
+def finding_class_lines(flow: Flow) -> list[str]:
+    """Befundklassen für Review-Rollen, in Vorrangreihenfolge."""
+    classes = flow.finding_classes
+    parts = [
+        f"{name} = {classes[name].text} ({classes[name].verdict})"
+        for name in flow.priority
+    ]
+    return [
+        "Befundklassen: " + "; ".join(parts) + ".",
+        "Nenne je Befund seine Klasse; das Urteil folgt der "
+        f"stärksten Klasse ({' > '.join(flow.priority)}), "
+        "ohne Befund PASS.",
+    ]
 
 
 def _epic_sections(turn: TurnInput) -> list[str]:
     if not turn.issue.epic_context:
         return []
-    lines = ["", *lines_of(TEMPLATES, "epic-intro")]
+    lines = ["", *lines_of(TEXTS, "epic-intro")]
     for epic_id, epic_context in turn.issue.epic_context:
         lines += [
             "",
             render(
-                TEMPLATES,
+                TEXTS,
                 "epic-hint",
                 id=one_line(epic_id),
                 context=one_line(epic_context),
@@ -143,10 +157,34 @@ def _next_steps(turn: TurnInput) -> list[str]:
     """Folgeschritte laut Ablauf als abschließender Block."""
     return [
         "",
-        *turn.flow.hint_lines(
-            turn.state, one_line(turn.issue.id), turn.events
+        *next_step_lines(
+            turn.flow, turn.state, one_line(turn.issue.id), turn.events
         ),
     ]
+
+
+def next_step_lines(
+    flow: Flow,
+    state: str,
+    bead: str,
+    events: Iterable[str] | None = None,
+) -> list[str]:
+    """Übergabe an den Menschen als Boten: Folgeschritte aus dem
+    Ablauf mit eingesetzter Bead-ID; ``events`` beschränkt sie auf die
+    Übergänge eines Urteils."""
+    wanted = None if events is None else set(events)
+    lines = [
+        f"Hinweis für den Menschen: Zustand {state}; Folgeschritte "
+        f"laut {flow.name}.toml (Adapter manual, du trägst sie weiter):"
+    ]
+    for transition in flow.outgoing(state):
+        if wanted is not None and transition.event not in wanted:
+            continue
+        command = (transition.hint or "").replace("{bead}", bead)
+        lines.append(
+            f"- {transition.event} → {transition.target}: {command}"
+        )
+    return lines
 
 
 def _attempt(turn: TurnInput) -> list[str]:
@@ -154,7 +192,7 @@ def _attempt(turn: TurnInput) -> list[str]:
     eine Antwort trägt sie zurück. Leer, wenn nichts wartet."""
     if turn.attempt is None:
         return []
-    return [render(TEMPLATES, "attempt-line", attempt=turn.attempt)]
+    return [render(TEXTS, "attempt-line", attempt=turn.attempt)]
 
 
 def _reading_hint(turn: TurnInput) -> list[str]:
@@ -173,8 +211,8 @@ def _report(turn: TurnInput) -> list[str]:
     lines += [format_command_result(item) for item in report.commands]
     lines.append(artifact_line(report))
     if report.partial:
-        lines.append(text(TEMPLATES, "partial-run-note"))
-    lines.append(text(TEMPLATES, "pass-note"))
+        lines.append(text(TEXTS, "partial-run-note"))
+    lines.append(text(TEXTS, "pass-note"))
     return lines
 
 
@@ -195,7 +233,7 @@ def _feedback(header: str) -> Callable[[TurnInput], list[str]]:
             f"| {_quoted(line)}".rstrip()
             for line in turn.feedback.splitlines()
         ]
-        return ["", text(TEMPLATES, header), *quoted]
+        return ["", text(TEXTS, header), *quoted]
 
     return lines
 
@@ -212,7 +250,7 @@ def _quoted(line: str) -> str:
 
 
 def _human_note(_turn: TurnInput) -> list[str]:
-    return ["", text(TEMPLATES, "human-note")]
+    return ["", text(TEXTS, "human-note")]
 
 
 def _finding(turn: TurnInput) -> list[str]:
@@ -239,7 +277,7 @@ def _control(turn: TurnInput) -> list[str]:
     ):
         for name, value in values.items():
             argv += [option, f"{name}={value}"]
-    return ["", text(TEMPLATES, "control-intro"), shlex.join(argv)]
+    return ["", text(TEXTS, "control-intro"), shlex.join(argv)]
 
 
 BLOCKS: dict[str, Callable[[TurnInput], Sequence[str]]] = {
@@ -265,12 +303,14 @@ BLOCKS: dict[str, Callable[[TurnInput], Sequence[str]]] = {
 # --- Zuordnung Schritt → Übergabe -------------------------------------
 
 
-def state_turn(flow: ReviewFlow, state: str) -> Turn:
+def state_turn(flow: Flow, state: str) -> Turn:
     """Die Übergabe des Zustands laut Ablauf: Vorlage und Kontext."""
-    for operation in flow.flow.state(state).operations:
+    for operation in flow.state(state).operations:
         if operation.turn is not None:
             return operation.turn
-    raise FlowError(f"{flow.file}: {state} hat keine Übergabevorlage")
+    raise FlowError(
+        f"{flow.name}.toml: {state} hat keine Übergabevorlage"
+    )
 
 
 # --- Basisgrenze ------------------------------------------------------

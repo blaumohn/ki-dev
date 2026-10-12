@@ -69,13 +69,13 @@ def map_handoff(
     require_valid(issue, flow, state)
     subject = TurnInput(
         issue,
-        flow,
+        flow.flow,
         state,
         guidelines=guidelines,
         reading_hint=text(TEMPLATES, "map-reading-hint"),
     )
     return hand_over(
-        flow, state_turn(flow, state), subject, base_max_chars
+        flow, state_turn(flow.flow, state), subject, base_max_chars
     )
 
 

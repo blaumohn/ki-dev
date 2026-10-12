@@ -70,7 +70,7 @@ def select_for(
 def turn_after(flow: ReviewFlow, source: str, event: str) -> Turn:
     """Übergabe nach genau dieser Kante (ohne Wächter)."""
     edge = flow.flow.candidates(source, event)[0]
-    return edge.turn or state_turn(flow, edge.target)
+    return edge.turn or state_turn(flow.flow, edge.target)
 
 
 def render_handoff(
@@ -91,14 +91,14 @@ def render_handoff(
     require_valid(issue, flow, state)
     subject = TurnInput(
         issue,
-        flow,
+        flow.flow,
         state,
         guidelines=guidelines,
         reading_hint=reading_hint,
         report=report,
     )
     return hand_over(
-        flow, state_turn(flow, state), subject, base_max_chars
+        flow, state_turn(flow.flow, state), subject, base_max_chars
     )
 
 
@@ -145,7 +145,7 @@ def render_review_turn(
     flow = load_review_flow(FLOWS[target.value])
     subject = TurnInput(
         issue,
-        flow,
+        flow.flow,
         f"{target.value}.review",
         report=report,
         feedback=feedback,
@@ -165,7 +165,7 @@ def render_repair_turn(
     flow = load_review_flow("implement_review")
     subject = TurnInput(
         issue,
-        flow,
+        flow.flow,
         "implement.correction",
         finding=finding,
         feedback=feedback,

@@ -33,7 +33,7 @@ def test_caller_implements_exactly_the_declared_context():
 
 def test_missing_block_is_named(monkeypatch):
     monkeypatch.delitem(BLOCKS, "criteria")
-    with pytest.raises(FlowError, match="fehlt: criteria"):
+    with pytest.raises(FlowError, match="Aufrufer: criteria"):
         bind_flow(FLOW)
 
 

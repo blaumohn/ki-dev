@@ -29,6 +29,7 @@ from ki_dev.flow.model import (
 from ki_dev.flow.pattern import expand
 from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.ops.context.blocks import next_step_lines
 from ki_dev.step import boundary, projection
 from ki_dev.step.choices import ReviewTarget, Step
 from tests.turn_helpers import handoff_state, phase_flow, render_handoff
@@ -96,7 +97,7 @@ def test_every_handoff_ends_with_its_flow_hint(step):
     text = render_handoff(issue, step)
     state = handoff_state(step)
     assert text.rstrip().endswith(
-        "\n".join(phase_flow(state).hint_lines(state, "x-1"))
+        "\n".join(next_step_lines(phase_flow(state).flow, state, "x-1"))
     )
     assert ("Befundklassen:" in text) is (step is Step.REVIEW)
 
@@ -110,7 +111,7 @@ def test_review_targets_map_to_review_states(target):
 
 def test_hint_inserts_bead_and_lists_every_transition():
     graph = FLOWS["graph"]
-    lines = graph.hint_lines("graph.review", "b-7")
+    lines = next_step_lines(graph.flow, "graph.review", "b-7")
     assert lines[0].startswith("Hinweis für den Menschen: Zustand")
     assert "laut graph.toml" in lines[0]
     assert len(lines) == 1 + len(graph.outgoing("graph.review"))
@@ -302,7 +303,7 @@ def test_unknown_class_or_event_is_visible():
     with pytest.raises(FlowError, match="kein Review-Ereignis"):
         A.verdict("done")
     with pytest.raises(FlowError, match="unbekannter Zustand"):
-        FLOW.hint_lines("nirgends", "x")
+        next_step_lines(A, "nirgends", "x")
 
 
 def test_renderer_uses_the_flow_it_is_given():

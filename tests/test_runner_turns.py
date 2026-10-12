@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import copy
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,10 +20,10 @@ from ki_dev.flow.review_flow import load_review_flow
 from ki_dev.flow_ops.implement import turns as implement_turns
 from ki_dev.flow_ops.implement.machine import IMPLEMENT
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.ops.context.blocks import TurnInput, state_turn
+from ki_dev.ops.context.blocks import BLOCKS, TurnInput, state_turn
 from ki_dev.review_context import ReviewProjection
 from ki_dev.runner import turns
-from ki_dev.runner.turns import Plug, bind_turns
+from ki_dev.runner.turns import Plug, bind_turns, render_turn
 from ki_dev.step import turn as step_turn
 from ki_dev.step.choices import Step
 from tests.turn_helpers import render_handoff
@@ -129,14 +130,73 @@ def test_missing_field_is_named_extra_field_is_allowed():
         bind_turns(flow, Plug(fields, {}), ("work", "review"))
 
 
-def test_foreign_block_is_named():
-    blocks = {"orakel": lambda _turn: []}
-    with pytest.raises(FlowError, match="nicht deklariert: orakel"):
-        bind_turns(
-            load_flow("implement"),
-            Plug(implement_turns.FIELDS, blocks),
-            ("work", "review"),
-        )
+def test_extra_block_is_allowed_missing_block_is_named():
+    """Ein Satz Bausteine dient mehreren Abläufen."""
+    blocks = {**BLOCKS, "orakel": lambda _turn: []}
+    step_turn.bind_flow(FLOW)
+    bind_turns(FLOW.flow, Plug(step_turn.FIELDS, blocks), ("turn",))
+    del blocks["criteria"]
+    with pytest.raises(FlowError, match="Aufrufer: criteria"):
+        bind_turns(FLOW.flow, Plug(step_turn.FIELDS, blocks), ("turn",))
+
+
+def test_any_flow_uses_the_shared_blocks_without_step():
+    """Parametrisierte Übergaben sind Gerüst: ein Ablauf ohne
+    Review-Muster deklariert Vorlage und gemeinsame Bausteine und
+    rendert ohne step-Code."""
+    flow = parse_flow(
+        {
+            "name": "notiz",
+            "templates": "review",
+            "start": "schreiben",
+            "final": ["fertig"],
+            "vocabulary": {
+                "kinds": ["write", "final"],
+                "events": ["done"],
+                "operations": ["turn"],
+                "context": ["epic_sections", "criteria", "attempt"],
+            },
+            "state": [
+                {
+                    "id": "schreiben",
+                    "kind": "write",
+                    "operation": [
+                        {
+                            "do": "turn",
+                            "template": "role-implement",
+                            "context": [
+                                {"use": "epic_sections"},
+                                {"use": "criteria"},
+                                {"use": "attempt"},
+                            ],
+                        }
+                    ],
+                },
+                {"id": "fertig", "kind": "final"},
+            ],
+            "transition": [
+                {
+                    "source": "schreiben",
+                    "event": "done",
+                    "target": "fertig",
+                }
+            ],
+        }
+    )
+    plug = Plug(step_turn.FIELDS, BLOCKS)
+    bind_turns(flow, plug, ("turn",))
+    issue = replace(
+        _issue(),
+        acceptance_criteria="1. a\n2. b",
+        epic_context=(("e-1", "Ziel des Epics"),),
+    )
+    subject = TurnInput(issue, flow, "schreiben", attempt="n:1")
+    text = render_turn(
+        flow, state_turn(flow, "schreiben"), subject, plug
+    ).text()
+    assert "Ziel des Epics" in text
+    assert "requirement_ref: AC1, AC2" in text
+    assert text.splitlines()[-1].startswith("Versuch: n:1 ")
 
 
 def test_declared_blocks_and_fields_match_for_both_flows():
@@ -196,19 +256,19 @@ def test_declared_edge_turn_wins_over_the_state_operation():
     edge = MAP.flow.candidates("map.correction", "done")[0]
     assert edge.turn is not None
     assert edge.turn.template == "again-map"
-    assert state_turn(FLOW, "implement.review").template == (
+    assert state_turn(FLOW.flow, "implement.review").template == (
         "review-implement"
     )
 
 
 def test_blocks_render_in_declared_order_and_parts_stay_apart():
-    subject = TurnInput(_issue(), FLOW, "implement")
+    subject = TurnInput(_issue(), FLOW.flow, "implement")
     rendered = turns.render_turn(
         FLOW.flow,
-        state_turn(FLOW, "implement"),
+        state_turn(FLOW.flow, "implement"),
         subject,
         step_turn.PLUG,
     )
     names = [name for name, _ in rendered.parts]
-    assert names == list(state_turn(FLOW, "implement").context)
+    assert names == list(state_turn(FLOW.flow, "implement").context)
     assert rendered.text(skip=names) == rendered.head + "\n"

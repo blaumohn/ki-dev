@@ -240,7 +240,7 @@ def turn_input(
     return replace(
         TurnInput(
             issue,
-            flow,
+            flow.flow,
             halt.state,
             report=None if outcome is None else outcome.report,
             finding=failure,

@@ -58,13 +58,18 @@ def bind_turns[T](
 ) -> None:
     """Ablauf und Aufrufer sprechen dieselben Namen.
 
-    Jede Operation aus ``turn_operations`` nennt eine Vorlage; die
-    Kontextbausteine des Ablaufs sind genau die eingesteckten; jeder
-    Platzhalter der genannten Vorlagen ist eingesteckt. Ein Satz Felder
-    dient mehreren Abläufen; jeder nutzt davon, was er braucht."""
+    Jede Operation aus ``turn_operations`` nennt eine Vorlage; jeder
+    deklarierte Kontextbaustein und jeder Platzhalter der genannten
+    Vorlagen ist eingesteckt. Ein Satz Felder und Bausteine (Gerüst:
+    :mod:`ki_dev.ops.context.blocks`, dazu eigene des Pakets) dient
+    mehreren Abläufen; jeder nutzt davon, was er braucht."""
     wanted = set(turn_operations)
-    declared = set(flow.vocabulary.context)
-    _same(flow, "Kontextbausteine", declared, set(plug.blocks))
+    _plugged(
+        flow,
+        "Kontextbausteine",
+        set(flow.vocabulary.context),
+        plug.blocks,
+    )
     used: set[str] = set()
     for state in flow.states.values():
         for operation in state.operations:
@@ -75,12 +80,7 @@ def bind_turns[T](
                 )
     for turn in declared_turns(flow):
         used |= _identifiers(flow, turn)
-    missing = sorted(used - set(plug.fields))
-    if missing:
-        raise FlowError(
-            f"{flow.name}.toml: Felder fehlen beim Aufrufer: "
-            f"{', '.join(missing)}"
-        )
+    _plugged(flow, "Felder", used, plug.fields)
 
 
 def declared_turns(flow: Flow) -> list[Turn]:
@@ -119,14 +119,12 @@ def _identifiers(flow: Flow, turn: Turn) -> set[str]:
     return set(source.get_identifiers())
 
 
-def _same(
-    flow: Flow, kind: str, declared: set[str], plugged: set[str]
+def _plugged(
+    flow: Flow, kind: str, used: set[str], plugged: Mapping[str, object]
 ) -> None:
-    missing = sorted(declared - plugged)
-    foreign = sorted(plugged - declared)
-    if missing or foreign:
+    missing = sorted(used - set(plugged))
+    if missing:
         raise FlowError(
-            f"{flow.name}.toml: {kind} passen nicht zum Aufrufer "
-            f"(fehlt: {', '.join(missing) or '-'}; nicht deklariert: "
-            f"{', '.join(foreign) or '-'})"
+            f"{flow.name}.toml: {kind} fehlen beim Aufrufer: "
+            f"{', '.join(missing)}"
         )

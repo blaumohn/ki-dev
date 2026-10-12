@@ -80,8 +80,8 @@ def ensure_base_fits(
     require_valid(issue, flow, state)
     hand_over(
         flow,
-        state_turn(flow, state),
-        TurnInput(issue, flow, state),
+        state_turn(flow.flow, state),
+        TurnInput(issue, flow.flow, state),
         base_max_chars,
     )
 

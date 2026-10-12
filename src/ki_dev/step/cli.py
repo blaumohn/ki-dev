@@ -17,6 +17,7 @@ from ki_dev.ops.context.beads_reader import (
     InvalidBeadIdError,
     check_bead_id,
 )
+from ki_dev.ops.context.blocks import next_step_lines
 from ki_dev.ops.context.contract import one_line
 from ki_dev.ops.context.limit import HandoffBaseTooLongError
 from ki_dev.ops.context.limit_config import (
@@ -314,7 +315,7 @@ def _continue(
             Inputs(None, None),
         )
         return
-    lines = flow.hint_lines(saved.state, one_line(bead_id))
+    lines = next_step_lines(flow.flow, saved.state, one_line(bead_id))
     typer.echo("\n".join(lines) + "\n", nl=False)
 
 def _note_jump(saved: SavedState | None, halt: Halt) -> None:
