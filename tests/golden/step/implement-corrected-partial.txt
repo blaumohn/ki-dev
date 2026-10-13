@@ -4,21 +4,19 @@ Empfänger: Review-Agent (bisherige, vom Schreibagenten getrennte Sitzung)
 Reviewziel: implement
 Bead: x-1 - Titel [red]rot[/red]
 
-Erneute Prüfung nach Korrekturen: Prüfe die Korrekturen und die davon betroffenen Kriterien samt Regressionen fachlich anhand von Diff und Prüfbericht. Grüne Tests sind kein Review-PASS. Starte selbst keine Prüfwerkzeuge oder Folgemodelle; du hast keine automatische Autorität gegenüber dem Schreibagenten und schließt nichts automatisch. Ausgabe: die stärkste Befundklasse (Teillauf, kein PASS).
+Erneute Prüfung nach Korrekturen: Prüfe die Korrekturen und die davon betroffenen Kriterien samt Regressionen fachlich anhand von Diff und Prüfbericht. Grüne Tests sind kein Review-PASS. Starte selbst keine Prüfwerkzeuge oder Folgemodelle; du hast keine automatische Autorität gegenüber dem Schreibagenten und schließt nichts automatisch. Ausgabe: die stärkste Befundklasse (Teillauf, kein PASS). Zum Schluss genau ein JSON-Objekt {"event": …, "detail": …, "requirement_ref": …}: event ist das Ergebnis laut Ausgabe (PASS oder eine Befundklasse), requirement_ref ist immer vorhanden: bei fix "AC<n>", sonst null. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
 
 PRUEFBERICHT vorlauf-start=<ZEIT>
 - tests: SKIPPED ausgelassen per --preflight-skip: nur Doku [argv=<PY> -c 'print(1)']
 Vollständig: .local/handoff/preflight/<STEMPEL>.json
 TEILLAUF: Zusatzargumente oder ausgelassene Prüfungen (siehe Bericht). Abweichend von der Rolle ist PASS ausgeschlossen; Ausgabe: die stärkste Befundklasse. PASS erst nach einem vollständigen Vorlauf ohne --preflight-args/--preflight-skip.
-Hinweis: PASS gilt nur, wenn Arbeitsbaum und Bead seit diesem Vorlauf unverändert sind; ki-dev prüft das beim Eingang der Antwort und startet sonst den Vorlauf erneut.
+Hinweis: Der Bericht gilt für den Stand bei diesem Vorlauf; ein PASS bezieht sich auf diesen Stand.
 
-Empfänger und Befundkontext verantwortest du (den Stand seit dem Vorlauf prüft ki-dev beim PASS); Schließen und weitere Schritte entscheidest du selbst.
+Empfänger und Befundkontext verantwortest du, auch den Stand seit dem Vorlauf (ki-dev prüft ihn nicht nach); Schließen und weitere Schritte entscheidest du selbst.
 
 Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
 - fix → implement.correction: Befunde an den Umsetzer (implementer) (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → implement.decision: du entscheidest: accept, correct oder source
 - PASS → finished: Schließen entscheidest du (`bd close x-1`)
-- PASS → implement.preflight: Stand seit dem Vorlauf geändert: neuer Vorlauf, dann neues Review
-Versuch: x-1:2 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

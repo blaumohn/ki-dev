@@ -1,1 +1,1 @@
-Empfänger und Befundkontext verantwortest du (den Stand seit dem Vorlauf prüft ki-dev beim PASS); Schließen und weitere Schritte entscheidest du selbst.
+Empfänger und Befundkontext verantwortest du, auch den Stand seit dem Vorlauf (ki-dev prüft ihn nicht nach); Schließen und weitere Schritte entscheidest du selbst.

@@ -119,6 +119,10 @@ class Operation:
     role: str | None = None
     """Rolle, die die Übergabe bearbeitet; welcher Executor das ist,
     sagt das Profil (Rolle → Executor), nicht der Ablauf."""
+    inputs: tuple[tuple[str, str], ...] = ()
+    """Laufdaten, die die Übergabe braucht, je mit dem Zustand, der
+    sie liefert (TOML ``input = { report = "work" }``); prüft der
+    Aufrufer."""
 
     @property
     def turn(self) -> Turn | None:
@@ -148,6 +152,9 @@ class Transition:
     turn: Turn | None = None
     """Nachricht am Übergang: Vorlage und Kontext, wenn diese Kante die
     Übergabe bestimmt (statt der Operation des Zielzustands)."""
+    inputs: tuple[tuple[str, str], ...] = ()
+    """Laufdaten, die die Kante braucht (Wächter, Nachricht), je mit
+    dem Zustand, der sie liefert; prüft der Aufrufer."""
 
 
 @dataclass(frozen=True)
@@ -504,6 +511,7 @@ def _operation(item: dict) -> Operation:
         item.get("failure"),
         tuple(item.get("require", ())),
         item.get("role"),
+        tuple(item.get("input", {}).items()),
     )
 
 
@@ -528,6 +536,7 @@ def _transition(item: dict, source: str) -> Transition:
         escalation=item.get("escalation"),
         hint=item.get("hint"),
         turn=_edge_turn(item),
+        inputs=tuple(item.get("input", {}).items()),
     )
 
 
@@ -547,6 +556,12 @@ _ID = {"type": "string", "pattern": r"^[a-z_]+(\.[a-z_]+)?$"}
 _NAME = {"type": "string", "pattern": r"^[A-Za-z_]+$"}
 _NAMES = {"type": "array", "uniqueItems": True, "items": _NAME}
 _TEMPLATE = {"type": "string", "pattern": r"^[a-z]+(-[a-z]+)*$"}
+_INPUTS = {
+    "type": "object",
+    "minProperties": 1,
+    "propertyNames": {"pattern": _NAME["pattern"]},
+    "additionalProperties": _ID,
+}
 _CONTEXT = {
     "type": "array",
     "minItems": 1,
@@ -657,6 +672,7 @@ _SCHEMA = {
                                 "template": _TEMPLATE,
                                 "context": _CONTEXT,
                                 "require": _NAMES,
+                                "input": _INPUTS,
                                 "role": _NAME,
                                 "repeatable": {"type": "boolean"},
                                 "failure": _NAME,
@@ -695,6 +711,7 @@ _SCHEMA = {
                     "hint": _TEXT,
                     "template": _TEMPLATE,
                     "context": _CONTEXT,
+                    "input": _INPUTS,
                 },
                 "dependentRequired": {"context": ["template"]},
             },
@@ -720,10 +737,16 @@ _PATTERN_STATE = {
         "local": _NAME,
     },
 }
+# Herkunft im Muster: lokaler Zustand oder globaler Zustand.
+_LOCAL_INPUTS = {
+    **_INPUTS,
+    "additionalProperties": {"type": "string", "pattern": r"^[a-z_]+$"},
+}
 _PATTERN_TRANSITION = {
     **_TRANSITION_ITEM,
     "properties": {
         **_TRANSITION_ITEM["properties"],
+        "input": _LOCAL_INPUTS,
         "source": _NAME,
         "target": {"type": "string", "pattern": r"^@?[a-z_]+$"},
         "template": {
@@ -781,6 +804,10 @@ _PATTERN_SCHEMA = {
                     "require": {
                         "type": "object",
                         "additionalProperties": _NAMES,
+                    },
+                    "input": {
+                        "type": "object",
+                        "additionalProperties": _LOCAL_INPUTS,
                     },
                     "role": {
                         "type": "object",
@@ -954,6 +981,8 @@ def _check_operations(flow: Flow, where: str) -> None:
             )
             if op.template is not None:
                 _require_template(flow.templates, op.template, label)
+            for name, origin in op.inputs:
+                _require_state(flow, origin, f"{label}.input.{name}")
             if op.failure is not None and not any(
                 t.source == state.id and t.event == op.failure
                 for t in flow.transitions
@@ -1006,6 +1035,8 @@ def _check_transitions(flow: Flow, where: str) -> None:
                 f"{label}.escalation",
                 "Eskalation",
             )
+        for name, origin in t.inputs:
+            _require_state(flow, origin, f"{label}.input.{name}")
         if t.turn is not None:
             _require_known(
                 set(t.turn.context),

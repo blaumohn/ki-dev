@@ -40,6 +40,7 @@ def load_ops(flow: Flow, path: Path) -> typer.Typer:
     commands = getattr(module, "commands", None)
     if not callable(commands):
         raise FlowError(
-            f"{path}: ops-Modul {flow.ops} ohne commands(flow, path)"
+            f"{path}: ops-Modul {flow.ops} ohne commands(flow, path); "
+            "seine Ops gelten nur für `ki-dev -f NAME step`"
         )
     return commands(flow, path)

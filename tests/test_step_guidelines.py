@@ -25,9 +25,9 @@ from ki_dev.ops.context.guidelines_source import (
     load_guidelines,
     sync_guideline_documents,
 )
-from ki_dev.step.choices import ReviewTarget, Step
 from tests.guideline_fixtures import guideline_data, write_guidelines
 from tests.turn_helpers import (
+    WRITE_STATES,
     render_base_handoff,
     render_handoff,
     render_review_handoff,
@@ -36,7 +36,6 @@ from tests.turn_helpers import (
 
 REPO = Path(__file__).resolve().parents[1]
 SOURCE = GUIDELINE_SOURCES[0]
-NON_REVIEW = [Step.MAP, Step.GRAPH, Step.MATERIALIZE, Step.IMPLEMENT]
 
 
 def _documents():
@@ -66,26 +65,26 @@ def _issue():
 # ---------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("step", NON_REVIEW)
+@pytest.mark.parametrize("step", WRITE_STATES)
 def test_productive_step_selects_common_and_task(step):
     selected = select_for(_documents(), step)
     for source in GUIDELINE_SOURCES:
         assert _ids(selected, source) == [
             "common",
             "shared",
-            f"{step.value}-task",
+            f"{step}-task",
         ]
 
 
-@pytest.mark.parametrize("target", list(ReviewTarget))
+@pytest.mark.parametrize("target", WRITE_STATES)
 def test_review_selects_common_task_and_review_of_target(target):
-    selected = select_for(_documents(), Step.REVIEW, target)
+    selected = select_for(_documents(), f"{target}.review")
     for source in GUIDELINE_SOURCES:
         assert _ids(selected, source) == [
             "common",
             "shared",
-            f"{target.value}-task",
-            f"{target.value}-review",
+            f"{target}-task",
+            f"{target}-review",
         ]
 
 
@@ -97,18 +96,18 @@ def _with_map_common(ids):
 
 def test_stage_common_replaces_source_common():
     documents = (_with_map_common(["shared"]),)
-    assert _ids(select_for(documents, Step.MAP)) == [
+    assert _ids(select_for(documents, "map")) == [
         "shared",
         "map-task",
     ]
     assert _ids(
-        select_for(documents, Step.REVIEW, ReviewTarget.MAP)
+        select_for(documents, "map.review")
     ) == ["shared", "map-task", "map-review"]
 
 
 def test_stage_common_leaves_other_steps_and_local_unchanged():
     documents = (_with_map_common([]),)
-    assert _ids(select_for(documents, Step.GRAPH)) == [
+    assert _ids(select_for(documents, "graph")) == [
         "common",
         "shared",
         "graph-task",
@@ -132,21 +131,12 @@ def test_stage_common_with_unknown_id_is_reference_problem():
 def test_repository_map_gets_only_neutral_work_rules():
     """Kartierung ist bereichsneutral: keine Architektur-,
     Programmier- oder Technikregeln, nur Arbeitsregeln."""
-    selected = select_for(load_guidelines(REPO), Step.MAP)
+    selected = select_for(load_guidelines(REPO), "map")
     assert [(Path(s.source).name, s.id) for s in selected] == [
         ("arbeitsregeln.de.yaml", "beads-lesen"),
         ("arbeitsregeln.de.yaml", "rollenrechte"),
         ("arbeitsregeln.de.yaml", "sitzungsende"),
     ]
-
-
-def test_review_without_target_stays_build_review():
-    documents = _documents()
-    assert select_for(
-        documents, Step.REVIEW
-    ) == select_for(
-        documents, Step.REVIEW, ReviewTarget.IMPLEMENT
-    )
 
 
 def test_common_selection_has_no_stage_sections_and_keeps_order():
@@ -172,7 +162,7 @@ def test_repository_common_sections_cover_former_entry_texts():
 
 
 def test_sources_keep_fixed_order_and_markdown():
-    selected = select_for(_documents(), Step.IMPLEMENT)
+    selected = select_for(_documents(), "implement")
     sources = [s.source for s in selected]
     assert sources == sorted(sources, key=sources.index)
     assert sources[0] == "docs/policies/programmierleitlinie.de.yaml"
@@ -189,34 +179,28 @@ def test_sources_keep_fixed_order_and_markdown():
 # übrigen Abschnitte gelten in jedem Schritt und Reviewziel außer der
 # bereichsneutralen Kartierung (test_repository_map_gets_only_…).
 _FOCUS = {
-    "architektur-planung": {Step.GRAPH, Step.MATERIALIZE},
-    "programmierung-umsetzung": {Step.IMPLEMENT},
-    "docstrings": {Step.IMPLEMENT},
+    "architektur-planung": {"graph", "materialize"},
+    "programmierung-umsetzung": {"implement"},
+    "docstrings": {"implement"},
 }
-_TARGETS = [
-    (step, None) for step in NON_REVIEW if step is not Step.MAP
-] + [
-    (Step.REVIEW, target)
-    for target in [None, *ReviewTarget]
-    if target is not ReviewTarget.MAP
+_STATES = [
+    state
+    for phase in WRITE_STATES
+    if phase != "map"
+    for state in (phase, f"{phase}.review")
 ]
 
 
-def _effective(step, target):
-    if step is not Step.REVIEW:
-        return step
-    return Step((target or ReviewTarget.IMPLEMENT).value)
-
-
-@pytest.mark.parametrize(("step", "target"), _TARGETS)
-def test_repository_mapping_keeps_full_reach(step, target):
+@pytest.mark.parametrize("state", _STATES)
+def test_repository_mapping_keeps_full_reach(state):
     documents = load_guidelines(REPO)
-    selected = select_for(documents, step, target)
+    selected = select_for(documents, state)
+    phase = state.partition(".")[0]
     for document in documents:
         expected = [
             sid
             for sid, _ in document.sections
-            if _effective(step, target) in _FOCUS.get(sid, set(Step))
+            if phase in _FOCUS.get(sid, set(WRITE_STATES))
         ]
         assert _ids(selected, document.source) == expected
 
@@ -235,11 +219,11 @@ def test_block_follows_unchanged_base_with_source_labels():
     guidelines = (
         GuidelineSection("q.yaml", "a", "## A\n\n```py\nx = 1\n```"),
     )
-    base = render_base_handoff(_issue(), Step.IMPLEMENT)
+    base = render_base_handoff(_issue(), "implement")
     text = render_handoff(
-        _issue(), Step.IMPLEMENT, guidelines=guidelines
+        _issue(), "implement", guidelines=guidelines
     )
-    assert render_handoff(_issue(), Step.IMPLEMENT) == base
+    assert render_handoff(_issue(), "implement") == base
     assert text.startswith(base)
     block = text[len(base) :]
     assert "LEITLINIEN (mitgeliefert" in block
@@ -249,9 +233,9 @@ def test_block_follows_unchanged_base_with_source_labels():
 def test_long_guidelines_are_neither_cut_nor_part_of_base():
     long_text = "Regel " + "x" * 20_000
     guidelines = (GuidelineSection("q.yaml", "lang", long_text),)
-    base = render_base_handoff(_issue(), Step.IMPLEMENT)
+    base = render_base_handoff(_issue(), "implement")
     text = render_handoff(
-        _issue(), Step.IMPLEMENT, guidelines=guidelines
+        _issue(), "implement", guidelines=guidelines
     )
     assert long_text in text
     assert len(base) < 4000 < len(text)
@@ -267,7 +251,8 @@ def test_build_review_puts_report_before_guidelines():
     )
     guidelines = (GuidelineSection("q.yaml", "a", "REGEL"),)
     text = render_review_handoff(_issue(), report, guidelines)
-    assert text.startswith(render_base_handoff(_issue(), Step.REVIEW))
+    base = render_base_handoff(_issue(), "implement.review")
+    assert text.startswith(base)
     assert text.index("PRUEFBERICHT") < text.index("LEITLINIEN")
     assert text.endswith("REGEL\n")
 

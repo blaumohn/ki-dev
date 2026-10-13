@@ -1,17 +1,18 @@
-"""I/O-Grenze von ``ki-dev step``: Ablauf, Grenzen, Leitlinien
+"""I/O-Grenze von step: Ablauf, Grenzen, Leitlinien
 und Transport des Boten laden; Fehler werden zu Exitcodes."""
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import BinaryIO, NoReturn
 
 import typer
 
 from ki_dev.adapter.manual import Console
-from ki_dev.flow.model import FlowError
-from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
+from ki_dev.flow.model import Flow, FlowError
+from ki_dev.flow.review_flow import load_review_flow
 from ki_dev.ops.checks.preflight import (
     PreflightConfig,
     load_preflight_config,
@@ -31,19 +32,22 @@ from ki_dev.ops.context.limit_config import (
     LimitConfigReadError,
     load_base_max_chars,
 )
+from ki_dev.runner.turns import declared_turns
 from ki_dev.step.exits import fail
 from ki_dev.step.feedback import load_feedback_max_chars
+from ki_dev.step.package import StepOps, load_step_ops
 from ki_dev.step.turn import bind_flow
 
 
-def bound_flow(name: str) -> ReviewFlow:
-    """step-Ablauf an der I/O-Grenze laden und an die eingesteckten
-    Felder und Kontextbausteine binden; ein ungültiger mitgelieferter
-    Ablauf ist ein Programmfehler (Exit 1)."""
+def bound_flow(name: str) -> tuple[Flow, StepOps]:
+    """step-Ablauf an der I/O-Grenze laden, an die eingesteckten
+    Felder und Kontextbausteine binden und die Ops seines Pakets
+    laden; ein ungültiger mitgelieferter Ablauf ist ein Programmfehler
+    (Exit 1)."""
     try:
-        flow = load_review_flow(name)
+        flow = load_review_flow(name).flow
         bind_flow(flow)
-        return flow
+        return flow, load_step_ops(flow)
     except FlowError as exc:
         fail(f"Ablauf {name} ungültig: {exc}", code=1)
 
@@ -58,16 +62,33 @@ def base_limit() -> int:
         fail(str(exc), code=1)
 
 def selected_guidelines(
-    flow: ReviewFlow, review: bool
+    flow: Flow, review: bool
 ) -> tuple[GuidelineSection, ...]:
     """Leitlinien vor Vorlauf und Schreibwirkungen laden und für die
     Phase des Ablaufs (sein Start) auswählen."""
     try:
         return select_guidelines(
-            guideline_documents(), flow.flow.start, review
+            guideline_documents(), flow.start, review
         )
     except GuidelineContractError as exc:
         _contract_failure(exc)
+
+def guideline_choice(
+    flow: Flow, ops: StepOps
+) -> Callable[[str], tuple[GuidelineSection, ...]]:
+    """Leitlinien je Zustand: Auswahl für die Phase des Ablaufs (sein
+    Start), bei prüfenden Übergaben mit Review-Teil. Quellen und
+    Auswahl werden vor jedem Vorlauf geladen und geprüft, nur wenn
+    eine Übergabe des Ablaufs Leitlinien trägt."""
+    if not any(
+        "guidelines" in turn.context for turn in declared_turns(flow)
+    ):
+        return lambda _state: ()
+    chosen = {
+        review: selected_guidelines(flow, review)
+        for review in (False, True)
+    }
+    return lambda state: chosen[ops.review(state)]
 
 def guideline_documents() -> tuple[GuidelineDocument, ...]:
     """Quellen laden. Fehlend/unlesbar: Exit 1; kein UTF-8, ungültiges

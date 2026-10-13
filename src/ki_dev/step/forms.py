@@ -23,11 +23,9 @@ from ki_dev.step.boundary import (
     guideline_documents,
     selected_guidelines,
 )
-from ki_dev.step.choices import ReviewTarget, Step
 from ki_dev.step.exits import fail
 from ki_dev.step.local import render_local_handoff
 from ki_dev.step.map import map_handoff
-from ki_dev.step.options import PreflightValues
 from ki_dev.step.source import HandoffSourceError
 
 MAP_WORD = "map"
@@ -40,30 +38,14 @@ MAP_KEPT_NOTE = (
 )
 
 def local_form(
-    step: Step | None,
-    review_of: ReviewTarget | None,
-    options: PreflightValues,
-    next_turn_option: bool,
-    agent: str | None,
-    session: str | None,
-    title: str | None,
+    agent: str | None, session: str | None, title: str | None
 ) -> None:
     """``local``: weder Bead noch ``bd``; Konfiguration und Quellen
     werden gelesen, sonst nichts (keine Schreibwirkung)."""
-    if (
-        step is not None
-        or review_of is not None
-        or options
-        or next_turn_option
-        or agent is not None
-        or session is not None
-        or title is not None
-    ):
+    if agent is not None or session is not None or title is not None:
         fail(
-            "local lässt sich nicht mit --step/--review-of/"
-            "--preflight-args/--preflight-skip/--next-turn/"
-            "--feedback-file/--decision-file/--agent/--session/"
-            "--title mischen",
+            "local lässt sich nicht mit --agent/--session/--title "
+            "mischen",
             code=2,
         )
     limit = base_limit()
@@ -75,32 +57,15 @@ def local_form(
     typer.echo(text, nl=False)
 
 def map_form(
-    bead_id: str | None,
-    step: Step | None,
-    review_of: ReviewTarget | None,
-    options: PreflightValues,
-    next_turn_option: bool,
+    form: str | None,
     agent: str | None,
     session: str | None,
     title: str | None,
 ) -> None:
-    if bead_id != MAP_WORD:
+    if form != MAP_WORD:
         fail(
             "Sitzungsform: ki-dev step map --agent codex --session "
-            "SESSION_ID --title TITEL (nicht mit BEAD_ID oder anderen "
-            "Positionsargumenten mischen)",
-            code=2,
-        )
-    if (
-        step is not None
-        or review_of is not None
-        or options
-        or next_turn_option
-    ):
-        fail(
-            "--step/--review-of/--preflight-args/--preflight-skip/"
-            "--next-turn/--feedback-file lassen sich nicht mit map "
-            "--agent/--session mischen",
+            "SESSION_ID --title TITEL",
             code=2,
         )
     if agent is None or session is None:
@@ -122,7 +87,7 @@ def map_text(agent: str, session: str, title: str) -> str:
     """Sitzungsimport mit Konfigurations- und Leitlinienprüfung vor
     jeder Schreibwirkung."""
     limit = base_limit()
-    flow = bound_flow(MAP_WORD)
+    flow, _ = bound_flow(MAP_WORD)
     guidelines = selected_guidelines(flow, review=False)
     try:
         text = map_handoff(

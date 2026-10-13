@@ -2,10 +2,11 @@
 
 Git transportiert keinen Schreibschutz (nur das Ausführungsbit): Nach
 jedem frischen Klon einmal ausführen. Die Dateien sind im Repository
-leer; der Einstiegskontext kommt aus ``ki-dev step`` (Bead-Form und
-``local``). Standard setzt 0444, aber nur auf leere Dateien; ``--check``
-prüft leer und schreibgeschützt, ohne etwas zu ändern (Exit 1 bei
-Abweichung). Schutz aufheben: ``chmod u+w AGENTS.md CLAUDE.md``.
+leer; der Einstiegskontext kommt aus ``ki-dev -f ABLAUF step``
+und ``ki-dev step local``. Standard setzt 0444, aber nur auf leere
+Dateien; ``--check`` prüft leer und schreibgeschützt, ohne etwas zu
+ändern (Exit 1 bei Abweichung). Schutz aufheben:
+``chmod u+w AGENTS.md CLAUDE.md``.
 """
 
 from __future__ import annotations

@@ -23,15 +23,13 @@ def test_phases_expand_to_their_states_and_edges():
         assert f"implement{local}" in flow.states
     assert "implement.preflight" in flow.states
     assert "map.preflight" not in load_flow("map").states
-    unchanged, changed = flow.candidates("implement.review", "PASS")
-    assert (unchanged.cond, unchanged.target) == (
-        ("full_checks", "unchanged"),
-        "finished",
-    )
-    assert (changed.cond, changed.target) == (
-        ("full_checks", "!unchanged"),
-        "implement.preflight",
-    )
+    (passed,) = flow.candidates("implement.review", "PASS")
+    assert passed.cond == ("full_checks",)
+    assert passed.target == "finished"
+    # Die Tatsachen des Vorlaufs sind Eingabe der Kante, mit Herkunft.
+    assert passed.inputs == (("facts", "implement.preflight"),)
+    (correction,) = flow.state("implement.correction").operations
+    assert correction.inputs == (("verdict", "implement.review"),)
     (map_pass,) = load_flow("map").candidates("map.review", "PASS")
     assert (map_pass.cond, map_pass.target) == ((), "finished")
 
@@ -114,4 +112,27 @@ def test_shared_catalog_errors_are_visible(change, message):
     raw = copy.deepcopy(read_raw("map"))
     change(raw)
     with pytest.raises(FlowError, match=re.escape(message)):
+        parse_flow(raw)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (
+            lambda r: r["phase"][0].update(
+                input={"review": {"report": "nirgends"}}
+            ),
+            "input.review.report: unbekannt nirgends",
+        ),
+        (
+            lambda r: r["phase"][0].update(
+                input={"review": {"report": "@next"}}
+            ),
+            "input",
+        ),
+    ],
+)
+def test_input_origin_must_be_a_local_or_global_state(change, message):
+    raw = _mutated(change)
+    with pytest.raises(FlowError, match=message):
         parse_flow(raw)

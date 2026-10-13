@@ -1,23 +1,23 @@
 import json
 import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from ki_dev.cli import app
-from ki_dev.ops.checks import preflight
 from ki_dev.ops.context import beads_reader
-from ki_dev.step.choices import Step
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
-from tests.turn_helpers import without_attempt
+from tests.turn_helpers import (
+    WRITE_STATES,
+    flow_step,
+    handoff_of,
+    write_done,
+)
 
 runner = CliRunner()
-
-NON_REVIEW_STEPS = [step for step in Step if step is not Step.REVIEW]
 
 FULL = {
     "id": "x-1",
@@ -48,13 +48,11 @@ def bd(monkeypatch, tmp_path_factory):
     return fake
 
 
-@pytest.mark.parametrize("step", NON_REVIEW_STEPS)
+@pytest.mark.parametrize("step", WRITE_STATES)
 def test_every_step_prints_plain_handoff(bd, step):
-    result = runner.invoke(
-        app, ["step", "x-1", "--step", step.value]
-    )
+    result = handoff_of(step)
     assert result.exit_code == 0
-    assert result.stdout.startswith(f"Schritt: {step.value}\n")
+    assert result.stdout.startswith(f"Schritt: {step}\n")
     assert "Bead: x-1 - Titel [red]rot[/red]\n" in result.stdout
     assert "\x1b" not in result.stdout
     assert "GEHEIME" not in result.stdout
@@ -65,10 +63,8 @@ def test_every_step_prints_plain_handoff(bd, step):
 def test_same_input_gives_same_output(bd):
     # Nicht review: dessen Bericht trägt einen Zeitstempel, und ohne
     # eigenes Projekt liefe der Vorlauf dieses Repos (pytest) rekursiv.
-    args = ["step", "x-1", "--step", "implement"]
-    assert without_attempt(
-        runner.invoke(app, args).stdout
-    ) == without_attempt(runner.invoke(app, args).stdout)
+    first = handoff_of("implement").stdout
+    assert handoff_of("implement").stdout == first
 
 
 def test_missing_bead_names_id_on_stderr(bd):
@@ -78,7 +74,7 @@ def test_missing_bead_names_id_on_stderr(bd):
             {"error": "no issues found matching the provided IDs"}
         ),
     )
-    result = runner.invoke(app, ["step", "x-1", "--step", "implement"])
+    result = handoff_of('implement')
     assert result.exit_code == 1
     assert result.stdout == ""
     assert (
@@ -88,55 +84,64 @@ def test_missing_bead_names_id_on_stderr(bd):
 
 def test_long_lines_are_not_wrapped(bd):
     bd.state["stdout"] = json.dumps([FULL | {"title": "T" * 300}])
-    result = runner.invoke(
-        app, ["step", "x-1", "--step", "implement"], terminal_width=40
-    )
+    result = handoff_of('implement', terminal_width=40)
     assert f"Bead: x-1 - {'T' * 300}\n" in result.stdout
 
 
 @pytest.mark.parametrize(
     "args",
     [
-        ["step"],
-        ["step", "x-1"],
-        ["step", "--step", "map"],
-        ["step", "x-1", "--step", "unbekannt"],
-        ["step", "x-1", "--step", ""],
-        ["step", "", "--step", "map"],
-        ["step", "-x", "--step", "map"],
+        [],
+        ["x-1"],
+        ["x-1", "unbekannt"],
+        ["x-1", ""],
+        ["", "map"],
+        ["-x", "map"],
+        ["x-1", "finished"],
+        ["x-1", "map", "map"],
     ],
 )
 def test_incomplete_or_invalid_call_exits_2_without_bd(bd, args):
+    result = flow_step("map", *args)
+    assert result.exit_code == 2
+    assert bd.calls == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["step", "x-1"],
+        ["step", "x-1", "--step", "implement"],
+        ["step", "x-1", "--step", "review", "--next-turn"],
+        ["step"],
+    ],
+)
+def test_bead_form_without_flow_is_gone_without_alias(bd, args):
     result = runner.invoke(app, args)
     assert result.exit_code == 2
     assert bd.calls == []
 
 
-def test_help_explains_steps_and_shows_examples(bd):
-    result = runner.invoke(app, ["step", "--help"])
+def test_help_explains_the_call_and_shows_examples(bd):
+    result = flow_step("map", "--help")
     assert result.exit_code == 0
     for text in (
         "BEAD_ID",
-        "map",
-        "graph",
-        "materialize",
-        "implement",
-        "review",
-        "Anforderungen aus Rohnotizen kartieren",
-        "Vorgänge ableiten",
-        "ausführungsreif beschreiben",
-        "Auftrag umsetzen",
-        "getrennten Sitzung prüfen",
-        "BEISPIELE",
-        "ki-dev step projekt-42 --step implement > uebergabe.txt",
-        "--review-of materialize",
-        "--next-turn --feedback-file",
-        "höchstens feedback_max_chars Zeichen",
-        "tool.ki-dev.handoff;",
+        "ZUSTAND",
+        "ZUSTAND=DATEI",
+        "ki-dev -f map step projekt-42 map.review",
+        "map.review=review.json",
+        "implement.preflight=vorlauf.json",
+        "Herkunft",
+        "Nichts wird gespeichert",
+        "--preflight-skip",
+        "höchstens",
+        "feedback_max_chars",
         "docs/step.de.md",
     ):
         assert text in result.output
-    assert "ki-dev handoff" not in result.output
+    assert "--step" not in result.output
+    assert "--next-turn" not in result.output
     assert bd.calls == []
 
 
@@ -158,7 +163,7 @@ def test_former_handoff_command_is_gone_without_alias(bd, args):
 def test_missing_source_refs_block_only_reference_steps(bd, step):
     bead = {k: v for k, v in FULL.items() if k != "metadata"}
     bd.state["stdout"] = json.dumps([bead])
-    result = runner.invoke(app, ["step", "x-1", "--step", step])
+    result = handoff_of(step)
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "metadata.handoff.source_refs" in result.stderr
@@ -168,9 +173,7 @@ def test_build_works_without_metadata(bd):
     bead = {k: v for k, v in FULL.items() if k != "metadata"}
     bd.state["stdout"] = json.dumps([bead])
     assert (
-        runner.invoke(
-            app, ["step", "x-1", "--step", "implement"]
-        ).exit_code
+        handoff_of('implement').exit_code
         == 0
     )
 
@@ -178,7 +181,7 @@ def test_build_works_without_metadata(bd):
 def test_missing_contract_fields_are_named_on_stderr(bd):
     bead = FULL | {"design": "", "acceptance_criteria": 5}
     bd.state["stdout"] = json.dumps([bead])
-    result = runner.invoke(app, ["step", "x-1", "--step", "implement"])
+    result = handoff_of('implement')
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "acceptance_criteria" in result.stderr
@@ -189,7 +192,7 @@ def test_markup_like_field_path_is_printed_literally(bd):
     bd.state["stdout"] = json.dumps(
         [FULL | {"metadata": {"handoff": {"source_refs": [3]}}}]
     )
-    result = runner.invoke(app, ["step", "x-1", "--step", "map"])
+    result = handoff_of('map')
     assert "metadata.handoff.source_refs[0]" in result.stderr
 
 
@@ -208,7 +211,7 @@ def test_adapter_errors_exit_1_without_raw_output(
 ):
     monkeypatch.setattr(beads_reader, "BD_TIMEOUT_S", 0.5)
     bd.state.update(change)
-    result = runner.invoke(app, ["step", "x-1", "--step", "map"])
+    result = handoff_of('map')
     assert result.exit_code == 1
     assert result.stdout == ""
     assert "Beads-Lesefehler" in result.stderr
@@ -255,7 +258,7 @@ def test_review_preflight_success_runs_checks_and_appends_report(
         tmp_path, checks=f"[{_command('ok', 'print(1)')}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 0
     assert result.stdout.startswith("Schritt: review\n")
     assert "PRUEFBERICHT vorlauf-start=" in result.stdout
@@ -276,7 +279,7 @@ def test_review_preflight_check_failure_exits_1_with_repair_message(
         tmp_path, checks=f"[{_command('fails', fail_code)}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 1
     assert result.stdout.startswith(
         "Empfänger: Umsetzer (Vorlauf fehlgeschlagen)"
@@ -295,7 +298,7 @@ def test_review_preflight_repair_finding_names_artifact_file_once(
         checks=f"[{_command('fails', 'import sys; sys.exit(1)')}]",
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     (artifact,) = (tmp_path / ".local" / "handoff" / "preflight").glob(
         "*.json"
     )
@@ -317,7 +320,7 @@ def test_review_preflight_correction_failure_stops_before_checks(
         checks=f"[{_command('never-runs', 'raise SystemExit(1)')}]",
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 1
     assert "bad-correction: FAIL" in result.stdout
     assert "never-runs: OMITTED" in result.stdout
@@ -335,7 +338,7 @@ def test_review_preflight_reports_passed_correction_after_check_fails(
         checks=(f"[{_command('fails', 'import sys; sys.exit(1)')}]"),
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 1
     assert "good-correction: PASS" in result.stdout
     assert "fails: FAIL" in result.stdout
@@ -352,7 +355,7 @@ def test_review_preflight_repair_hint_covers_fail_not_only_pass(
         checks=f"[{_command('fails', 'import sys; sys.exit(1)')}]",
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 1
     assert "PASS wie" in result.stdout
     assert "FAIL" in result.stdout
@@ -369,7 +372,7 @@ def test_review_preflight_without_git_repository_succeeds(
         f"checks = [{_command('ok', 'print(1)')}]\n"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 0
     assert "PRUEFBERICHT vorlauf-start=" in result.stdout
     assert result.stderr == "Vorlauf: ok läuft (Timeout 5 s) …\n"
@@ -388,7 +391,7 @@ def test_review_preflight_artifact_failure_without_traceback(
     blocker.parent.mkdir(parents=True, exist_ok=True)
     blocker.write_text("kein Verzeichnis")
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     # Ein kontrolliertes _fail() endet als SystemExit ueber typer.Exit;
     # ein unbehandelter OSError waere eine andere Exception-Klasse und
     # keine saubere Reparaturmeldung.
@@ -404,7 +407,7 @@ def test_review_without_preflight_config_exits_2(
     bd, tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "Vorlauf-Konfiguration ungültig" in result.stderr
@@ -456,10 +459,7 @@ def test_review_of_source_target_needs_only_refs(bd, target):
         if k not in ("design", "acceptance_criteria")
     }
     bd.state["stdout"] = json.dumps([bead])
-    result = runner.invoke(
-        app,
-        ["step", "x-1", "--step", "review", "--review-of", target],
-    )
+    result = write_done(target)
     assert result.exit_code == 0
     assert result.stdout.startswith("Schritt: review\n")
     assert f"Reviewziel: {target}\n" in result.stdout
@@ -473,10 +473,7 @@ def test_review_of_source_target_runs_no_preflight_or_process(
     """Quellen-/Materialisierungsreviews laufen ohne pyproject.toml
     und ohne Prozessaufrufe (AC4: kein Code-Pruefvorlauf)."""
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app,
-        ["step", "x-1", "--step", "review", "--review-of", target],
-    )
+    result = write_done(target)
     assert result.exit_code == 0
     assert "PRUEFBERICHT" not in result.stdout
     preflight_dir = tmp_path / ".local" / "handoff" / "preflight"
@@ -496,10 +493,7 @@ def test_review_of_source_target_ignores_failing_preflight(
         tmp_path, checks=f"[{_command('fails', fail_code)}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app,
-        ["step", "x-1", "--step", "review", "--review-of", target],
-    )
+    result = write_done(target)
     assert result.exit_code == 0
     assert "PRUEFBERICHT" not in result.stdout
     preflight_dir = tmp_path / ".local" / "handoff" / "preflight"
@@ -509,44 +503,9 @@ def test_review_of_source_target_ignores_failing_preflight(
 def test_review_of_materialize_needs_refs_and_contract(bd):
     bead = {k: v for k, v in FULL.items() if k != "metadata"}
     bd.state["stdout"] = json.dumps([bead])
-    result = runner.invoke(
-        app,
-        [
-            "step",
-            "x-1",
-            "--step",
-            "review",
-            "--review-of",
-            "materialize",
-        ],
-    )
+    result = write_done('materialize')
     assert result.exit_code == 2
     assert "metadata.handoff.source_refs" in result.stderr
-
-
-def test_review_of_build_matches_plain_review(
-    bd, tmp_path, monkeypatch
-):
-    _preflight_project(
-        tmp_path, checks=f"[{_command('ok', 'print(1)')}]"
-    )
-    monkeypatch.chdir(tmp_path)
-    # Feste Zeit: der Bericht trägt vorlauf-start, zwei Läufe könnten
-    # sonst an einer Sekundengrenze verschieden sein.
-    monkeypatch.setattr(
-        preflight,
-        "_utc_now",
-        lambda: datetime(2026, 10, 3, 12, 0, tzinfo=UTC),
-    )
-    plain = runner.invoke(app, ["step", "x-1", "--step", "review"])
-    explicit = runner.invoke(
-        app,
-        ["step", "x-1", "--step", "review", "--review-of", "implement"],
-    )
-    assert plain.exit_code == explicit.exit_code == 0
-    assert without_attempt(plain.stdout) == without_attempt(
-        explicit.stdout
-    )
 
 
 def test_review_validates_bead_before_preflight_config(
@@ -558,7 +517,7 @@ def test_review_validates_bead_before_preflight_config(
         [{k: v for k, v in FULL.items() if k != "design"}]
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 2
     assert "design" in result.stderr
     assert "Vorlauf-Konfiguration" not in result.stderr
@@ -585,13 +544,7 @@ def test_review_preflight_args_are_appended_and_marked(
         tmp_path, checks=f"[{_command('tests', _NEEDS_SKIP)}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app,
-        [
-            "step", "x-1", "--step", "review",
-            "--preflight-args", "tests=--skip",
-        ],
-    )
+    result = write_done("implement", '--preflight-args', 'tests=--skip')
     assert result.exit_code == 0, result.stderr
     assert "- tests: PASS" in result.stdout
     assert "[ergänzt per --preflight-args]" in result.stdout
@@ -604,7 +557,7 @@ def test_review_without_preflight_args_still_fails_the_same_check(
         tmp_path, checks=f"[{_command('tests', _NEEDS_SKIP)}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 1
 
 
@@ -618,10 +571,7 @@ def test_review_invalid_preflight_args_exit_2_before_any_write(
         tmp_path, checks=f"[{_command('tests', 'pass')}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app,
-        ["step", "x-1", "--step", "review", "--preflight-args", value],
-    )
+    result = write_done("implement", '--preflight-args', value)
     assert result.exit_code == 2
     assert result.stdout == ""
     assert result.stderr.startswith("Aufruf ungültig: --preflight-args")
@@ -630,25 +580,18 @@ def test_review_invalid_preflight_args_exit_2_before_any_write(
 
 
 @pytest.mark.parametrize(
-    "extra",
-    [
-        ["--step", "implement"],
-        ["--step", "review", "--review-of", "map"],
-        ["--step", "review", "--review-of", "materialize"],
-    ],
+    "state", ["map", "map.review", "materialize.review"]
 )
-def test_preflight_args_outside_build_review_is_call_error(
-    bd, tmp_path, monkeypatch, extra
+def test_preflight_args_outside_a_preflight_flow_is_call_error(
+    bd, tmp_path, monkeypatch, state
 ):
     _preflight_project(
         tmp_path, checks=f"[{_command('tests', 'pass')}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app, ["step", "x-1", *extra, "--preflight-args", "tests=-x"]
-    )
+    result = handoff_of(state, "--preflight-args", "tests=-x")
     assert result.exit_code == 2
-    assert "gelten nur für den Vorlauf" in result.stderr
+    assert "nur für einen Ablauf mit Vorlauf" in result.stderr
     assert bd.calls == []
     assert _preflight_artifacts(tmp_path) == []
 
@@ -679,7 +622,7 @@ def test_repair_finding_names_config_and_preflight_args_way_out(
         ),
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 1
     assert (
         "Konfiguration: pyproject.toml [tool.ki-dev.handoff.preflight]"
@@ -700,7 +643,7 @@ def test_repair_finding_after_correction_failure_has_no_hint(
         checks=f"[{_command('tests', 'pass')}]",
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 1
     assert "Konfiguration: pyproject.toml" in result.stdout
     assert "Einmalig ergänzen" not in result.stdout
@@ -708,10 +651,7 @@ def test_repair_finding_after_correction_failure_has_no_hint(
 
 def test_former_check_args_option_is_gone(bd, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app,
-        ["step", "x-1", "--step", "review", "--check-args", "tests=-x"],
-    )
+    result = write_done("implement", '--check-args', 'tests=-x')
     assert result.exit_code == 2
     assert bd.calls == []
 
@@ -725,12 +665,8 @@ def test_review_preflight_skip_is_a_partial_run_without_pass(
         tmp_path, checks=f"[{_command('tests', 'pass')}, {lint}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app,
-        [
-            "step", "x-1", "--step", "review",
-            "--preflight-skip", "lint=nur Doku geändert",
-        ],
+    result = write_done(
+        "implement", "--preflight-skip", "lint=nur Doku geändert"
     )
     assert result.exit_code == 0, result.stderr
     assert not marker.exists()
@@ -748,7 +684,7 @@ def test_full_review_run_keeps_pass_without_partial_note(
         tmp_path, checks=f"[{_command('tests', 'pass')}]"
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 0, result.stderr
     assert "TEILLAUF:" not in result.stdout
     assert "PASS oder die stärkste Befundklasse" in result.stdout
@@ -780,9 +716,7 @@ def test_invalid_preflight_skip_exit_2_before_any_command(
         ),
     )
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app, ["step", "x-1", "--step", "review", *options]
-    )
+    result = write_done("implement", *options)
     assert result.exit_code == 2
     assert message in result.stderr
     assert "Vorlauf:" not in result.stderr
@@ -800,9 +734,7 @@ def test_productive_step_appends_selected_guidelines(
     bd, tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app, ["step", "x-1", "--step", "materialize"]
-    )
+    result = handoff_of('materialize')
     assert result.exit_code == 0, result.stderr
     base, block = result.stdout.split("\nLEITLINIEN (mitgeliefert", 1)
     assert "Hinweis für den Menschen" in base
@@ -822,10 +754,7 @@ def test_source_review_appends_review_guidelines(
     bd, tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(
-        app,
-        ["step", "x-1", "--step", "review", "--review-of", "graph"],
-    )
+    result = write_done('graph')
     assert result.exit_code == 0, result.stderr
     assert "- Q0:graph-task" in result.stdout
     assert "- Q0:graph-review" in result.stdout
@@ -837,7 +766,7 @@ def test_build_review_appends_guidelines_after_report(
 ):
     _preflight_project(tmp_path, checks=_OK_CHECK)
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 0, result.stderr
     text = result.stdout
     assert text.index("PRUEFBERICHT") < text.index("LEITLINIEN")
@@ -851,7 +780,7 @@ def test_missing_guideline_source_blocks_preflight(
     _preflight_project(tmp_path, checks=_OK_CHECK)
     (tmp_path / "docs/policies/technikleitlinie.de.yaml").unlink()
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 1
     assert result.stdout == ""
     assert result.stderr == (
@@ -875,7 +804,7 @@ def test_invalid_guideline_source_exits_2_without_raw_text(
     source = tmp_path / "docs/policies/programmierleitlinie.de.yaml"
     source.write_text(content)
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "review"])
+    result = write_done("implement")
     assert result.exit_code == 2
     assert result.stdout == ""
     assert result.stderr.startswith(

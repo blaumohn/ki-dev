@@ -22,7 +22,7 @@ Quellenreferenzen (unaufgelöst):
 - bd:k
 
 Hinweis für den Menschen: Zustand graph; Folgeschritte laut graph.toml (Adapter manual, du trägst sie weiter):
-- done → graph.review: je dünnem Vorgang `ki-dev step VORGANG --step review --review-of graph`
+- done → graph.review: je dünnem Vorgang `ki-dev -f graph step VORGANG graph.review`
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
@@ -73,5 +73,4 @@ Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
 ## Q2 graph-task
 
 - Q2:graph-task
-Versuch: x-1:1 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

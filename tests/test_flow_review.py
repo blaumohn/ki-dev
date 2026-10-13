@@ -15,9 +15,8 @@ import re
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from typer.testing import CliRunner
 
-from ki_dev.cli import app
+from ki_dev.cli import main
 from ki_dev.flow.model import (
     PASS,
     FlowError,
@@ -30,9 +29,14 @@ from ki_dev.flow.pattern import expand
 from ki_dev.flow.review_flow import ReviewFlow, load_review_flow
 from ki_dev.ops.context.bead_input import BeadInput
 from ki_dev.ops.context.blocks import next_step_lines
-from ki_dev.step import boundary, projection
-from ki_dev.step.choices import ReviewTarget, Step
-from tests.turn_helpers import handoff_state, phase_flow, render_handoff
+from ki_dev.step import projection
+from tests.turn_helpers import (
+    HANDOFF_STATES,
+    REVIEW_STATES,
+    WRITE_STATES,
+    phase_flow,
+    render_handoff,
+)
 
 NAMES = ("map", "graph", "materialize", "implement_review")
 FLOWS = {name: load_review_flow(name) for name in NAMES}
@@ -84,8 +88,8 @@ def test_catalog_part_must_not_be_overridden():
         parse_flow(raw)
 
 
-@pytest.mark.parametrize("step", list(Step))
-def test_every_handoff_ends_with_its_flow_hint(step):
+@pytest.mark.parametrize("state", HANDOFF_STATES)
+def test_every_handoff_ends_with_its_flow_hint(state):
     issue = BeadInput(
         id="x-1",
         title="T",
@@ -94,19 +98,17 @@ def test_every_handoff_ends_with_its_flow_hint(step):
         acceptance_criteria="AC",
         source_refs=["a.md"],
     )
-    text = render_handoff(issue, step)
-    state = handoff_state(step)
+    text = render_handoff(issue, state)
     assert text.rstrip().endswith(
         "\n".join(next_step_lines(phase_flow(state).flow, state, "x-1"))
     )
-    assert ("Befundklassen:" in text) is (step is Step.REVIEW)
+    assert ("Befundklassen:" in text) is (state in REVIEW_STATES)
 
 
-@pytest.mark.parametrize("target", list(ReviewTarget))
-def test_review_targets_map_to_review_states(target):
-    state = handoff_state(Step.REVIEW, target)
-    flow = phase_flow(state)
-    assert flow.state_of("review") == state == f"{target.value}.review"
+@pytest.mark.parametrize("phase", WRITE_STATES)
+def test_review_states_are_the_review_of_their_phase(phase):
+    flow = phase_flow(phase)
+    assert flow.state_of("review") == f"{phase}.review"
 
 
 def test_hint_inserts_bead_and_lists_every_transition():
@@ -115,7 +117,9 @@ def test_hint_inserts_bead_and_lists_every_transition():
     assert lines[0].startswith("Hinweis für den Menschen: Zustand")
     assert "laut graph.toml" in lines[0]
     assert len(lines) == 1 + len(graph.outgoing("graph.review"))
-    assert "`ki-dev step b-7 --step materialize`" in "\n".join(lines)
+    assert "`ki-dev -f materialize step b-7 materialize`" in "\n".join(
+        lines
+    )
     assert "{bead}" not in "\n".join(lines)
 
 
@@ -322,26 +326,24 @@ def test_renderer_uses_the_flow_it_is_given():
         acceptance_criteria="AC",
         source_refs=["a.md"],
     )
-    text = render_handoff(issue, Step.IMPLEMENT, flow=other)
+    text = render_handoff(issue, "implement", flow=other)
     assert "EIGENER-BEFEHL x-1" in text
-    assert "EIGENER-BEFEHL" not in render_handoff(issue, Step.IMPLEMENT)
+    assert "EIGENER-BEFEHL" not in render_handoff(issue, "implement")
 
 
-def test_cli_reports_invalid_table_at_its_boundary(monkeypatch):
-    def broken(_name):
-        raise FlowError("implement_review.toml: $: zusätzlich")
-
-    monkeypatch.setattr(boundary, "load_review_flow", broken)
+def test_cli_reports_invalid_table_at_its_boundary(
+    monkeypatch, tmp_path, capsys
+):
+    """Ein ungültiger Ablauf endet vor jedem Beads-Zugriff (Exit 2)."""
+    raw = (tmp_path / "kaputt.toml")
+    raw.write_text('name = "kaputt"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         projection,
         "read_issue",
         lambda *_: pytest.fail("Bead gelesen trotz ungültiger Tabelle"),
     )
-    monkeypatch.setattr(
-        projection, "load_base_max_chars", lambda _: 4000
-    )
-    result = CliRunner().invoke(
-        app, ["step", "x-1", "--step", "implement"]
-    )
-    assert result.exit_code == 1
-    assert "Ablauf implement_review ungültig" in result.stderr
+    with pytest.raises(SystemExit) as raised:
+        main(["-f", "./kaputt.toml", "step", "x-1", "kaputt"])
+    assert raised.value.code == 2
+    assert "Ablauffehler" in capsys.readouterr().err

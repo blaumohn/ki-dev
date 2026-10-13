@@ -19,6 +19,7 @@ from tests.codex_session_fixtures import (
 )
 from tests.fake_bd import FakeBd
 from tests.guideline_fixtures import write_guidelines
+from tests.turn_helpers import handoff_of
 
 runner = CliRunner()
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
@@ -456,13 +457,13 @@ def test_existing_bead_form_stays_read_only_and_compatible(env):
             }
         ]
     )
-    result = runner.invoke(app, ["step", "x-1", "--step", "map"])
+    result = handoff_of('map')
     assert result.exit_code == 0
     assert env.bd.commands() == ["show"]
     assert artifacts(env.work) == []
 
 
-def test_bead_form_without_step_still_exits_2(env):
+def test_bead_form_without_flow_exits_2(env):
     result = runner.invoke(app, ["step", "x-1"])
     assert result.exit_code == 2
     assert env.bd.get()["calls"] == []
@@ -473,14 +474,12 @@ def test_help_documents_both_forms_and_their_effects(env):
     assert result.exit_code == 0
     for text in (
         "--agent codex --session",
-        "--step STEP",
-        "Korrekturen können Dateien ändern",
-        "Schreibt einen datierten Snapshot",
+        "ki-dev -f ABLAUF step BEAD_ID ZUSTAND",
+        "datierter Snapshot",
         ".local/var/transcripts/",
         "--title ist Pflicht",
         "Quellen-Bead",
         "bei gleichem Stand wiederverwendet",
-        "Statt einer Beads-ID; nicht mit --step kombinieren",
     ):
         assert text in " ".join(result.stdout.split()), text
 

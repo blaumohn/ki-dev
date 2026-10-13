@@ -1,0 +1,10 @@
+exit: 0
+--- stdout ---
+Empfänger: Mensch
+Bead: x-1 - Titel [red]rot[/red]
+
+Review-Urteil PASS (PASS): ohne Begründung
+
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
+- PASS → finished: `ki-dev -f graph step x-1 graph`
+--- stderr ---

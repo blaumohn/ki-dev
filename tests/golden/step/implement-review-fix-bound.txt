@@ -8,5 +8,4 @@ Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnisse
 
 Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
 - fix → implement.correction: Befunde an den Umsetzer (implementer) (bisherige Sitzung)
-Versuch: x-1:3 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

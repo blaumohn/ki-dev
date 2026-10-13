@@ -5,8 +5,12 @@ from ki_dev.ops.context.bead_input import (
     BeadInput,
     BeadInputInvalidError,
 )
-from ki_dev.step.choices import ReviewTarget, Step
-from tests.turn_helpers import render_handoff, validate_for
+from tests.turn_helpers import (
+    HANDOFF_STATES,
+    WRITE_STATES,
+    render_handoff,
+    validate_for,
+)
 
 REFS = ["docs/design/a.md#L12-L40", "bd:karte"]
 
@@ -23,12 +27,12 @@ def _issue(**changes):
     return BeadInput(**(values | changes))
 
 
-@pytest.mark.parametrize("step", list(Step))
+@pytest.mark.parametrize("step", HANDOFF_STATES)
 def test_complete_issue_is_valid_for_every_step(step):
     assert validate_for(_issue(), step) == ()
 
 
-@pytest.mark.parametrize("step", list(Step))
+@pytest.mark.parametrize("step", HANDOFF_STATES)
 @pytest.mark.parametrize("field", ["id", "title", "description"])
 @pytest.mark.parametrize("bad", [None, "", "  ", 3, ["x"]])
 def test_common_fields_must_be_nonempty_strings(step, field, bad):
@@ -36,7 +40,7 @@ def test_common_fields_must_be_nonempty_strings(step, field, bad):
 
 
 @pytest.mark.parametrize(
-    "step", [Step.MAP, Step.GRAPH, Step.MATERIALIZE]
+    "step", ["map", "graph", "materialize"]
 )
 @pytest.mark.parametrize("bad", [None, [], "a.md", [""], {"a": 1}])
 def test_source_refs_required_for_map_graph_materialize(step, bad):
@@ -46,7 +50,7 @@ def test_source_refs_required_for_map_graph_materialize(step, bad):
 
 def test_source_ref_problem_names_the_index():
     problems = validate_for(
-        _issue(source_refs=["ok", " ", 7]), Step.MAP
+        _issue(source_refs=["ok", " ", 7]), "map"
     )
     assert problems == (
         "metadata.handoff.source_refs[1]",
@@ -54,12 +58,12 @@ def test_source_ref_problem_names_the_index():
     )
 
 
-@pytest.mark.parametrize("step", [Step.IMPLEMENT, Step.REVIEW])
+@pytest.mark.parametrize("step", ["implement", "implement.review"])
 def test_build_review_need_no_metadata(step):
     assert validate_for(_issue(source_refs=None), step) == ()
 
 
-@pytest.mark.parametrize("step", [Step.IMPLEMENT, Step.REVIEW])
+@pytest.mark.parametrize("step", ["implement", "implement.review"])
 @pytest.mark.parametrize("field", ["acceptance_criteria", "design"])
 @pytest.mark.parametrize("bad", [None, "", 5])
 def test_build_review_require_contract_fields(step, field, bad):
@@ -67,7 +71,7 @@ def test_build_review_require_contract_fields(step, field, bad):
 
 
 @pytest.mark.parametrize(
-    "step", [Step.MAP, Step.GRAPH, Step.MATERIALIZE]
+    "step", ["map", "graph", "materialize"]
 )
 def test_map_graph_materialize_need_no_design_or_ac(step):
     issue = _issue(design=None, acceptance_criteria=None)
@@ -76,7 +80,7 @@ def test_map_graph_materialize_need_no_design_or_ac(step):
 
 def test_all_problems_are_reported_together():
     issue = BeadInput()
-    assert validate_for(issue, Step.IMPLEMENT) == (
+    assert validate_for(issue, "implement") == (
         "id",
         "title",
         "description",
@@ -85,11 +89,11 @@ def test_all_problems_are_reported_together():
     )
 
 
-@pytest.mark.parametrize("step", list(Step))
+@pytest.mark.parametrize("step", HANDOFF_STATES)
 def test_render_is_deterministic_plain_and_dump_free(step):
     first = render_handoff(_issue(), step)
     assert first == render_handoff(_issue(), step)
-    assert f"Schritt: {step.value}" in first
+    assert f"Schritt: {step.rpartition('.')[2]}" in first
     assert "Bead: x-1 - Titel" in first
     assert "\x1b" not in first
     assert "GEHEIMER-DUMP" not in first
@@ -99,34 +103,37 @@ def test_render_is_deterministic_plain_and_dump_free(step):
 
 
 def test_render_roles_are_distinct():
-    roles = {step: render_handoff(_issue(), step) for step in Step}
-    assert "Kartierungsagent" in roles[Step.MAP]
-    assert "Abschnittsabdeckung" in roles[Step.MAP]
-    assert "Auflösungsagent" in roles[Step.GRAPH]
-    assert "dünne Vorgänge" in roles[Step.GRAPH]
-    assert "Materialisierungsagent" in roles[Step.MATERIALIZE]
-    assert "ausführungsreif" in roles[Step.MATERIALIZE]
-    assert "Umsetzer" in roles[Step.IMPLEMENT]
-    assert "Review-Agent" in roles[Step.REVIEW]
-    assert "PASS oder die stärkste Befundklasse" in roles[Step.REVIEW]
+    roles = {s: render_handoff(_issue(), s) for s in HANDOFF_STATES}
+    assert "Kartierungsagent" in roles["map"]
+    assert "Abschnittsabdeckung" in roles["map"]
+    assert "Auflösungsagent" in roles["graph"]
+    assert "dünne Vorgänge" in roles["graph"]
+    assert "Materialisierungsagent" in roles["materialize"]
+    assert "ausführungsreif" in roles["materialize"]
+    assert "Umsetzer" in roles["implement"]
+    assert "Review-Agent" in roles["implement.review"]
+    assert (
+        "PASS oder die stärkste Befundklasse"
+        in roles["implement.review"]
+    )
 
 
 def test_source_refs_only_in_reference_steps():
-    for step in (Step.MAP, Step.GRAPH, Step.MATERIALIZE):
+    for step in ("map", "graph", "materialize"):
         text = render_handoff(_issue(), step)
         assert "- docs/design/a.md#L12-L40\n- bd:karte\n" in text
-    for step in (Step.IMPLEMENT, Step.REVIEW):
+    for step in ("implement", "implement.review"):
         assert "docs/design/a.md" not in render_handoff(_issue(), step)
 
 
 def test_review_hands_no_notes_or_self_assessment_to_reviewer():
-    text = render_handoff(_issue(), Step.REVIEW)
+    text = render_handoff(_issue(), "implement.review")
     assert "nicht als Bewertungsinput" in " ".join(text.split())
     assert "GEHEIMER-DUMP" not in text
 
 
 def test_successor_is_only_a_human_hint():
-    for step in Step:
+    for step in HANDOFF_STATES:
         assert "Hinweis für den Menschen:" in render_handoff(
             _issue(), step
         )
@@ -134,7 +141,7 @@ def test_successor_is_only_a_human_hint():
 
 def test_title_control_characters_and_newlines_are_flattened():
     text = render_handoff(
-        _issue(title="A\x1b[31mB\nC\t[bold]D"), Step.IMPLEMENT
+        _issue(title="A\x1b[31mB\nC\t[bold]D"), "implement"
     )
     assert "\x1b" not in text
     assert "Bead: x-1 - A[31mB C [bold]D\n" in text
@@ -142,7 +149,7 @@ def test_title_control_characters_and_newlines_are_flattened():
 
 def test_render_refuses_invalid_issue():
     with pytest.raises(BeadInputInvalidError) as info:
-        render_handoff(_issue(design=None), Step.IMPLEMENT)
+        render_handoff(_issue(design=None), "implement")
     assert info.value.problems == ("design",)
 
 
@@ -167,8 +174,10 @@ def test_build_may_test_review_may_not():
     """Build darf gezielt testen (kein pauschales Werkzeugverbot);
     Review startet selbst keine Prüfwerkzeuge, darf aber lesen und
     Testqualität/Abdeckung beurteilen (AC1/AC2)."""
-    build = " ".join(render_handoff(_issue(), Step.IMPLEMENT).split())
-    review = " ".join(render_handoff(_issue(), Step.REVIEW).split())
+    build = " ".join(render_handoff(_issue(), "implement").split())
+    review = " ".join(
+        render_handoff(_issue(), "implement.review").split()
+    )
 
     assert "gezielte Entwicklungstests" in build
     assert "Kein pauschales Test-, Typprüfer- oder Werkzeugverbot" in (
@@ -184,7 +193,7 @@ def test_build_may_test_review_may_not():
     assert "Prüfbericht" in review
 
 
-@pytest.mark.parametrize("step", list(Step))
+@pytest.mark.parametrize("step", HANDOFF_STATES)
 def test_every_step_includes_epic_context_with_origin(step):
     context = (
         "Wir erproben manuelle Übergaben vor der Automatisierung. "
@@ -207,7 +216,7 @@ def test_epic_context_instruction_appears_once_before_ordered_hints():
     issue = _issue(
         epic_context=(("outer", "Ziel"), ("inner", "Beitrag"))
     )
-    text = render_handoff(issue, Step.IMPLEMENT)
+    text = render_handoff(issue, "implement")
     instruction = "Die Epic-Hinweise vermitteln"
     assert text.count(instruction) == 1
     assert text.index(instruction) < text.index("Epic-Hinweis (outer)")
@@ -216,61 +225,50 @@ def test_epic_context_instruction_appears_once_before_ordered_hints():
     )
 
 
-@pytest.mark.parametrize("step", list(Step))
+@pytest.mark.parametrize("step", HANDOFF_STATES)
 def test_no_epic_context_adds_no_instruction(step):
     text = render_handoff(_issue(), step)
     assert "Die Epic-Hinweise vermitteln" not in text
     assert "Epic-Hinweis (" not in text
 
 
-# --- ReviewTarget (--review-of) -------------------------------------
+# --- Review-Zustände der Abläufe --------------------------------------
 
 
 SOURCE_TARGETS = (
-    ReviewTarget.MAP,
-    ReviewTarget.GRAPH,
-    ReviewTarget.MATERIALIZE,
+    "map",
+    "graph",
+    "materialize",
 )
-
-
-def test_review_without_target_equals_build_target():
-    assert render_handoff(_issue(), Step.REVIEW) == render_handoff(
-        _issue(), Step.REVIEW, ReviewTarget.IMPLEMENT
-    )
-    assert validate_for(
-        _issue(), Step.REVIEW
-    ) == validate_for(
-        _issue(), Step.REVIEW, ReviewTarget.IMPLEMENT
-    )
 
 
 @pytest.mark.parametrize("target", SOURCE_TARGETS)
 def test_source_review_targets_require_source_refs(target):
     problems = validate_for(
-        _issue(source_refs=None), Step.REVIEW, target
+        _issue(source_refs=None), f"{target}.review"
     )
     assert problems[0].startswith("metadata.handoff.source_refs")
 
 
 @pytest.mark.parametrize(
-    "target", [ReviewTarget.MAP, ReviewTarget.GRAPH]
+    "target", ["map", "graph"]
 )
 def test_map_graph_review_need_no_design_or_ac(target):
     issue = _issue(design=None, acceptance_criteria=None)
-    assert validate_for(issue, Step.REVIEW, target) == ()
+    assert validate_for(issue, f"{target}.review") == ()
 
 
 def test_materialize_review_needs_refs_and_contract_fields():
-    target = ReviewTarget.MATERIALIZE
-    assert validate_for(_issue(), Step.REVIEW, target) == ()
+    target = "materialize"
+    assert validate_for(_issue(), f"{target}.review") == ()
 
     missing_refs = validate_for(
-        _issue(source_refs=None), Step.REVIEW, target
+        _issue(source_refs=None), f"{target}.review"
     )
     assert missing_refs[0].startswith("metadata.handoff.source_refs")
 
     missing_design = validate_for(
-        _issue(design=None), Step.REVIEW, target
+        _issue(design=None), f"{target}.review"
     )
     assert missing_design == ("design",)
 
@@ -278,34 +276,34 @@ def test_materialize_review_needs_refs_and_contract_fields():
 def test_build_review_target_needs_no_source_refs():
     issue = _issue(source_refs=None)
     problems = validate_for(
-        issue, Step.REVIEW, ReviewTarget.IMPLEMENT
+        issue, "implement.review"
     )
     assert problems == ()
 
 
 @pytest.mark.parametrize("target", SOURCE_TARGETS)
 def test_source_review_targets_render_source_refs(target):
-    text = render_handoff(_issue(), Step.REVIEW, target)
+    text = render_handoff(_issue(), f"{target}.review")
     assert "- docs/design/a.md#L12-L40\n- bd:karte\n" in text
 
 
 def test_build_review_target_does_not_render_source_refs():
     assert "docs/design/a.md" not in render_handoff(
-        _issue(), Step.REVIEW, ReviewTarget.IMPLEMENT
+        _issue(), "implement.review"
     )
 
 
 def test_review_targets_have_distinct_role_texts():
     texts = {
-        target: render_handoff(_issue(), Step.REVIEW, target)
-        for target in ReviewTarget
+        target: render_handoff(_issue(), f"{target}.review")
+        for target in WRITE_STATES
     }
-    assert "Kartenprüfung" in texts[ReviewTarget.MAP]
-    assert "Graphprüfung" in texts[ReviewTarget.GRAPH]
+    assert "Kartenprüfung" in texts["map"]
+    assert "Graphprüfung" in texts["graph"]
     assert (
-        "Materialisierungsprüfung" in texts[ReviewTarget.MATERIALIZE]
+        "Materialisierungsprüfung" in texts["materialize"]
     )
-    assert "deterministischen Vorlauf" in texts[ReviewTarget.IMPLEMENT]
+    assert "deterministischen Vorlauf" in texts["implement"]
     for target in SOURCE_TARGETS:
         assert "deterministischen Vorlauf" not in texts[target]
 
@@ -313,7 +311,7 @@ def test_review_targets_have_distinct_role_texts():
 def test_materialize_review_transports_ac3_criteria():
     text = " ".join(
         render_handoff(
-            _issue(), Step.REVIEW, ReviewTarget.MATERIALIZE
+            _issue(), "materialize.review"
         ).split()
     )
     assert "ursprünglichen, bestätigten Nutzeranforderungen und" in text
@@ -344,7 +342,7 @@ def test_materialize_review_criteria_cover_invented_build_test_ban():
     )
     text = " ".join(
         render_handoff(
-            issue, Step.REVIEW, ReviewTarget.MATERIALIZE
+            issue, "materialize.review"
         ).split()
     )
     # Der Rohtext des Auftrags erscheint nicht in der Übergabe
@@ -374,7 +372,7 @@ def test_materialize_review_criteria_cover_unauthorized_loop_scope():
     )
     text = " ".join(
         render_handoff(
-            issue, Step.REVIEW, ReviewTarget.MATERIALIZE
+            issue, "materialize.review"
         ).split()
     )
     assert "automatische Freigaben" not in text
@@ -386,48 +384,51 @@ def test_materialize_review_criteria_cover_unauthorized_loop_scope():
     )
 
 
-@pytest.mark.parametrize("target", list(ReviewTarget))
+@pytest.mark.parametrize("target", WRITE_STATES)
 def test_all_review_targets_forbid_own_tooling_or_further_models(
     target,
 ):
     text = " ".join(
-        render_handoff(_issue(), Step.REVIEW, target).split()
+        render_handoff(_issue(), f"{target}.review").split()
     )
     assert "Prüfwerkzeuge oder Folgemodelle" in text
 
 
 def test_default_review_is_build_and_forbids_further_models():
     default = " ".join(
-        render_handoff(_issue(), Step.REVIEW).split()
+        render_handoff(_issue(), "implement.review").split()
     )
     assert "Reviewziel: implement" in default
     assert "Prüfwerkzeuge oder Folgemodelle" in default
 
 
-@pytest.mark.parametrize("target", list(ReviewTarget))
+@pytest.mark.parametrize("target", WRITE_STATES)
 def test_every_review_target_outputs_pass_changes_needs_decision(
     target,
 ):
-    text = render_handoff(_issue(), Step.REVIEW, target)
+    text = render_handoff(_issue(), f"{target}.review")
     assert "PASS oder die stärkste Befundklasse" in text
 
 
 def test_review_line_names_effective_target():
     assert "Reviewziel: implement\n" in render_handoff(
-        _issue(), Step.REVIEW
+        _issue(), "implement.review"
     )
     assert "Reviewziel: map\n" in render_handoff(
-        _issue(), Step.REVIEW, ReviewTarget.MAP
+        _issue(), "map.review"
     )
 
 
 @pytest.mark.parametrize(
     "step,expected",
     [
-        (Step.MAP, "--review-of map"),
-        (Step.GRAPH, "--review-of graph"),
-        (Step.MATERIALIZE, "--review-of materialize"),
-        (Step.IMPLEMENT, "--step review"),
+        ("map", "ki-dev -f map step KARTE map.review"),
+        ("graph", "ki-dev -f graph step VORGANG graph.review"),
+        (
+            "materialize",
+            "ki-dev -f materialize step x-1 materialize.review",
+        ),
+        ("implement", "implement implement=ANTWORT.json"),
     ],
 )
 def test_productive_steps_name_the_concrete_review_call(
@@ -439,31 +440,30 @@ def test_productive_steps_name_the_concrete_review_call(
 def test_build_review_lists_criterion_refs_without_text():
     text = render_handoff(
         _issue(acceptance_criteria="1. Erstens GEHEIM\n2. Zweitens"),
-        Step.REVIEW,
+        "implement.review",
     )
     assert "requirement_ref: AC1, AC2 (" in text
     assert "GEHEIM" not in text
-    assert "--decision-file" in text
+    assert "als Antwort dieses Zustands" in " ".join(text.split())
 
 
 def test_build_review_rejects_gapped_criterion_numbering():
     with pytest.raises(BeadInputInvalidError, match="fortlaufend"):
         render_handoff(
-            _issue(acceptance_criteria="1. a\n3. b"), Step.REVIEW
+            _issue(acceptance_criteria="1. a\n3. b"), "implement.review"
         )
 
 
 def test_build_review_states_requirement_ref_is_always_present():
-    text = " ".join(render_handoff(_issue(), Step.REVIEW).split())
+    text = " ".join(
+        render_handoff(_issue(), "implement.review").split()
+    )
     assert "requirement_ref ist immer vorhanden" in text
     assert "bei fix \"AC<n>\", sonst null" in text
 
 
-@pytest.mark.parametrize("target", [None, ReviewTarget.IMPLEMENT])
-def test_validate_reports_gapped_criteria_for_build_review(target):
+def test_validate_reports_gapped_criteria_for_build_review():
     issue = _issue(acceptance_criteria="1. a\n3. b")
-    (problem,) = validate_for(issue, Step.REVIEW, target)
+    (problem,) = validate_for(issue, "implement.review")
     assert problem.startswith("acceptance_criteria:")
-    assert (
-        validate_for(issue, Step.REVIEW, ReviewTarget.MAP) == ()
-    )
+    assert validate_for(issue, "map.review") == ()

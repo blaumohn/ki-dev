@@ -2,4 +2,4 @@ Empfänger: Review-Agent (bisherige, vom Schreibagenten getrennte Sitzung)
 Reviewziel: implement
 Bead: ${bead}
 
-Erneute Prüfung nach Korrekturen: Prüfe die Korrekturen und die davon betroffenen Kriterien samt Regressionen fachlich anhand von Diff und Prüfbericht. Grüne Tests sind kein Review-PASS. ${rules} ${output}
+Erneute Prüfung nach Korrekturen: Prüfe die Korrekturen und die davon betroffenen Kriterien samt Regressionen fachlich anhand von Diff und Prüfbericht. Grüne Tests sind kein Review-PASS. ${rules} ${output} ${answer}

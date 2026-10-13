@@ -3,7 +3,7 @@
 Fachliche Sicht auf den allgemeinen :class:`~ki_dev.flow.model.Flow`:
 welche Befundklasse ein Review-Ereignis ist, welches Urteil daraus
 folgt und welche Folgeschritte der Mensch als Bote (Executor
-``manual``, ``ki-dev step``) erhält.
+``manual``, ``ki-dev -f ABLAUF step``) erhält.
 """
 
 from __future__ import annotations

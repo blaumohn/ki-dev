@@ -190,20 +190,6 @@ class PackageRunner:
             self._save()
             return self._drive()
 
-    def allows(self, event: str, update: Mapping[str, object]) -> bool:
-        """Ob der gespeicherte Lauf ``event`` mit diesen zusätzlichen
-        Laufdaten annähme (Wächter), ohne ihn zu verändern."""
-        self._load()
-        model = self.model_type(None, {**self.data, **update})
-        return any(
-            all(
-                bool(getattr(model, name.removeprefix("!"))())
-                != name.startswith("!")
-                for name in transition.cond
-            )
-            for transition in self.flow.candidates(self.state, event)
-        )
-
     def _restart(self) -> None:
         """Ein neuer Lauf im selben Protokoll: die Regionen des Laufs
         beginnen wieder im Anfangszustand (Zeile
@@ -502,29 +488,6 @@ def flow_digest(flow: Flow) -> str:
     document.pop("edges")
     encoded = json.dumps([document, RUN_DOC], sort_keys=True)
     return hashlib.sha256(encoded.encode()).hexdigest()
-
-
-def waiting_of(flow: Flow, record: Mapping[str, object]) -> tuple[
-    str, str, str | None
-]:
-    """Zustand des Ablaufs, Halt des Laufs und wartender Versuch eines
-    gespeicherten Laufs, rein lesend; ein Datensatz aus einem anderen
-    Ablaufstand oder Format ist ein Fehler."""
-    validate(record, _RECORD, "record")
-    if record["digest"] != flow_digest(flow):
-        raise RunStoreError("Paket wurde seit Laufbeginn verändert")
-    states = cast(Mapping[str, list[str]], record["machine"])["state"]
-    halts = RUN_DOC["states"]["lauf"]["states"]["halt"]["states"]
-    pending = cast(Mapping[str, object] | None, record["pending"])
-    return (
-        next(s for s in states if s in flow.states),
-        next(s for s in states if s in halts),
-        (
-            None
-            if pending is None
-            else cast(str | None, pending["attempt"])
-        ),
-    )
 
 
 _ANSWER = {

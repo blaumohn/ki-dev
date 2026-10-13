@@ -2,4 +2,4 @@ Empfänger: Review-Agent (bisherige, vom Schreibagenten getrennte Sitzung)
 Reviewziel: graph
 Bead: ${bead}
 
-Erneute Prüfung nach Korrekturen: Prüfe fachlich, ob die Korrekturen die früheren Befunde beheben und bei Abdeckung, Zuschnitt und Abhängigkeiten der Vorgänge keine neuen Abweichungen entstanden sind. ${rules} ${output}
+Erneute Prüfung nach Korrekturen: Prüfe fachlich, ob die Korrekturen die früheren Befunde beheben und bei Abdeckung, Zuschnitt und Abhängigkeiten der Vorgänge keine neuen Abweichungen entstanden sind. ${rules} ${output} ${answer}

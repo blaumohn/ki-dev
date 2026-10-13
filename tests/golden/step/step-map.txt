@@ -28,7 +28,7 @@ Quellenreferenzen (unaufgelöst):
 - bd:k
 
 Hinweis für den Menschen: Zustand map; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
-- done → map.review: `ki-dev step KARTE --step review --review-of map` (KARTE = erstellte oder ergänzte Karte)
+- done → map.review: `ki-dev -f map step KARTE map.review` (KARTE = erstellte oder ergänzte Karte)
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
@@ -79,5 +79,4 @@ Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
 ## Q2 map-task
 
 - Q2:map-task
-Versuch: x-1:1 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

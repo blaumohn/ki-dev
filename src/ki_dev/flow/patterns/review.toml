@@ -15,8 +15,14 @@
 # Ebene. Ein Review endet mit PASS oder mit der stärksten Befundklasse
 # nach `priority`; das Urteil (CHANGES/NEEDS_DECISION) folgt aus der
 # Klasse. `hint` ist die Übergabe an den Menschen als Boten
-# (Adapter manual, `ki-dev step`); {bead} setzt ki-dev ein.
+# (Adapter manual, `ki-dev -f ABLAUF step`); {bead} setzt ki-dev ein.
+# `input` nennt Laufdaten einer Übergabe oder Kante mit dem Zustand,
+# der sie liefert (z. B. verdict aus review); fehlen sie in einem
+# step-Aufruf, nennt step Name und Herkunft (Exit 2).
 #
+# Ops des Musters: was die Zustandsarten für `ki-dev -f NAME step` (Executor
+# manual) bedeuten, Vorlauf und Deutung der Antworten.
+ops = "ki_dev.flow_ops.review"
 final = ["finished"]
 priority = ["decision", "source", "fix"]
 
@@ -30,9 +36,8 @@ events = [
   "checks_passed", "checks_partial", "checks_failed",
 ]
 # full_checks: der letzte Vorlauf lief vollständig (kein Teillauf);
-# ohne ihn gibt es kein PASS. unchanged: Arbeitsbaum und Bead sind
-# seit dem Vorlauf unverändert (synchron verglichen, wie freeze bei run).
-guards = ["full_checks", "unchanged"]
+# ohne ihn gibt es kein PASS.
+guards = ["full_checks"]
 # Was der Ausführer beim Betreten tut: turn = Übergabe an eine Sitzung
 # (Adapter manual: Ausgabe für den Menschen als Boten), ask = der Mensch
 # entscheidet, checks = deterministischer Vorlauf (läuft automatisch).
@@ -52,7 +57,7 @@ operations = ["turn", "ask", "checks"]
 # = Rückmeldung des Schreibagenten, human_note = Hinweis an den
 # Menschen, finding = Befund des Vorlaufs, control = vorgeschlagene
 # Prüfsteuerung. Was ein Baustein liefert, steckt der Aufrufer ein
-# (ki-dev step: ki_dev.ops.context.blocks). Die Kopfzeilen und gemeinsamen
+# (step: ki_dev.ops.context.blocks). Die Kopfzeilen und gemeinsamen
 # Regeln stehen in der Vorlage.
 context = [
   "finding_classes", "epic_sections", "source_refs", "criteria",
@@ -134,7 +139,7 @@ kind = "correction"
 operation = [
   { do = "turn", template = "decision-changes", context = [
     { use = "next_steps" }, { use = "control" }, { use = "attempt" },
-  ] },
+  ], input = { verdict = "review" } },
 ]
 
 [[pattern.review_core.state]]
@@ -144,7 +149,7 @@ actor = "Mensch"
 operation = [
   { do = "ask", template = "decision-other", context = [
     { use = "next_steps" }, { use = "control" }, { use = "attempt" },
-  ] },
+  ], input = { verdict = "review" } },
 ]
 
 [[pattern.review_core.transition]]
@@ -207,7 +212,8 @@ template = "decision-other"
 context = [{ use = "next_steps" }, { use = "control" }, { use = "attempt" }]
 
 # Umsetzung: vor jedem Review ein deterministischer Vorlauf (checks);
-# ein Teillauf erreicht das Review, aber kein PASS.
+# ein Teillauf erreicht das Review, aber kein PASS. Die Tatsachen des
+# Vorlaufs (facts) braucht PASS als Eingabe aus dem Vorlauf.
 [pattern.write_review_preflight]
 extends = "review_core"
 
@@ -258,19 +264,8 @@ context = [
 [[pattern.write_review_preflight.transition]]
 source = "review"
 event = "PASS"
-cond = ["full_checks", "unchanged"]
+cond = ["full_checks"]
+input = { facts = "preflight" }
 target = "@next"
 template = "decision-other"
 context = [{ use = "next_steps" }, { use = "control" }, { use = "attempt" }]
-
-[[pattern.write_review_preflight.transition]]
-source = "review"
-event = "PASS"
-cond = ["full_checks", "!unchanged"]
-target = "preflight"
-hint = "Stand seit dem Vorlauf geändert: neuer Vorlauf, dann neues Review"
-template = "@again"
-context = [
-  { use = "report_followup" }, { use = "feedback_review" },
-  { use = "human_note" }, { use = "next_steps" }, { use = "attempt" },
-]

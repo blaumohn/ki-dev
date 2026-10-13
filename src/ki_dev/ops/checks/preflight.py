@@ -14,11 +14,9 @@ keine Runden-/Sicherheitsgrenzen, keine Agentensteuerung.
 Prozessaufrufe laufen ohne Shell in der Projektwurzel; die Umgebung
 wird nicht eingeschränkt (geerbte Umgebung des Aufrufers).
 
-Der Vorlauf selbst ruft kein Git auf und braucht kein Repository. Den
-geprüften Stand (Arbeitsbaum, Bead) hält der Planungsablauf nach dem
-Vorlauf fest (``ki_dev.ops.checks.stand``): Eine PASS-Antwort gilt
-nur, wenn er sich seither nicht geändert hat; sonst läuft der Vorlauf
-erneut (docs/step.de.md).
+Der Vorlauf selbst ruft kein Git auf und braucht kein Repository. Ob
+der Arbeitsstand bei einer Antwort noch der geprüfte ist, verantwortet
+bei ``ki-dev -f ABLAUF step`` der Mensch (docs/step.de.md).
 """
 
 from __future__ import annotations
@@ -51,7 +49,7 @@ CONFIG_FILE = Path("pyproject.toml")
 CONFIG_TABLE = "tool.ki-dev.handoff.preflight"
 _TABLE_KEYS = tuple(CONFIG_TABLE.split("."))
 CONFIG_SOURCE = ConfigSource(
-    "handoff --step review", str(CONFIG_FILE), CONFIG_TABLE, CONFIG_FILE
+    "step (Vorlauf)", str(CONFIG_FILE), CONFIG_TABLE, CONFIG_FILE
 )
 
 # Ausgabegrenzen je Befehl: Ein Fehlschlag behält Anfang und Ende der
@@ -285,7 +283,8 @@ def _read_preflight_table(path: Path) -> object:
 
 def read_toml(path: Path) -> object:
     """TOML-Datei lesen; Lese-, UTF-8- und Syntaxfehler als
-    ``PreflightConfigError``. Gemeinsam mit ``--next-turn``."""
+    ``PreflightConfigError``. Auch für die Grenze der
+    Rückmeldung."""
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:

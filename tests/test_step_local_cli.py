@@ -10,7 +10,6 @@ from ki_dev.cli import app
 from ki_dev.ops.context import beads_reader
 from ki_dev.ops.context.bead_input import BeadInput
 from ki_dev.ops.context.guidelines import GUIDELINE_SOURCES
-from ki_dev.step.choices import Step
 from tests.guideline_fixtures import write_guidelines
 from tests.turn_helpers import (
     render_base_handoff,
@@ -48,7 +47,7 @@ def test_local_runs_without_bead_db_or_bd_on_path(offline):
     result = runner.invoke(app, LOCAL)
     assert result.exit_code == 0, result.stderr
     assert result.stdout.startswith("Schritt: local\n")
-    assert "ki-dev step BEAD_ID --step STEP" in result.stdout
+    assert "ki-dev -f ABLAUF step BEAD_ID ZUSTAND" in result.stdout
     assert result.stderr == ""
 
 
@@ -91,13 +90,9 @@ def test_local_carries_former_entry_texts_without_claim_or_close(
 @pytest.mark.parametrize(
     "extra",
     [
-        ["--step", "implement"],
-        ["--step", "review", "--review-of", "implement"],
-        ["--step", "review", "--preflight-args", "tests=-k x"],
-        ["--step", "review", "--next-turn"],
-        ["--step", "review", "--next-turn", "--feedback-file", "-"],
         ["--agent", "codex"],
         ["--session", "abc"],
+        ["--title", "t"],
     ],
 )
 def test_local_rejects_mixing_with_other_forms(offline, extra):
@@ -106,6 +101,14 @@ def test_local_rejects_mixing_with_other_forms(offline, extra):
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "local lässt sich nicht" in result.stderr
+
+
+@pytest.mark.parametrize("option", ["--step", "--next-turn"])
+def test_former_options_are_gone(offline, option):
+    write_guidelines(offline)
+    result = runner.invoke(app, [*LOCAL, option, "x"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
 
 
 def test_missing_source_is_exit_1(offline):
@@ -160,6 +163,6 @@ def test_bead_handoff_no_longer_points_to_agents_md():
         design="S",
         acceptance_criteria="A",
     )
-    text = render_base_handoff(issue, Step.IMPLEMENT)
+    text = render_base_handoff(issue, "implement")
     assert "AGENTS.md" not in text
     assert "bd show BEAD_ID" in text

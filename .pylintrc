@@ -11,7 +11,8 @@ enable=
     too-many-nested-blocks,
     too-many-locals,
     invalid-name,
-    line-too-long
+    line-too-long,
+    too-many-lines
 
 [DESIGN]
 max-branches=8
@@ -32,6 +33,7 @@ module-rgx=[a-z_][a-z0-9_]*$
 
 [FORMAT]
 max-line-length=72
+max-module-lines=400
 
 [REPORTS]
 reports=no

@@ -1,131 +1,275 @@
-"""Typer-Anbindung für ki-dev step: Argumente, Aufrufform, Exitcodes."""
+"""Typer-Anbindung von step: ``ki-dev -f ABLAUF step`` (ein Turn
+eines Ablaufs) und ``ki-dev step`` (local, Sitzungsimport);
+Argumente, Aufrufform, Exitcodes."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
 from typing import Annotated, NoReturn
 
 import typer
 
 from ki_dev.adapter.manual import TransportReadError, send
+from ki_dev.flow.model import Flow, FlowError
 from ki_dev.ops.checks import PREFLIGHT
 from ki_dev.ops.checks.options import PreflightOptionError
 from ki_dev.ops.checks.preflight import PreflightConfigError
-from ki_dev.ops.checks.stand import StandError
 from ki_dev.ops.context.bead_input import BeadInputInvalidError
 from ki_dev.ops.context.beads_reader import (
     BeadsReadError,
     InvalidBeadIdError,
     check_bead_id,
 )
-from ki_dev.ops.context.blocks import next_step_lines
-from ki_dev.ops.context.contract import one_line
 from ki_dev.ops.context.limit import HandoffBaseTooLongError
 from ki_dev.ops.context.limit_config import (
     LimitConfigInvalidError,
     LimitConfigReadError,
 )
-from ki_dev.step.boundary import CONSOLE, bound_flow
-from ki_dev.step.choices import ReviewTarget, Step
+from ki_dev.step.boundary import CONSOLE, guideline_choice
 from ki_dev.step.exits import fail
-from ki_dev.step.feedback import DecisionInputError, NextTurnInputError
+from ki_dev.step.feedback import FeedbackConfigError
 from ki_dev.step.forms import LOCAL_WORD, MAP_WORD, local_form, map_form
-from ki_dev.step.help import HELP
-from ki_dev.step.options import (
-    Inputs,
-    PreflightValues,
-    check_decision_options,
-    flow_name,
-    review_options,
-    review_target,
+from ki_dev.step.help import HELP, TOOL_HELP
+from ki_dev.step.options import PreflightValues, preflight_request
+from ki_dev.step.package import AnswerError, StepOps, load_step_ops
+from ki_dev.step.projection import (
+    Guidelines,
+    InputMissingError,
+    Output,
+    Request,
+    handoff_operation,
+    step_output,
 )
-from ki_dev.step.projection import Output, bead_output
-from ki_dev.step.state import (
-    SavedState,
-    StaleHaltError,
-    StepStateError,
-    load_state,
-)
+from ki_dev.step.turn import bind_flow
 
-AWAITING = "awaiting_input"
-"""Halt des Laufs, in dem eine Übergabe auf ihre Antwort wartet."""
+ANSWER_MAX_CHARS = 20000
+"""Obergrenze einer Antwortdatei (Zeichen); nie gekürzt."""
+
+STDIN_WORD = "-"
 
 
-def handoff(
-    bead_id: Annotated[
+def step_app(flow: Flow, path: Path) -> typer.Typer:
+    """Der Befehl ``step`` für den Ablauf aus ``path`` (``ki-dev -f``):
+    jedes Paket hat ihn, das Paket liefert nur seine Ops."""
+    app = typer.Typer(add_completion=False)
+
+    @app.command(help=HELP)
+    def step(
+        bead_id: Annotated[
+            str, typer.Argument(metavar="BEAD_ID", help="Beads-ID.")
+        ],
+        position: Annotated[
+            str,
+            typer.Argument(
+                metavar="ZUSTAND",
+                help="Zustand mit Übergabe (turn/ask).",
+            ),
+        ],
+        answers: Annotated[
+            list[str] | None,
+            typer.Argument(
+                metavar="[ZUSTAND=DATEI]...",
+                help="Antwort eines Zustands (DATEI - liest stdin).",
+                show_default=False,
+            ),
+        ] = None,
+        preflight_args: Annotated[
+            list[str] | None,
+            typer.Option(
+                "--preflight-args",
+                metavar="NAME=ARGS",
+                help="ARGS an die Vorlauf-Prüfung NAME anhängen "
+                "(wiederholbar; Teillauf).",
+                show_default=False,
+            ),
+        ] = None,
+        preflight_skip: Annotated[
+            list[str] | None,
+            typer.Option(
+                "--preflight-skip",
+                metavar="NAME=GRUND",
+                help="Vorlauf-Prüfung NAME begründet auslassen "
+                "(wiederholbar; Teillauf).",
+                show_default=False,
+            ),
+        ] = None,
+    ) -> None:
+        run_step(
+            flow,
+            path,
+            bead_id,
+            position,
+            answers or [],
+            PreflightValues(preflight_args or [], preflight_skip or []),
+        )
+
+    return app
+
+
+def run_step(
+    flow: Flow,
+    path: Path,
+    bead_id: str,
+    position: str,
+    answers: list[str],
+    options: PreflightValues,
+) -> None:
+    """Aufruf prüfen (Exit 2 vor jedem Lesen), Antworten lesen, den
+    Turn fahren und die Übergabe ausgeben."""
+    ops = _bound(flow, path)
+    _check_position(flow, bead_id, position)
+    sources = _answer_sources(flow, answers)
+    preflight = preflight_request(options, _binds_preflight(flow))
+    output = _output(
+        Request(bead_id, position, (), preflight),
+        sources,
+        flow,
+        ops,
+        guideline_choice(flow, ops),
+    )
+    send(CONSOLE, "", output.text)
+    if output.exit_code:
+        raise typer.Exit(code=output.exit_code)
+
+
+def _output(
+    request: Request,
+    sources: list[tuple[str, str]],
+    flow: Flow,
+    ops: StepOps,
+    guidelines: Guidelines,
+) -> Output:
+    """Antworten lesen und den Turn fahren; Fehler werden Exitcodes."""
+    try:
+        raws = tuple((s, _read(s, src)) for s, src in sources)
+        return step_output(
+            replace(request, answers=raws), flow, ops, guidelines
+        )
+    except (
+        InvalidBeadIdError,
+        AnswerError,
+        InputMissingError,
+        FeedbackConfigError,
+        LimitConfigInvalidError,
+        HandoffBaseTooLongError,
+    ) as exc:
+        fail(str(exc), code=2)
+    except BeadInputInvalidError as exc:
+        _fail_incomplete(request.bead_id, request.position, exc)
+    except BeadsReadError as exc:
+        fail(f"Beads-Lesefehler: {exc}", code=1)
+    except PreflightOptionError as exc:
+        fail(f"Aufruf ungültig: {exc}", code=2)
+    except PreflightConfigError as exc:
+        fail(f"Vorlauf-Konfiguration ungültig: {exc}", code=2)
+    except (TransportReadError, LimitConfigReadError) as exc:
+        fail(str(exc), code=1)
+
+
+def _bound(flow: Flow, path: Path) -> StepOps:
+    """Ablauf an Felder und Bausteine binden, Ops des Pakets laden."""
+    try:
+        bind_flow(flow)
+        return load_step_ops(flow)
+    except FlowError as exc:
+        fail(f"Ablauffehler: {path}: {exc}", code=2)
+
+
+def _binds_preflight(flow: Flow) -> bool:
+    return any(b.do == PREFLIGHT for b in flow.bindings.values())
+
+
+def _handoff_states(flow: Flow) -> list[str]:
+    return [s for s in flow.states if handoff_operation(flow, s)]
+
+
+def _check_position(flow: Flow, bead_id: str, position: str) -> None:
+    """Gültige Beads-ID; nur Zustände mit Übergabe an einen
+    Executor."""
+    try:
+        check_bead_id(bead_id)
+    except InvalidBeadIdError as exc:
+        fail(str(exc), code=2)
+    if (
+        position in flow.states
+        and handoff_operation(flow, position) is not None
+    ):
+        return
+    reason = (
+        "hat keine Übergabe (turn/ask)"
+        if position in flow.states
+        else "ist kein Zustand"
+    )
+    fail(
+        f"{position} {reason} in {flow.name}; Zustände mit Übergabe: "
+        + ", ".join(_handoff_states(flow)),
+        code=2,
+    )
+
+
+def _answer_sources(
+    flow: Flow, answers: list[str]
+) -> list[tuple[str, str]]:
+    """``ZUSTAND=DATEI`` je Antwort: ein Zustand mit Übergabe oder
+    gebundener Operation, jeder höchstens einmal, stdin höchstens
+    einmal."""
+    found: list[tuple[str, str]] = []
+    for item in answers:
+        state, separator, source = item.partition("=")
+        if not separator or not state or not source:
+            fail(f"Antwort {item!r}: erwartet ZUSTAND=DATEI", code=2)
+        if state not in flow.states:
+            fail(
+                f"Antwort {state}: kein Zustand in {flow.name}", code=2
+            )
+        if not _answers(flow, state):
+            fail(f"Antwort {state}: der Zustand antwortet nie", code=2)
+        if any(state == seen for seen, _ in found):
+            fail(f"Antwort {state}: doppelt", code=2)
+        found.append((state, source))
+    if sum(source == STDIN_WORD for _, source in found) > 1:
+        fail("stdin (-) höchstens für eine Antwort", code=2)
+    return found
+
+
+def _answers(flow: Flow, state: str) -> bool:
+    """Ob ``state`` je eine Antwort hat: Übergabe oder gebundene
+    Operation (ihr Ergebnis)."""
+    return handoff_operation(flow, state) is not None or any(
+        op.do in flow.bindings for op in flow.state(state).operations
+    )
+
+
+def _read(state: str, source: str) -> str:
+    what = f"Antwort {state}"
+    text = CONSOLE.receive(source, ANSWER_MAX_CHARS, what)
+    if len(text) > ANSWER_MAX_CHARS:
+        raise AnswerError(
+            f"{what} überschreitet {ANSWER_MAX_CHARS} Zeichen; keine "
+            "Kürzung"
+        )
+    return text
+
+
+def _fail_incomplete(
+    bead_id: str, state: str, error: BeadInputInvalidError
+) -> NoReturn:
+    fields = "\n".join(f"  {path}" for path in error.problems)
+    fail(
+        f"Bead {bead_id} ist für {state} formal unvollständig:\n"
+        f"{fields}",
+        code=2,
+    )
+
+
+def step_forms(
+    form: Annotated[
         str | None,
         typer.Argument(
-            metavar="[BEAD_ID]",
-            help="Beads-ID, map (Sitzungsimport) oder local "
-            "(freie Sitzung ohne Bead).",
-        ),
-    ] = None,
-    step: Annotated[
-        Step | None,
-        typer.Option(
-            "--step",
-            metavar="STEP",
-            help="Schritt der Übergabe; ohne --step setzt step den "
-            "gespeicherten Zustand fort.",
-            show_default=False,
-        ),
-    ] = None,
-    review_of: Annotated[
-        ReviewTarget | None,
-        typer.Option(
-            "--review-of",
-            metavar="ZIEL",
-            help="map, graph, materialize oder implement (Standard); "
-            "nur mit --step review.",
-            show_default=False,
-        ),
-    ] = None,
-    preflight_args: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--preflight-args",
-            metavar="NAME=ARGS",
-            help="ARGS an die Vorlauf-Prüfung NAME anhängen "
-            "(wiederholbar; Teillauf); nur mit --step review.",
-            show_default=False,
-        ),
-    ] = None,
-    preflight_skip: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--preflight-skip",
-            metavar="NAME=GRUND",
-            help="Vorlauf-Prüfung NAME begründet auslassen "
-            "(wiederholbar; Teillauf); nur mit --step review.",
-            show_default=False,
-        ),
-    ] = None,
-    next_turn: Annotated[
-        bool,
-        typer.Option(
-            "--next-turn",
-            help="Nächste Nachricht nach einer Korrektur (Umsetzer "
-            "bei Vorlauffehler, sonst Reviewer); nur mit --step "
-            "review.",
-        ),
-    ] = False,
-    feedback_file: Annotated[
-        str | None,
-        typer.Option(
-            "--feedback-file",
-            metavar="DATEI|-",
-            help="Rückmeldung des Schreibagenten (UTF-8; - liest "
-            "stdin); nur mit --next-turn.",
-            show_default=False,
-        ),
-    ] = None,
-    decision_file: Annotated[
-        str | None,
-        typer.Option(
-            "--decision-file",
-            metavar="DATEI|-",
-            help="JSON-Antwort der Umsetzungs-Review (- liest stdin); "
-            "nur mit --next-turn, ohne Vorlauf.",
-            show_default=False,
+            metavar="local|map",
+            help="local (freie Sitzung ohne Bead) oder map "
+            "(Sitzungsimport).",
         ),
     ] = None,
     agent: Annotated[
@@ -156,183 +300,16 @@ def handoff(
         ),
     ] = None,
 ) -> None:
-    options = PreflightValues(
-        preflight_args or [], preflight_skip or []
-    )
-    if bead_id == LOCAL_WORD:
-        local_form(
-            step,
-            review_of,
-            options,
-            next_turn
-            or feedback_file is not None
-            or decision_file is not None,
-            agent,
-            session,
-            title,
-        )
-    elif (
-        agent is not None or session is not None or bead_id == MAP_WORD
-    ):
-        map_form(
-            bead_id,
-            step,
-            review_of,
-            options,
-            next_turn
-            or feedback_file is not None
-            or decision_file is not None,
-            agent,
-            session,
-            title,
-        )
+    if form == LOCAL_WORD:
+        local_form(agent, session, title)
+    elif form == MAP_WORD or agent is not None or session is not None:
+        map_form(form, agent, session, title)
     else:
-        if title is not None:
-            fail("--title gilt nur für map --agent/--session", code=2)
-        _bead_form(
-            bead_id,
-            step,
-            review_of,
-            options,
-            next_turn,
-            Inputs(feedback_file, decision_file),
-        )
-
-def _bead_form(
-    bead_id: str | None,
-    step: Step | None,
-    review_of: ReviewTarget | None,
-    options: PreflightValues,
-    next_turn: bool,
-    inputs: Inputs,
-) -> None:
-    if bead_id is None:
         fail(
-            "Aufruf: BEAD_ID [--step STEP] oder map --agent codex "
-            "--session SESSION_ID",
+            "Aufruf: ki-dev step local oder ki-dev step map --agent "
+            "AGENT --session SESSION_ID --title TITEL; einen Bead "
+            "führt ki-dev -f ABLAUF step BEAD_ID ZUSTAND",
             code=2,
         )
-    saved = _saved_state(bead_id, explicit=step is not None)
-    if step is None:
-        _continue(bead_id, saved, review_of, options, next_turn, inputs)
-        return
-    flow = bound_flow(flow_name(step, review_of))
-    if saved is not None and saved.flow != flow.flow.name:
-        # Ein anderer Ablauf ist ein neuer Lauf, kein Sprung.
-        saved = None
-    preflight = flow.binds(PREFLIGHT)
-    extra = review_options(
-        step, review_of, preflight, options, next_turn, inputs.feedback
-    )
-    check_decision_options(preflight, options, next_turn, inputs)
-    try:
-        output = bead_output(
-            bead_id,
-            flow,
-            step,
-            extra,
-            next_turn,
-            inputs,
-            saved,
-        )
-    except (
-        InvalidBeadIdError,
-        NextTurnInputError,
-        DecisionInputError,
-        LimitConfigInvalidError,
-        HandoffBaseTooLongError,
-    ) as exc:
-        fail(str(exc), code=2)
-    except StandError as exc:
-        fail(f"Stand nicht ermittelbar: {exc}", code=1)
-    except BeadInputInvalidError as exc:
-        _fail_incomplete(bead_id, step, exc)
-    except BeadsReadError as exc:
-        fail(f"Beads-Lesefehler: {exc}", code=1)
-    except PreflightOptionError as exc:
-        fail(f"Aufruf ungültig: {exc}", code=2)
-    except PreflightConfigError as exc:
-        fail(f"Vorlauf-Konfiguration ungültig: {exc}", code=2)
-    except (TransportReadError, LimitConfigReadError) as exc:
-        fail(str(exc), code=1)
-    _note_jump(saved, output)
-    send(CONSOLE, output.attempt or "", output.text)
-    if output.exit_code:
-        raise typer.Exit(code=output.exit_code)
 
-def _saved_state(bead_id: str, *, explicit: bool) -> SavedState | None:
-    """Gespeicherter Halt; ein Halt aus einem anderen Ablaufstand lässt
-    sich nicht fortsetzen, ein ausdrückliches --step beginnt neu."""
-    try:
-        check_bead_id(bead_id)
-        return load_state(bead_id)
-    except StaleHaltError as exc:
-        if explicit:
-            return None
-        fail(f"Bead {bead_id}: {exc}", code=2)
-    except InvalidBeadIdError as exc:
-        fail(str(exc), code=2)
-    except StepStateError as exc:
-        fail(f"Laufzustand ungültig: {exc}", code=2)
-
-def _continue(
-    bead_id: str,
-    saved: SavedState | None,
-    review_of: ReviewTarget | None,
-    options: PreflightValues,
-    next_turn: bool,
-    inputs: Inputs,
-) -> None:
-    """Ohne --step: den gespeicherten Zustand fortsetzen. Nach dem
-    Schreiben folgt das Review, nach der Korrektur die Folgerunde; wo
-    eine Antwort oder Entscheidung fehlt, nennt step die
-    Folgeschritte."""
-    if review_of or options or next_turn or any(inputs):
-        fail(
-            "ohne --step setzt step den gespeicherten Zustand fort; "
-            "weitere Optionen nur mit --step",
-            code=2,
-        )
-    if saved is None:
-        fail(
-            f"Bead {bead_id}: kein gespeicherter Zustand; beginne mit "
-            "--step STEP",
-            code=2,
-        )
-    flow = bound_flow(saved.flow)
-    kind = flow.flow.state(saved.state).kind
-    if saved.status == AWAITING and kind in ("write", "correction"):
-        _bead_form(
-            bead_id,
-            Step.REVIEW,
-            review_target(saved.flow),
-            PreflightValues([], []),
-            kind == "correction",
-            Inputs(None, None),
-        )
-        return
-    lines = next_step_lines(flow.flow, saved.state, one_line(bead_id))
-    typer.echo("\n".join(lines) + "\n", nl=False)
-
-def _note_jump(saved: SavedState | None, output: Output) -> None:
-    """Beginnt ein Aufruf woanders, als der letzte endete, steht das im
-    Protokoll (check_conformance) und hier als Hinweis auf stderr."""
-    if saved is not None and saved.state != output.start:
-        typer.echo(
-            f"Hinweis: letzter Halt {saved.state}, dieser Aufruf "
-            f"beginnt in {output.start} (im Protokoll als Sprung "
-            "sichtbar).",
-            err=True,
-        )
-
-def _fail_incomplete(
-    bead_id: str, step: Step, error: BeadInputInvalidError
-) -> NoReturn:
-    fields = "\n".join(f"  {path}" for path in error.problems)
-    fail(
-        f"Bead {bead_id} ist für Schritt {step.value} formal "
-        f"unvollständig:\n{fields}",
-        code=2,
-    )
-
-handoff.__doc__ = HELP
+step_forms.__doc__ = TOOL_HELP

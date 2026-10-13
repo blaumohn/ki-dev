@@ -25,7 +25,6 @@ from ki_dev.review_context import ReviewProjection
 from ki_dev.runner import turns
 from ki_dev.runner.turns import Plug, bind_turns, render_turn
 from ki_dev.step import turn as step_turn
-from ki_dev.step.choices import Step
 from tests.turn_helpers import render_handoff
 
 TURNS = Path(turns.__file__)
@@ -97,7 +96,7 @@ def test_run_and_step_render_through_the_same_function(monkeypatch):
         ReviewProjection(text="Nachweis", omissions=()),
         _vocabulary(),
     )
-    assert render_handoff(_issue(), Step.IMPLEMENT, flow=FLOW)
+    assert render_handoff(_issue(), "implement", flow=FLOW)
     assert seen == ["implement", "implement", "implement_review"]
 
 
@@ -133,7 +132,7 @@ def test_missing_field_is_named_extra_field_is_allowed():
 def test_extra_block_is_allowed_missing_block_is_named():
     """Ein Satz Bausteine dient mehreren Abläufen."""
     blocks = {**BLOCKS, "orakel": lambda _turn: []}
-    step_turn.bind_flow(FLOW)
+    step_turn.bind_flow(FLOW.flow)
     bind_turns(FLOW.flow, Plug(step_turn.FIELDS, blocks), ("turn",))
     del blocks["criteria"]
     with pytest.raises(FlowError, match="Aufrufer: criteria"):
@@ -200,7 +199,7 @@ def test_any_flow_uses_the_shared_blocks_without_step():
 
 
 def test_declared_blocks_and_fields_match_for_both_flows():
-    step_turn.bind_flow(FLOW)
+    step_turn.bind_flow(FLOW.flow)
     bind_turns(IMPLEMENT, implement_turns.PLUG, ("work", "review"))
 
 

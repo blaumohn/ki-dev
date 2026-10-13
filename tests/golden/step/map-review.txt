@@ -24,6 +24,7 @@ Abschnitt. Du hast keine
 automatische Autorität gegenüber dem Kartierungsagenten und
 schließt nichts automatisch; unentscheidbare Konflikte gehen
 an den Menschen.
+Zum Schluss genau ein JSON-Objekt {"event": …, "detail": …, "requirement_ref": …}: event ist das Ergebnis laut Ausgabe (PASS oder eine Befundklasse), requirement_ref ist immer vorhanden: bei fix "AC<n>", sonst null. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
 Befundklassen: decision = nur der Mensch kann entscheiden (NEEDS_DECISION); source = offene Frage, braucht eine neue Quelle (NEEDS_DECISION); fix = aus vorhandenen Quellen korrigierbar (CHANGES).
 Nenne je Befund seine Klasse; das Urteil folgt der stärksten Klasse (decision > source > fix), ohne Befund PASS.
 
@@ -35,7 +36,7 @@ Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adap
 - fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → map.decision: du entscheidest: accept, correct oder source
-- PASS → finished: `ki-dev step x-1 --step graph`
+- PASS → finished: `ki-dev -f graph step x-1 graph`
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
@@ -101,5 +102,4 @@ Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
 ## Q2 map-review
 
 - Q2:map-review
-Versuch: x-1:2 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

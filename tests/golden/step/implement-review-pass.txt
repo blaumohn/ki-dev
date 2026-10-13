@@ -3,9 +3,8 @@ exit: 0
 Empfänger: Mensch
 Bead: x-1 - Titel [red]rot[/red]
 
-Review-Urteil NEEDS_DECISION (source): Umfang?
+Review-Urteil PASS (PASS): ohne Begründung
 
 Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
-- source → source: offene Fragen in einer Planungssitzung klären
-Versuch: x-1:3 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
+- PASS → finished: Schließen entscheidest du (`bd close x-1`)
 --- stderr ---

@@ -13,7 +13,7 @@ und setzt Läufe fort.
 |---|---|---|
 | Ablauf | Zustände, Kanten, Bindungen `[op.*]` | `flow/map.toml`, `flow/implement_review.toml`, `flow/implement.toml` |
 | Gemeinsame Muster | wiederkehrende Abschnitte | `flow/patterns/review.toml` |
-| Ops-Katalog | Arbeit, Eingabeaufbereitung, Ergebnisdeutung | `ops/checks`, `flow_ops/implement/ops.py` |
+| Ops-Katalog | Arbeit, Eingabeaufbereitung, Ergebnisdeutung | `ops/checks`, `flow_ops/implement/ops.py`, `flow_ops/review/` (Ops des Review-Musters) |
 | Ausführer | Op starten, Ergebnis sichern, Ereignis senden | `runner/` |
 
 ## Gerüst und Paket
@@ -32,8 +32,9 @@ Paket meint:   implement.review, checks → checks_passed, reviewer → claude
 
 Abhängigkeit nur Paket → Gerüst. Gemeinsame Teile wie das Review-Muster
 mit Vokabular und Befundklassen liegen einmal im Katalog
-(`flow/patterns/`). `ki-dev step` ist kein Ablauf: Es führt einen Turn
-eines Paketablaufs mit dem Executor `manual` aus. Der Schichtentest
+(`flow/patterns/`). `step` ist kein Ablauf, sondern ein Befehl jedes
+Pakets: `ki-dev -f ABLAUF step BEAD ZUSTAND [ZUSTAND=DATEI …]` führt
+zustandslos einen Turn mit dem Executor `manual` aus. Der Schichtentest
 (`tests/test_schichten.py`) weist Ablauf-, Phasen- und Rollennamen als
 Literale in `runner/`, `ops/` und `step/` ab.
 
@@ -132,11 +133,18 @@ Muster mit `extends`, kein Schalter.
 
 ## Ausführer
 
-- `ki-dev step` (`runner/package.py`): ein Turn des gewählten Ablaufs
-  mit dem Executor `manual`; jede Übergabe (`turn`, `ask`) geht über
-  `runner/dispatch.py` an den Boten, ohne Antwort hält der Lauf in
-  `awaiting_input`; `checks` läuft über `[op.checks]` und den Katalog,
-  den `step` einsteckt.
+- `ki-dev -f ABLAUF step` (`runner/package.py`): ein Turn des Ablaufs
+  ab dem genannten Zustand mit dem Executor `manual`, in einem Lauf nur
+  für diesen Aufruf (zustandslos); jede Übergabe (`turn`, `ask`) geht
+  über `runner/dispatch.py` an den Boten, mit einer Antwort des Aufrufs
+  geht es weiter, sonst gibt step die Übergabe aus. Daten von weiter
+  vorn deklariert der Ablauf mit Herkunft (`input` an Operation oder
+  Kante). step kennt weder Zustandsarten noch Ereignisse
+  eines Musters: Deutung der Antworten, Katalog (`checks` über
+  `[op.checks]`), Wächter und Eingaben der Übergaben liefern die Ops
+  des Pakets (`ops` des Ablaufs, `step_ops(flow)`, Schnittstelle
+  `step/package.py`). Für das Review-Muster nennt der Katalog sie
+  einmal: `ops = "ki_dev.flow_ops.review"`.
 - `ki-dev -f implement` (Paket `flow_ops/implement/`, eigener Ausführer
   `runtime.py`): die sieben externen Operationen (Arbeit, Nachweise,
   Review, Einfrieren, Historie, Prüfung, Integration) laufen über ihre

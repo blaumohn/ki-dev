@@ -2,7 +2,7 @@
 # Paketablauf auf dem Review-Muster: Zustände und Kanten aus dem
 # Muster, gemeinsame Teile aus dem Katalog flow/patterns/review.toml;
 # hier stehen nur Parameter. PASS führt nach finished, der Hinweis
-# nennt den nächsten Schritt. `ki-dev step` führt einen Turn mit dem
+# nennt den nächsten Schritt. `ki-dev -f NAME step` führt einen Turn mit dem
 # Executor manual aus.
 
 name = "graph"
@@ -51,15 +51,15 @@ review = "Review-Agent (Graphprüfung)"
 correction = "Auflösungsagent (bisherige Sitzung)"
 
 [phase.hint.write]
-done = "je dünnem Vorgang `ki-dev step VORGANG --step review --review-of graph`"
+done = "je dünnem Vorgang `ki-dev -f graph step VORGANG graph.review`"
 
 [phase.hint.review]
-PASS = "`ki-dev step {bead} --step materialize`"
+PASS = "`ki-dev -f materialize step {bead} materialize`"
 fix = "Befunde an den Auflösungsagenten (bisherige Sitzung)"
 
 [phase.hint.correction]
-done = "`ki-dev step {bead} --step review --review-of graph --next-turn`"
+done = "`ki-dev -f graph step {bead} graph.correction graph.correction=ANTWORT.json`"
 
 [phase.hint.decision]
-accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step materialize`"
+accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev -f materialize step {bead} materialize`"
 correct = "Entscheidung an den Auflösungsagenten (bisherige Sitzung)"

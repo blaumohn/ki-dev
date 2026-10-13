@@ -51,10 +51,10 @@ def test_unknown_flow_names_every_place_searched(
     assert "nix.toml" in err and "/nirgends" in err
 
 
-def test_flow_without_ops_is_data_only(capsys):
+def test_flow_with_step_ops_only_has_no_commands(capsys):
     code, _, err = _main(capsys, "-f", "map", "x")
     assert code == 2
-    assert "kein ops-Modul" in err
+    assert "ki_dev.flow_ops.review ohne commands" in err
 
 
 def test_flow_file_in_cwd_wins_and_must_match_bound_flow(

@@ -1,1 +1,1 @@
-Hinweis: PASS gilt nur, wenn Arbeitsbaum und Bead seit diesem Vorlauf unverändert sind; ki-dev prüft das beim Eingang der Antwort und startet sonst den Vorlauf erneut.
+Hinweis: Der Bericht gilt für den Stand bei diesem Vorlauf; ein PASS bezieht sich auf diesen Stand.

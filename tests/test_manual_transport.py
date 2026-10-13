@@ -8,7 +8,6 @@ import io
 import json
 
 import pytest
-from typer.testing import CliRunner
 
 from ki_dev.adapter import manual
 from ki_dev.adapter.contract import AnswerPending, RunTask, WorkRequest
@@ -19,13 +18,11 @@ from ki_dev.adapter.manual import (
     TransportReadError,
 )
 from ki_dev.adapter.registry import executor_specs
-from ki_dev.cli import app
 from ki_dev.step import cli as step_cli
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
 from tests.test_step_cli import FULL
-
-runner = CliRunner()
+from tests.turn_helpers import flow_step
 
 SPECS = executor_specs()
 
@@ -66,13 +63,12 @@ def test_run_and_step_hand_over_through_the_same_function(
     ).install(monkeypatch)
     write_guidelines(tmp_path)
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["step", "x-1", "--step", "implement"])
+    result = flow_step("implement_review", "x-1", "implement")
     assert result.exit_code == 0, result.stderr
 
     assert [name for name, _, _ in calls] == ["Inbox", "Console"]
     assert calls[0][2] == "Bauauftrag"
     assert calls[1][2] == result.stdout
-    assert calls[1][1] == "x-1:1"
 
 
 def test_console_writes_and_reads_bounded(tmp_path):

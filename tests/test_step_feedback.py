@@ -1,4 +1,5 @@
-"""Einheiten für Grenze, Leser und Vorlagen von ``--next-turn``."""
+"""Einheiten für die Grenze der Rückmeldung, den begrenzten Leser der
+Antworten (Konsole des Boten) und die Folgevorlagen."""
 
 import io
 
@@ -6,14 +7,12 @@ import pytest
 
 from ki_dev.adapter.manual import Console, TransportReadError
 from ki_dev.ops.context.bead_input import BeadInput
-from ki_dev.step.choices import ReviewTarget
 from ki_dev.step.feedback import (
     DEFAULT_FEEDBACK_MAX_CHARS as DEFAULT_MAX,
 )
 from ki_dev.step.feedback import (
-    NextTurnInputError,
+    FeedbackConfigError,
     load_feedback_max_chars,
-    read_feedback,
 )
 from tests.turn_helpers import render_repair_turn, render_review_turn
 
@@ -76,7 +75,7 @@ def test_invalid_limit_is_rejected_without_raw_value(tmp_path, value):
         tmp_path / "pyproject.toml",
         f"[tool.ki-dev.handoff]\nfeedback_max_chars = {value}\n",
     )
-    with pytest.raises(NextTurnInputError) as error:
+    with pytest.raises(FeedbackConfigError) as error:
         load_feedback_max_chars(tmp_path)
     assert "tool.ki-dev.handoff.feedback_max_chars" in str(error.value)
     assert "positive ganze Zahl" in str(error.value)
@@ -84,7 +83,7 @@ def test_invalid_limit_is_rejected_without_raw_value(tmp_path, value):
 
 def test_invalid_toml_is_rejected(tmp_path):
     _write(tmp_path / "pyproject.toml", "kaputt = [")
-    with pytest.raises(NextTurnInputError, match="TOML"):
+    with pytest.raises(FeedbackConfigError, match="TOML"):
         load_feedback_max_chars(tmp_path)
 
 
@@ -100,22 +99,26 @@ def test_wrong_table_type_is_rejected_with_field_path(
     tmp_path, toml, field
 ):
     _write(tmp_path / "pyproject.toml", toml)
-    with pytest.raises(NextTurnInputError) as error:
+    with pytest.raises(FeedbackConfigError) as error:
         load_feedback_max_chars(tmp_path)
     assert f"{field} muss eine Tabelle sein" in str(error.value)
     assert "7" not in str(error.value).replace(field, "")
 
 
+def _read(source, limit, console=_CONSOLE) -> str:
+    return console.receive(source, limit, "Antwort")
+
+
 def test_reads_file_exactly_and_never_truncates(tmp_path):
     path = _write(tmp_path / "f.txt", "ä😀 \r\nx")
-    assert read_feedback(str(path), 6, _CONSOLE) == "ä😀 \r\nx"
-    with pytest.raises(NextTurnInputError, match="5 Zeichen"):
-        read_feedback(str(path), 5, _CONSOLE)
+    assert _read(str(path), 6) == "ä😀 \r\nx"
+    # Überlänge bleibt sichtbar: ein Zeichen mehr als die Grenze.
+    assert _read(str(path), 4) == "ä😀 \r\n"
 
 
 def test_reads_stdin_through_the_same_path(tmp_path):
     data = io.BytesIO("ä😀 \r\nx".encode())
-    assert read_feedback("-", 6, _console(lambda: data)) == "ä😀 \r\nx"
+    assert _read("-", 6, _console(lambda: data)) == "ä😀 \r\nx"
     # Der Strom bleibt offen: stdin wird nicht geschlossen.
     assert not data.closed
 
@@ -139,54 +142,45 @@ class _CountingStream(io.BytesIO):
 )
 def test_reads_no_byte_beyond_limit_plus_one_characters(char, width):
     stream = _CountingStream((char * 200_000).encode())
-    with pytest.raises(NextTurnInputError, match="10 Zeichen"):
-        read_feedback("-", 10, _console(lambda: stream))
+    assert len(_read("-", 10, _console(lambda: stream))) == 11
     assert stream.delivered == 11 * width
 
 
 @pytest.mark.parametrize("char", ["a", "ä", "😀"])
 def test_invalid_utf8_behind_limit_is_overlength_not_read_error(char):
     data = (char * 11).encode() + b"\xff\xfe" + b"x" * 50
-    with pytest.raises(NextTurnInputError, match="10 Zeichen"):
-        read_feedback("-", 10, _console(lambda: _CountingStream(data)))
+    stream = _CountingStream(data)
+    assert _read("-", 10, _console(lambda: stream)) == char * 11
 
 
 def test_invalid_utf8_within_limit_is_read_error():
     data = b"a" * 5 + b"\xff" + b"a" * 3
     with pytest.raises(TransportReadError, match="UTF-8"):
-        read_feedback("-", 10, _console(lambda: io.BytesIO(data)))
+        _read("-", 10, _console(lambda: io.BytesIO(data)))
 
 
 def test_truncated_utf8_at_end_is_read_error():
     data = b"ab" + "ä".encode()[:1]
     with pytest.raises(TransportReadError, match="UTF-8"):
-        read_feedback("-", 10, _console(lambda: io.BytesIO(data)))
+        _read("-", 10, _console(lambda: io.BytesIO(data)))
 
 
 def test_file_is_read_without_overlength_decoding(tmp_path):
     path = tmp_path / "f.txt"
     path.write_bytes(b"a" * 11 + b"\xff" * 100_000)
-    with pytest.raises(NextTurnInputError, match="10 Zeichen"):
-        read_feedback(str(path), 10, _CONSOLE)
-
-
-@pytest.mark.parametrize("text", ["", " ", "\n\n", " \t"])
-def test_blank_feedback_is_rejected(tmp_path, text):
-    path = _write(tmp_path / "f.txt", text)
-    with pytest.raises(NextTurnInputError, match="leer"):
-        read_feedback(str(path), 10, _CONSOLE)
+    assert _read(str(path), 10) == "a" * 11
 
 
 def test_read_errors_name_no_content(tmp_path):
     bad = tmp_path / "f.txt"
     bad.write_bytes(b"GEHEIM\xff")
     with pytest.raises(TransportReadError, match="UTF-8") as utf8:
-        read_feedback(str(bad), 100, _CONSOLE)
+        _read(str(bad), 100)
     assert "GEHEIM" not in str(utf8.value)
     with pytest.raises(TransportReadError, match="nicht lesbar"):
-        read_feedback(str(tmp_path / "fehlt"), 100, _CONSOLE)
+        _read(str(tmp_path / "fehlt"), 100)
     with pytest.raises(TransportReadError, match="nicht lesbar"):
-        read_feedback(str(tmp_path), 100, _CONSOLE)
+        _read(str(tmp_path), 100)
 
 
 def test_repair_turn_names_recipient_request_limit_and_finding():
@@ -206,16 +200,12 @@ def test_review_turn_has_phase_specific_focus_per_target():
         target: render_review_turn(
             ISSUE, target, None, None, pass_allowed=True
         )
-        for target in (
-            ReviewTarget.MAP,
-            ReviewTarget.GRAPH,
-            ReviewTarget.MATERIALIZE,
-        )
+        for target in ("map", "graph", "materialize")
     }
     assert len(set(texts.values())) == 3
-    assert "Quellenabdeckung" in texts[ReviewTarget.MAP]
-    assert "Abhängigkeiten" in texts[ReviewTarget.GRAPH]
-    assert "Abnahmekriterien" in texts[ReviewTarget.MATERIALIZE]
+    assert "Quellenabdeckung" in texts["map"]
+    assert "Abhängigkeiten" in texts["graph"]
+    assert "Abnahmekriterien" in texts["materialize"]
 
 
 def test_feedback_block_is_single_line_quoted_and_sanitized():

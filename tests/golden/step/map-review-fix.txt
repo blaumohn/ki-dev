@@ -1,0 +1,11 @@
+exit: 0
+--- stdout ---
+Empfänger: Umsetzer (bisherige Sitzung)
+Bead: x-1 - Titel [red]rot[/red]
+
+Review-Befund (fix, CHANGES, AC1): Test fehlt
+Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
+
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
+- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
+--- stderr ---

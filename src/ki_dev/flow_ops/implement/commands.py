@@ -7,8 +7,8 @@ Profil, der Ausführer fährt den Ablauf bis zum nächsten Halt.
 
 ``--adapter manual`` ersetzt die Agentensitzung durch den Menschen als
 Boten: die Eingabe geht auf stdout, die formale Antwort kommt von
-stdin. Der frühere Befehl ``ki-dev step`` ist damit nur noch ein
-Adapter, kein eigener Ablauf.
+stdin. ``ki-dev -f ABLAUF step`` gibt dagegen zustandslos einzelne
+Übergaben aus; den Befehl hat jedes Paket (Gerüst).
 """
 
 from __future__ import annotations

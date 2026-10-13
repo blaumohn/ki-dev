@@ -10,15 +10,17 @@ Umweg über ein Hilfsmodul ist ebenso eine Abhängigkeit.
   transportiert Eingabe und formale Ausgabe, mehr nicht.
 - ``ki_dev.step`` ist die Projektion des Ausführers mit dem Adapter
   manual: es nutzt ``ki_dev.runner`` (den einen Ausführer), der
-  Ausführer kennt step nie; Maschinenoperationen reicht step als
-  Bindung herein.
+  Ausführer kennt step nie. Katalog, Deutung der Antworten und
+  Eingaben der Übergaben lädt step als Ops des Pakets (``ops`` des
+  Ablaufs, :mod:`ki_dev.step.package`); es importiert sie nie.
 - ``ki_dev.ops`` setzt deklarierte Operationen um (``checks``) und
   liefert Kontextquellen (``context``: Bead-Eingabe, Leitlinien,
   Grenzen, Beads-Leser); es kennt weder Ausführer noch Adapter noch
   step: eingesteckt wird es von außen.
 - ``ki_dev.flow_ops`` setzt die Ablaufpakete zusammen (``ops`` eines
-  Ablaufs): es nutzt Ausführer, Ops-Bausteine und Adapter; keine
-  andere Schicht und kein Kernmodul kennt es.
+  Ablaufs): es nutzt Ausführer, Ops-Bausteine, Adapter und die
+  Schnittstelle von step; keine andere Schicht und kein Kernmodul
+  kennt es.
 - Kernmodule außerhalb der Schichten (Deltas, Verbrauch, Nachweise)
   kennen weder Ausführer noch ``step`` noch die Kommandozeile; ein
   Modul, das nur eine Schicht nutzt, liegt in dieser Schicht.
@@ -200,17 +202,13 @@ def test_generic_package_runner_knows_no_roles_or_catalog():
 # --- Grenze Gerüst/Paket ----------------------------------------------
 
 # Gerüstwörter, die auch als Rolle oder Zustandsart vorkommen: review
-# ist Modus von ``--step review``, Zustandsart des Review-Katalogs und
-# Schlüssel der Leitlinienquelle; source und finished sind Zustände des
-# gemeinsamen Katalogs.
+# ist Zustandsart des Review-Katalogs und Schlüssel der
+# Leitlinienquelle; source und finished sind Zustände des gemeinsamen
+# Katalogs.
 _FRAMEWORK_WORDS = {"review", "source", "finished"}
-# Bedienvorgaben der CLI mit Begründung (``ki_dev.step``): Vorgabe von
-# ``--step review`` und die Form ``ki-dev step map --agent`` des
-# Sitzungsimports.
-_ALLOWED = {
-    ("ki_dev.step.choices", "implement"),
-    ("ki_dev.step.forms", "map"),
-}
+# Bedienvorgabe der CLI mit Begründung (``ki_dev.step``): die Form
+# ``ki-dev step map --agent`` des Sitzungsimports.
+_ALLOWED = {("ki_dev.step.forms", "map")}
 
 
 def _package_words() -> set[str]:
@@ -289,3 +287,56 @@ def test_package_words_cover_phases_roles_and_flows():
     assert {"map", "implement", "implement_review", "worker"} <= words
     assert {"worker_step", "map.review"} <= words
     assert not words & _FRAMEWORK_WORDS
+
+
+# --- step ohne Musterwissen (ige.8) -----------------------------------
+
+
+def _pattern_words() -> set[str]:
+    """Zustandsarten und Ereignisse der Muster im Gerüst-Katalog
+    (``flow/patterns``), ohne Gerüstwörter."""
+    import tomllib
+
+    words: set[str] = set()
+    for path in (SRC / "ki_dev" / "flow" / "patterns").glob("*.toml"):
+        vocabulary = tomllib.loads(path.read_text(encoding="utf-8"))[
+            "vocabulary"
+        ]
+        words |= {*vocabulary["kinds"], *vocabulary["events"]}
+    return words - _FRAMEWORK_WORDS
+
+
+def test_step_knows_no_pattern_vocabulary():
+    """Zustandsarten (``correction``, ``machine``) und Ereignisse
+    (``done``) eines Musters deuten seine Ops, nicht step."""
+    words = _pattern_words()
+    found = {
+        (module, value)
+        for module in _layer("ki_dev.step")
+        for value in _literals(module)
+        if value in words
+    }
+    assert found == set()
+
+
+def test_step_leaves_verdicts_and_checks_to_the_package():
+    """Urteilsdeutung, Wächter und Vorlauf importiert step nicht
+    (Fehlerarten für Exitcodes ausgenommen); es lädt die Ops des
+    Pakets über ``ops`` des Ablaufs."""
+    forbidden = (
+        "ki_dev.flow_ops",
+        "ki_dev.review_decision",
+        "ki_dev.runner.review_output",
+        "ki_dev.ops.checks.run",
+    )
+    found = {
+        (module, target)
+        for module in _layer("ki_dev.step")
+        for target in _direct(module)
+        if _within(target, forbidden)
+    }
+    assert found == set()
+
+
+def test_pattern_words_cover_kinds_and_events():
+    assert {"correction", "machine", "done", "PASS"} <= _pattern_words()

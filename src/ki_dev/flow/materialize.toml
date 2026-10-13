@@ -2,7 +2,7 @@
 # Paketablauf auf dem Review-Muster: Zustände und Kanten aus dem
 # Muster, gemeinsame Teile aus dem Katalog flow/patterns/review.toml;
 # hier stehen nur Parameter. PASS führt nach finished, der Hinweis
-# nennt den nächsten Schritt. `ki-dev step` führt einen Turn mit dem
+# nennt den nächsten Schritt. `ki-dev -f NAME step` führt einen Turn mit dem
 # Executor manual aus.
 
 name = "materialize"
@@ -51,15 +51,15 @@ review = "Review-Agent (Materialisierungsprüfung)"
 correction = "Materialisierungsagent (bisherige Sitzung)"
 
 [phase.hint.write]
-done = "`ki-dev step {bead} --step review --review-of materialize`"
+done = "`ki-dev -f materialize step {bead} materialize.review`"
 
 [phase.hint.review]
-PASS = "`ki-dev step {bead} --step implement`"
+PASS = "`ki-dev -f implement_review step {bead} implement`"
 fix = "Befunde an den Materialisierungsagenten (bisherige Sitzung)"
 
 [phase.hint.correction]
-done = "`ki-dev step {bead} --step review --review-of materialize --next-turn`"
+done = "`ki-dev -f materialize step {bead} materialize.correction materialize.correction=ANTWORT.json`"
 
 [phase.hint.decision]
-accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step implement`"
+accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev -f implement_review step {bead} implement`"
 correct = "Entscheidung an den Materialisierungsagenten (bisherige Sitzung)"

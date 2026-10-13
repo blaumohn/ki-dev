@@ -4,8 +4,7 @@ und prüft die Basisgrenze."""
 
 from __future__ import annotations
 
-from ki_dev.flow.model import FlowError, Operation, Turn
-from ki_dev.flow.review_flow import ReviewFlow
+from ki_dev.flow.model import Flow, FlowError, Operation, Turn
 from ki_dev.ops.context.bead_input import (
     BeadInput,
     BeadInputInvalidError,
@@ -17,7 +16,6 @@ from ki_dev.ops.context.blocks import (
     OUTSIDE_BASE,
     TurnInput,
     base_fields,
-    state_turn,
 )
 from ki_dev.ops.context.limit import check_base_length
 from ki_dev.runner.turns import Plug, bind_turns, render_turn
@@ -25,19 +23,19 @@ from ki_dev.runner.turns import Plug, bind_turns, render_turn
 PLUG = Plug(FIELDS, BLOCKS)
 
 
-def bind_flow(flow: ReviewFlow) -> None:
+def bind_flow(flow: Flow) -> None:
     """Ablauf und eingesteckte Felder und Bausteine passen; Übergaben
     sind wie beim Ausführer die Operationen ohne Bindung."""
     used = {
         operation.do
-        for state in flow.flow.states.values()
+        for state in flow.states.values()
         for operation in state.operations
     }
-    bind_turns(flow.flow, PLUG, used - set(flow.flow.bindings))
+    bind_turns(flow, PLUG, used - set(flow.bindings))
 
 
 def require_valid(
-    issue: BeadInput, flow: ReviewFlow, state: str
+    issue: BeadInput, flow: Flow, state: str
 ) -> None:
     """Formal unvollständige Beads lehnt jede erste Übergabe ab: der
     Ablauf nennt am Zustand die Bead-Felder (``require``), der
@@ -53,7 +51,7 @@ def require_valid(
 
 
 def hand_over(
-    flow: ReviewFlow,
+    flow: Flow,
     turn: Turn | None,
     subject: TurnInput,
     base_max_chars: int | None = None,
@@ -62,9 +60,9 @@ def hand_over(
     Basis (``None``: ungeprüft), nie für Bericht und Leitlinien."""
     if turn is None:
         raise FlowError(
-            f"{flow.file}: der Halt bestimmt keine Übergabe"
+            f"{flow.name}.toml: der Halt bestimmt keine Übergabe"
         )
-    rendered = render_turn(flow.flow, turn, subject, PLUG)
+    rendered = render_turn(flow, turn, subject, PLUG)
     if base_max_chars is not None:
         check_base_length(
             rendered.text(OUTSIDE_BASE),
@@ -74,26 +72,11 @@ def hand_over(
     return rendered.text()
 
 
-def ensure_base_fits(
-    flow: ReviewFlow,
-    issue: BeadInput,
-    state: str,
-    base_max_chars: int,
-) -> None:
-    """Basisgrenze der Übergabe in ``state`` prüfen, ohne den Text zu
-    verwenden (vor einem Vorlauf, der Dateien ändern kann)."""
-    require_valid(issue, flow, state)
-    hand_over(
-        flow,
-        state_turn(flow.flow, state),
-        TurnInput(issue, flow.flow, state),
-        base_max_chars,
-    )
-
-
-def _turn_operation(flow: ReviewFlow, state: str) -> Operation:
+def _turn_operation(flow: Flow, state: str) -> Operation:
     """Die Operation des Zustands, die seine Übergabe trägt."""
-    for operation in flow.flow.state(state).operations:
+    for operation in flow.state(state).operations:
         if operation.turn is not None:
             return operation
-    raise FlowError(f"{flow.file}: {state} hat keine Übergabevorlage")
+    raise FlowError(
+        f"{flow.name}.toml: {state} hat keine Übergabevorlage"
+    )

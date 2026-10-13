@@ -1,1 +1,1 @@
-Prüfsteuerung des Reviewers (nicht angewendet; Teillauf ohne PASS), nach der Korrektur auszuführen:
+Prüfsteuerung des Reviewers (nicht angewendet; Teillauf ohne PASS), nach der Korrektur an den step-Aufruf mit Vorlauf anhängen:

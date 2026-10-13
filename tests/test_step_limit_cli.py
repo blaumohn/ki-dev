@@ -14,7 +14,6 @@ from ki_dev.ops.context.guidelines import (
 )
 from ki_dev.ops.context.guidelines_source import load_guidelines
 from ki_dev.ops.context.limit import MAX_DIAGNOSIS_CHARS
-from ki_dev.step.choices import Step
 from ki_dev.step.help import HELP
 from tests.codex_session_fixtures import (
     SECRET,
@@ -25,7 +24,7 @@ from tests.codex_session_fixtures import (
 from tests.fake_bd import FakeBd
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
-from tests.turn_helpers import select_for, without_attempt
+from tests.turn_helpers import handoff_of, select_for, write_done
 
 runner = CliRunner()
 ROOT = Path(__file__).resolve().parent.parent
@@ -65,14 +64,14 @@ def bd(monkeypatch, tmp_path_factory):
     return fake
 
 
-def _handoff(*args: str):
-    return runner.invoke(app, ["step", "x-1", *args])
+def _handoff(state: str):
+    return handoff_of(state)
 
 
-def _measured_base(project, *args: str) -> int:
+def _measured_base(project, state: str) -> int:
     """Zeichenzahl der Basis aus der Diagnose einer Übergröße."""
     _limit(project, 1)
-    result = _handoff(*args)
+    result = _handoff(state)
     assert result.exit_code == 2
     return int(re.search(r"(\d+) Zeichen, Grenze", result.stderr)[1])
 
@@ -81,19 +80,19 @@ def _measured_base(project, *args: str) -> int:
 
 
 @pytest.mark.parametrize(
-    "args",
+    "state",
     [
-        ["--step", "map"],
-        ["--step", "graph"],
-        ["--step", "materialize"],
-        ["--step", "implement"],
-        ["--step", "review", "--review-of", "map"],
-        ["--step", "review", "--review-of", "materialize"],
+        "map",
+        "graph",
+        "materialize",
+        "implement",
+        "map.review",
+        "materialize.review",
     ],
 )
-def test_overlong_base_exits_2_with_empty_stdout(bd, project, args):
+def test_overlong_base_exits_2_with_empty_stdout(bd, project, state):
     _limit(project, 1)
-    result = _handoff(*args)
+    result = _handoff(state)
     assert result.exit_code == 2
     assert result.stdout == ""
     assert re.search(r"\d+ Zeichen, Grenze 1 ", result.stderr)
@@ -105,28 +104,28 @@ def test_overlong_base_exits_2_with_empty_stdout(bd, project, args):
 def test_boundary_equal_is_allowed_and_one_less_is_rejected(
     bd, project
 ):
-    size = _measured_base(project, "--step", "implement")
+    size = _measured_base(project, "implement")
     _limit(project, size)
-    ok = _handoff("--step", "implement")
+    ok = _handoff("implement")
     assert ok.exit_code == 0
     assert ok.stdout.index("\nLEITLINIEN") == size
     _limit(project, size - 1)
-    assert _handoff("--step", "implement").exit_code == 2
+    assert _handoff("implement").exit_code == 2
 
 
 def test_guidelines_do_not_count_to_the_base(bd, project):
-    size = _measured_base(project, "--step", "implement")
+    size = _measured_base(project, "implement")
     _limit(project, size)
-    text = _handoff("--step", "implement").stdout
+    text = _handoff("implement").stdout
     assert text.startswith("Schritt: implement\n")
     assert len(text) > size
 
 
 def test_default_4000_applies_without_configuration(bd, project):
     assert not (project / "pyproject.toml").exists()
-    assert _handoff("--step", "implement").exit_code == 0
+    assert _handoff("implement").exit_code == 0
     bd.state["stdout"] = json.dumps([FULL | {"title": "T" * 6000}])
-    assert _handoff("--step", "implement").exit_code == 2
+    assert _handoff("implement").exit_code == 2
 
 
 def test_epic_hint_counts_and_is_named_by_index(bd, project):
@@ -145,7 +144,7 @@ def test_epic_hint_counts_and_is_named_by_index(bd, project):
     bd.state["graph"] = {"x-1": child, "ep": epic}
     bd.state["stdout"] = ""
     _limit(project, 1)
-    result = _handoff("--step", "implement")
+    result = _handoff("implement")
     assert result.exit_code == 2
     assert "epic_context[0]" in result.stderr
     assert "Epic-Text" not in result.stderr
@@ -164,7 +163,7 @@ def test_epic_hint_counts_and_is_named_by_index(bd, project):
 )
 def test_invalid_value_exits_2_before_reading_beads(bd, project, text):
     _config(project, f"{TABLE}{text}\n")
-    result = _handoff("--step", "implement")
+    result = _handoff("implement")
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "tool.ki-dev.handoff.base_max_chars" in result.stderr
@@ -176,7 +175,7 @@ def test_invalid_value_exits_2_before_reading_beads(bd, project, text):
 )
 def test_wrong_table_or_defective_toml_exits_2(bd, project, text):
     _config(project, text)
-    result = _handoff("--step", "implement")
+    result = _handoff("implement")
     assert result.exit_code == 2
     assert result.stdout == ""
     assert bd.calls == []
@@ -184,7 +183,7 @@ def test_wrong_table_or_defective_toml_exits_2(bd, project, text):
 
 def test_unreadable_configuration_exits_1(bd, project):
     (project / "pyproject.toml").mkdir()
-    result = _handoff("--step", "implement")
+    result = _handoff("implement")
     assert result.exit_code == 1
     assert result.stdout == ""
     assert bd.calls == []
@@ -193,7 +192,7 @@ def test_unreadable_configuration_exits_1(bd, project):
 def test_non_default_valid_value_is_effective(bd, project):
     _limit(project, 9999)
     bd.state["stdout"] = json.dumps([FULL | {"title": "T" * 6000}])
-    assert _handoff("--step", "implement").exit_code == 0
+    assert _handoff("implement").exit_code == 0
 
 
 # --- Build-Review: Grenze vor dem Vorlauf ---------------------------
@@ -214,37 +213,31 @@ def _review_project(project: Path, limit: int | str) -> Path:
     return marker
 
 
-def test_review_over_limit_blocks_before_any_preflight(bd, project):
+def test_review_over_limit_exits_2_after_the_preflight(bd, project):
+    """Welche Übergabe ein beantworteter Zustand auslöst, zeigt erst
+    der Ablauf: die Grenze greift an der ausgegebenen Übergabe."""
     marker = _review_project(project, 1)
-    for args in (
-        ["--step", "review"],
-        ["--step", "review", "--review-of", "implement"],
-    ):
-        result = _handoff(*args)
-        assert result.exit_code == 2
-        assert result.stdout == ""
-        assert "Vorlauf" not in result.stderr
-        assert "Zeichen, Grenze 1" in result.stderr
-    assert not marker.exists()
-    assert not (project / ".local").exists()
+    result = write_done("implement")
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Zeichen, Grenze 1" in result.stderr
+    assert marker.exists()
 
 
 def test_review_report_is_not_counted_and_guidelines_follow(
     bd, project
 ):
     marker = _review_project(project, 100000)
-    full = _handoff("--step", "review").stdout
+    full = write_done("implement").stdout
     size = full.index("PRUEFBERICHT")
     marker.unlink()
     _review_project(project, size)
-    ok = _handoff("--step", "review")
+    ok = write_done("implement")
     assert ok.exit_code == 0
     assert marker.exists()
     assert len(ok.stdout) > size
-    marker.unlink()
     _review_project(project, size - 1)
-    assert _handoff("--step", "review").exit_code == 2
-    assert not marker.exists()
+    assert write_done("implement").exit_code == 2
 
 
 def _enlarge_guidelines(project: Path, filler: str) -> None:
@@ -264,10 +257,10 @@ def test_review_base_at_limit_keeps_large_report_and_guidelines(
     _enlarge_guidelines(project, filler)
     _review_project(project, 4000)
     bd.state["stdout"] = json.dumps([FULL | {"title": "x"}])
-    short = _handoff("--step", "review").stdout.index("PRUEFBERICHT")
+    short = write_done("implement").stdout.index("PRUEFBERICHT")
     title = "x" + "ä" * (4000 - short)
     bd.state["stdout"] = json.dumps([FULL | {"title": title}])
-    result = _handoff("--step", "review")
+    result = write_done("implement")
     assert result.exit_code == 0, result.stderr
     out = result.stdout
     assert out.index("PRUEFBERICHT") == 4000
@@ -275,14 +268,12 @@ def test_review_base_at_limit_keeps_large_report_and_guidelines(
         "PRUEFBERICHT vorlauf-start=",
         "- marker: PASS",
         "Vollständig: .local/handoff/preflight/",
-        "Hinweis: PASS gilt nur, wenn Arbeitsbaum",
+        "Hinweis: Der Bericht gilt für den Stand",
     ):
         assert line in out[4000:]
-    sections = select_for(
-        load_guidelines(project), Step.REVIEW, None
-    )
+    sections = select_for(load_guidelines(project), "implement.review")
     block = render_guideline_block(sections)
-    assert without_attempt(out).endswith(block)
+    assert out.endswith(block)
     assert out.count(filler) == len(sections)
     assert all(section.text in out for section in sections)
     assert sum(len(section.text) for section in sections) >= 17000
@@ -292,22 +283,9 @@ def test_review_invalid_configuration_blocks_before_preflight(
     bd, project
 ):
     marker = _review_project(project, "0")
-    assert _handoff("--step", "review").exit_code == 2
+    assert write_done("implement").exit_code == 2
     assert not marker.exists()
     assert bd.calls == []
-
-
-# --- --next-turn bleibt unverändert ---------------------------------
-
-
-@pytest.mark.parametrize("value", ["1", "0", '"x"'])
-def test_next_turn_ignores_the_base_limit(bd, project, value):
-    _limit(project, value)
-    result = _handoff(
-        "--step", "review", "--review-of", "materialize", "--next-turn"
-    )
-    assert result.exit_code == 0
-    assert "Reviewziel: materialize" in result.stdout
 
 
 # --- Hilfe und Dokumentation ----------------------------------------

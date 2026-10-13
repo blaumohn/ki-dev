@@ -746,15 +746,14 @@ def test_render_review_handoff_appends_compact_report(tmp_path: Path):
     assert "[argv=" in text
 
 
-def test_render_review_handoff_names_the_stand_check(
+def test_render_review_handoff_binds_pass_to_the_checked_stand(
     tmp_path: Path,
 ):
-    """Der Hinweis nennt, dass PASS nur bei unverändertem Stand gilt
-    und ki-dev das prüft (ki-dev-ablauf-nyk)."""
+    """Der Hinweis bindet PASS an den Stand dieses Vorlaufs; step
+    prüft ihn nicht nach (ki-dev-ablauf-ige.9)."""
     report = run_preflight(_ok_config(), _repo(tmp_path))
     text = render_review_handoff(_issue(), report)
-    assert "PASS gilt nur, wenn Arbeitsbaum und Bead" in text
-    assert "startet sonst den Vorlauf erneut" in text
+    assert "Der Bericht gilt für den Stand bei diesem Vorlauf" in text
 
 
 def test_format_command_result_includes_argv_and_detail():

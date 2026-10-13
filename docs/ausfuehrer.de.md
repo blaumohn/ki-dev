@@ -32,7 +32,7 @@ Modul, das ihre Befehle umsetzt (`ki_dev.flow_ops.implement`: `start`,
 `resume`, `status`). Der Ausführer bindet bisher nur das mitgelieferte
 `implement.toml`; eine abweichende Datei wird abgewiesen.
 
-Aus dem Bead (Pflichtfelder wie bei `ki-dev step --step implement`):
+Aus dem Bead (Pflichtfelder wie bei `ki-dev -f implement_review step BEAD implement`):
 Titel, Beschreibung, Design und die Übersicht der Eltern-Epics werden
 `task`, `acceptance_criteria` (nummeriert `1.`, `2.` …) werden `AC1`,
 `AC2` …, `sources` ist `bd:BEAD` plus `metadata.handoff.source_refs`.
@@ -136,8 +136,9 @@ genommene Kante nennt den Ersatz im Feld `adapter` von `events.jsonl`.
 
 ```bash
 ki-dev -f implement resume RUN_ID --adapter review=manual   # Review einmal von Hand
-``` Damit ist der frühere `ki-dev step` für diesen Ablauf nur ein
-Adapter, kein eigener Befehl.
+``` Der Mensch als Bote ist damit für diesen Ablauf nur ein Adapter;
+`ki-dev -f ABLAUF step` gibt dagegen zustandslos einzelne Übergaben
+aus (Spielplatz, [step](step.de.md)).
 
 `awaiting_input` ist ein Halt des Ausführers, kein Zustand des Ablaufs
 (`AnswerPending` im Adaptervertrag, für jeden Transport gleich):
@@ -267,8 +268,8 @@ stattfand. So steht der Verlauf des Laufs (Operationen, Pausen,
 Antworten) neben dem des Ablaufs, ohne dessen Zählung zu stören.
 `adapter` nennt, wer das Ereignis brachte: bei einer Übergabe der
 Executor, der antwortete (etwa `manual`), sonst `ki-dev`.
-Beginnt ein neuer Lauf im selben Protokoll (`start` mit `again`, etwa
-jedes ausdrückliche `ki-dev step --step`), steht davor die Zeile
+Beginnt ein neuer Lauf im selben Protokoll (`start` mit `again`),
+steht davor die Zeile
 `lauf --@start--> lauf` (Region `lauf`): die Regionen des Laufs beginnen
 wieder im Anfangszustand. Beginnt der neue Lauf im selben Ablauf an
 anderer Stelle, als der alte hielt, folgt `letzter Halt --@jump--> Start`.

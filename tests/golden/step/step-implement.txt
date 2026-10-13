@@ -21,7 +21,7 @@ keine allgemeinen ADR-Sammlungen, um den Auftrag zu
 rekonstruieren; melde konkrete Vertragslücken zurück.
 
 Hinweis für den Menschen: Zustand implement; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
-- done → implement.preflight: `ki-dev step x-1 --step review` (mit Vorlauf)
+- done → implement.preflight: `ki-dev -f implement_review step x-1 implement implement=ANTWORT.json` (Vorlauf, dann Review)
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
@@ -72,5 +72,4 @@ Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
 ## Q2 implement-task
 
 - Q2:implement-task
-Versuch: x-1:1 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---

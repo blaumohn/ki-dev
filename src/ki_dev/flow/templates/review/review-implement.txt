@@ -11,9 +11,7 @@ tatsächlichen Diffs und des beigefügten Prüfberichts. Diese
 Übergabe hat bereits einen deterministischen Vorlauf
 ausgeführt (Korrekturen und Prüfungen); starte selbst keine
 Formatter, Linter, Typprüfer oder Tests, auch keine
-Prüfwerkzeuge oder Folgemodelle. ki-dev nimmt ein PASS
-nur an, wenn Arbeitsbaum und Bead seit diesem Vorlauf
-unverändert sind.
+Prüfwerkzeuge oder Folgemodelle.
 Lesen von Dateien, Diff,
 Anforderungen und Prüfbericht bleibt erlaubt. Beurteile
 Testqualität und Abdeckung; melde fehlende oder
@@ -24,12 +22,8 @@ Umsetzers und frühere Reviews vor diesem Urteil nicht als
 Bewertungsinput.
 Ausgabe: PASS oder die stärkste Befundklasse.
 Nenne zuerst je Befund kurz Klasse und Anforderungs- oder
-Codebezug; zum Schluss genau ein JSON-Objekt
-{"event": …, "detail": …, "requirement_ref": …, "attempt": …};
-event ist PASS oder die stärkste Befundklasse, requirement_ref
-ist immer vorhanden: bei fix "AC<n>", sonst null, attempt ist
-die Kennung aus der Zeile „Versuch:“ dieser Übergabe. Der Mensch
-gibt es mit --decision-file weiter.
+Codebezug.
+${answer}
 Optional "preflight_args"/"preflight_skip" ({NAME: ARGS bzw.
 Grund}) begrenzen nur den Prüfumfang der nächsten Runde; nie
 bei PASS, keine Programme oder Korrekturen.

@@ -12,7 +12,7 @@ Es ist keine Rolle eines Handoff-Schritts gewählt: Beads-Status
 nur lesen. Lesebefehle und Rollenrechte stehen im Block unten.
 
 Hinweis für den Menschen: Für einen Beads-Auftrag stattdessen
-`ki-dev step BEAD_ID --step STEP` verwenden.
+`ki-dev -f ABLAUF step BEAD_ID ZUSTAND` verwenden.
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt

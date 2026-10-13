@@ -23,9 +23,10 @@ from ki_dev.flow_cli import app as flow_app
 from ki_dev.flow_ops import load_ops
 from ki_dev.planning_cli import app as planning_app
 from ki_dev.session_cli import app as session_app
-from ki_dev.step.cli import handoff
+from ki_dev.step.cli import step_app, step_forms
 
 FILE_OPTIONS = ("-f", "--file")
+STEP = "step"
 _HELP_WORDS = ("--help", "-h")
 
 errors = Console(stderr=True)
@@ -38,7 +39,9 @@ app = typer.Typer(
     epilog=(
         "Abläufe: ki-dev -f NAME [BEFEHL] … sucht ./NAME.toml, "
         "$KI_DEV_FLOW_PATH, dann das mitgelieferte Paket. "
-        "Beispiel: ki-dev -f implement BEAD --adapter review=manual"
+        "Beispiel: ki-dev -f implement BEAD --adapter review=manual; "
+        "ein Turn mit dem Executor manual: "
+        "ki-dev -f NAME step BEAD ZUSTAND [ZUSTAND=DATEI …]"
     ),
     no_args_is_help=True,
     add_completion=False,
@@ -46,7 +49,7 @@ app = typer.Typer(
 app.add_typer(flow_app, name="flow")
 app.add_typer(planning_app, name="planning")
 app.add_typer(session_app, name="session")
-app.command("step")(handoff)
+app.command("step")(step_forms)
 app.command("config")(config)
 
 
@@ -60,17 +63,24 @@ def main(argv: list[str] | None = None) -> None:
 
 def run_flow(args: list[str]) -> None:
     """``ki-dev -f NAME [BEFEHL] …``: ohne BEFEHL gilt der erste
-    Befehl des Pakets (bei implement: start)."""
+    Befehl des Pakets (bei implement: start). ``step`` hat jeder
+    Ablauf: ein Turn mit dem Executor manual."""
     if not args:
         _abort("-f braucht den Namen oder Pfad eines Ablaufs")
     name, rest = args[0], args[1:]
     try:
         path = find_flow(name, Path.cwd(), os.environ)
         flow = load_flow_file(path)
-        command = typer.main.get_command(load_ops(flow, path))
+        if rest[:1] == [STEP]:
+            step = typer.main.get_command(step_app(flow, path))
+        else:
+            command = typer.main.get_command(load_ops(flow, path))
     except FlowError as exc:
         _abort(f"Ablauffehler: {exc}")
     errors.print(Text(f"Ablauf: {path}", style="dim"))
+    if rest[:1] == [STEP]:
+        step.main(args=rest[1:], prog_name=f"ki-dev -f {name} step")
+        return
     names = list(getattr(command, "commands", {}))
     if rest and rest[0] not in names and rest[0] not in _HELP_WORDS:
         rest = [names[0], *rest]

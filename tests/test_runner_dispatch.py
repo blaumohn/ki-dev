@@ -2,7 +2,7 @@
 
 Derselbe Ablauf läuft mit Agenten (hier mock) ohne Halt bis zum Ende;
 mit dem Boten hält er in ``awaiting_input`` und setzt mit der Antwort
-fort, wie ``ki-dev step``. Ein neuer Lauf im selben Protokoll beginnt
+fort. Ein neuer Lauf im selben Protokoll beginnt
 mit ``lauf --@start--> lauf``.
 """
 
@@ -17,27 +17,21 @@ from ki_dev.adapter.contract import AnswerPending
 from ki_dev.adapter.mock import MockAnswers
 from ki_dev.flow.binding import OperationSpec
 from ki_dev.flow.model import parse_flow, read_raw
+from ki_dev.flow_ops.review.model import ReviewModel
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.bound import BoundOperations
 from ki_dev.runner.dispatch import Dispatch, role_of
 from ki_dev.runner.events import check_conformance
-from ki_dev.runner.package import PackageRunner, waiting_of
+from ki_dev.runner.package import PackageRunner
 from ki_dev.runner.protocol import RUN_DOC
-from ki_dev.runner.review_model import ReviewModel
 from tests.executor_specs import LOCAL
-
-STAND = {"tree": "a1b2c3d", "bead": "40"}
 
 
 def _flow():
-    """implement_review mit einem Vorlauf, dessen Ergebnis in die
-    Laufdaten geht (Tatsachen, geprüfter Stand)."""
+    """implement_review mit einem Vorlauf, dessen Tatsachen in die
+    Laufdaten gehen."""
     raw = copy.deepcopy(read_raw("implement_review"))
-    raw["op"]["checks"]["input"] = []
-    raw["op"]["checks"]["output"] = {
-        "facts": ["facts"],
-        "checked": ["checked"],
-    }
+    raw["op"]["checks"]["output"] = {"facts": ["facts"]}
     return parse_flow(raw)
 
 
@@ -46,11 +40,7 @@ FLOW = _flow()
 
 def _catalog(facts=("full_checks",)):
     def checks():
-        return {
-            "event": "checks_passed",
-            "facts": list(facts),
-            "checked": STAND,
-        }
+        return {"event": "checks_passed", "facts": list(facts)}
 
     return {
         "checks.preflight": OperationSpec(
@@ -60,10 +50,10 @@ def _catalog(facts=("full_checks",)):
 
 
 def _read(handoff, answer):
-    """Antwort → Ereignis; der Stand der Antwort ist der geprüfte."""
+    """Antwort → Ereignis."""
     value = json.loads(answer)
     assert value["attempt"] == handoff.attempt
-    return {"current": STAND}, value["event"]
+    return {}, value["event"]
 
 
 def _runner(tmp_path, executors, catalog=None):
@@ -228,29 +218,3 @@ def test_new_run_elsewhere_is_a_jump(tmp_path):
     ]
 
 
-@pytest.mark.parametrize(
-    ("facts", "allowed"), [(("full_checks",), True), ((), False)]
-)
-def test_allows_checks_the_guards_without_a_change(
-    tmp_path, facts, allowed
-):
-    """Nach einem Teillauf (ohne full_checks) nimmt das Review kein
-    PASS an; die Prüfung ändert den Lauf nicht."""
-    run = _review_waits(tmp_path, _catalog(facts))
-    record = run.store.load_record()
-    assert run.allows("PASS", {"current": STAND}) is allowed
-    assert run.allows("fix", {}) is True
-    assert run.store.load_record() == record
-
-
-def test_waiting_of_reads_state_halt_and_attempt(tmp_path):
-    run = _review_waits(tmp_path)
-    record = run.store.load_record()
-    assert waiting_of(FLOW, record) == (
-        "implement.review",
-        "awaiting_input",
-        "b:1",
-    )
-    other = parse_flow({**read_raw("implement_review"), "name": "x"})
-    with pytest.raises(RunStoreError, match="verändert"):
-        waiting_of(other, record)

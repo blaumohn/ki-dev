@@ -13,7 +13,8 @@ from ki_dev.adapter.executors.session_transcript import (
     SessionTranscript,
 )
 from ki_dev.adapter.executors.transcript import read_session_transcript
-from ki_dev.flow.review_flow import TEMPLATES, ReviewFlow
+from ki_dev.flow.model import Flow
+from ki_dev.flow.review_flow import TEMPLATES
 from ki_dev.flow.templates import render, text
 from ki_dev.ops.context.beads_reader import read_issue
 from ki_dev.ops.context.blocks import TurnInput, state_turn
@@ -39,7 +40,7 @@ def map_handoff(
     workdir: Path,
     guidelines: tuple[GuidelineSection, ...],
     base_max_chars: int,
-    flow: ReviewFlow,
+    flow: Flow,
 ) -> str:
     """Kurzer map-Auftrag; schreibt Snapshot und Quellen-Bead.
 
@@ -65,17 +66,17 @@ def map_handoff(
         raise HandoffSourceError(
             "Quellen-Bead verweist nicht auf das lokale Artefakt"
         )
-    state = flow.flow.start
+    state = flow.start
     require_valid(issue, flow, state)
     subject = TurnInput(
         issue,
-        flow.flow,
+        flow,
         state,
         guidelines=guidelines,
         reading_hint=text(TEMPLATES, "map-reading-hint"),
     )
     return hand_over(
-        flow, state_turn(flow.flow, state), subject, base_max_chars
+        flow, state_turn(flow, state), subject, base_max_chars
     )
 
 

@@ -25,57 +25,125 @@ from tests.fake_bd import FakeBd
 from tests.fake_bd_command import BdScript
 from tests.guideline_fixtures import write_guidelines
 from tests.test_step_cli import FULL, _command, _preflight_project
+from tests.turn_helpers import flow_step
 
 GOLDEN = Path(__file__).parent / "golden" / "step"
 runner = CliRunner()
 
-REVIEW = ["step", "x-1", "--step", "review"]
-NEXT = [*REVIEW, "--next-turn"]
 FAIL = "import sys; sys.exit(1)"
 SID = "0199aaaa-bbbb-cccc-dddd-eeeeffff0001"
+DONE = ("{}", None)
+PREFLIGHT = {
+    "event": "checks_passed",
+    "facts": ["full_checks"],
+    "report": None,
+    "finding": None,
+}
 
 
-def _decision(tmp_path: Path, attempt: str, **fields) -> str:
-    value = {
-        "event": "PASS",
-        "detail": "",
-        "requirement_ref": None,
-        "attempt": attempt,
-    }
-    value.update(fields)
-    path = tmp_path / "antwort.json"
-    path.write_text(json.dumps(value))
-    return str(path)
+def _verdict(event: str, ref: str | None = None) -> str:
+    detail = {"PASS": "", "fix": "Test fehlt"}.get(event, "Umfang?")
+    return json.dumps(
+        {"event": event, "detail": detail, "requirement_ref": ref}
+    )
 
 
-# (Name, Vorlauf-Prüfung oder None, Argumente; Pfade erst im Test)
+# (Name, Vorlauf-Prüfung oder None, Ablauf, Argumente nach x-1,
+# Antwortdateien: Name → Inhalt)
 CASES = [
     *(
-        (f"step-{phase}", None, ["step", "x-1", "--step", phase])
-        for phase in ("map", "graph", "materialize", "implement")
+        (f"step-{phase}", None, phase, [phase], {})
+        for phase in ("map", "graph", "materialize")
+    ),
+    ("step-implement", None, "implement_review", ["implement"], {}),
+    *(
+        (f"{phase}-review", None, phase, [f"{phase}.review"], {})
+        for phase in ("map", "graph", "materialize")
+    ),
+    (
+        "implement-written",
+        "print(1)",
+        "implement_review",
+        ["implement", "implement=done.json"],
+        {"done.json": "{}"},
+    ),
+    (
+        "implement-corrected",
+        "print(1)",
+        "implement_review",
+        ["implement.correction", "implement.correction=done.json"],
+        {"done.json": '{"feedback": "Test ergänzt"}'},
+    ),
+    (
+        "implement-corrected-red",
+        FAIL,
+        "implement_review",
+        ["implement.correction", "implement.correction=done.json"],
+        {"done.json": "{}"},
+    ),
+    (
+        "implement-corrected-partial",
+        "print(1)",
+        "implement_review",
+        [
+            "implement.correction",
+            "implement.correction=done.json",
+            "--preflight-skip",
+            "tests=nur Doku",
+        ],
+        {"done.json": "{}"},
+    ),
+    (
+        "map-corrected",
+        None,
+        "map",
+        ["map.correction", "map.correction=done.json"],
+        {"done.json": "{}"},
+    ),
+    (
+        "map-review-fix",
+        None,
+        "map",
+        ["map.review", "map.review=review.json"],
+        {"review.json": _verdict("fix", "AC1")},
+    ),
+    (
+        "map-review-pass",
+        None,
+        "map",
+        ["map.review", "map.review=review.json"],
+        {"review.json": _verdict("PASS")},
     ),
     *(
         (
-            f"review-of-{phase}",
+            f"implement-review-{name}",
             None,
-            [*REVIEW, "--review-of", phase],
+            "implement_review",
+            [
+                "implement.review",
+                "implement.review=review.json",
+                "implement.preflight=vorlauf.json",
+            ],
+            {
+                "review.json": verdict,
+                "vorlauf.json": json.dumps(PREFLIGHT),
+            },
         )
-        for phase in ("map", "graph", "materialize")
+        for name, verdict in (
+            ("pass", _verdict("PASS")),
+            ("fix-bound", _verdict("fix", "AC1")),
+            ("fix-unbound", _verdict("fix", "AC9")),
+            ("source", _verdict("source")),
+            ("decision", _verdict("decision")),
+        )
     ),
-    ("review-implement", "print(1)", REVIEW),
-    ("next-turn-review", "print(1)", NEXT),
-    ("next-turn-repair", FAIL, NEXT),
     (
-        "next-turn-partial",
-        "print(1)",
-        [*NEXT, "--preflight-skip", "tests=nur Doku"],
+        "implement-review-pass-without-preflight",
+        None,
+        "implement_review",
+        ["implement.review", "implement.review=review.json"],
+        {"review.json": _verdict("PASS")},
     ),
-    ("next-turn-of-map", None, [*NEXT, "--review-of", "map"]),
-    ("decision-pass", "print(1)", "PASS"),
-    ("decision-fix-bound", "print(1)", "fix-AC1"),
-    ("decision-fix-unbound", "print(1)", "fix-AC9"),
-    ("decision-source", "print(1)", "source"),
-    ("decision-decision", "print(1)", "decision"),
 ]
 
 
@@ -91,10 +159,12 @@ def bd(monkeypatch, tmp_path_factory):
 
 
 @pytest.mark.parametrize(
-    ("name", "check", "args"), CASES, ids=[c[0] for c in CASES]
+    ("name", "check", "flow", "args", "files"),
+    CASES,
+    ids=[c[0] for c in CASES],
 )
 def test_step_output_matches_golden(
-    name, check, args, bd, tmp_path, monkeypatch
+    name, check, flow, args, files, bd, tmp_path, monkeypatch
 ):
     if check is not None:
         # Die argv-Kürzung hinge sonst vom Pfad des venv ab;
@@ -106,31 +176,10 @@ def test_step_output_matches_golden(
             tmp_path, checks=f"[{_command('tests', check)}]"
         )
     write_guidelines(tmp_path)
+    for file, content in files.items():
+        (tmp_path / file).write_text(content, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    if isinstance(args, str):
-        # Eine Antwort gilt nur am wartenden Review: erst der Vorlauf.
-        first = runner.invoke(app, REVIEW)
-        assert first.exit_code == 0
-        attempt = re.search(r"^Versuch: (\S+)", first.stdout, re.M)
-        assert attempt, first.stdout
-        answer = _answer(tmp_path, attempt.group(1), args)
-        args = [*NEXT, "--decision-file", answer]
-    result = runner.invoke(app, args)
-    _compare(name, result, tmp_path)
-
-
-def _answer(tmp_path: Path, attempt: str, spec: str) -> str:
-    if spec == "PASS":
-        return _decision(tmp_path, attempt)
-    if spec.startswith("fix-"):
-        return _decision(
-            tmp_path,
-            attempt,
-            event="fix",
-            detail="Test fehlt",
-            requirement_ref=spec.removeprefix("fix-"),
-        )
-    return _decision(tmp_path, attempt, event=spec, detail="Umfang?")
+    _compare(name, flow_step(flow, "x-1", *args), tmp_path)
 
 
 def test_local_matches_golden(tmp_path, monkeypatch):

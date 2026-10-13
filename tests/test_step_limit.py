@@ -18,27 +18,13 @@ from ki_dev.ops.context.limit_config import (
     base_max_chars_from,
     load_base_max_chars,
 )
-from ki_dev.step.choices import ReviewTarget, Step
 from tests.turn_helpers import (
+    HANDOFF_STATES,
     render_base_handoff,
     render_handoff,
 )
 
 SECRET = "GEHEIMER-ROHWERT"
-
-# Alle Schritte und Reviewziele; Review ohne Ziel ist build.
-COMBINATIONS = [
-    (Step.MAP, None),
-    (Step.GRAPH, None),
-    (Step.MATERIALIZE, None),
-    (Step.IMPLEMENT, None),
-    (Step.REVIEW, None),
-    (Step.REVIEW, ReviewTarget.MAP),
-    (Step.REVIEW, ReviewTarget.GRAPH),
-    (Step.REVIEW, ReviewTarget.MATERIALIZE),
-    (Step.REVIEW, ReviewTarget.IMPLEMENT),
-]
-
 
 def _issue(title="Titel", epic=(), refs=("a.md#L1",)) -> BeadInput:
     return BeadInput(
@@ -52,13 +38,13 @@ def _issue(title="Titel", epic=(), refs=("a.md#L1",)) -> BeadInput:
     )
 
 
-def _base(step, target, **issue_fields) -> str:
-    return render_handoff(_issue(**issue_fields), step, target)
+def _base(state, **issue_fields) -> str:
+    return render_handoff(_issue(**issue_fields), state)
 
 
-def _padded_title(step, target, size: int) -> str:
+def _padded_title(state, size: int) -> str:
     """Mehrbyte-Titel für genau ``size`` Zeichen Basis."""
-    empty = len(_base(step, target, title="ä"))
+    empty = len(_base(state, title="ä"))
     return "ä" * (size - empty + 1)
 
 
@@ -116,43 +102,39 @@ def test_diagnosis_without_fields_is_still_valid():
 # --- Rendering ------------------------------------------------------
 
 
-@pytest.mark.parametrize(("step", "target"), COMBINATIONS)
+@pytest.mark.parametrize("state", HANDOFF_STATES)
 @pytest.mark.parametrize(
     ("size", "allowed"), [(3999, True), (4000, True), (4001, False)]
 )
-def test_rendered_base_boundary_for_every_step(
-    step, target, size, allowed
-):
-    title = _padded_title(step, target, size)
-    assert len(_base(step, target, title=title)) == size
+def test_rendered_base_boundary_for_every_step(state, size, allowed):
+    title = _padded_title(state, size)
+    assert len(_base(state, title=title)) == size
     if allowed:
         text = render_handoff(
-            _issue(title=title), step, target, base_max_chars=4000
+            _issue(title=title), state, base_max_chars=4000
         )
         assert len(text) == size
         return
     with pytest.raises(HandoffBaseTooLongError):
-        render_handoff(
-            _issue(title=title), step, target, base_max_chars=4000
-        )
+        render_handoff(_issue(title=title), state, base_max_chars=4000)
 
 
 def test_default_limit_is_4000_and_fits_every_step_with_one_epic():
     epic = [("ep", "E" * 600)]
-    for step, target in COMBINATIONS:
-        text = _base(step, target, epic=epic)
-        assert len(text) <= DEFAULT_BASE_MAX_CHARS, (step, target)
+    for state in HANDOFF_STATES:
+        text = _base(state, epic=epic)
+        assert len(text) <= DEFAULT_BASE_MAX_CHARS, state
 
 
 def test_without_limit_nothing_is_checked():
     text = render_handoff(
-        _issue(title="T" * 9000), Step.IMPLEMENT, None
+        _issue(title="T" * 9000), "implement"
     )
     assert len(text) > 9000
 
 
 def test_guidelines_are_not_counted():
-    title = _padded_title(Step.IMPLEMENT, None, 4000)
+    title = _padded_title("implement", 4000)
     sections = [
         GuidelineSection(
             source="doc.yaml", id="a", text="Regel " * 3000
@@ -160,8 +142,7 @@ def test_guidelines_are_not_counted():
     ]
     text = render_handoff(
         _issue(title=title),
-        Step.IMPLEMENT,
-        None,
+        "implement",
         sections,
         base_max_chars=4000,
     )
@@ -170,13 +151,12 @@ def test_guidelines_are_not_counted():
 
 
 def test_epic_context_and_source_refs_count_to_the_base():
-    step = Step.MATERIALIZE
-    size = len(_base(step, None))
+    step = "materialize"
+    size = len(_base(step))
     with pytest.raises(HandoffBaseTooLongError) as error:
         render_handoff(
             _issue(epic=[("ep", SECRET)]),
             step,
-            None,
             base_max_chars=size,
         )
     assert "epic_context[0]" in str(error.value)
@@ -184,7 +164,6 @@ def test_epic_context_and_source_refs_count_to_the_base():
         render_handoff(
             _issue(refs=["a.md", SECRET + "x"]),
             step,
-            None,
             base_max_chars=size,
         )
     assert "source_refs[1]" in str(error.value)
@@ -192,14 +171,14 @@ def test_epic_context_and_source_refs_count_to_the_base():
 
 
 def test_reading_hint_counts_to_the_base():
-    plain = render_base_handoff(_issue(), Step.MAP)
+    plain = render_base_handoff(_issue(), "map")
     hint = "Hinweis " * 10
-    both = render_base_handoff(_issue(), Step.MAP, reading_hint=hint)
+    both = render_base_handoff(_issue(), "map", reading_hint=hint)
     assert both == f"{plain}\n{hint}\n"
     with pytest.raises(HandoffBaseTooLongError) as error:
         render_base_handoff(
             _issue(),
-            Step.MAP,
+            "map",
             reading_hint=hint,
             max_chars=len(plain),
         )
@@ -210,8 +189,7 @@ def test_diagnosis_does_not_contain_the_title_text():
     with pytest.raises(HandoffBaseTooLongError) as error:
         render_handoff(
             _issue(title=SECRET * 400),
-            Step.IMPLEMENT,
-            None,
+            "implement",
             base_max_chars=100,
         )
     assert SECRET not in str(error.value)

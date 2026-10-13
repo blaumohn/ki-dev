@@ -145,8 +145,8 @@ def validate_bead_input(
 
 def _criterion_problems(issue: BeadInput) -> tuple[str, ...]:
     """AC-Zerlegung der Umsetzungs-Review vor jedem Vorlauf
-    prüfen (Erst-Review, --next-turn und --decision-file teilen
-    diese Grenze)."""
+    prüfen (Übergabe und Antwort des Reviews teilen diese
+    Grenze)."""
     try:
         split_acceptance_criteria(str(issue.acceptance_criteria))
     except ReviewContractError as exc:

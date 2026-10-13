@@ -108,11 +108,16 @@ sections:
         wie `implement`, `map` oder `worker`; sie stehen nur als Daten im
         Ablauf. Ein Paket (`flow/<ablauf>.toml`, seine Ops unter
         `flow_ops/`, Profil Rolle → Executor) setzt Teile des Gerüsts
-        zusammen; Abhängigkeit nur Paket → Gerüst. `ki-dev step` führt
-        einen Turn eines Paketablaufs mit dem Executor `manual` aus.
-        Gemeinsame Teile (Muster, Vokabular, Bausteine der Übergaben)
-        liegen einmal im Gerüst-Katalog. Der Schichtentest prüft die
-        Grenze an den Literalen.
+        zusammen; Abhängigkeit nur Paket → Gerüst. `step` ist ein
+        Befehl jedes Pakets (`ki-dev -f ABLAUF step`) und führt
+        zustandslos einen Turn mit dem Executor `manual` aus;
+        Zustandsarten und Ereignisse eines Musters, die Deutung der
+        Antworten und den Katalog kennt es nicht, sie liefern die Ops
+        des Pakets (`ops` des Ablaufs, beim Review-Muster einmal im
+        Katalog: `flow_ops/review`). Gemeinsame Teile (Muster,
+        Vokabular, Bausteine der Übergaben) liegen einmal im
+        Gerüst-Katalog. Der Schichtentest prüft die Grenze an den
+        Literalen.
       - Ein Zustandsmodell: Zustände und Kanten stehen im nativen Format von
         python-statemachine (`[statechart]` der Ablaufdatei, bei Mustern
         daraus erzeugt); Kantenwahl, History und `raise` übernimmt die

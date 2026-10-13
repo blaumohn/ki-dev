@@ -191,8 +191,9 @@ sections:
 
       - Aufgabe, Verzweigungen und Fehlerpfade einer Funktion müssen gemeinsam
         verständlich bleiben. Tiefe Verschachtelung wird vereinfacht.
-      - Jede Datei bündelt eine zusammenhängende Zuständigkeit. Ab einigen hundert
-        Zeilen werden ihre Aufgabenbereiche und Abstraktionsebenen ausdrücklich geprüft.
+      - Jede Quelldatei bündelt eine zusammenhängende Zuständigkeit und soll
+        höchstens 400 Zeilen enthalten. Pylint prüft Python-Dateien mit
+        `too-many-lines` (`C0302`) und `max-module-lines=400`.
       - **Senkrechter Schnitt:** Einzelheiten unterhalb des Hauptflusses in eigene
         Dateien auslagern; der Hauptfluss behält die Ablaufsteuerung.
       - **Waagerechter Schnitt:** Gleichrangige Aufgabenbereiche auf eigene Dateien

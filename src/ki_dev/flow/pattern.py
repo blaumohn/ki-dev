@@ -17,10 +17,12 @@ Namensregeln, ohne Ausdrücke in Strings:
   Ereignis) für die Kanten ohne eigenen Hinweis im Muster (so behält
   eine zweite Kante desselben Ereignisses, etwa PASS bei geändertem
   Stand, ihren Hinweis).
-- ``template``, ``context``, ``require`` und ``role`` der Phase setzen
-  je lokalem Zustand Rollenvorlage, Kontextbausteine, benötigte
-  Bead-Felder und Rolle seiner einzigen Operation (der Übergabe); so
-  trägt jede Phase ihre Übergabe als Daten.
+- ``template``, ``context``, ``require``, ``input`` und ``role`` der
+  Phase setzen je lokalem Zustand Rollenvorlage, Kontextbausteine,
+  benötigte Bead-Felder, benötigte Laufdaten mit Herkunft und Rolle
+  seiner einzigen Operation (der Übergabe); so trägt jede Phase ihre
+  Übergabe als Daten. Die Herkunft einer Eingabe (``input`` der Phase
+  oder einer Kante) nennt einen lokalen oder globalen Zustand.
 - Eine Kante des Musters kann die Übergabe selbst bestimmen
   (``template``, ``context``: Nachricht am Übergang). ``@NAME`` als
   Vorlage nennt den Eintrag ``template.NAME`` der Phase, so wie
@@ -36,6 +38,7 @@ und Kanten, in Deklarationsreihenfolge.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import cast
 
 NEXT = "@next"
 REFERENCE = "@"
@@ -110,7 +113,7 @@ def _instantiate(
         local: dict(events)
         for local, events in phase.get("hint", {}).items()
     }
-    turns = _turns(phase)
+    turns = _turns(phase, locals_, pattern["globals"], label)
     _check_overrides(locals_, actors, hints, pattern, label)
     referenced = {
         str(item["template"]).removeprefix(REFERENCE)
@@ -128,7 +131,9 @@ def _instantiate(
             )
     states = [
         _state(
-            state,
+            _with_origins(
+                state, phase, locals_, pattern["globals"], label
+            ),
             phase_id,
             actors.get(state["local"]),
             {
@@ -158,13 +163,20 @@ def _state_id(phase_id: str, local: str) -> str:
 
 def _turns(
     phase: Mapping[str, object],
+    locals_: list[str],
+    globals_: list[str],
+    label: str,
 ) -> dict[str, dict[str, object]]:
     """Übergabe-Parameter je lokalem Zustand (template, context,
-    require, role)."""
+    require, input, role); die Herkunft der Eingaben aufgelöst."""
     turns: dict[str, dict[str, object]] = {}
     for key in ("template", "context", "require", "role"):
         for local, value in dict(phase.get(key, {})).items():
             turns.setdefault(local, {})[key] = value
+    for local, value in dict(phase.get("input", {})).items():
+        turns.setdefault(local, {})["input"] = _origins(
+            phase, value, locals_, globals_, f"{label}: input.{local}"
+        )
     return turns
 
 
@@ -214,6 +226,10 @@ def _transition(
     hint = hints.get(source, {}).get(str(item["event"]))
     if hint is not None and "hint" not in item:
         transition["hint"] = hint
+    if "input" in item:
+        transition["input"] = _origins(
+            phase, item["input"], locals_, globals_, f"{label}: input"
+        )
     template = str(item.get("template", ""))
     if template.startswith(REFERENCE):
         name = template.removeprefix(REFERENCE)
@@ -222,6 +238,51 @@ def _transition(
             raise PatternError(f"{label}: template.{name} fehlt")
         transition["template"] = named[name]
     return transition
+
+
+def _with_origins(
+    item: Mapping,
+    phase: Mapping[str, object],
+    locals_: list[str],
+    globals_: list[str],
+    label: str,
+) -> Mapping:
+    """Musterzustand mit aufgelöster Herkunft seiner Eingaben."""
+    if "operation" not in item:
+        return item
+    operations = [
+        {
+            **op,
+            "input": _origins(
+                phase,
+                op["input"],
+                locals_,
+                globals_,
+                f"{label}: {item['local']}.input",
+            ),
+        }
+        if "input" in op
+        else op
+        for op in item["operation"]
+    ]
+    return {**item, "operation": operations}
+
+
+def _origins(
+    phase: Mapping[str, object],
+    inputs: object,
+    locals_: list[str],
+    globals_: list[str],
+    label: str,
+) -> dict[str, str]:
+    """Herkunft deklarierter Eingaben: lokaler oder globaler Zustand
+    (kein ``@next``: eine Eingabe stammt von weiter vorn)."""
+    found = {}
+    for name, origin in dict(cast(Mapping, inputs)).items():
+        if origin not in locals_ and origin not in globals_:
+            raise PatternError(f"{label}.{name}: unbekannt {origin}")
+        found[name] = _target(phase, origin, locals_, globals_, label)
+    return found
 
 
 def _target(

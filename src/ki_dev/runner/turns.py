@@ -7,7 +7,7 @@ in der deklarierten Reihenfolge. Welche Vorlage und welche Bausteine
 gelten, steht im Ablauf (:class:`~ki_dev.flow.model.Turn`); der
 Ausführer kennt weder Zustände noch Phasen noch Befehle. Felder und
 Bausteine steckt der Aufrufer ein (:class:`Plug`), wie eine
-Maschinenoperation: ``ki-dev -f implement`` und ``ki-dev step``
+Maschinenoperation: ``ki-dev -f implement`` und ``ki-dev -f … step``
 rendern über dieselbe Funktion, Claude, Codex und der Mensch als Bote
 erhalten denselben Wortlaut.
 

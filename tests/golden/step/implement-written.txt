@@ -16,9 +16,7 @@ tatsächlichen Diffs und des beigefügten Prüfberichts. Diese
 Übergabe hat bereits einen deterministischen Vorlauf
 ausgeführt (Korrekturen und Prüfungen); starte selbst keine
 Formatter, Linter, Typprüfer oder Tests, auch keine
-Prüfwerkzeuge oder Folgemodelle. ki-dev nimmt ein PASS
-nur an, wenn Arbeitsbaum und Bead seit diesem Vorlauf
-unverändert sind.
+Prüfwerkzeuge oder Folgemodelle.
 Lesen von Dateien, Diff,
 Anforderungen und Prüfbericht bleibt erlaubt. Beurteile
 Testqualität und Abdeckung; melde fehlende oder
@@ -29,12 +27,8 @@ Umsetzers und frühere Reviews vor diesem Urteil nicht als
 Bewertungsinput.
 Ausgabe: PASS oder die stärkste Befundklasse.
 Nenne zuerst je Befund kurz Klasse und Anforderungs- oder
-Codebezug; zum Schluss genau ein JSON-Objekt
-{"event": …, "detail": …, "requirement_ref": …, "attempt": …};
-event ist PASS oder die stärkste Befundklasse, requirement_ref
-ist immer vorhanden: bei fix "AC<n>", sonst null, attempt ist
-die Kennung aus der Zeile „Versuch:“ dieser Übergabe. Der Mensch
-gibt es mit --decision-file weiter.
+Codebezug.
+Zum Schluss genau ein JSON-Objekt {"event": …, "detail": …, "requirement_ref": …}: event ist das Ergebnis laut Ausgabe (PASS oder eine Befundklasse), requirement_ref ist immer vorhanden: bei fix "AC<n>", sonst null. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
 Optional "preflight_args"/"preflight_skip" ({NAME: ARGS bzw.
 Grund}) begrenzen nur den Prüfumfang der nächsten Runde; nie
 bei PASS, keine Programme oder Korrekturen.
@@ -50,11 +44,10 @@ Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut implemen
 - source → source: offene Fragen in einer Planungssitzung klären
 - decision → implement.decision: du entscheidest: accept, correct oder source
 - PASS → finished: Schließen entscheidest du (`bd close x-1`)
-- PASS → implement.preflight: Stand seit dem Vorlauf geändert: neuer Vorlauf, dann neues Review
 PRUEFBERICHT vorlauf-start=<ZEIT>
 - tests: PASS 1 [argv=<PY> -c 'print(1)']
 Vollständig: .local/handoff/preflight/<STEMPEL>.json
-Hinweis: PASS gilt nur, wenn Arbeitsbaum und Bead seit diesem Vorlauf unverändert sind; ki-dev prüft das beim Eingang der Antwort und startet sonst den Vorlauf erneut.
+Hinweis: Der Bericht gilt für den Stand bei diesem Vorlauf; ein PASS bezieht sich auf diesen Stand.
 
 LEITLINIEN (mitgeliefert; gesonderter Block nach der Übergabe)
 Diese Regeltexte gelten für diesen Schritt. Wende sie direkt
@@ -120,6 +113,5 @@ Jeder Abschnitt nennt YAML-Quelle und Abschnitts-ID.
 ## Q2 implement-review
 
 - Q2:implement-review
-Versuch: x-1:2 (eine Antwort trägt diese Kennung als "attempt"; sie gilt nur für diesen Versuch)
 --- stderr ---
 Vorlauf: tests läuft (Timeout 5 s) …

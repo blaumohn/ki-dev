@@ -1,0 +1,25 @@
+exit: 0
+--- stdout ---
+Empfänger: Review-Agent (bisherige, vom Schreibagenten getrennte Sitzung)
+Reviewziel: implement
+Bead: x-1 - Titel [red]rot[/red]
+
+Erneute Prüfung nach Korrekturen: Prüfe die Korrekturen und die davon betroffenen Kriterien samt Regressionen fachlich anhand von Diff und Prüfbericht. Grüne Tests sind kein Review-PASS. Starte selbst keine Prüfwerkzeuge oder Folgemodelle; du hast keine automatische Autorität gegenüber dem Schreibagenten und schließt nichts automatisch. Ausgabe: PASS oder die stärkste Befundklasse. Zum Schluss genau ein JSON-Objekt {"event": …, "detail": …, "requirement_ref": …}: event ist das Ergebnis laut Ausgabe (PASS oder eine Befundklasse), requirement_ref ist immer vorhanden: bei fix "AC<n>", sonst null. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
+PRUEFBERICHT vorlauf-start=<ZEIT>
+- tests: PASS 1 [argv=<PY> -c 'print(1)']
+Vollständig: .local/handoff/preflight/<STEMPEL>.json
+Hinweis: Der Bericht gilt für den Stand bei diesem Vorlauf; ein PASS bezieht sich auf diesen Stand.
+
+Rückmeldung des Schreibagenten (unbestätigte Aussage, nicht geprüft; kein Beleg, erst nach eigenem Urteil heranziehen):
+| Test ergänzt
+
+Empfänger und Befundkontext verantwortest du, auch den Stand seit dem Vorlauf (ki-dev prüft ihn nicht nach); Schließen und weitere Schritte entscheidest du selbst.
+
+Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
+- fix → implement.correction: Befunde an den Umsetzer (implementer) (bisherige Sitzung)
+- source → source: offene Fragen in einer Planungssitzung klären
+- decision → implement.decision: du entscheidest: accept, correct oder source
+- PASS → finished: Schließen entscheidest du (`bd close x-1`)
+--- stderr ---
+Vorlauf: tests läuft (Timeout 5 s) …

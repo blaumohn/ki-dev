@@ -35,6 +35,15 @@ OUTSIDE_BASE = frozenset({"report", "attempt", "guidelines"})
 """Bausteine, die nicht zur Basis der Übergabe zählen (Basisgrenze)."""
 
 
+class MissingTurnData(FlowError):
+    """Einer Übergabe fehlen Laufdaten, die ihr Ablauf nicht als
+    Eingabe deklariert (daher ohne Herkunft)."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Übergabe braucht {name}")
+        self.name = name
+
+
 @dataclass(frozen=True)
 class TurnInput:
     """Alles, was Felder und Bausteine einer Übergabe brauchen.
@@ -74,7 +83,7 @@ def _output(turn: TurnInput) -> str:
 
 def _verdict(turn: TurnInput) -> ReviewVerdict:
     if turn.verdict is None:
-        raise FlowError("Übergabe braucht ein Urteil (verdict)")
+        raise MissingTurnData("verdict")
     return turn.verdict
 
 
@@ -91,6 +100,7 @@ FIELDS: dict[str, Callable[[TurnInput], object]] = {
     "common": lambda _turn: text(TEXTS, "common"),
     "rules": lambda _turn: text(TEXTS, "review-rules"),
     "output": _output,
+    "answer": lambda _turn: text(TEXTS, "answer-json"),
     "limit": lambda turn: turn.feedback_limit,
     "event": lambda turn: _verdict(turn).event,
     "judgement": _judgement,
@@ -255,22 +265,16 @@ def _human_note(_turn: TurnInput) -> list[str]:
 
 def _finding(turn: TurnInput) -> list[str]:
     if turn.finding is None:
-        raise FlowError("Übergabe braucht einen Befund (finding)")
+        raise MissingTurnData("finding")
     return ["", turn.finding]
 
 
 def _control(turn: TurnInput) -> list[str]:
-    """Vorgeschlagene Prüfsteuerung als ausführbarer Befehl."""
+    """Vorgeschlagene Prüfsteuerung als Optionen für den nächsten
+    Aufruf mit Vorlauf."""
     if not (turn.preflight_args or turn.preflight_skip):
         return []
-    argv = [
-        "ki-dev",
-        "step",
-        one_line(turn.issue.id),
-        "--step",
-        "review",
-        "--next-turn",
-    ]
+    argv: list[str] = []
     for option, values in (
         (ARGS_OPTION, turn.preflight_args),
         (SKIP_OPTION, turn.preflight_skip),

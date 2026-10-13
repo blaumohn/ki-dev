@@ -2,7 +2,7 @@
 # Paketablauf auf dem Review-Muster: Zustände und Kanten aus dem
 # Muster, gemeinsame Teile aus dem Katalog flow/patterns/review.toml;
 # hier stehen nur Parameter. PASS führt nach finished, der Hinweis
-# nennt den nächsten Schritt. `ki-dev step` führt einen Turn mit dem
+# nennt den nächsten Schritt. `ki-dev -f NAME step` führt einen Turn mit dem
 # Executor manual aus.
 
 name = "map"
@@ -52,15 +52,15 @@ review = "Review-Agent (Kartenprüfung)"
 correction = "Kartierungsagent (bisherige Sitzung)"
 
 [phase.hint.write]
-done = "`ki-dev step KARTE --step review --review-of map` (KARTE = erstellte oder ergänzte Karte)"
+done = "`ki-dev -f map step KARTE map.review` (KARTE = erstellte oder ergänzte Karte)"
 
 [phase.hint.review]
-PASS = "`ki-dev step {bead} --step graph`"
+PASS = "`ki-dev -f graph step {bead} graph`"
 fix = "Befunde an den Kartierungsagenten (bisherige Sitzung)"
 
 [phase.hint.correction]
-done = "`ki-dev step {bead} --step review --review-of map --next-turn`"
+done = "`ki-dev -f map step {bead} map.correction map.correction=ANTWORT.json`"
 
 [phase.hint.decision]
-accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev step {bead} --step graph`"
+accept = "Entscheidung im Bead festhalten (kein PASS), dann `ki-dev -f graph step {bead} graph`"
 correct = "Entscheidung an den Kartierungsagenten (bisherige Sitzung)"

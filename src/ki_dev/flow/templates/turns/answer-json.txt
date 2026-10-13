@@ -1,0 +1,1 @@
+Zum Schluss genau ein JSON-Objekt {"event": …, "detail": …, "requirement_ref": …}: event ist das Ergebnis laut Ausgabe (PASS oder eine Befundklasse), requirement_ref ist immer vorhanden: bei fix "AC<n>", sonst null. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.

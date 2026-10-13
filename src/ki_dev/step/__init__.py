@@ -1,7 +1,9 @@
-"""`ki-dev step`: ein Turn eines Paketablaufs mit dem Executor manual.
+"""step: ein Turn eines Paketablaufs mit dem Executor manual,
+zustandslos (``ki-dev -f ABLAUF step BEAD ZUSTAND [ZUSTAND=DATEI …]``).
 
-Für einen Zustand eines Ablaufs (``flow/map.toml`` …) wird die
-Übergabe an die nächste Sitzung erzeugt (Adapter manual: der Mensch
-trägt sie weiter); danach hält ki-dev an. Prüfungen (Vorlauf) und
-Rollenrechte gehören zur Übergabe, nicht zu einer Schleife.
+Für einen Zustand eines Ablaufs wird die Übergabe an die nächste
+Sitzung erzeugt oder, mit einer Antwort, die nächste danach (Adapter
+manual: der Mensch trägt sie weiter); gespeichert wird nichts.
+Prüfungen (Vorlauf) und Rollenrechte gehören zur Übergabe, nicht zu
+einer Schleife.
 """

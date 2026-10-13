@@ -1,91 +1,91 @@
-# Manuelle Arbeitsübergaben mit `ki-dev step`
+# Manuelle Arbeitsübergaben mit `ki-dev -f ABLAUF step`
 
-`ki-dev step` führt einen Turn eines Paketablaufs mit dem Executor
-`manual` aus. Die Abläufe gehören zum Paket, nicht zu step:
-[`map`](../src/ki_dev/flow/map.toml), [`graph`](../src/ki_dev/flow/graph.toml),
-[`materialize`](../src/ki_dev/flow/materialize.toml) und
-[`implement_review`](../src/ki_dev/flow/implement_review.toml) (bis
-ki-dev-ablauf-ige.6 neben `implement.toml`); `--step` bzw. `--review-of`
-wählt den Ablauf. Ein Aufruf nimmt die Kante seines Startereignisses, fährt
-Maschinenzustände wie den Vorlauf (`implement.preflight`) selbst und hält beim
-nächsten `turn` (Übergabe an eine Sitzung) oder `ask` (der Mensch entscheidet).
-Der Ausführer ist ein Lauf je Bead (`src/ki_dev/runner/package.py`, der
-Ablauf als Region der Lauf-Maschine `runner/run.toml`); das `[statechart]`
-erzeugt die Mustererweiterung des gewählten Ablaufs. Jede Übergabe (`turn`,
-`ask`) bearbeitet der Executor `manual`: mit einer Antwort dieses Aufrufs
-(`done` nach dem Schreiben, das Urteil aus `--decision-file`) geht der Lauf
-weiter, sonst hält er in `awaiting_input`, der Prozess endet. step wählt aus Halt und
-genommenem Weg die Vorlage und gibt sie aus, der Mensch trägt sie als Bote
-weiter (den Umsetzungsablauf fährt `ki-dev -f implement`, siehe [Ausführer](ausfuehrer.de.md)). Der Nutzen liegt in kurzen Übergaben und weniger Handarbeit. Auch
-ausführungsreife Aufträge bleiben auf einen kleinen Umsetzungsschnitt
-begrenzt: notwendige Anforderungen, Schnittstellen und Prüfnachweise; bei
-fachlicher Übergröße teilen statt immer mehr Details anzuhäufen.
-
-**Geprüfter Stand.** Nach dem Vorlauf hält step den Stand fest: den
-Git-Tree des Arbeitsbaums (mit uncommitteten und neuen Dateien, ohne `.local/`)
-und einen Fingerabdruck des Beads. Eine PASS-Antwort gilt nur, wenn beides
-seither unverändert ist (Wächter `unchanged`, wie `freeze` bei `ki-dev -f implement`).
-Sonst nimmt der Ablauf die Kante `implement.review --PASS--> implement.preflight`:
-Der Vorlauf läuft erneut, die nächste Nachricht geht an das Review. Der Vorlauf
-selbst braucht kein Git; ohne Git-Arbeitsverzeichnis gibt es keinen Stand und
-damit kein PASS. Eine Antwortdatei im Projekt zählt nicht zum Stand.
-
-**Laufzustand je Bead.** Jeder Aufruf endet in einem Halt des Ablaufs; step
-speichert ihn als Datensatz unter `.local/handoff/steps/<BEAD_ID>/record.json`
-(Zustand des Ablaufs, Halt, wartender Versuch und Laufdaten für Wächter,
-etwa „kein PASS nach Teillauf“) und protokolliert jede genommene Kante in
-`events.jsonl`, für Ablauf und Lauf (Operation, Halt) je mit ihrer Region;
-eine Antwort des Boten trägt den Adapter `manual`. Jedes ausdrückliche
-`--step` ist ein neuer Lauf im selben Protokoll (Zeile
-`lauf --@start--> lauf`). Eine Antwort (etwa `--decision-file`) gilt nur dort, wo der
-Thread wartet; nach rotem Vorlauf beendet ein PASS den Lauf nicht. `ki-dev step BEAD_ID`
-ohne `--step` setzt fort: nach dem Schreiben folgt das Review, nach der
-Korrektur die Folgerunde; in Review, Entscheidung und Quelle nennt step die
-Folgeschritte. Ein ausdrückliches `--step` beginnt dort; weicht das im
-selben Ablauf vom letzten Halt ab, steht ein Hinweis auf stderr und im
-Protokoll die Zeile `letzter Halt --@jump--> Start`, die
-`check_conformance` meldet. Ein anderer Ablauf beginnt einen neuen Lauf.
-Der Zustand ist lokaler Arbeitsstand, nicht Teil von bd/Dolt.
-
-**Transport.** step und `ki-dev -f implement` übergeben an den Boten über dieselbe
-Funktion des Adapters `manual` (`ki_dev.adapter.manual.send`); nur die
-Transportart unterscheidet sich: `run` legt die Eingabe im Posteingang ab
-(`ki-dev -f implement resume`), step gibt sie auf stdout aus und liest die Antwort aus
-`--decision-file DATEI|-`. Gerendert wird jede Übergabe vom Ausführer
-(`ki_dev.runner.turns`) aus der Deklaration im Ablauf: Vorlage und
-Kontextbausteine je Zustand oder, wenn die Kante sie bestimmt, je Übergang.
-Jede Übergabe nennt am Ende ihre Versuchskennung (`Versuch: …`).
-
-`ki-dev step BEAD_ID --step STEP` prüft einen Bead formal und gibt eine
-kurze, kopierbare Arbeitsübergabe aus. Du startest die passende Agentensitzung
-selbst und fügst den Text dort ein. Diese Form liest den Bead nur
-(`bd --readonly show BEAD_ID --json` im aktuellen Arbeitsverzeichnis, Frist
-10 s) und startet keinen Agenten. Für `--step review` gilt eine ausdrückliche
-Ausnahme vom sonst rein lesenden Vertrag: siehe
-[Deterministischer Vorlauf vor der Review-Übergabe](#deterministischer-vorlauf-vor-der-review-übergabe---step-review).
-Eine zweite Form, die eine Codex- oder Claude-Sitzung als Quelle erschließt
-und dabei schreibt, steht [weiter unten](#sitzung-als-quelle-step-map).
-
-Befehl und Paket heißen `step` (`src/ki_dev/step/`). Die Daten heißen
-weiter „Übergabe“ (`handoff`), denn genau das erzeugt ein Schritt:
-`metadata.handoff`, die pyproject-Abschnitte `tool.ki-dev.handoff.*` und
-Artefakte unter `.local/handoff/`.
-
-## Die fünf Aufrufe
-
-`--step` ist erforderlich; es gibt keine automatische Auswahl.
+`step` ist ein zustandsloser Haltepunkt vor einer Übergabe an einen
+Executor: Debug und Spielplatz für Abläufe. Jedes Paket hat den Befehl;
+der Ablauf kommt wie bei `-f` aus Name oder Pfad
+([`map`](../src/ki_dev/flow/map.toml), [`graph`](../src/ki_dev/flow/graph.toml),
+[`materialize`](../src/ki_dev/flow/materialize.toml),
+[`implement_review`](../src/ki_dev/flow/implement_review.toml) oder ein
+eigener Ablauf mit `ops`).
 
 ```bash
-ki-dev step projekt-42 --step map          # Rohnotizen kartieren
-ki-dev step projekt-42 --step graph        # dünne Vorgänge anlegen
-ki-dev step projekt-42 --step materialize  # einen Vorgang ausführungsreif machen
-ki-dev step projekt-42 --step implement        # materialisierten Bead umsetzen
-ki-dev step projekt-42 --step review       # getrennt reviewen
+ki-dev -f ABLAUF step BEAD_ID ZUSTAND [ZUSTAND=DATEI ...]
 ```
 
-Die Ausgabe ist unfarbiger Klartext ohne Zeilenumbruch nach Terminalbreite. Sie
-lässt sich umleiten (`ki-dev step … > uebergabe.txt`) oder aus dem Terminal
-kopieren. `ki-dev step --help` fasst das auf Deutsch zusammen.
+- **ZUSTAND** ist ein Zustand mit Übergabe an einen Executor (`turn` oder
+  `ask`); `ki-dev flow show ABLAUF` zeigt sie. Ein Zustand ohne Übergabe
+  (etwa der Vorlauf `implement.preflight` oder `finished`) ist Exit 2.
+- **Ohne Antwort für ZUSTAND** gibt step dessen Übergabe aus.
+- **Mit `ZUSTAND=DATEI`** hat ZUSTAND geantwortet: die Datei ist, was
+  sonst der Agent zurückgibt. Dieselben Ops des Pakets prüfen und deuten
+  sie (z. B. Review-Urteil `fix`), der Ablauf wählt die Kante wie beim
+  Ausführer, step fährt Maschinenzustände wie den Vorlauf selbst und gibt
+  die nächste Übergabe aus oder, am Ende, die Nachricht der letzten Kante.
+- **Weitere `ZUSTAND=DATEI`** liefern Daten von weiter vorn: die Datei ist
+  die Antwort dieses Zustands (bei einer Katalogoperation wie dem Vorlauf
+  ihr Ergebnis). Was eine Übergabe oder Kante davon braucht, deklariert
+  der Ablauf mit Herkunft (`input`, siehe
+  [Daten von weiter vorn](#daten-von-weiter-vorn-input)); fehlt eine
+  Eingabe, ist das Exit 2 mit Name und Herkunft.
+- `DATEI` `-` liest stdin (höchstens einmal je Aufruf); eine Antwort hat
+  höchstens 20000 Zeichen, nie gekürzt.
+
+```bash
+ki-dev -f map step projekt-42 map                          # Übergabe an den Kartierungsagenten
+ki-dev -f map step projekt-42 map.review                   # Übergabe an das Review
+ki-dev -f map step projekt-42 map.review map.review=review.json
+                                                           # Urteil fix → Übergabe an die Korrektur
+ki-dev -f map step projekt-42 map.correction map.correction=done.json
+                                                           # Korrektur erledigt → Folgenachricht an das Review
+ki-dev -f implement_review step projekt-42 implement implement=done.json
+                                                           # Umsetzung erledigt → Vorlauf → Review
+```
+
+**Zustandslos.** Jeder Aufruf fährt einen Lauf, der nur für diesen Aufruf
+besteht (`runner/package.py`, Ablauf als Region der Lauf-Maschine
+`runner/run.toml`, Ablage in einem temporären Verzeichnis); gespeichert
+wird nichts, kein Halt, kein Versuch, kein Protokoll. Gleiche Eingabe gibt
+gleiche Ausgabe (der Prüfbericht trägt seinen Zeitstempel). Es gibt keine
+Versuchskennung (`attempt`): sie bände eine Antwort an einen Lauf, den es
+nicht gibt.
+
+**Der Mensch ist verantwortlich.** step gleicht nichts mit dem Stand des
+Repos ab und erinnert keinen früheren Aufruf. Welche Antworten du
+mitgibst und ob sie zum Arbeitsstand passen, entscheidest du; step prüft
+sie nur formal, wie der Ausführer es bei einem Agenten täte, und errät
+nichts (Programmierleitlinie: Fallbacks verdecken keine Fehler).
+
+**Ops des Pakets.** Was eine Antwort bedeutet, welche Katalogoperationen
+(Vorlauf) eingesteckt werden und welche Eingaben eine Übergabe braucht,
+liefern die Ops des Pakets: das Modul `ops` des Ablaufs mit
+`step_ops(flow)` (Schnittstelle `src/ki_dev/step/package.py`); für alle
+Abläufe auf dem Review-Muster nennt der Katalog
+`flow/patterns/review.toml` einmal `ki_dev.flow_ops.review`. step kennt
+weder Zustandsarten noch Ereignisse eines Musters.
+
+**Transport.** step und `ki-dev -f implement` übergeben an den Boten über
+dieselbe Funktion des Adapters `manual` (`ki_dev.adapter.manual.send`);
+gerendert wird jede Übergabe vom Ausführer (`ki_dev.runner.turns`) aus
+der Deklaration im Ablauf: Vorlage und Kontextbausteine je Zustand oder,
+wenn die Kante sie bestimmt, je Übergang. step liest den Bead nur
+(`bd --readonly show BEAD_ID --json`, Frist 10 s) und startet keinen
+Agenten; du startest die Sitzung selbst und fügst den Text dort ein.
+Läuft ein Aufruf durch den Vorlauf, führt dieser konfigurierte Befehle aus
+(siehe [Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe)).
+
+Die Ausgabe ist unfarbiger Klartext ohne Zeilenumbruch nach
+Terminalbreite; sie lässt sich umleiten (`… > uebergabe.txt`).
+`ki-dev -f map step --help` fasst das auf Deutsch zusammen. Die Daten
+heißen weiter „Übergabe“ (`handoff`): `metadata.handoff`, die
+pyproject-Abschnitte `tool.ki-dev.handoff.*` und Artefakte unter
+`.local/handoff/`.
+
+Ohne Ablaufposition bleiben zwei Formen von `ki-dev step`: `local`
+(freie Sitzung) und `map --agent … --session …`
+([Sitzung als Quelle](#sitzung-als-quelle-step-map)). `ki-dev step BEAD`
+und die früheren Optionen `--step`, `--review-of`, `--next-turn`,
+`--feedback-file` und `--decision-file` gibt es nicht mehr (Exit 2, kein
+Alias).
 
 ## Freie lokale Sitzung (`step local`)
 
@@ -94,10 +94,8 @@ ki-dev step local > uebergabe.txt
 ```
 
 Für Sitzungen ohne Auftrag aus Beads. Der Aufruf braucht weder Bead noch
-Datenbankverbindung noch `bd` im PATH, hat keine `--step`-Pflicht und schreibt
-nichts. Mit `--step`, `--review-of`, `--preflight-args`, `--preflight-skip`,
-`--next-turn`, `--feedback-file`, `--agent` oder `--session` kombiniert endet
-er mit Exit 2.
+Datenbankverbindung noch `bd` im PATH und schreibt nichts. Mit `--agent`,
+`--session` oder `--title` kombiniert endet er mit Exit 2.
 Die Ausgabe besteht aus einer festen kurzen Basis (`Schritt: local`) und dem
 gesonderten Leitlinienblock mit den allgemeinen Abschnitten (`common`) aller
 Regelquellen (siehe [Mitgelieferte Leitlinien](#mitgelieferte-leitlinien));
@@ -152,7 +150,7 @@ verhindern eine unvollständige Übergabe (Exit 1). Eltern ohne Hinweis bleiben
 stumm; ihre Beschreibungen, Notizen und Kommentare werden nicht übernommen.
 
 Beispiel: `ki-dev-ablauf-zip` bündelt die Handoff-Vorgänge. Bei
-`ki-dev step ki-dev-ablauf-prx --step implement` erscheint automatisch:
+`ki-dev -f implement_review step ki-dev-ablauf-prx implement` erscheint automatisch:
 
 > Epic-Hinweis (ki-dev-ablauf-zip): Experimenteller „mensch-dev loop“ …
 
@@ -162,152 +160,144 @@ Der Hinweis wird einmal am Epic gepflegt, nicht in jedem Kind verknüpft.
 
 Immer: `id`, `title`, `description` als nichtleere Strings.
 
-| Schritt | zusätzlich |
+| Zustand | zusätzlich |
 | --- | --- |
-| `map`, `graph`, `materialize` | `metadata.handoff.source_refs` |
-| `implement`, `review` (ohne `--review-of`, = `--review-of implement`) | `acceptance_criteria`, `design` |
+| `map`, `graph`, `materialize` (und ihr `.review`) | `metadata.handoff.source_refs` |
+| `implement`, `implement.review` | `acceptance_criteria`, `design` |
 
-`implement` und `review` brauchen keine Metadaten; fehlende Metadaten blockieren nur
+Geprüft wird der Zustand des Aufrufs und jede ausgegebene Übergabe.
+`implement` und `implement.review` brauchen keine Metadaten; fehlende Metadaten blockieren nur
 `map`, `graph` und `materialize`. `design` soll die relevanten
 Schnittstellen/Code-Einstiege und die konkreten Prüfaufträge enthalten. Das
 Werkzeug prüft nur Vorhandensein und Typ, nicht die inhaltliche
 Ausführungsreife.
 
-### `--review-of`: getrenntes Review je Handoff-Schritt
+### Antworten im Review-Muster
 
-`--step review` prüft standardmäßig das Ergebnis von `implement`. `--review-of
-map|graph|materialize|build` wählt stattdessen den Prüfgegenstand für ein
-eigenes, getrenntes Review nach den jeweils vorangegangenen Schritten
-`map`, `graph` und `materialize` – unabhängig vom verwendeten Modell. Die
-Option ist nur zusammen mit `--step review` zulässig; jede andere Kombination
-(auch mit der `map --agent`/`--session`-Form) ist Exit 2 vor jeder
-`bd`-Anfrage. Ohne `--review-of` bleibt `--step review` unverändert die
-bisherige Umsetzungs-Review; `--review-of implement` ist dazu gleichwertig.
+Die Ops des Review-Musters (`ki_dev.flow_ops.review`) deuten die
+Antworten je Zustandsart; jede Antwort ist ein JSON-Objekt:
 
-### `--next-turn`: nächste Nachricht nach einer Korrektur
-
-```bash
-ki-dev step projekt-42 --step review --next-turn
-ki-dev step projekt-42 --step review --next-turn --feedback-file rueckmeldung.txt
-ki-dev step projekt-42 --step review --next-turn --feedback-file - < rueckmeldung.txt
-```
-
-Nach einer Korrektur erzeugt `--next-turn` die nächste Nachricht, die du selbst
-übergibst; die erste Zeile nennt den Empfänger. Die Review-Nachricht ist eine
-kurze Folgenachricht in die bisherige, vom Autor getrennte Review-Sitzung
-(Reviewziel, Bead, Prüfauftrag, Bericht, Rückmeldung), keine zweite
-Rollenübergabe; eine frische Sitzung startest du mit `--step review` ohne
-`--next-turn`. Es gibt keinen eigenen
-`check`-Befehl, keine Sitzungs- oder Rundenzustände und keinen Agentenstart.
-
-| Prüfgegenstand | Ergebnis | Empfänger, stdout, Exit |
+| Zustand | Antwort | Ereignis |
 | --- | --- | --- |
-| `implement` (Standard) | Vorlauf fehlgeschlagen (Korrektur, Prüfung, Start, Timeout, Artefakt) | Umsetzer: „Bitte die gemeldeten Fehler beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht …“, Befund wie beim Reparaturbefund (ohne Artefaktzeile, wenn kein Artefakt entstand), Grenze für die Rückmeldung; Exit 1 |
-| `implement` | Vorlauf bestanden | bisherige, vom Schreibagenten getrennte Review-Sitzung: Korrekturen und betroffene Kriterien samt Regressionen fachlich erneut prüfen, `PASS` oder die stärkste Befundklasse, Prüfbericht beigefügt; grüne Tests sind kein Review-PASS; Exit 0 |
-| `map`, `graph`, `materialize` | ohne Code-Vorlauf | dieselbe Review-Sitzung: erneute, phasengerechte Prüfung; Exit 0 |
+| `P`, `P.correction` (Schreiben, Korrektur) | `{}` oder `{"feedback": "…"}` | `done` |
+| `P.review` | `{"event", "detail", "requirement_ref"}`, optional `preflight_args`/`preflight_skip` | das Urteil |
+| `P.decision`, `source` (Mensch) | `{"event": "accept"}` (bzw. `correct`, `source`, `imported`) | das genannte |
 
-Nur der Prüfgegenstand `implement` braucht `tool.ki-dev.handoff.preflight`;
-`--preflight-args`/`--preflight-skip` gelten wie bisher nur dort. Der Fortschritt des Vorlaufs steht auf
-stderr, die Nachricht auf stdout (auch bei Exit 1). Das gilt ebenso ohne
-`--next-turn`: Der Vorlauf ist der Zustand `implement.preflight`, und seine
-Kante `checks_failed` führt in beiden Fällen zu `implement.correction` mit
-derselben Reparaturnachricht. `checks_partial` erreicht das Review, aber die
-Kante `PASS` trägt den Wächter `full_checks`.
+**Rückmeldung.** `feedback` ist die Rückmeldung des Schreibagenten: nur,
+was nicht aus Diff und Prüfergebnissen hervorgeht. Sie erscheint in der
+nächsten Nachricht als unbestätigte Aussage (nicht geprüft, kein Beleg,
+Zeilen mit `| ` zitiert, Steuerzeichen entfernt). Grenze:
+`[tool.ki-dev.handoff] feedback_max_chars` in `pyproject.toml`, eine
+positive ganze Zahl (Standard 600, auch ohne Datei), Unicode-Zeichen
+einschließlich Leerraum; leer, zu lang oder ungültig konfiguriert ist
+Exit 2, nie gekürzt. `bd`-Notizen und -Kommentare werden weder gelesen
+noch beschrieben.
 
-`--next-turn` gilt nur mit `BEAD_ID` und `--step review`; `--feedback-file`
-nur zusammen mit `--next-turn` (sonst Exit 2 vor jeder `bd`-Anfrage).
-
-**Rückmeldung (`--feedback-file DATEI|-`):** Eine UTF-8-Datei oder, mit `-`,
-stdin; beide Wege sind gleichwertig. Ohne die Option wird nichts gelesen,
-auch nicht stdin. Der Text erscheint als unbestätigte Aussage des
-Schreibagenten (nicht geprüft, kein Beleg, Zeilen mit `| ` zitiert,
-Steuerzeichen entfernt) in beiden Nachrichten. Verlangt wird nur, was nicht aus
-Diff und Prüfergebnissen hervorgeht. `bd`-Notizen und -Kommentare werden weder
-gelesen noch beschrieben; es gibt keine dauerhafte Ablage.
-
-**Grenze:** `[tool.ki-dev.handoff] feedback_max_chars` in `pyproject.toml`, eine
-positive ganze Zahl (Standard 600 bei fehlender Angabe, auch ohne Datei; dieses
-Projekt setzt sie ausdrücklich). Gezählt werden Unicode-Zeichen einschließlich
-Leerzeichen und Zeilenumbrüchen (CRLF = 2); eingelesen werden höchstens Grenze
-+ 1 Zeichen; Bytes dahinter werden weder gelesen noch dekodiert. Die
-Reparaturnachricht nennt die Grenze. Mit `--next-turn` wird sie für jedes Ziel
-geprüft: Ein vorhandener ungültiger Wert oder ungültiges TOML ist Exit 2, auch
-für `map`/`graph`/`materialize` ohne Rückmeldung; eine fehlende
-Vorlauf-Konfiguration bleibt dort erlaubt.
-
-Eingabefehler liefern keine Übergabe und starten keinen Vorlauf: leere oder
-nur aus Leerraum bestehende Rückmeldung und Überlänge (keine Kürzung) sind
-Exit 2; Lese- oder UTF-8-Fehler sind Exit 1, ohne Textinhalt in der Meldung.
-
-### `--decision-file`: Antwort der Build-Review weitergeben
-
-Die Build-Review endet mit genau einem JSON-Objekt im gemeinsamen Vertrag
-von step und `ki-dev -f implement` (`src/ki_dev/review_decision.py`):
+**Urteil.** Die Review-Antwort folgt dem gemeinsamen Vertrag von step und
+`ki-dev -f implement` (`src/ki_dev/review_decision.py`):
 
 ```json
-{"event": "fix", "detail": "Test für leere Eingabe fehlt", "requirement_ref": "AC2", "attempt": "projekt-42:2"}
+{"event": "fix", "detail": "Test für leere Eingabe fehlt", "requirement_ref": "AC2"}
 ```
 
-`attempt` ist die Kennung des Versuchs, für den die Übergabe ausgegeben wurde
-(Zeile `Versuch:` am Ende jeder Übergabe). Eine Antwort gilt nur für ihren
-Versuch, wie `run_id` und `round_id` bei `ki-dev -f implement`: fehlt `attempt` oder
-gehört es zu einem früheren Versuch (etwa nach einem neuen Vorlauf oder einer
-Korrekturrunde), ist das Exit 2 und der Lauf bleibt unverändert.
+`event` ist `PASS` oder eine Befundklasse (`fix`, `source`, `decision`);
+das Urteil (`CHANGES`, `NEEDS_DECISION`) folgt aus der Klasse.
+Nicht-PASS braucht `detail`. `requirement_ref` ist immer vorhanden: bei
+`fix` `"AC<n>"` (ohne gültige Referenz wird daraus `decision`), sonst
+`null`. Zeilen `N.` in `acceptance_criteria` ergeben `AC1..ACn`, ohne
+Nummerierung ist das ganze Feld `AC1`; eine Nummerierung mit Lücke oder
+Doppel ist ein formaler Mangel (Exit 2). Ungültiges JSON, fremde Felder,
+`escalate` oder verletzte Feldregeln: Exit 2 mit Feldpfad, ohne Rohwerte.
 
-`event` ist ein Review-Ereignis des Ablaufs: `PASS` oder eine
-Befundklasse (`fix`, `source`, `decision`); das Urteil (`CHANGES`,
-`NEEDS_DECISION`) folgt aus der Klasse (`escalate` gibt es nur in
-`implement.toml`). Nicht-PASS braucht `detail`. `requirement_ref` ist immer
-vorhanden: bei `fix` `"AC<n>"` (ohne gültige Referenz wird daraus
-`decision`), sonst zwingend `null`. Die Übergabe nennt die Referenzen: Zeilen `N.` in
-`acceptance_criteria` ergeben `AC1..ACn`, ohne Nummerierung ist das ganze
-Feld `AC1`. Eine Nummerierung mit Lücke oder Doppel ist ein formaler Mangel
-(Exit 2).
-
-```bash
-ki-dev step projekt-42 --step review --next-turn --decision-file antwort.json
-pbpaste | ki-dev step projekt-42 --step review --next-turn --decision-file -
-```
-
-Ohne Vorlauf prüft step die Antwort, bindet `fix` an ein bestehendes
-Kriterium und gibt die Nachricht für genau die Kante dieses Ereignisses aus:
-
-| Antwort | Empfänger | Folgeschritt |
+| Antwort | nächste Übergabe | Kante |
 | --- | --- | --- |
-| `fix` mit gültigem `AC<n>` | Umsetzer (bisherige Sitzung) | `fix → implement.correction` |
-| `fix` ohne/mit fremdem `AC` | Mensch, als `decision` | `decision → implement.decision` |
+| `fix` mit gültigem `AC<n>` | Schreibagent (bisherige Sitzung) | `fix → P.correction` |
+| `fix` ohne/mit fremdem `AC` | Mensch, als `decision` | `decision → P.decision` |
 | `source` | Mensch | `source → source` |
-| `decision` | Mensch | `decision → implement.decision` |
-| `PASS` | Mensch | `PASS → finished` (Schließen entscheidest du) |
+| `decision` | Mensch | `decision → P.decision` |
+| `PASS` | Mensch (Ende) | `PASS → finished` |
 
-Statt `run_id`/`round_id` trägt die Hülle von step die Versuchskennung;
-`ki-dev -f implement` legt seine Hülle um denselben Kern
-(`src/ki_dev/runner/review_output.py`). Höchstens 20000 Zeichen, nie gekürzt.
-Ungültiges JSON, fremde Felder, `escalate` oder verletzte Feldregeln: Exit 2
-mit Feldpfad, ohne Rohwerte. Nur mit `--next-turn`, nur Prüfgegenstand
-`implement`, nicht mit `--feedback-file` oder `--preflight-*`.
-
-**Begrenzte Prüfsteuerung des Reviewers.** Bei jedem Ereignis außer
-`PASS` darf die Antwort zusätzlich den Prüfumfang der nächsten
-Runde vorschlagen:
-
-```json
-{"event": "fix", "detail": "…", "requirement_ref": "AC2",
- "attempt": "projekt-42:2",
- "preflight_args": {"tests": "-k test_review"},
- "preflight_skip": {"lint": "nur Doku geändert"}}
+```bash
+ki-dev -f implement_review step projekt-42 implement.review \
+  implement.review=antwort.json implement.preflight=vorlauf.json
+pbpaste | ki-dev -f map step projekt-42 map.review map.review=-
 ```
 
-step prüft die Werte mit denselben Regeln wie `--preflight-args` und
-`--preflight-skip` gegen die Vorlauf-Konfiguration und gibt den fertigen
-Befehl aus; ausgeführt wird er nur von dir, nach der Korrektur:
+**PASS nach dem Vorlauf.** In `implement_review` trägt die Kante `PASS`
+den Wächter `full_checks` (kein Teillauf) und deklariert die Tatsachen
+des Vorlaufs als Eingabe (`facts` aus `implement.preflight`). Ohne sie
+endet der Aufruf mit Exit 2:
 
 ```text
-ki-dev step projekt-42 --step review --next-turn --preflight-args 'tests=-k test_review' --preflight-skip 'lint=nur Doku geändert'
+implement.review --PASS--> braucht facts (aus implement.preflight; Antwort mitgeben: implement.preflight=DATEI.json)
 ```
 
-Kein eigener Einleseweg, keine Programme, keine Korrekturen, nie bei `PASS`
-(ein PASS braucht den Volllauf). Ungültige Steuerung: Exit 2 ohne Befehl.
+Die Antwort des Vorlaufs ist sein Ergebnis, etwa
+`{"event": "checks_passed", "facts": ["full_checks"], "report": null, "finding": null}`.
+step prüft nur ihre Form, nicht ob sie zum Arbeitsstand passt; das
+verantwortest du. Nach einem Teillauf (`"facts": []`) weist der Wächter
+PASS ab (Exit 2).
+
+**Begrenzte Prüfsteuerung des Reviewers.** Bei jedem Ereignis außer
+`PASS` darf die Review-Antwort den Prüfumfang der nächsten Runde
+vorschlagen (`"preflight_args": {"tests": "-k test_review"}`,
+`"preflight_skip": {"lint": "nur Doku geändert"}`). step prüft die Werte
+mit denselben Regeln wie die Optionen gegen die Vorlauf-Konfiguration und
+gibt sie in der Nachricht an den Umsetzer aus; anwenden tust du sie, indem
+du sie an den nächsten Aufruf mit Vorlauf hängst. Nie bei `PASS` (ein
+PASS braucht den Volllauf). Ungültige Steuerung: Exit 2.
+
+### Daten von weiter vorn (`input`)
+
+Eine Übergabe oder Kante kann Laufdaten brauchen, die ein früherer
+Zustand liefert. Der Ablauf deklariert sie mit ihrer Herkunft:
+
+```toml
+[[state]]
+id = "summary"
+kind = "work"
+operation = [{ do = "turn", template = "summary", input = { report = "work" } }]
+```
+
+Im Review-Muster braucht die Korrektur das Urteil des Reviews
+(`input = { verdict = "review" }`, lokale Namen), die Review-Übergabe in
+`implement_review` Tatsachen und Bericht des Vorlaufs (`[phase.input]`),
+die Kante `PASS` dort die Tatsachen. Liefert der Aufruf eine Eingabe
+nicht, weder als Antwort dieses Aufrufs noch als `ZUSTAND=DATEI`, ist das
+Exit 2 mit Name und Herkunft:
+
+```text
+ki-dev -f map step projekt-42 map.correction
+map.correction braucht verdict (aus map.review; Antwort mitgeben: map.review=DATEI.json)
+ki-dev -f map step projekt-42 map.correction map.review=review.json   # Übergabe an die Korrektur
+```
+
+Die Eingabe gilt für die Übergabe bzw. Kante, nicht für die Antwort auf
+sie: wer `map.correction=done.json` mitgibt, braucht das Urteil nicht.
+Fehlt einer Übergabe ein Datum, das der Ablauf nicht deklariert, nennt
+step nur den Namen.
+
+### Folgenachricht nach einer Korrektur
+
+```bash
+ki-dev -f map step projekt-42 map.correction map.correction=done.json
+ki-dev -f implement_review step projekt-42 implement.correction implement.correction=done.json
+```
+
+Die Kante `P.correction --done-->` bestimmt die Nachricht selbst: eine
+kurze Folgenachricht in die bisherige, vom Autor getrennte
+Review-Sitzung (Reviewziel, Bead, Prüfauftrag, Bericht, Rückmeldung),
+keine zweite Rollenübergabe; eine frische Sitzung bekommt die Übergabe
+von `P.review`. In `implement_review` läuft vorher der Vorlauf:
+
+| Ablauf | Ergebnis | Empfänger, stdout, Exit |
+| --- | --- | --- |
+| `implement_review` | Vorlauf fehlgeschlagen (Korrektur, Prüfung, Start, Timeout, Artefakt) | Umsetzer: Reparaturnachricht mit Befund und Grenze der Rückmeldung; Exit 1 |
+| `implement_review` | Vorlauf bestanden | bisherige Review-Sitzung: Korrekturen und betroffene Kriterien samt Regressionen erneut prüfen, Prüfbericht beigefügt; Exit 0 |
+| `map`, `graph`, `materialize` | ohne Vorlauf | dieselbe Review-Sitzung: erneute, phasengerechte Prüfung; Exit 0 |
+
+Der Fortschritt des Vorlaufs steht auf stderr, die Nachricht auf stdout
+(auch bei Exit 1). `checks_partial` erreicht das Review, aber kein PASS.
 
 ### `--preflight-args`/`--preflight-skip`: Teillauf mit begründetem Umfang
 
@@ -317,14 +307,16 @@ NAME=ARGS` die Argumente einmalig an die Prüfung `NAME` an;
 bleibt unverändert:
 
 ```bash
-ki-dev step projekt-42 --step review --preflight-args 'tests=-k "not langsam"'
-ki-dev step projekt-42 --step review --preflight-skip 'lint=nur Doku geändert'
+ki-dev -f implement_review step projekt-42 implement implement=done.json \
+  --preflight-args 'tests=-k "not langsam"'
+ki-dev -f implement_review step projekt-42 implement.correction \
+  implement.correction=done.json --preflight-skip 'lint=nur Doku geändert'
 ```
 
 `ARGS` wird wie in einer Shell zerlegt und hat keine Längengrenze. `GRUND`
 ist einzeilig, nichtleer und höchstens 200 Zeichen lang. Beide Optionen sind
-wiederholbar (je Prüfung einmal), gelten nur für den Vorlauf (`--step review`,
-Prüfgegenstand `implement`, auch mit `--next-turn`) und nur für Prüfungen, nie
+wiederholbar (je Prüfung einmal), gelten nur für einen Ablauf, der den
+Vorlauf bindet (`implement_review`; sonst Exit 2), und nur für Prüfungen, nie
 für Korrekturen. Exit 2 vor jeder Schreibwirkung: fehlendes `=`, leerer Name,
 leere `ARGS`, ungültiger `GRUND`, unvollständiges Quoting, NUL/CR/LF,
 doppelte Prüfung, dieselbe Prüfung in beiden Optionen, unbekannter Name oder
@@ -352,16 +344,17 @@ vorgeschrieben, es gibt keine automatische Übermittlung oder
 Modellanfrage und **keine Garantie unabhängiger Fehler**: Ein anderes
 Modell kann dieselben Lücken übersehen.
 
-| `--review-of` | zusätzliche Pflichtfelder | deterministischer Vorlauf |
+| Review-Zustand | zusätzliche Pflichtfelder | deterministischer Vorlauf |
 | --- | --- | --- |
-| `map` | `metadata.handoff.source_refs` | nein |
-| `graph` | `metadata.handoff.source_refs` | nein |
-| `materialize` | `metadata.handoff.source_refs`, `acceptance_criteria`, `design` | nein |
-| `implement` (Standard) | `acceptance_criteria`, `design` | ja |
+| `map.review` | `metadata.handoff.source_refs` | nein |
+| `graph.review` | `metadata.handoff.source_refs` | nein |
+| `materialize.review` | `metadata.handoff.source_refs`, `acceptance_criteria`, `design` | nein |
+| `implement.review` | `acceptance_criteria`, `design` | ja (davor `implement.preflight`) |
 
-Nur `--review-of implement` führt den
-[deterministischen Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe---step-review)
-aus `ops/checks/preflight.py` aus (Operation `checks`, von step eingesteckt); `map`, `graph` und `materialize` sind reine,
+Nur `implement_review` bindet den
+[deterministischen Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe)
+aus `ops/checks/preflight.py` (Operation `checks`, eingesteckt von den Ops
+des Musters); `map`, `graph` und `materialize` sind reine,
 lesende Quellenprüfungen ohne Prozessaufrufe und ohne `pyproject.toml`. Für
 `materialize` gilt zusätzlich: Es reicht nicht, den fertig materialisierten
 Auftrag gegen sich selbst zu prüfen – das Review vergleicht ihn gegen die
@@ -370,10 +363,10 @@ fehlender Quelle `NEEDS_DECISION` statt eines Freibriefs für formal gefüllte
 Felder.
 
 Jede produktive Übergabe (`map`, `graph`, `materialize`, `implement`) nennt am
-Ende den passenden Review-Aufruf, z. B. nach `materialize`:
+Ende den passenden nächsten Aufruf, z. B. nach `materialize`:
 
 ```bash
-ki-dev step BEAD_ID --step review --review-of materialize
+ki-dev -f materialize step BEAD_ID materialize.review
 ```
 
 Alle vier Prüfgegenstände geben `PASS` oder die stärkste Befundklasse aus, nennen
@@ -402,36 +395,37 @@ weitergegeben, nicht aufgelöst und nicht auf Vollständigkeit geprüft.
 
 | Exit | Bedeutung |
 | --- | --- |
-| 0 | Übergabe auf stdout (bei `--step review` inklusive Prüfbericht; mit `--next-turn` die Review-Nachricht) |
-| 2 | Aufruf falsch (fehlende/unbekannte Optionen, Mischung von `BEAD_ID`/`--step` mit `map --agent`/`--session`, `--review-of` ohne `--step review` oder zusammen mit `map --agent`/`--session`, `--preflight-args`/`--preflight-skip` außerhalb des Vorlaufs oder ungültig, das entfernte `--check-args`, `--next-turn` ohne `--step review`, `--feedback-file` ohne `--next-turn`, leere oder zu lange Rückmeldung, ungültige `feedback_max_chars` oder `base_max_chars`, zu lange Basisübergabe, fehlendes `map`, anderer Anbieter als `codex` oder `claude`, ungültige Sitzungs-ID), Bead formal unvollständig, oder bei `--step review` (Prüfgegenstand `implement`) eine ungültige Vorlauf-Konfiguration (jeweils vor jeder Schreibwirkung); stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
-| 1 | Bead-Form: `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), oder bei `--step review` eine fehlgeschlagene Korrektur/Prüfung (kurzer Reparaturbefund statt Übergabe; mit `--next-turn` stattdessen die Bau-Nachricht auf stdout), nicht lesbare Rückmeldung (Datei/stdin, kein UTF-8), nicht lesbare `pyproject.toml` (Basisgrenze). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
+| 0 | Übergabe auf stdout (nach dem Vorlauf mit Prüfbericht) oder, am Ende des Ablaufs, die Nachricht der letzten Kante |
+| 2 | Aufruf falsch (unbekannter Ablauf oder Zustand, Zustand ohne Übergabe, `ZUSTAND=DATEI` ungültig, doppelt oder für einen Zustand ohne Antwort, stdin mehrfach, `--preflight-args`/`--preflight-skip` ohne Vorlauf oder ungültig, Optionen der früheren Form), ungültige Antwort (Vertrag der Ops, Ereignis ohne Kante, Wächter verletzt), fehlende deklarierte Eingabe (mit Name und Herkunft), ungültige `feedback_max_chars` oder `base_max_chars`, zu lange Basisübergabe, Bead formal unvollständig, ungültige Vorlauf-Konfiguration; Sitzungsform: fehlendes `map`, anderer Anbieter als `codex` oder `claude`, ungültige Sitzungs-ID; stderr nennt z. B. die Feldpfade `metadata.handoff.source_refs` oder `metadata.handoff.source_refs[1]` |
+| 1 | `bd` nicht lesbar (nicht gefunden — stderr nennt dann `Bead BEAD_ID nicht gefunden` —, Fehler, Zeitüberschreitung, unerwartete Antwort), fehlgeschlagener Vorlauf (Reparaturnachricht an den Umsetzer auf stdout), nicht lesbare Antwortdatei (Datei/stdin, kein UTF-8), nicht lesbare `pyproject.toml` (Basisgrenze). Sitzungsform: Sitzung fehlt, ist mehrdeutig oder besteht die Dialogprüfung nicht; Quellen-Datei abweichend; Quellen-Bead mehrdeutig oder nicht bestätigt; `bd`-Fehler. Kurze, bereinigte Ursache auf stderr |
 
-Bei fehlender ID, fehlendem oder unbekanntem `--step` wird `bd` nicht gestartet.
-Beheben: fehlende Felder im Bead ergänzen (`bd update …`) und erneut aufrufen.
+Ist der Aufruf selbst falsch (Ablauf, Zustand, Antwortangaben, Optionen),
+wird `bd` nicht gestartet. Beheben: fehlende Felder im Bead ergänzen
+(`bd update …`) bzw. die genannte Antwort mitgeben und erneut aufrufen.
 
 ## Ablauf in wenigen Minuten
 
-1. `map`: Übergabe ausgeben, in einer neuen Agentensitzung einfügen. Danach
-   den erstellten Karten-Bead mit `--step review --review-of map` in einer
+1. `ki-dev -f map step KARTE map`: Übergabe ausgeben, in einer neuen
+   Agentensitzung einfügen. Danach mit `map.review` die Karte in einer
    frischen Sitzung prüfen lassen.
-2. `graph`: Übergabe für den Bead der Karte; der Agent legt dünne Vorgänge an.
-   Danach jeden angelegten dünnen Vorgang mit `--step review --review-of
-   graph` prüfen lassen, bevor er materialisiert wird.
-3. `materialize`: je dünnem Vorgang eine Sitzung; danach die Ausführungsreife
-   mit `--step review --review-of materialize` getrennt prüfen lassen.
-4. `implement`: Übergabe des materialisierten Beads in einer Umsetzungssitzung.
-5. `review` (Standard bzw. `--review-of implement`): Vorher läuft automatisch der
-   [deterministische Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe---step-review);
-   erst bei dessen Erfolg entsteht die Übergabe für eine **frische, getrennte**
-   Sitzung. Der Review-Text verlangt zuerst ein eigenes Urteil anhand von
-   `description`, `design`, `acceptance_criteria`, Diff und Prüfbericht und
-   ein Ergebnis `PASS`, `CHANGES` oder `NEEDS_DECISION`. Das Schließen des
-   Beads entscheidest du.
+2. `ki-dev -f graph step KARTE graph`: der Agent legt dünne Vorgänge an;
+   jeden mit `ki-dev -f graph step VORGANG graph.review` prüfen lassen.
+3. `ki-dev -f materialize step VORGANG materialize`: je dünnem Vorgang eine
+   Sitzung; danach `materialize.review`.
+4. `ki-dev -f implement_review step VORGANG implement`: Übergabe in eine
+   Umsetzungssitzung.
+5. `ki-dev -f implement_review step VORGANG implement implement=done.json`:
+   die Umsetzung ist erledigt, der
+   [deterministische Vorlauf](#deterministischer-vorlauf-vor-der-review-übergabe)
+   läuft; erst bei dessen Erfolg entsteht die Übergabe für eine **frische,
+   getrennte** Review-Sitzung. Der Review-Text verlangt ein eigenes Urteil
+   anhand von `description`, `design`, `acceptance_criteria`, Diff und
+   Prüfbericht. Die Antwort gibst du mit `implement.review=antwort.json`
+   weiter; das Schließen des Beads entscheidest du.
 
 Der Block „Hinweis für den Menschen“ am Ende jeder Übergabe nennt die
-Folgeschritte des aktuellen Zustands aus der
-[Ablaufs](#zustände-und-befundklassen); du trägst sie
-weiter.
+Folgeschritte des aktuellen Zustands aus dem
+[Ablauf](#zustände-und-befundklassen); du trägst sie weiter.
 
 ## Zustände und Befundklassen
 
@@ -444,7 +438,7 @@ Ablaufformat
 Regeln: Jedes Ziel existiert, jedes Review kennt die Pflichtereignisse seiner
 Art (`[required]` im Katalog), und von jedem Zustand führt ein Weg zu
 `finished`. PASS führt nach `finished`; der Hinweis nennt den nächsten
-Ablauf (`ki-dev step BEAD --step graph`).
+Ablauf (`ki-dev -f graph step BEAD graph`).
 
 | Zustand | Wer | Bedeutung |
 | --- | --- | --- |
@@ -460,7 +454,7 @@ Review-Befunde tragen eine Klasse. Das Urteil folgt der stärksten Klasse
 
 | Klasse | Urteil | Weiter mit |
 | --- | --- | --- |
-| `fix` | `CHANGES` | `P.correction`, danach `--next-turn` |
+| `fix` | `CHANGES` | `P.correction`, danach `P.correction=done.json` |
 | `source` | `NEEDS_DECISION` | Planungssitzung, Import, **bestehende** Karte ergänzen |
 | `decision` | `NEEDS_DECISION` | `P.decision` |
 
@@ -470,8 +464,8 @@ Beispiel: Ein Graph-Review findet eine offene Frage.
 graph.review --source--> source          Planungssitzung mit dem Menschen
 source --imported--> finished            ki-dev step map --agent claude --session S2 --title T
 map (neuer Lauf)                         Agent ergänzt die bestehende Karte K
-map --done--> map.review                 ki-dev step K --step review --review-of map
-map.review --PASS--> finished            ki-dev step K --step graph
+map --done--> map.review                 ki-dev -f map step K map.review
+map.review --PASS--> finished            ki-dev -f graph step K graph
 graph (neuer Lauf)                       Agent ergänzt die bestehenden Vorgänge
 ```
 
@@ -495,7 +489,7 @@ Positionsargument. `--agent`, `--session` und `--title` sind erforderlich; `--ag
 Anbieter der **Quellsitzung** (`codex` oder `claude`), nicht den späteren
 Kartierungsagenten. Es gibt kein Dateipfadargument und keine automatische Wahl
 der letzten Sitzung. Die Form lässt sich nicht mit einer `BEAD_ID`, einem
-anderen Positionsargument oder `--step` mischen; auch `--agent`/`--session`
+anderen Positionsargument mischen; auch `--agent`/`--session`
 ohne `map` wird abgelehnt (Exit 2, vor jeder Schreibwirkung).
 `--title` ist nichtleerer Text bis 120 Zeichen und muss Buchstaben oder
 Ziffern enthalten; daraus entsteht der Dateislug. Der Titel wird nie aus
@@ -561,7 +555,7 @@ Wiederholungen, Präzisierungen und Widersprüchen inhaltlich um; der Parser
 bereinigt nichts. Der Befehl startet keinen Agenten und legt keine Karte an,
 beansprucht oder schließt nichts.
 
-## Deterministischer Vorlauf vor der Review-Übergabe (`--step review`)
+## Deterministischer Vorlauf vor der Review-Übergabe
 
 Build darf gezielt entwickeln und testen; das ist kein pauschales Test-,
 Typprüfer- oder Werkzeugverbot. Ein deterministischer Vorlauf entlastet die
@@ -570,9 +564,10 @@ Prüfungen. Die Review-Sitzung selbst startet keine Formatter, Linter,
 Typprüfer oder Tests und keine Folgemodelle; sie liest Dateien, Diff,
 Anforderungen und den Prüfbericht und beurteilt anhand dessen auch Testqualität und Abdeckung.
 
-`ki-dev step BEAD_ID --step review` führt diesen Vorlauf jetzt selbst aus,
-**bevor** die Übergabe entsteht — das erweitert den sonst rein lesenden
-Vertrag ausdrücklich für diesen einen Aufruf. Ablauf: konfigurierte
+Erreicht ein Aufruf in `implement_review` den Zustand `implement.preflight`
+(nach `implement=…` oder `implement.correction=…`), führt step diesen
+Vorlauf selbst aus, **bevor** die nächste Übergabe entsteht — das erweitert
+den sonst rein lesenden Vertrag ausdrücklich für diesen Aufruf. Ablauf: konfigurierte
 Korrekturen seriell (Abbruch bei der ersten fehlgeschlagenen; restliche
 Korrekturen **und** alle Prüfungen gelten dann als ausgelassen und erscheinen
 so im Bericht; bereits erfolgte Änderungen bleiben unverändert stehen, es gibt
@@ -672,23 +667,22 @@ eine nicht lesbare Datei ist Exit 1. Es gibt keinen stillen Ersatz.
 
 **Zeitpunkt:**
 
-- `BEAD_ID --step …`: Die Konfiguration wird vor jeder `bd`-Anfrage gelesen.
-  Bei `--step review` (Prüfgegenstand `implement`) wird die Basis vor dem
-  Vorlauf geprüft, also vor allen Korrekturen; Leitlinien und Prüfbericht
-  kommen erst danach dazu.
+- `ki-dev -f ABLAUF step …`: Die Konfiguration wird vor jeder `bd`-Anfrage
+  gelesen. Geprüft wird die ausgegebene Übergabe, jede Folgenachricht
+  eingeschlossen. Welche Übergabe ein beantworteter Zustand auslöst,
+  zeigt erst der Ablauf: Läuft davor der Vorlauf, hat er bei Übergröße
+  bereits gearbeitet (Exit 2, kein stdout, kein Rückbau).
 - `map --agent … --session …`: Die Konfiguration wird vor Quellenablage und
   Beads-Anlage geprüft. Die endgültige Basis (mit Titel und Lesehinweis)
   steht erst nach der Quellenanlage fest. Ist sie zu lang, gibt es weder
   Übergabe noch Kürzung; Quelldatei und Quellen-Bead bleiben bestehen und
   werden beim erneuten Aufruf wiederverwendet. Kein Rückbau.
-- `--next-turn` ist eine Folgenachricht und behält seinen Vertrag; die
-  Basisgrenze gilt dort nicht und wird nicht gelesen.
 
 ## Mitgelieferte Leitlinien
 
 Alle Formen hängen die geltenden Regeltexte der Architektur-/Programmier-
 und der Technikleitlinie sowie der Arbeitsregeln direkt an:
-`BEAD_ID --step …` und `map --agent … --session …` die Regeln des Schritts,
+`ki-dev -f ABLAUF step` und `map --agent … --session …` die Regeln des Schritts,
 `local` nur die allgemeinen Abschnitte (`common`). Der Agent muss Leitlinien weder suchen noch ihre
 Phasenzuordnung selbst entscheiden; er wendet die mitgelieferten Texte an,
 ohne ihre Quelldokumente erneut vollständig zu lesen.
@@ -705,9 +699,9 @@ enthält `title`, `permalink`, `sections` (geordnete Liste `{id, text}`, Text
 als Markdown-Literalblock `|-`), `common` sowie `stages` mit genau `map`,
 `graph`, `materialize` und `implement`, jeweils `task` und `review` als
 ID-Listen. Ausgewählt wird fest, ohne Modell oder Themenklassifikation:
-`common` + `stages[ZIEL].task`; bei `--step review` zusätzlich
-`stages[ZIEL].review`. ZIEL ist der Schritt oder `--review-of`; ohne
-`--review-of` bleibt es `implement`. Reihenfolge wie in `sections`, jede ID je
+`common` + `stages[ZIEL].task`; bei einer prüfenden Übergabe (Review-Zustand)
+zusätzlich `stages[ZIEL].review`. ZIEL ist die Phase des Ablaufs (sein
+Start, z. B. `implement` für `implement_review`). Reihenfolge wie in `sections`, jede ID je
 Datei einmal, auch wenn sie mehrfach zugeordnet ist. Die Zuordnung verringert
 die Geltung nicht: Allgemeine Regeln stehen in `common` und erreichen jeden
 Schritt; `stages` tragen nur die Phasenschwerpunkte (Architektur in Planung
@@ -722,8 +716,9 @@ Listen und Codeblöcke bleiben erhalten. Der Block ist ein gesondert
 ausgewiesener Kontextblock wie der Prüfbericht: Er wird nie gekürzt und zählt
 nicht zu einer Längengrenze der Basisübergabe. Die gesamte Ausgabe kann
 deshalb deutlich länger sein als die Basisübergabe. Das ist keine
-Tokenersparnis und keine Verbrauchszusage. `--next-turn` hängt keine
-Leitlinien erneut an; die Sitzungen haben sie bereits erhalten.
+Tokenersparnis und keine Verbrauchszusage. Folgenachrichten in eine
+bestehende Sitzung hängen keine Leitlinien erneut an; die Sitzungen haben
+sie bereits erhalten.
 
 **Fehler.** Die Quellen werden relativ zum aktuellen Verzeichnis geladen,
 ohne Ersatzquelle, und vor Vorlauf, Quellenablage und Beads-Anlage geprüft.
