@@ -1,15 +1,42 @@
 # Einrichtung von ki-dev. Voraussetzungen: python3 (>= 3.12), git, go, C-Compiler.
-#   make setup   venv, ki-dev und bd anlegen
-#   make demo    Mock-Lauf ohne Anbieterzugang
-#   make test    Tests und Lint
+#
+# Verfügbare Ziele:
+#   make setup          venv, ki-dev und bd anlegen
+#   make setup-runtime  eigenes Betriebs-venv und ~/.local/bin/ki-dev
+#   make demo           Mock-Lauf ohne Anbieterzugang
+#   make test           Tests und Lint
 #   make readme-check   README-Einrichtung im Wegwerf-Container (braucht Docker)
+#   make clean          Temporäre Dateien und venv entfernen
+
+.DEFAULT_GOAL := help
+
 version     = $(shell sed -n 's/.*"$(1)": "\(.*\)".*/\1/p' src/ki_dev/tool-versions.json)
 BD_VERSION := $(call version,BD_VERSION)
 BIN        := $(CURDIR)/.venv/bin
 CHECK      := docker compose -f compose.readme-check.yaml
 
-.PHONY: setup demo test readme-check
+.PHONY: help
+help:
+	@echo "ki-dev Makefile - Verfügbare Ziele:"
+	@echo ""
+	@echo "  make setup          Erstelle venv, ki-dev und bd"
+	@echo "  make setup-runtime  Betriebs-venv und ~/.local/bin/ki-dev einrichten"
+	@echo "  make demo           Starten Sie einen Mock-Lauf ohne Anbieterzugang"
+	@echo "  make test           Führen Sie Tests und Lint aus"
+	@echo "  make readme-check   README-Einrichtung im Wegwerf-Container (braucht Docker)"
+	@echo "  make clean          Entfernen Sie venv und temporäre Dateien"
+	@echo ""
+	@echo "Beispiele:"
+	@echo "  make setup          # Initialisierung durchführen"
+	@echo "  make test           # Tests ausführen"
+
+.PHONY: setup setup-runtime demo test readme-check clean
+
 setup: .venv/bin/ki-dev .venv/bin/bd
+
+# Explizites Update nur ohne aktive oder pausierte ki-dev-Läufe.
+setup-runtime:
+	bash scripts/setup-runtime.sh
 
 .venv/bin/ki-dev:
 	python3 -m venv .venv
@@ -37,3 +64,9 @@ readme-check: export GO_SHA256_ARM64 := $(call version,GO_SHA256_ARM64)
 readme-check:
 	$(CHECK) build check
 	$(CHECK) run --rm check
+
+clean:
+	rm -rf .venv
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name '*.pyc' -delete
+	find . -type f -name '*.pyo' -delete

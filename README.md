@@ -21,8 +21,9 @@ Die drei Bausteine teilen sich die Verantwortung:
 Der Ausführer (`runner/`) liest die Ablaufdatei und ruft den jeweiligen
 Adapter auf. Bei `ki-dev -f implement BEAD` geschieht das automatisch.
 
-`ki-dev step` ist dieselbe Idee von Hand: genau ein Übergang des
-Planungsablaufs, die Übergabe trägt der Mensch als Bote weiter.
+`ki-dev -f ABLAUF step` ist dieselbe Idee von Hand: genau ein Turn
+eines Ablaufs, zustandslos; die Übergabe trägt der Mensch als Bote
+weiter.
 
 ---
 
@@ -135,12 +136,18 @@ Prüfung wie bei einem Agenten.
 Der Mensch hat damit zwei getrennte Rollen: **Bote** (Adapter `manual`) und
 **Entscheider** (Zustände der Art `wait`, z. B. nach `NEEDS_DECISION`).
 
-### `ki-dev step`: ein Übergang des Planungsablaufs von Hand
+### `ki-dev -f ABLAUF step`: ein Turn von Hand
 
 ```bash
-ki-dev step BEAD --step map | graph | materialize | implement | review
-ki-dev step BEAD --step review --next-turn --decision-file antwort.json
+ki-dev -f materialize step BEAD materialize          # Übergabe an den Schreibagenten
+ki-dev -f materialize step BEAD materialize.review   # Übergabe an das Review
+ki-dev -f materialize step BEAD materialize.review \
+  materialize.review=antwort.json                    # Antwort → nächste Übergabe
 ```
+
+Der Zustand steht im Aufruf, Antworten kommen als Dateien je Zustand;
+gespeichert wird nichts. Braucht eine Übergabe Daten von weiter vorn,
+nennt der Ablauf ihre Herkunft, und step meldet, welche Antwort fehlt.
 
 Echte Ausgabe (gekürzt) für einen Bead dieses Repositorys:
 
@@ -149,7 +156,7 @@ Schritt: materialize
 Bead: ki-dev-ablauf-5we - Vor GitHub: begrenzte Reviewer-Prüfsteuerung in step anschließen
 …
 Hinweis für den Menschen: Zustand materialize; Folgeschritte laut materialize.toml (Adapter manual, du trägst sie weiter):
-- done → materialize.review: `ki-dev step ki-dev-ablauf-5we --step review --review-of materialize`
+- done → materialize.review: `ki-dev -f materialize step ki-dev-ablauf-5we materialize.review`
 ```
 
 Ein Review vergibt je Befund eine Klasse. Die stärkste Klasse bestimmt die
@@ -258,6 +265,19 @@ Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
 Voraussetzungen und Einrichtung: siehe [oben](#in-einer-minute-ausprobieren);
 das `Makefile` ist kurz und lesbar.
 
+<!-- readme-script: readme-scripts/2-runtime.sh -->
+Für Entwicklung an ki-dev: separates Betriebs-venv und Symlink in
+`~/.local/bin` (XDG_DATA_HOME wird berücksichtigt).
+Vor jedem Update aktive und pausierte Läufe abschließen.
+Details: [Entwicklung am eigenen Repo](docs/self-development.de.md).
+
+```bash
+make setup-runtime
+export PATH="$HOME/.local/bin:$PATH"
+ki-dev --help
+```
+<!-- /readme-script -->
+
 ```bash
 make test           # pytest und ruff
 make readme-check   # README-Einrichtung im Wegwerf-Container (braucht Docker)
@@ -293,14 +313,16 @@ src/ki_dev/
   adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),
                executors.toml + registry.py (Executor = Transport + measures),
                executors/ (Claude- und Codex-CLI, Transkripte, Messung)
-  step/        ein Turn eines Paketablaufs mit dem Executor manual:
-               Bedienung, Laufzustand je Bead, Quellenimport
+  step/        ein Turn eines Paketablaufs mit dem Executor manual,
+               zustandslos: Bedienung, Eingaben mit Herkunft,
+               Quellenimport
   pilot/, safety_profile/   abgelegt, noch nicht angebunden (urq, wu0.10.5)
 ```
 
 Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
+[ki-dev am eigenen Repo entwickeln](docs/self-development.de.md) ·
 [Bindungen und Muster](docs/ablaufpakete.de.md) ·
-[`ki-dev step` im Detail](docs/step.de.md) ·
+[`step` im Detail](docs/step.de.md) ·
 [CLI-Adapter](docs/cli-adapters.md) ·
 [Sitzungen lesen](docs/session.de.md) ·
 [Zielbild und Hintergrund](docs/zielbild.de.md)
@@ -309,23 +331,22 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 
 ## Stand und offene Punkte
 
-- **Benutzbar:** `ki-dev step` (ein Turn eines Ablaufs von Hand), `ki-dev -f implement` mit
-  allen vier Adaptern (Bauablauf).
+- **Benutzbar:** `ki-dev -f ABLAUF step` (ein Turn eines Ablaufs von
+  Hand), `ki-dev -f implement` mit allen vier Adaptern (Bauablauf).
 - **Abläufe von Hand:** `step` fährt den gewählten Ablauf (`map`,
-  `graph`, `materialize`, `implement_review`) als Lauf je Bead auf dem
-  einen Ausführer (`runner/package.py`, Executor `manual`) bis zur
-  nächsten Übergabe (`turn`/`ask`); nur `implement_review` bindet den Vorlauf
+  `graph`, `materialize`, `implement_review` oder ein eigener) ab dem
+  genannten Zustand auf dem einen Ausführer (`runner/package.py`,
+  Executor `manual`) bis zur nächsten Übergabe (`turn`/`ask`), in einem
+  Lauf nur für diesen Aufruf; nur `implement_review` bindet den Vorlauf
   `implement.preflight`. `implement_review` und `implement` werden ein
   Ablauf (ki-dev-ablauf-ige.6).
-- **Laufzustand je Bead:** `ki-dev step BEAD_ID` ohne `--step` setzt den
-  gespeicherten Halt fort (`.local/handoff/steps/`), je Übergang steht eine
-  Zeile in `events.jsonl` (Ablauf und Regionen des Laufs).
 - **Beobachtbar:** `ki-dev -f implement` schreibt je Übergang eine Zeile nach
   `events.jsonl`, für Ablauf und Lauf (Operation, Halt) je mit ihrer Region
   ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
-- **Geprüfter Stand bei step:** Ein PASS gilt nur, wenn Arbeitsbaum und
-  Bead seit dem Vorlauf unverändert sind; sonst läuft der Vorlauf erneut
-  (Wächter `unchanged`, wie `freeze` bei `run`).
+- **Stand bei step:** step gleicht nichts mit dem Repo ab; der Mensch
+  verantwortet, welche Antworten er mitgibt. PASS in `implement_review`
+  braucht die Tatsachen des Vorlaufs (Wächter `full_checks`, Eingabe
+  aus `implement.preflight`).
 - **Grenzen, genau genommen:** `runner/safety.py` prüft Aufruf-, Token- und
   Kostengrenzen *vor dem nächsten* Aufruf; ein einzelner Aufruf kann
   `max_total_tokens` überschreiten, Cache-Lesen zählt voll. Innerhalb eines

@@ -20,8 +20,8 @@ The three components divide responsibility:
 The executor (`runner/`) reads the workflow file and calls the appropriate
 adapter. With `ki-dev -f implement BEAD`, this happens automatically.
 
-`ki-dev step` is the same idea by hand: exactly one transition of the
-planning workflow, carried on by a human as messenger.
+`ki-dev -f FLOW step` is the same idea by hand: exactly one turn of a
+workflow, stateless, carried on by a human as messenger.
 
 ## A loop is an edge, not a component
 
@@ -98,7 +98,7 @@ profile (`profil.toml`) itself.
 ki-dev -f implement BEAD                   # drive a bead to the next halt
 ki-dev -f implement BEAD --adapter manual  # you relay prompts via stdout/stdin
 ki-dev -f implement resume -v RUN_ID       # continue; transitions live
-ki-dev step BEAD --step review             # one planning transition by hand
+ki-dev -f map step BEAD map.review         # one turn by hand, stateless
 ```
 
 `-f NAME` searches like `make -f`: `./NAME.toml`, `$KI_DEV_FLOW_PATH`, then
@@ -133,14 +133,27 @@ messenger (adapter) and decider (states of kind `wait`).
   `--max-turns`), Codex is not. `step` (adapter manual) measures no tokens.
 - The access profile in a task is prompt text, not a lock; isolation comes
   from the [agent container](docker/agent/README.md).
-- With `step`, a PASS only counts if working tree and bead are unchanged
-  since the preflight; otherwise the preflight runs again (guard
-  `unchanged`, like `freeze` in `run`).
+- `step` compares nothing with the repository; the human answers for
+  the answers passed in. PASS in `implement_review` needs the preflight
+  facts (guard `full_checks`, input from `implement.preflight`).
 
 ## Installation
 
 Prerequisites and setup: see [above](#try-it-in-a-minute); the `Makefile`
 is short and readable.
+
+<!-- readme-script: readme-scripts/en/2-runtime.sh -->
+For development on ki-dev: separate runtime venv and a symlink in
+`~/.local/bin` (honors XDG_DATA_HOME).
+Finish active and paused runs before each update.
+Details: [self-development runbook (German)](docs/self-development.de.md).
+
+```bash
+make setup-runtime
+export PATH="$HOME/.local/bin:$PATH"
+ki-dev --help
+```
+<!-- /readme-script -->
 
 ```bash
 make test           # pytest and ruff

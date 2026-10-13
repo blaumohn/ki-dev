@@ -38,6 +38,9 @@ main() {
   cd "$user_dir/ki-dev"
   step "README-Abschnitte gegen readme-scripts prüfen"
   .venv/bin/python scripts/render-readme.py --check
+  step "Separate Runtime und Update prüfen"
+  bash -eu -o pipefail readme-scripts/2-runtime.sh
+  check_runtime_installation
   step "Tests und Lint im Klon des Besuchers"
   # bd liegt im venv; Tests finden es wie bei aktiviertem venv im PATH.
   PATH="$PWD/.venv/bin:$PATH" .venv/bin/pytest -q -m "not docker"
@@ -47,6 +50,23 @@ main() {
 
 step() {
   echo "[readme-check] $*" >&2
+}
+
+check_runtime_installation() {
+  local runtime="${XDG_DATA_HOME:-$HOME/.local/share}/ki-dev/venv"
+  local module=src/ki_dev/runtime_setup_probe.py
+  local installed="$runtime/bin/python"
+  # Nur im Besucher-Klon: gleichbleibende Paketversion, neuer Quellinhalt.
+  printf 'VALUE = "first"\n' > "$module"
+  make setup-runtime
+  "$installed" -I -c 'from ki_dev.runtime_setup_probe import VALUE; assert VALUE == "first"'
+  printf 'VALUE = "second"\n' > "$module"
+  "$installed" -I -c 'from ki_dev.runtime_setup_probe import VALUE; assert VALUE == "first"'
+  make setup-runtime
+  "$installed" -I -c 'from ki_dev.runtime_setup_probe import VALUE; assert VALUE == "second"'
+  [[ $(readlink "$HOME/.local/bin/ki-dev") == "$runtime/bin/ki-dev" ]]
+  "$HOME/.local/bin/ki-dev" --help >/dev/null
+  rm "$module"
 }
 
 # Klon des Quell-Repos mit dessen Arbeitsstand, committet nur im Klon.
