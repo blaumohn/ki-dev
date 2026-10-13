@@ -25,14 +25,19 @@ Vom Repository aus (auf dem Host):
 ```
 
 Codex und Claude Code werden über npm installiert, ki-dev aus den
-Projektquellen in die Image-venv. bd wird beim Image-Build
+Projektquellen in die Image-venv. Antigravity CLI (`agy`) wird als natives
+Linux-Release für amd64 oder arm64 nach `/usr/local/bin/agy` installiert.
+Version, Download-URLs und SHA512-Prüfsummen sind ebenfalls in der gemeinsamen
+Versionsdatei festgeschrieben; die Downloads stammen aus den Manifesten des
+[offiziellen Installers](https://antigravity.google/cli/install.sh).
+bd wird beim Image-Build
 aus der über `BD_VERSION` festgelegten Go-Modulversion nativ nach
 `/usr/local/bin/bd` installiert, mit CGO für Embedded Dolt und dem Build-Tag
 `gms_pure_go`. Grundlage ist der
 [Go-Installationsweg von Beads](https://github.com/gastownhall/beads/blob/main/.goreleaser.yml).
 Das Dolt-CLI wird als Release-Binary nach `/usr/local/bin/dolt` gelegt
 (Architektur über `TARGETARCH`, Fallback `dpkg --print-architecture`).
-Alle Image-, Toolversionen und Go-Prüfsummen stehen ausschließlich in
+Alle Image-, Toolversionen, Download-URLs und Prüfsummen stehen ausschließlich in
 `src/ki_dev/tool-versions.json`. Das Buildskript übergibt diese Werte als
 Build-Argumente; Python-Code und Tests lesen dieselbe mitgelieferte Datei.
 Der Host benötigt Python 3 mit `jsonschema`, für `--mount` zusätzlich
@@ -254,15 +259,31 @@ läuft noch ein Container, bricht `reset` mit Hinweis ab.
 
 ## Anmeldung und Start
 
-Die vorhandenen Verzeichnisse `~/.claude` und `~/.codex` werden schreibbar
-nach `/home/agent/.claude` und `/home/agent/.codex` eingebunden. Damit können
+Die vorhandenen Verzeichnisse `~/.claude`, `~/.codex` und `~/.gemini` werden
+schreibbar nach `/home/agent/.claude`, `/home/agent/.codex` und
+`/home/agent/.gemini` eingebunden. Alle drei müssen auf dem Host vorhanden sein.
+Damit können
 die CLIs die Host-Anmeldung verwenden und ihre Tokens erneuern. Es werden keine
 API-Key-Variablen weitergereicht. Falls vorhanden, wird `~/.claude.json`
 zusätzlich schreibgeschützt eingebunden und einmalig ins Container-Home kopiert.
 Bei einem anderen Benutzerverzeichnis:
 `KI_DEV_AGENT_AUTH_HOME=/Users/name ./scripts/agent-container shell`.
 
+Auch die agy-Anmeldung bleibt durch den Host-Mount bei Container-Neustarts,
+`--fresh` und `reset` erhalten. Die OAuth-Datei
+`~/.gemini/antigravity-cli/antigravity-oauth-token` bleibt auf dem Host;
+Token-Erneuerungen des Containers werden in dasselbe Verzeichnis geschrieben.
+`KI_DEV_AGENT_AUTH_HOME` gilt für alle drei Anmeldeverzeichnisse.
+Nach dem Image-Build startet `./scripts/agent-container run agy` die CLI direkt.
+
+Die agy-Konfiguration liegt unter
+[`~/.gemini/antigravity-cli/settings.json`](https://antigravity.google/docs/cli/using).
+agy läuft direkt mit seiner eigenen Konfiguration; die nachfolgend beschriebenen
+A/B-Launcher gelten für Codex und Claude. Der Mount stellt keine macOS-Keychain
+im Container bereit und garantiert daher keine übertragbare Anmeldung.
+
 ```bash
+./scripts/agent-container run agy --help
 ./scripts/agent-container run codex login status
 ./scripts/agent-container run claude auth status
 ./scripts/agent-container run ki-dev --help

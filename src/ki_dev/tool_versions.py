@@ -21,6 +21,7 @@ _VERSION_KEYS = (
     "BD_VERSION",
     "CODEX_VERSION",
     "CLAUDE_VERSION",
+    "AGY_VERSION",
     "DOLT_VERSION",
     "RUST_VERSION",
     "RUSTUP_VERSION",
@@ -44,6 +45,25 @@ _PROPERTIES = {
         {"type": "string", "pattern": r"^[a-f0-9]{64}$"},
     ),
 }
+_PROPERTIES.update(
+    dict.fromkeys(
+        ("AGY_URL_AMD64", "AGY_URL_ARM64"),
+        {
+            "type": "string",
+            "pattern": (
+                r"^https://storage\.googleapis\.com/"
+                r"antigravity-public/antigravity-cli/"
+                r"[a-zA-Z0-9/._-]+\.tar\.gz$"
+            ),
+        },
+    )
+)
+_PROPERTIES.update(
+    dict.fromkeys(
+        ("AGY_SHA512_AMD64", "AGY_SHA512_ARM64"),
+        {"type": "string", "pattern": r"^[a-f0-9]{128}$"},
+    )
+)
 _VALIDATOR = Draft202012Validator(
     {
         "type": "object",

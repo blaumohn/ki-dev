@@ -119,6 +119,7 @@ def sandbox(tmp_path):
     auth = tmp_path / "auth"
     (auth / ".claude").mkdir(parents=True)
     (auth / ".codex").mkdir()
+    (auth / ".gemini").mkdir()
     log = tmp_path / "log"
     log.mkdir()
     box = Sandbox(
@@ -402,7 +403,7 @@ def test_claude_state_only_when_present(sandbox, present):
     assert sandbox.logged("claude") == [expected]
 
 
-@pytest.mark.parametrize("missing", [".claude", ".codex"])
+@pytest.mark.parametrize("missing", [".claude", ".codex", ".gemini"])
 def test_missing_cli_login_fails(sandbox, missing):
     (sandbox.auth / missing).rmdir()
     _, _, stderr = sandbox.run("shell", retcode=1)

@@ -298,7 +298,7 @@ remove_stale_overlays() {
 
 require_cli_logins() {
   local auth_root="$1" auth_dir
-  for auth_dir in .claude .codex; do
+  for auth_dir in .claude .codex .gemini; do
     if [[ ! -d "$auth_root/$auth_dir" ]]; then
       echo "Missing $auth_root/$auth_dir; log in with the CLI on the host first." >&2
       exit 1

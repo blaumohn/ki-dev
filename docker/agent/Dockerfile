@@ -83,11 +83,30 @@ RUN --mount=type=cache,id=npm,target=/root/.npm,sharing=locked \
     && chown ${AGENT_UID}:${AGENT_GID} /usr/local/bin \
     && chown -h ${AGENT_UID}:${AGENT_GID} /usr/local/bin/node /usr/local/bin/npm \
         /usr/local/bin/codex /usr/local/bin/claude
+# Native agy release from the official installer's manifests; URLs and hashes
+# are pinned rather than executing the rolling installer at build time.
+ARG AGY_VERSION
+ARG AGY_URL_AMD64
+ARG AGY_URL_ARM64
+ARG AGY_SHA512_AMD64
+ARG AGY_SHA512_ARM64
+LABEL io.ki-dev.agy.version="${AGY_VERSION}"
+RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+        amd64) agy_url="${AGY_URL_AMD64}"; agy_sha="${AGY_SHA512_AMD64}" ;; \
+        arm64) agy_url="${AGY_URL_ARM64}"; agy_sha="${AGY_SHA512_ARM64}" ;; \
+        *) echo "unsupported architecture" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "$agy_url" -o /tmp/agy.tar.gz \
+    && echo "${agy_sha}  /tmp/agy.tar.gz" | sha512sum -c - \
+    && mkdir /tmp/agy-release \
+    && tar -xzf /tmp/agy.tar.gz -C /tmp/agy-release antigravity \
+    && install -m 0755 /tmp/agy-release/antigravity /usr/local/bin/agy \
+    && rm -rf /tmp/agy.tar.gz /tmp/agy-release
 COPY project /opt/project
 RUN --mount=type=cache,id=pip,target=/root/.cache/pip,sharing=locked \
     python -m venv /workspace/.venv \
     && /workspace/.venv/bin/pip install hatchling '/opt/project[test]' \
-    && mkdir -p /home/agent/.claude /home/agent/.codex \
+    && mkdir -p /home/agent/.claude /home/agent/.codex /home/agent/.gemini \
     && chown -R ${AGENT_UID}:${AGENT_GID} /workspace /home/agent
 # Bind targets of the download caches (compose.yaml). Created here so a fresh
 # home (--fresh) does not get root-owned parents from Docker.

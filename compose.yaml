@@ -56,6 +56,11 @@ services:
         bind:
           create_host_path: false
       - type: bind
+        source: ${KI_DEV_AGENT_AUTH_HOME:-${HOME}}/.gemini
+        target: /home/agent/.gemini
+        bind:
+          create_host_path: false
+      - type: bind
         source: ${KI_DEV_CLAUDE_STATE:-/dev/null}
         target: /run/claude-host.json
         read_only: true

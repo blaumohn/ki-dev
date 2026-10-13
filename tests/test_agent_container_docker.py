@@ -35,7 +35,7 @@ def docker_ready():
     home = Path.home()
     return code == 0 and (home / ".claude").is_dir() and (
         home / ".codex"
-    ).is_dir()
+    ).is_dir() and (home / ".gemini").is_dir()
 
 
 @pytest.fixture
