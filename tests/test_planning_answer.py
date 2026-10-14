@@ -31,7 +31,6 @@ def _raw(**fields) -> str:
         "event": "PASS",
         "detail": "",
         "requirement_ref": None,
-        "attempt": "x-1:1",
     }
     return json.dumps(value | fields)
 
@@ -44,29 +43,17 @@ def _parse(raw: str, check=_accept):
     return parse_planning_answer(raw, FLOW, REFS, CONTROL_SCHEMA, check)
 
 
-def test_answer_carries_verdict_and_attempt():
+def test_answer_carries_verdict():
     answer = _parse(_raw())
-    assert (answer.verdict.event, answer.attempt) == ("PASS", "x-1:1")
+    assert answer.verdict.event == "PASS"
     assert answer.extras == {}
 
 
-@pytest.mark.parametrize(
-    ("fields", "message"),
-    [
-        ({"attempt": 3}, "attempt: muss nichtleerer Text sein"),
-        ({"attempt": "  "}, "attempt: muss nichtleerer Text sein"),
-    ],
-)
-def test_attempt_must_be_text(fields, message):
-    with pytest.raises(AgentProtocolError, match=message):
-        _parse(_raw(**fields))
-
-
-def test_missing_attempt_names_the_field():
-    value = json.loads(_raw())
-    del value["attempt"]
-    with pytest.raises(AgentProtocolError, match="attempt: fehlt"):
-        _parse(json.dumps(value))
+def test_attempt_is_refused():
+    with pytest.raises(
+        AgentProtocolError, match="attempt: unbekanntes Feld"
+    ):
+        _parse(_raw(attempt="x-1:1"))
 
 
 def test_unknown_field_is_refused_like_in_the_core():
