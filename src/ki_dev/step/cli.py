@@ -32,7 +32,11 @@ from ki_dev.step.feedback import FeedbackConfigError
 from ki_dev.step.forms import LOCAL_WORD, MAP_WORD, local_form, map_form
 from ki_dev.step.help import HELP, TOOL_HELP
 from ki_dev.step.options import PreflightValues, preflight_request
-from ki_dev.step.package import AnswerError, StepOps, load_step_ops
+from ki_dev.step.package import (
+    AnswerError,
+    PackageOps,
+    load_package_ops,
+)
 from ki_dev.step.projection import (
     Guidelines,
     InputMissingError,
@@ -137,7 +141,7 @@ def _output(
     request: Request,
     sources: list[tuple[str, str]],
     flow: Flow,
-    ops: StepOps,
+    ops: PackageOps,
     guidelines: Guidelines,
 ) -> Output:
     """Antworten lesen und den Turn fahren; Fehler werden Exitcodes."""
@@ -167,11 +171,11 @@ def _output(
         fail(str(exc), code=1)
 
 
-def _bound(flow: Flow, path: Path) -> StepOps:
+def _bound(flow: Flow, path: Path) -> PackageOps:
     """Ablauf an Felder und Bausteine binden, Ops des Pakets laden."""
     try:
         bind_flow(flow)
-        return load_step_ops(flow)
+        return load_package_ops(flow)
     except FlowError as exc:
         fail(f"Ablauffehler: {path}: {exc}", code=2)
 

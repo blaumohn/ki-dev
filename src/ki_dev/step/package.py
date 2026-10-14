@@ -7,7 +7,7 @@ Boten (Executor manual) aus und gibt die nächste Übergabe aus. Was eine
 Antwort bedeutet, welche Katalogoperationen der Ablauf eingesteckt
 bekommt und welche Eingaben eine Übergabe außer Bead und Leitlinien
 braucht, liefern die Ops des Pakets: das Modul ``ops`` des Ablaufs mit
-``step_ops(flow)`` (bei Mustern aus dem Katalog).
+``package_ops(flow)`` (bei Mustern aus dem Katalog).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ class Call:
     preflight: PreflightRequest = NO_PREFLIGHT_OPTIONS
 
 
-class StepOps(Protocol):
+class PackageOps(Protocol):
     """Ops eines Pakets für step."""
 
     model: type[RunModel]
@@ -74,16 +74,16 @@ class StepOps(Protocol):
         ...
 
 
-def load_step_ops(flow: Flow) -> StepOps:
+def load_package_ops(flow: Flow) -> PackageOps:
     """Ops des Pakets für step; ein Ablauf ohne sie läuft nicht über
     step."""
     if flow.ops is None:
         raise FlowError(f"{flow.name}.toml: kein ops-Modul für step")
     module = import_ops(flow)
-    factory = getattr(module, "step_ops", None)
+    factory = getattr(module, "package_ops", None)
     if not callable(factory):
         raise FlowError(
             f"{flow.name}.toml: ops-Modul {flow.ops} ohne "
-            "step_ops(flow)"
+            "package_ops(flow)"
         )
     return factory(flow)

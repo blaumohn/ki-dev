@@ -58,7 +58,7 @@ nichts (Programmierleitlinie: Fallbacks verdecken keine Fehler).
 **Ops des Pakets.** Was eine Antwort bedeutet, welche Katalogoperationen
 (Vorlauf) eingesteckt werden und welche Eingaben eine Übergabe braucht,
 liefern die Ops des Pakets: das Modul `ops` des Ablaufs mit
-`step_ops(flow)` (Schnittstelle `src/ki_dev/step/package.py`); für alle
+`package_ops(flow)` (Schnittstelle `src/ki_dev/step/package.py`); für alle
 Abläufe auf dem Review-Muster nennt der Katalog
 `flow/patterns/review.toml` einmal `ki_dev.flow_ops.review`. step kennt
 weder Zustandsarten noch Ereignisse eines Musters.

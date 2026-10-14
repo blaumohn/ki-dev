@@ -59,7 +59,7 @@ def test_unknown_flow_names_every_place_searched(
     assert "nix.toml" in err and "/nirgends" in err
 
 
-def test_flow_with_step_ops_only_has_no_commands(capsys):
+def test_flow_with_package_ops_only_has_no_commands(capsys):
     code, _, err = _main(capsys, "-f", "map", "x")
     assert code == 2
     assert "ki_dev.flow_ops.review ohne commands" in err

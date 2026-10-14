@@ -1,10 +1,11 @@
-"""Das Review-Muster für ``ki-dev -f ABLAUF step`` (Executor manual).
+"""Antwortdeutung des Review-Musters für jeden Executor.
 
 Deutung der Antworten je Zustandsart, Vorlauf als Katalogoperation
 und die Eingaben der Übergaben (Bericht, Befund, Urteil,
-Prüfsteuerung, Rückmeldung) aus den Laufdaten. step gleicht nichts
-mit dem Stand des Repos ab: der Mensch verantwortet, welche Antworten
-er mitgibt.
+Prüfsteuerung, Rückmeldung) aus den Laufdaten; gleich für den
+Menschen als Boten (manual) wie für einen Agenten. Die Deutung
+gleicht nichts mit dem Stand des Repos ab: wer antwortet,
+verantwortet, was er mitgibt.
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ FEEDBACK = "feedback"
 @dataclass(frozen=True)
 class ReviewOps:
     """Ops des Review-Musters für step
-    (:class:`~ki_dev.step.package.StepOps`)."""
+    (:class:`~ki_dev.step.package.PackageOps`)."""
 
     flow: ReviewFlow
     model: type[ReviewModel] = ReviewModel

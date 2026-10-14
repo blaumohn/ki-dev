@@ -37,7 +37,7 @@ from ki_dev.runner.bound import BoundOperations
 from ki_dev.runner.dispatch import Dispatch, role_of
 from ki_dev.runner.package import Handoff, PackageRunner
 from ki_dev.step.options import NO_PREFLIGHT_OPTIONS, PreflightRequest
-from ki_dev.step.package import AnswerError, Call, StepOps
+from ki_dev.step.package import AnswerError, Call, PackageOps
 from ki_dev.step.turn import hand_over, require_valid
 
 Guidelines = Callable[[str], Sequence[GuidelineSection]]
@@ -93,7 +93,7 @@ class Rendering:
 
     issue: BeadInput
     flow: Flow
-    ops: StepOps
+    ops: PackageOps
     guidelines: Guidelines
     limit: int | None = None
     subject: TurnInput | None = None
@@ -182,7 +182,10 @@ class Request:
 
 
 def step_output(
-    request: Request, flow: Flow, ops: StepOps, guidelines: Guidelines
+    request: Request,
+    flow: Flow,
+    ops: PackageOps,
+    guidelines: Guidelines,
 ) -> Output:
     """Übergabe in ``request.position`` (ohne Antwort dort) oder die
     nächste nach ihrer Antwort. Die Basisgrenze wird vor jedem
@@ -204,13 +207,13 @@ class Package:
     das die Antwort dieses Aufrufs brachte (Zustand, Ereignis)."""
 
     flow: Flow
-    ops: StepOps
+    ops: PackageOps
     call: Call
     bound: BoundOperations
     answered: tuple[str, str] | None = None
 
     @classmethod
-    def create(cls, flow: Flow, ops: StepOps, call: Call) -> Package:
+    def create(cls, flow: Flow, ops: PackageOps, call: Call) -> Package:
         used = {b.do for b in flow.bindings.values()}
         catalog = ops.catalog(call)
         bound = BoundOperations(

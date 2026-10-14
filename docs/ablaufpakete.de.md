@@ -168,7 +168,7 @@ Muster mit `extends`, kein Schalter.
   Kante). step kennt weder Zustandsarten noch Ereignisse
   eines Musters: Deutung der Antworten, Katalog (`checks` über
   `[op.checks]`), Wächter und Eingaben der Übergaben liefern die Ops
-  des Pakets (`ops` des Ablaufs, `step_ops(flow)`, Schnittstelle
+  des Pakets (`ops` des Ablaufs, `package_ops(flow)`, Schnittstelle
   `step/package.py`). Für das Review-Muster nennt der Katalog sie
   einmal: `ops = "ki_dev.flow_ops.review"`.
 - `ki-dev -f implement` (Paket `flow_ops/implement/`, eigener Ausführer

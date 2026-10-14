@@ -35,11 +35,11 @@ from ki_dev.ops.context.limit_config import (
 from ki_dev.runner.turns import declared_turns
 from ki_dev.step.exits import fail
 from ki_dev.step.feedback import load_feedback_max_chars
-from ki_dev.step.package import StepOps, load_step_ops
+from ki_dev.step.package import PackageOps, load_package_ops
 from ki_dev.step.turn import bind_flow
 
 
-def bound_flow(name: str) -> tuple[Flow, StepOps]:
+def bound_flow(name: str) -> tuple[Flow, PackageOps]:
     """step-Ablauf an der I/O-Grenze laden, an die eingesteckten
     Felder und Kontextbausteine binden und die Ops seines Pakets
     laden; ein ungültiger mitgelieferter Ablauf ist ein Programmfehler
@@ -47,7 +47,7 @@ def bound_flow(name: str) -> tuple[Flow, StepOps]:
     try:
         flow = load_review_flow(name).flow
         bind_flow(flow)
-        return flow, load_step_ops(flow)
+        return flow, load_package_ops(flow)
     except FlowError as exc:
         fail(f"Ablauf {name} ungültig: {exc}", code=1)
 
@@ -74,7 +74,7 @@ def selected_guidelines(
         _contract_failure(exc)
 
 def guideline_choice(
-    flow: Flow, ops: StepOps
+    flow: Flow, ops: PackageOps
 ) -> Callable[[str], tuple[GuidelineSection, ...]]:
     """Leitlinien je Zustand: Auswahl für die Phase des Ablaufs (sein
     Start), bei prüfenden Übergaben mit Review-Teil. Quellen und

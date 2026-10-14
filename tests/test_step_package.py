@@ -19,7 +19,7 @@ from ki_dev.ops.context.bead_input import BeadInput
 from ki_dev.runner.protocol import RunModel
 from ki_dev.step import projection
 from ki_dev.step.cli import step_app
-from ki_dev.step.package import AnswerError, load_step_ops
+from ki_dev.step.package import AnswerError, load_package_ops
 
 runner = CliRunner()
 
@@ -103,7 +103,7 @@ class DraftOps:
         return False
 
 
-def step_ops(_flow):
+def package_ops(_flow):
     return DraftOps()
 
 
@@ -232,4 +232,4 @@ def test_flow_option_routes_step_by_path(flow_file, capsys):
 def test_flow_without_ops_has_no_step_package(flow_file):
     flow = load_flow_file(flow_file)
     with pytest.raises(FlowError, match="kein ops-Modul für step"):
-        load_step_ops(type(flow)(**{**flow.__dict__, "ops": None}))
+        load_package_ops(type(flow)(**{**flow.__dict__, "ops": None}))

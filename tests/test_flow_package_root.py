@@ -21,7 +21,7 @@ OPS = """\
 from .teil import WERT
 
 
-def step_ops(flow):
+def package_ops(flow):
     return (WERT, flow.name)
 """
 
@@ -52,7 +52,7 @@ def test_templates_and_ops_load_relative_to_the_flow_file(tmp_path):
     assert Path(str(flow.root)) == tmp_path
     module = import_ops(flow)
     assert Path(module.__file__).parent == tmp_path / "paket"
-    assert module.step_ops(flow) == (str(tmp_path), "entwurf")
+    assert module.package_ops(flow) == (str(tmp_path), "entwurf")
 
 
 def test_missing_template_is_an_error_not_a_fallback(tmp_path):
@@ -73,8 +73,8 @@ def test_two_places_load_their_own_ops_and_share_the_digest(
 ):
     one = load_flow_file(_package(tmp_path / "eins"))
     two = load_flow_file(_package(tmp_path / "zwei"))
-    assert import_ops(one).step_ops(one)[0] == str(tmp_path / "eins")
-    assert import_ops(two).step_ops(two)[0] == str(tmp_path / "zwei")
+    assert import_ops(one).package_ops(one)[0] == str(tmp_path / "eins")
+    assert import_ops(two).package_ops(two)[0] == str(tmp_path / "zwei")
     assert flow_digest(one) == flow_digest(two)
 
 
