@@ -183,6 +183,10 @@ Antworten je Zustandsart; jede Antwort ist ein JSON-Objekt:
 | `P.review` | `{"event", "detail", "requirement_ref"}`, optional `preflight_args`/`preflight_skip` | das Urteil |
 | `P.decision`, `source` (Mensch) | `{"event": "accept"}` (bzw. `correct`, `source`, `imported`) | das genannte |
 
+Die Übergaben für Schreiben und Korrektur nennen ihr Format am Ende
+(`turns/answer-done.txt`), die des Reviews das Urteil
+(`turns/answer-json.txt`).
+
 **Rückmeldung.** `feedback` ist die Rückmeldung des Schreibagenten: nur,
 was nicht aus Diff und Prüfergebnissen hervorgeht. Sie erscheint in der
 nächsten Nachricht als unbestätigte Aussage (nicht geprüft, kein Beleg,

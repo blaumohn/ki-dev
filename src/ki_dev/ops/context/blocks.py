@@ -101,6 +101,7 @@ FIELDS: dict[str, Callable[[TurnInput], object]] = {
     "rules": lambda _turn: text(TEXTS, "review-rules"),
     "output": _output,
     "answer": lambda _turn: text(TEXTS, "answer-json"),
+    "answer_done": lambda _turn: text(TEXTS, "answer-done"),
     "limit": lambda turn: turn.feedback_limit,
     "event": lambda turn: _verdict(turn).event,
     "judgement": _judgement,

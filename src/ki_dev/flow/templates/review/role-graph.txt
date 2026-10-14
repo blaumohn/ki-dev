@@ -11,3 +11,5 @@ vollständigen Executor-Aufträge. Du verantwortest den
 fachlichen Zuschnitt und meldest unentscheidbare Konflikte.
 Bestehen aus dieser Karte schon Vorgänge, ergänze oder
 ersetze deren Inhalt, statt Doppel anzulegen.
+
+${answer_done}

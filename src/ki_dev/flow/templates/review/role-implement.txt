@@ -14,3 +14,5 @@ abschließenden Prüfungen; das entlastet dich nur davon.
 Melde kurz Ergebnis, Prüfungen und Blocker. Durchsuche
 keine allgemeinen ADR-Sammlungen, um den Auftrag zu
 rekonstruieren; melde konkrete Vertragslücken zurück.
+
+${answer_done}

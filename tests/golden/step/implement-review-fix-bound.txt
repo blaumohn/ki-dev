@@ -6,6 +6,8 @@ Bead: x-1 - Titel [red]rot[/red]
 Review-Befund (fix, CHANGES, AC1): Test fehlt
 Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
 
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
 Hinweis für den Menschen: Zustand implement.review; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
 - fix → implement.correction: Befunde an den Umsetzer (implementer) (bisherige Sitzung)
 --- stderr ---

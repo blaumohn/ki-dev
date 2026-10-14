@@ -5,6 +5,8 @@ Bead: x-1 - Titel [red]rot[/red]
 
 Bitte die gemeldeten Fehler beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse. Die Rückmeldung darf höchstens 600 Zeichen lang sein.
 
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
 Vorlauf ohne Review-Übergabe; bereits ausgeführte Befehle (PASS wie FAIL) wurden nicht automatisch zurückgesetzt:
 - tests: FAIL exit=1
  [argv=<PY> -c 'import sys; sys.exit(1)']

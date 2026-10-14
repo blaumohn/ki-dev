@@ -13,13 +13,6 @@ from ki_dev.flow_ops.implement.runtime import RunResult
 runner = CliRunner()
 
 
-@pytest.fixture(autouse=True)
-def _scaffold_flow_only(monkeypatch):
-    # Die Mocks greifen nur in der Gerüstkopie; ein externes Paket
-    # aus KI_DEV_FLOW_PATH liefe am Mock vorbei.
-    monkeypatch.delenv("KI_DEV_FLOW_PATH", raising=False)
-
-
 def _main(capsys, *args):
     with pytest.raises(SystemExit) as raised:
         main(list(args))

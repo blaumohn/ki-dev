@@ -20,6 +20,8 @@ Melde kurz Ergebnis, Prüfungen und Blocker. Durchsuche
 keine allgemeinen ADR-Sammlungen, um den Auftrag zu
 rekonstruieren; melde konkrete Vertragslücken zurück.
 
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
 Hinweis für den Menschen: Zustand implement; Folgeschritte laut implement_review.toml (Adapter manual, du trägst sie weiter):
 - done → implement.preflight: `ki-dev -f implement_review step x-1 implement implement=ANTWORT.json` (Vorlauf, dann Review)
 

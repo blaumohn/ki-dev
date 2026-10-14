@@ -17,3 +17,5 @@ mit Fundstelle schließen; lege keine zweite Karte an.
 Hinterlasse bei Kontextende den aktuellen Stand und den
 nächsten unbearbeiteten Abschnitt in Beads. Erstelle noch
 keine Executor-Aufträge.
+
+${answer_done}

@@ -258,3 +258,41 @@ def test_review_control_becomes_options_for_the_next_call(project):
     assert result.exit_code == 0, result.stderr
     assert "an den step-Aufruf mit Vorlauf anhängen" in result.stdout
     assert "--preflight-skip 'tests=nur Doku'" in result.stdout
+
+
+# --- Antwortformat in Schreib- und Korrekturübergaben ---------------
+
+DONE_FORMAT = 'genau ein JSON-Objekt: {} oder {"feedback": "…"}'
+
+
+def test_write_handoff_names_the_done_format(project):
+    result = flow_step("implement_review", "x-1", "implement")
+    assert result.exit_code == 0, result.stderr
+    assert DONE_FORMAT in result.stdout
+
+
+def test_correction_handoff_names_the_done_format(project):
+    _file(project, "review.json", _verdict("fix", "AC1"))
+    _file(project, "vorlauf.json", PREFLIGHT)
+    result = flow_step(
+        "implement_review",
+        "x-1",
+        "implement.review",
+        "implement.review=review.json",
+        "implement.preflight=vorlauf.json",
+    )
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.startswith("Empfänger: Umsetzer")
+    assert DONE_FORMAT in result.stdout
+
+
+def test_review_handoff_keeps_its_verdict_format(project):
+    _file(project, "vorlauf.json", PREFLIGHT)
+    result = flow_step(
+        "implement_review",
+        "x-1",
+        "implement.review",
+        "implement.preflight=vorlauf.json",
+    )
+    assert result.exit_code == 0, result.stderr
+    assert DONE_FORMAT not in result.stdout

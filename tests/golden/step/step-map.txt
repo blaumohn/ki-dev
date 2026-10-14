@@ -23,6 +23,8 @@ Hinterlasse bei Kontextende den aktuellen Stand und den
 nächsten unbearbeiteten Abschnitt in Beads. Erstelle noch
 keine Executor-Aufträge.
 
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
 Quellenreferenzen (unaufgelöst):
 - a.md#L1-L2
 - bd:k

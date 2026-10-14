@@ -12,3 +12,5 @@ Umfang, Schnittstellen, Prüfanweisungen und Abnahmekriterien;
 große Vorgänge als begründeten Teilungsvorschlag zurück.
 Schreibe keine Historie als Nachtragsstapel in die
 Beschreibung.
+
+${answer_done}
