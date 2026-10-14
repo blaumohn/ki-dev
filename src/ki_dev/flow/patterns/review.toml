@@ -1,9 +1,10 @@
 # Gemeinsame Review-Muster: Schreiben, getrenntes Review, Korrektur,
-# Entscheidung. Ein Ablauf lädt sie mit `pattern_catalog = ["review"]`
-# und erhält dazu die gemeinsamen Teile dieser Datei: Vokabular,
-# Pflichtereignisse, Befundklassen und die Zustände source und
-# finished. Ein Ablauf darf sie nicht überschreiben; er liefert nur
-# Phasen, Bindungen und Parameter (flow/model.py).
+# Entscheidung. Ein Ablauf lädt sie mit
+# `pattern_catalog = ["ki_dev:review"]` und erhält dazu die
+# gemeinsamen Teile dieser Datei: Vokabular, Pflichtereignisse,
+# Befundklassen und die Zustände source und finished. Ein Ablauf
+# darf sie nicht überschreiben; er liefert nur Phasen, Bindungen und
+# Parameter (flow/model.py).
 #
 # Jede Phase hat eigene Zustände:
 #   P             Schreibsitzung (erstellt oder ergänzt das Ergebnis)

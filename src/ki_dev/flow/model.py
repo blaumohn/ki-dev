@@ -35,11 +35,12 @@ weder Ausführer noch Adapter.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import cast
 
@@ -57,7 +58,7 @@ from ki_dev.flow.statechart import (
     edges_of,
     table_of,
 )
-from ki_dev.flow.templates import text
+from ki_dev.flow.templates import SHIPPED, text
 from ki_dev.fsm import FsmError, load_statechart
 
 HISTORY = "@history"
@@ -186,11 +187,15 @@ class Flow:
     finding_classes: Mapping[str, FindingClass]
     priority: tuple[str, ...]
     templates: str = ""
-    """Vorlagensatz unter ``flow/templates/<SATZ>/``; leer = ``name``.
-    Mehrere Abläufe eines Pakets teilen einen Satz."""
+    """Vorlagensatz unter ``templates/<SATZ>/`` neben der Ablaufdatei;
+    leer = ``name``. Mehrere Abläufe eines Pakets teilen einen Satz."""
     # Modul, das die Operationen dieses Ablaufs umsetzt (Ops des
-    # Pakets); fehlt es, ist der Ablauf nur Daten (z. B. Diagramm).
+    # Pakets): ``./PFAD`` relativ zur Ablaufdatei oder ein Modulname;
+    # fehlt es, ist der Ablauf nur Daten (z. B. Diagramm).
     ops: str | None = None
+    root: Traversable = SHIPPED
+    """Verzeichnis der Ablaufdatei: Wurzel für Vorlagen, eigene Muster
+    und ``ops = "./…"``; mitgeliefert ist es ``ki_dev/flow``."""
     statechart: Mapping[str, object] = field(default_factory=dict)
     """FSM-Kern im nativen Format der Bibliothek (``ki_dev.fsm``);
     ``states`` und ``transitions`` sind seine flache Sicht."""
@@ -295,12 +300,12 @@ def load_flow(name: str) -> Flow:
 
     I/O-Grenze: Aufrufer laden einmal und reichen das geprüfte Objekt
     ausdrücklich weiter."""
-    resource = files("ki_dev.flow").joinpath(f"{name}.toml")
+    resource = SHIPPED.joinpath(f"{name}.toml")
     try:
         text = resource.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise FlowError(f"unbekannter Ablauf: {name}") from exc
-    return _parse_text(text, f"{name}.toml")
+    return _parse_text(text, f"{name}.toml", SHIPPED)
 
 
 def load_flow_file(path: Path) -> Flow:
@@ -312,41 +317,52 @@ def load_flow_file(path: Path) -> Flow:
             f"{path}: nicht lesbar "
             f"({exc.strerror or type(exc).__name__})"
         ) from exc
-    return _parse_text(text, str(path))
+    return _parse_text(text, str(path), path.resolve().parent)
 
 
-def _parse_text(text: str, where: str) -> Flow:
+def _parse_text(text: str, where: str, root: Traversable) -> Flow:
     try:
         raw = tomllib.loads(text)
     except (tomllib.TOMLDecodeError, UnicodeError) as exc:
         raise FlowError(f"{where}: kein gültiges TOML") from exc
-    return parse_flow(raw)
+    return parse_flow(raw, root)
 
 
 def read_raw(name: str) -> dict:
     """Rohdaten eines mitgelieferten Ablaufs (Werkzeuge, Tests)."""
-    resource = files("ki_dev.flow").joinpath(f"{name}.toml")
+    resource = SHIPPED.joinpath(f"{name}.toml")
     return tomllib.loads(resource.read_text(encoding="utf-8"))
 
 
-def parse_flow(raw: object) -> Flow:
+def parse_flow(raw: object, root: Traversable = SHIPPED) -> Flow:
     """Ablauf mit ``[statechart]`` oder mit Mustern lesen: erst die
-    flache Tabelle bilden, dann Schema, dann Beziehungen prüfen."""
+    flache Tabelle bilden, dann Schema, dann Beziehungen prüfen.
+    ``root`` ist das Verzeichnis der Ablaufdatei."""
     if isinstance(raw, dict) and "statechart" in raw:
-        return _parse_statechart(raw)
-    raw = with_pattern_catalog(raw)
+        return _parse_statechart(raw, root)
+    raw = with_pattern_catalog(raw, root)
     _check_schema(raw, _PATTERN_VALIDATOR)
     where = f"{cast(dict, raw).get('name')}.toml"
     try:
         table = expand(cast(dict, raw), where)
     except PatternError as exc:
         raise FlowError(str(exc)) from exc
-    return _flow(table, where)
+    return _flow(table, where, root)
 
 
-def with_pattern_catalog(raw: object) -> object:
-    """Gemeinsame Muster und Teile aus ``flow/patterns`` einsetzen
-    (``pattern_catalog``). Ein Katalog darf neben ``[pattern]``
+# Quelle eines Musterkatalogs: ``ki_dev:NAME`` aus dem Gerüst
+# (``ki_dev/flow/patterns/NAME.toml``) oder ``./PFAD`` relativ zur
+# Ablaufdatei (``PFAD.toml``); einen Rückfall gibt es nicht.
+_LOCAL = r"\./(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]*"
+_CATALOG = rf"^(ki_dev:[a-z_]+|{_LOCAL})$"
+_SHIPPED_PREFIX = "ki_dev:"
+
+
+def with_pattern_catalog(
+    raw: object, root: Traversable = SHIPPED
+) -> object:
+    """Gemeinsame Muster und Teile aus den Katalogen in
+    ``pattern_catalog`` einsetzen. Ein Katalog darf neben ``[pattern]``
     gemeinsame Abschnitte tragen (Vokabular, Befundklassen, Zustände):
     Listen (``state``, ``transition``) werden angehängt, alles andere
     darf der Ablauf nicht überschreiben."""
@@ -359,27 +375,30 @@ def with_pattern_catalog(raw: object) -> object:
             {
                 "type": "array",
                 "uniqueItems": True,
-                "items": {"type": "string", "pattern": r"^[a-z_]+$"},
+                "items": {"type": "string"},
             }
         ),
     )
     patterns = {}
     for name in raw["pattern_catalog"]:
-        resource = files("ki_dev.flow").joinpath(
-            f"patterns/{name}.toml"
-        )
+        if not re.fullmatch(_CATALOG, name):
+            raise FlowError(
+                f"pattern_catalog: {name} ohne Quelle; ki_dev:NAME "
+                "(Gerüst) oder ./PFAD (relativ zur Ablaufdatei)"
+            )
+        resource = _catalog(name, root)
         try:
             library = tomllib.loads(
                 resource.read_text(encoding="utf-8")
             )
         except FileNotFoundError as exc:
             raise FlowError(
-                f"pattern_catalog.{name}: unbekannt"
+                f"pattern_catalog: {name} fehlt ({resource})"
             ) from exc
         _check_schema(library, _PATTERN_VALIDATOR)
         for key, value in library.pop("pattern").items():
             if key in patterns:
-                raise FlowError(f"pattern_catalog.{key}: doppelt")
+                raise FlowError(f"pattern_catalog: {key} doppelt")
             patterns[key] = value
         for key, value in library.items():
             if key in _SHARED_LISTS:
@@ -387,7 +406,7 @@ def with_pattern_catalog(raw: object) -> object:
             elif key in raw:
                 raise FlowError(
                     f"{key}: überschreibt gemeinsamen Teil aus "
-                    f"pattern_catalog.{name}"
+                    f"pattern_catalog {name}"
                 )
             else:
                 raw[key] = value
@@ -405,7 +424,15 @@ def with_pattern_catalog(raw: object) -> object:
 _SHARED_LISTS = ("state", "transition")
 
 
-def _parse_statechart(raw: dict) -> Flow:
+def _catalog(name: str, root: Traversable) -> Traversable:
+    if name.startswith(_SHIPPED_PREFIX):
+        return SHIPPED.joinpath(
+            "patterns", f"{name.removeprefix(_SHIPPED_PREFIX)}.toml"
+        )
+    return root.joinpath(f"{name.removeprefix('./')}.toml")
+
+
+def _parse_statechart(raw: dict, root: Traversable) -> Flow:
     """FSM-Kern laden (Schema der Bibliothek), Fachschicht prüfen und
     die flache Sicht daraus ableiten."""
     _check_schema(raw, _CHART_VALIDATOR)
@@ -417,6 +444,7 @@ def _parse_statechart(raw: dict) -> Flow:
     return _flow(
         table,
         where,
+        root,
         (raw["statechart"], edges_of(raw["statechart"], HISTORY)),
     )
 
@@ -424,6 +452,7 @@ def _parse_statechart(raw: dict) -> Flow:
 def _flow(
     table: dict,
     where: str,
+    root: Traversable,
     chart: tuple[dict, dict] | None = None,
 ) -> Flow:
     """Flow aus der flachen Tabelle; ohne geschriebenes
@@ -450,6 +479,7 @@ def _flow(
         priority=tuple(table.get("priority", ())),
         templates=table.get("templates", table["name"]),
         ops=table.get("ops"),
+        root=root,
         bindings=parse_bindings(table.get("op", {})),
     )
     _check_relations(flow, where)
@@ -552,6 +582,9 @@ def _edge_turn(item: dict) -> Turn | None:
 # --- Schema -----------------------------------------------------------
 
 _TEXT = {"type": "string", "minLength": 1, "pattern": r"\S"}
+# ``./PFAD`` relativ zur Ablaufdatei (Datei oder Paketverzeichnis)
+# oder ein importierbarer Modulname.
+_OPS = rf"^({_LOCAL}|[a-z_]+(\.[a-z_]+)*)$"
 _ID = {"type": "string", "pattern": r"^[a-z_]+(\.[a-z_]+)?$"}
 _NAME = {"type": "string", "pattern": r"^[A-Za-z_]+$"}
 _NAMES = {"type": "array", "uniqueItems": True, "items": _NAME}
@@ -596,7 +629,7 @@ _SCHEMA = {
     "properties": {
         "name": _ID,
         "templates": _ID,
-        "ops": {"type": "string", "pattern": r"^[a-z_]+(\.[a-z_]+)*$"},
+        "ops": {"type": "string", "pattern": _OPS},
         "op": BINDINGS_SCHEMA,
         "start": _ID,
         "final": {
@@ -948,13 +981,15 @@ def _names(guards: Iterable[str]) -> set[str]:
     return {guard.removeprefix("!") for guard in guards}
 
 
-def _require_template(flow: str, name: str, label: str) -> None:
-    """Die Rollenvorlage muss als Datei vorliegen (Ladefehler früh)."""
+def _require_template(flow: Flow, name: str, label: str) -> None:
+    """Die Rollenvorlage muss als Datei neben der Ablaufdatei vorliegen
+    (Ladefehler früh)."""
     try:
-        text(flow, name)
+        text(flow.templates, name, flow.root)
     except FileNotFoundError as exc:
         raise FlowError(
-            f"{label}.template: Vorlage {flow}/{name}.txt fehlt"
+            f"{label}.template: Vorlage "
+            f"{flow.root}/templates/{flow.templates}/{name}.txt fehlt"
         ) from exc
 
 
@@ -980,7 +1015,7 @@ def _check_operations(flow: Flow, where: str) -> None:
                 "Kontextbausteine",
             )
             if op.template is not None:
-                _require_template(flow.templates, op.template, label)
+                _require_template(flow, op.template, label)
             for name, origin in op.inputs:
                 _require_state(flow, origin, f"{label}.input.{name}")
             if op.failure is not None and not any(
@@ -1044,7 +1079,7 @@ def _check_transitions(flow: Flow, where: str) -> None:
                 f"{label}.context",
                 "Kontextbausteine",
             )
-            _require_template(flow.templates, t.turn.template, label)
+            _require_template(flow, t.turn.template, label)
 
 
 def _require_state(flow: Flow, state: str, label: str) -> None:

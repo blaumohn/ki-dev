@@ -16,7 +16,6 @@ import typer
 from rich.console import Console
 from rich.text import Text
 
-from ki_dev.config_cli import config
 from ki_dev.flow.model import FlowError, load_flow_file
 from ki_dev.flow.package import find_flow
 from ki_dev.flow_cli import app as flow_app
@@ -29,7 +28,7 @@ FILE_OPTIONS = ("-f", "--file")
 STEP = "step"
 _HELP_WORDS = ("--help", "-h")
 
-errors = Console(stderr=True)
+errors = Console(stderr=True, soft_wrap=True)
 
 app = typer.Typer(
     help=(
@@ -50,7 +49,21 @@ app.add_typer(flow_app, name="flow")
 app.add_typer(planning_app, name="planning")
 app.add_typer(session_app, name="session")
 app.command("step")(step_forms)
-app.command("config")(config)
+
+
+@app.command("config")
+def config() -> None:
+    """Konfigurationsorte der ki-dev-Befehle auflisten.
+
+    Bezogen auf das aktuelle Verzeichnis; geprüft wird nur, ob eine
+    Datei vorhanden ist, nicht ihr Inhalt.
+    """
+    # Übergangsbestand bis ki-dev-ablauf-cak.7: config_cli liest den
+    # Profilort aus der implement-Kopie im Gerüst. Erst hier laden,
+    # damit `ki-dev -f` ein Paket von außen ohne diese Kopie fährt.
+    from ki_dev.config_cli import config as show  # noqa: PLC0415
+
+    show()
 
 
 def main(argv: list[str] | None = None) -> None:

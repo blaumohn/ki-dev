@@ -10,6 +10,9 @@ services:
       TERM: ${TERM:-xterm-256color}
       DOLT_USER_NAME: ${DOLT_USER_NAME:-agent}
       DOLT_USER_EMAIL: ${DOLT_USER_EMAIL:-agent@ki-dev-ablauf.invalid}
+      # Suchpfad für `ki-dev -f NAME` im Container-Namensraum; leer
+      # schaltet ihn ab (docker/agent/README.md, Ablaufpakete).
+      KI_DEV_FLOW_PATH: ${KI_DEV_AGENT_FLOW_PATH-/workspace/.local/ablaufpakete}
     volumes:
       - type: bind
         source: ${KI_DEV_AGENT_REPO:-.}

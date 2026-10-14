@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 
 from ki_dev.cli import main
 from ki_dev.flow.model import FlowError, load_flow_file
+from ki_dev.flow.templates import text
 from ki_dev.ops.context.bead_input import BeadInput
 from ki_dev.runner.protocol import RunModel
 from ki_dev.step import projection
@@ -113,6 +114,13 @@ def flow_file(tmp_path, monkeypatch):
     monkeypatch.setattr(projection, "read_issue", lambda *_: issue)
     path = tmp_path / "entwurf.toml"
     path.write_text(_FLOW, encoding="utf-8")
+    # Vorlagen liegen neben der Ablaufdatei, nicht im Gerüst.
+    templates = tmp_path / "templates" / "review"
+    templates.mkdir(parents=True)
+    for name in ("local", "role-map", "role-graph"):
+        (templates / f"{name}.txt").write_text(
+            text("review", name), encoding="utf-8"
+        )
     (tmp_path / "work.json").write_text('{"report": "R"}')
     (tmp_path / "summary.json").write_text("{}")
     (tmp_path / "check.json").write_text("{}")

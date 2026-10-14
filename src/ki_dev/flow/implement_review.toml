@@ -1,3 +1,5 @@
+# Übergangsbestand bis ki-dev-ablauf-cak.7: dieselbe Datei liegt im
+# Ablaufpaket außerhalb des Gerüsts (docs/ablaufpakete.de.md).
 # Umsetzung mit Vorlauf (checks) vor jedem Review.
 # Übergang bis ki-dev-ablauf-ige.6: wird mit implement.toml ein
 # Ablauf (eine Datei, Turns für manual und Agenten).
@@ -9,7 +11,7 @@
 
 name = "implement_review"
 templates = "review"
-pattern_catalog = ["review"]
+pattern_catalog = ["ki_dev:review"]
 start = "implement"
 
 # Bindung der Maschinenoperation an den Ops-Katalog: `checks` ruft

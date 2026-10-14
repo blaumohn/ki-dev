@@ -18,6 +18,21 @@ IDENTITY = {
 }
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _require_bash_44():
+    _, version, _ = local["bash"].run(
+        args=[
+            "-c",
+            'printf "%s %s" '
+            '"${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"',
+        ],
+        retcode=0,
+        timeout=10,
+    )
+    if tuple(map(int, version.split())) < (4, 4):
+        pytest.skip("inherit_errexit benötigt Bash >= 4.4")
+
+
 @pytest.fixture
 def source(tmp_path):
     repo = tmp_path / "source"

@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,13 @@ from ki_dev.flow_ops.implement.machine import Phase
 from ki_dev.flow_ops.implement.runtime import RunResult
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _scaffold_flow_only(monkeypatch):
+    # Die Mocks greifen nur in der Gerüstkopie; ein externes Paket
+    # aus KI_DEV_FLOW_PATH liefe am Mock vorbei.
+    monkeypatch.delenv("KI_DEV_FLOW_PATH", raising=False)
 
 
 def _main(capsys, *args):
@@ -60,11 +68,17 @@ def test_flow_with_step_ops_only_has_no_commands(capsys):
 def test_flow_file_in_cwd_wins_and_must_match_bound_flow(
     capsys, monkeypatch, tmp_path
 ):
+    tmp_path = tmp_path / ("langer-pfad-" * 8)
+    tmp_path.mkdir()
     shipped = Path(model.__file__).parent
     text = (shipped / "implement.toml").read_text(encoding="utf-8")
     (tmp_path / "implement.toml").write_text(
         text.replace("nur der Mensch kann entscheiden", "anders"),
         encoding="utf-8",
+    )
+    shutil.copytree(
+        shipped / "templates" / "implement",
+        tmp_path / "templates" / "implement",
     )
     monkeypatch.chdir(tmp_path)
     code, _, err = _main(capsys, "-f", "implement", "--help")

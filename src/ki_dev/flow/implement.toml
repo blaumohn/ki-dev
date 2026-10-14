@@ -1,3 +1,5 @@
+# Übergangsbestand bis ki-dev-ablauf-cak.7: dieselbe Datei liegt im
+# Ablaufpaket außerhalb des Gerüsts (docs/ablaufpakete.de.md).
 # Umsetzungsablauf (`ki-dev -f implement BEAD`): ein begrenzter Auftrag
 # von der ersten Beauftragung bis zur geprüften Integration.
 #

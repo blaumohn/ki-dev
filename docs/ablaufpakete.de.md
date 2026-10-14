@@ -38,6 +38,32 @@ zustandslos einen Turn mit dem Executor `manual` aus. Der Schichtentest
 (`tests/test_schichten.py`) weist Ablauf-, Phasen- und Rollennamen als
 Literale in `runner/`, `ops/` und `step/` ab.
 
+### Paket außerhalb des Gerüsts
+
+Ein Paket liegt als eigenes Verzeichnis (eigenes Git-Repo) im Suchpfad
+`KI_DEV_FLOW_PATH`. Alles Paketeigene gilt relativ zur Ablaufdatei;
+Teile des Gerüsts nennt der Ablauf mit Quelle. Einen Rückfall vom Paket
+auf das Gerüst gibt es nicht, Fehlendes ist ein Ladefehler.
+
+| Teil | Paket (relativ zur Ablaufdatei) | Gerüst |
+|---|---|---|
+| Ops | `ops = "./implement/commands"` | `ops = "ki_dev.flow_ops.review"` |
+| Muster | `pattern_catalog = ["./muster/meins"]` | `pattern_catalog = ["ki_dev:review"]` |
+| Vorlagen | `templates/<satz>/<name>.txt` | gemeinsame Texte `flow/templates/turns/` |
+
+```text
+ablaufpakete/
+  implement.toml        ops = "./implement/commands"
+  implement/            Ops-Paket, importiert nur relativ und ki_dev
+  map.toml …            pattern_catalog = ["ki_dev:review"]
+  templates/            Rollenvorlagen
+  profiles/             Rolle → Executor
+```
+
+Im Agent-Container setzt Compose den Pfad (`docker/agent/README.md`).
+Die Abläufe unter `src/ki_dev/flow/` und `flow_ops/implement/` sind bis
+`ki-dev-ablauf-cak.7` Übergangsbestand.
+
 ## Parametrisierte Übergaben
 
 Eine Übergabe an eine Sitzung (Agent oder Mensch als Bote) entsteht aus
@@ -116,7 +142,7 @@ lädt seine Review-Topologie und die gemeinsamen Teile (Vokabular,
 Befundklassen, `source`/`finished`) aus dem Katalog:
 
 ```toml
-pattern_catalog = ["review"]
+pattern_catalog = ["ki_dev:review"]
 
 [[phase]]
 id = "graph"

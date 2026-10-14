@@ -486,6 +486,8 @@ def flow_digest(flow: Flow) -> str:
     passt ein gespeicherter Lauf nicht mehr."""
     document = asdict(flow)
     document.pop("edges")
+    # Der Ort des Pakets gehört nicht zum Ablauf (verschiebbar).
+    document.pop("root")
     encoded = json.dumps([document, RUN_DOC], sort_keys=True)
     return hashlib.sha256(encoded.encode()).hexdigest()
 

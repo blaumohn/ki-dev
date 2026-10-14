@@ -131,6 +131,21 @@ installiert und keine Builds gestartet. Die Option gilt für `shell` und
 `run` und lässt sich mit `--mount` und `--fresh` kombinieren. Ein bereits
 vorhandenes Agent-Image genügt, ein Image-Neubau ist dafür nicht nötig.
 
+## Ablaufpakete (`KI_DEV_FLOW_PATH`)
+
+Ablaufpakete außerhalb des Gerüsts (Ablauf, Ops, Vorlagen, Profile)
+findet `ki-dev -f NAME` über `KI_DEV_FLOW_PATH`. Compose setzt die
+Variable im Container aus `KI_DEV_AGENT_FLOW_PATH` des Hosts; der Wert
+ist ein Pfad im Container-Namensraum, Standard
+`/workspace/.local/ablaufpakete`. Das Verzeichnis liegt im eingebundenen
+Repo und gehört der Agent-UID (Host-UID), der Agent kann dort Dateien
+anlegen und ändern; einen zusätzlichen Mount braucht es nicht.
+
+```bash
+KI_DEV_AGENT_FLOW_PATH=/workspace/ablaufpakete ./scripts/agent-container shell
+KI_DEV_AGENT_FLOW_PATH= ./scripts/agent-container shell   # ohne Suchpfad
+```
+
 ## Weitere Nachbar-Repos per `--mount`
 
 Weitere Nachbar-Repos werden je Aufruf gewählt, nach dem Muster von

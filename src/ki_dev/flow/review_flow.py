@@ -64,7 +64,7 @@ def review_flow_files() -> dict[str, str]:
         if not item.name.endswith(".toml"):
             continue
         raw = tomllib.loads(item.read_text(encoding="utf-8"))
-        if "review" in raw.get("pattern_catalog", ()):
+        if "ki_dev:review" in raw.get("pattern_catalog", ()):
             found[raw["start"]] = raw["name"]
     return dict(sorted(found.items()))
 

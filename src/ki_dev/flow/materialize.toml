@@ -1,3 +1,5 @@
+# Übergangsbestand bis ki-dev-ablauf-cak.7: dieselbe Datei liegt im
+# Ablaufpaket außerhalb des Gerüsts (docs/ablaufpakete.de.md).
 # Materialisierung: Vorgang → umsetzbarer Bead.
 # Paketablauf auf dem Review-Muster: Zustände und Kanten aus dem
 # Muster, gemeinsame Teile aus dem Katalog flow/patterns/review.toml;
@@ -7,7 +9,7 @@
 
 name = "materialize"
 templates = "review"
-pattern_catalog = ["review"]
+pattern_catalog = ["ki_dev:review"]
 start = "materialize"
 
 [[phase]]

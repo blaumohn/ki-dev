@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from importlib import import_module
 from typing import Protocol
 
 from ki_dev.flow.binding import OperationSpec
 from ki_dev.flow.model import Flow, FlowError, Transition
+from ki_dev.flow.package import import_ops
 from ki_dev.ops.context.bead_input import BeadInput
 from ki_dev.ops.context.blocks import TurnInput
 from ki_dev.runner.package import Handoff
@@ -79,13 +79,7 @@ def load_step_ops(flow: Flow) -> StepOps:
     step."""
     if flow.ops is None:
         raise FlowError(f"{flow.name}.toml: kein ops-Modul für step")
-    try:
-        module = import_module(flow.ops)
-    except ImportError as exc:
-        raise FlowError(
-            f"{flow.name}.toml: ops-Modul {flow.ops} nicht ladbar "
-            f"({exc})"
-        ) from exc
+    module = import_ops(flow)
     factory = getattr(module, "step_ops", None)
     if not callable(factory):
         raise FlowError(

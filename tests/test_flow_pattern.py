@@ -87,7 +87,7 @@ def test_phase_needs_patterns():
 def test_flow_loads_review_patterns_from_shared_catalog():
     raw = read_raw("map")
     assert "pattern" not in raw
-    assert raw["pattern_catalog"] == ["review"]
+    assert raw["pattern_catalog"] == ["ki_dev:review"]
     assert {"review_core", "write_review"} <= set(
         with_pattern_catalog(raw)["pattern"]
     )
@@ -97,8 +97,12 @@ def test_flow_loads_review_patterns_from_shared_catalog():
     ("change", "message"),
     [
         (
-            lambda r: r.update(pattern_catalog=["gibt_es_nicht"]),
-            "pattern_catalog.gibt_es_nicht: unbekannt",
+            lambda r: r.update(pattern_catalog=["ki_dev:fehlt"]),
+            "pattern_catalog: ki_dev:fehlt fehlt",
+        ),
+        (
+            lambda r: r.update(pattern_catalog=["review"]),
+            "pattern_catalog: review ohne Quelle",
         ),
         (
             lambda r: r.update(

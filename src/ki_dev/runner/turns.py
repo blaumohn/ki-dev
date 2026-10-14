@@ -1,15 +1,16 @@
 """Übergaben: jede Übergabe an eine Sitzung entsteht hier aus ihrer
 Deklaration.
 
-Eine Übergabe ist eine Vorlage (``flow/templates/<ABLAUF>/NAME.txt``),
-deren Felder aus der Eingabe stammen, gefolgt von den Kontextbausteinen
-in der deklarierten Reihenfolge. Welche Vorlage und welche Bausteine
-gelten, steht im Ablauf (:class:`~ki_dev.flow.model.Turn`); der
-Ausführer kennt weder Zustände noch Phasen noch Befehle. Felder und
-Bausteine steckt der Aufrufer ein (:class:`Plug`), wie eine
-Maschinenoperation: ``ki-dev -f implement`` und ``ki-dev -f … step``
-rendern über dieselbe Funktion, Claude, Codex und der Mensch als Bote
-erhalten denselben Wortlaut.
+Eine Übergabe ist eine Vorlage (``templates/<SATZ>/NAME.txt`` neben
+der Ablaufdatei), deren Felder aus der Eingabe stammen, gefolgt von
+den Kontextbausteinen in der deklarierten Reihenfolge. Welche Vorlage
+und welche Bausteine gelten, steht im Ablauf
+(:class:`~ki_dev.flow.model.Turn`); der Ausführer kennt weder
+Zustände noch Phasen noch Befehle. Felder und Bausteine steckt der
+Aufrufer ein (:class:`Plug`), wie eine Maschinenoperation:
+``ki-dev -f implement`` und ``ki-dev -f … step`` rendern über dieselbe
+Funktion, Claude, Codex und der Mensch als Bote erhalten denselben
+Wortlaut.
 
 Das Ergebnis behält die Teile der Bausteine, damit der Aufrufer Teile
 von einer Grenze ausnehmen kann (:meth:`Rendered.text`).
@@ -100,7 +101,7 @@ def render_turn[T](
 ) -> Rendered:
     """Vorlage füllen, danach die Bausteine in deklarierter
     Reihenfolge."""
-    source = Template(text(flow.templates, turn.template))
+    source = Template(text(flow.templates, turn.template, flow.root))
     values = {
         name: plug.fields[name](subject)
         for name in source.get_identifiers()
@@ -115,7 +116,7 @@ def render_turn[T](
 
 
 def _identifiers(flow: Flow, turn: Turn) -> set[str]:
-    source = Template(text(flow.templates, turn.template))
+    source = Template(text(flow.templates, turn.template, flow.root))
     return set(source.get_identifiers())
 
 
