@@ -125,6 +125,19 @@ messenger (adapter) and decider (states of kind `wait`).
 | layers never import upwards | `tests/test_schichten.py` (transitive, AST) |
 | README diagrams match the workflows | `tests/test_flow_implement.py`, `tests/test_flow_planning.py` |
 
+## Known gaps
+
+Checked through the public CLI, as of 2026-10-15; the test is
+`xfail(strict=True)` and turns red once the gap is closed.
+
+| Property | Observed today | Evidence | Bead |
+| --- | --- | --- | --- |
+| a review PASS does not override red tests | `ki-dev -f implement` integrates despite red `[[tests]]` after a review PASS (`Fast-forward integriert`) | `tests/test_review_gate_cli.py` | ki-dev-ablauf-ek1 |
+
+```bash
+.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
+```
+
 ## Limits, precisely
 
 - `runner/safety.py` checks call, token and cost limits *before the next*

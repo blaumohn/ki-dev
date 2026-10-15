@@ -5,6 +5,9 @@ HOME und eine Umgebung ohne geerbte Zugangsdaten. ``claude``, ``codex``
 und ``docker`` sind durch Attrappen ersetzt, die jeden Aufruf
 protokollieren und scheitern: Der Standardlauf startet keinen Anbieter,
 und ein trotzdem versuchter Start lässt den Test fehlschlagen.
+``PYTHONPATH`` zeigt fest auf ``src`` dieses Checkouts: Geprüft wird der
+ausgecheckte Stand, auch wenn das venv eine ältere, nicht editierbare
+Kopie enthält (Agent-Image, docker/agent/Dockerfile).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from plumbum import CommandNotFound, ProcessTimedOut, local
 
 from tests.spec.evidence import Blocked, Evidence
 
+SOURCE = Path(__file__).resolve().parents[2] / "src"
 PROVIDERS = ("claude", "codex", "docker")
 IDENTITY = {
     "GIT_AUTHOR_NAME": "spec",
@@ -96,6 +100,7 @@ class Sandbox:
         )
         return {
             "PATH": path,
+            "PYTHONPATH": str(SOURCE),
             "HOME": str(home),
             "XDG_CONFIG_HOME": str(home / ".config"),
             "XDG_DATA_HOME": str(home / ".local/share"),

@@ -258,6 +258,19 @@ Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
 .venv/bin/pytest -q && .venv/bin/ruff check .
 ```
 
+## Bekannte Lücken
+
+Geprüft über die öffentliche CLI, Stand 2026-10-15; der Test ist
+`xfail(strict=True)` und wird rot, sobald die Lücke geschlossen ist.
+
+| Merkmal | Heute beobachtet | Nachweis | Bead |
+| --- | --- | --- | --- |
+| Review-PASS überstimmt keine roten Tests | `ki-dev -f implement` integriert trotz roter `[[tests]]` nach Review-PASS (`Fast-forward integriert`) | `tests/test_review_gate_cli.py` | ki-dev-ablauf-ek1 |
+
+```bash
+.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
+```
+
 ---
 
 ## Installation
