@@ -1,0 +1,14 @@
+# Anforderungskatalog für make spec-test (Vertrag: report.schema.json,
+# $defs/catalog). Je Eintrag eine stabile ID; ein Test verweist mit
+# @pytest.mark.requirement("ID") darauf. Einträge ohne Test erscheinen
+# im Bericht als missing-test, nie als passed.
+#
+# [requirement.STUFE1-ADD]
+# level = "feature"          # architecture | feature | actual (Ist)
+# text = "Der Auftrag korrigiert add() in add.py"
+# expected = "add(2,3)==5 und add(-1,1)==0 nach dem Lauf"
+# bead = "ki-dev-ablauf-1nf" # offener Produkt-Bead
+#
+# Die Einträge der Lehrstufen ergänzen unu, 4l9, v5w, 76e und ob9.
+
+[requirement]

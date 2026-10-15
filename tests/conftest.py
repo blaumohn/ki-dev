@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+# Anforderungstests: --spec, Marker requirement/control
+# (make spec-test).
+pytest_plugins = ["tests.spec.plugin"]
+
 
 @pytest.fixture(autouse=True)
 def claude_quota_dir(tmp_path_factory, monkeypatch):

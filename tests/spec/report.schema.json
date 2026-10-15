@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ki-dev.invalid/tests/spec/report.schema.json",
+  "title": "Anforderungstests: Katalog und Ergebnisbericht",
+  "$defs": {
+    "requirement_id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$"
+    },
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "bead": {"type": "string", "pattern": "^ki-dev-ablauf-[a-z0-9]+(\\.[0-9]+)*$"},
+    "level": {"enum": ["architecture", "feature", "actual"]},
+    "status": {"enum": ["passed", "failed", "not-run", "missing-test"]},
+    "blocked": {
+      "type": "object",
+      "required": ["stage", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": {"enum": ["infrastructure", "load", "schema", "cli", "timeout"]},
+        "detail": {"$ref": "#/$defs/text"}
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "required": ["requirement"],
+      "additionalProperties": false,
+      "properties": {
+        "requirement": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/requirement_id"},
+          "additionalProperties": {
+            "type": "object",
+            "required": ["level", "text", "expected", "bead"],
+            "additionalProperties": false,
+            "properties": {
+              "level": {"$ref": "#/$defs/level"},
+              "text": {"$ref": "#/$defs/text"},
+              "expected": {"$ref": "#/$defs/text"},
+              "bead": {"$ref": "#/$defs/bead"}
+            }
+          }
+        }
+      }
+    },
+    "control_target": {
+      "anyOf": [{"const": "scaffold"}, {"$ref": "#/$defs/requirement_id"}]
+    },
+    "requirement_row": {
+      "type": "object",
+      "required": [
+        "id", "level", "requirement", "command", "rerun", "revision",
+        "expected", "observed", "status", "blocked", "checker", "bead"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/requirement_id"},
+        "level": {"$ref": "#/$defs/level"},
+        "requirement": {"$ref": "#/$defs/text"},
+        "command": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "rerun": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "revision": {"$ref": "#/$defs/revision"},
+        "expected": {"$ref": "#/$defs/text"},
+        "observed": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "status": {"$ref": "#/$defs/status"},
+        "blocked": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/blocked"}]},
+        "checker": {"enum": ["accepted", "rejected", "no-control"]},
+        "bead": {"$ref": "#/$defs/bead"}
+      }
+    },
+    "control_row": {
+      "type": "object",
+      "required": ["id", "target", "expect", "description", "status", "observed"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "target": {"$ref": "#/$defs/control_target"},
+        "expect": {"$ref": "#/$defs/status"},
+        "description": {"$ref": "#/$defs/text"},
+        "status": {"enum": ["passed", "failed", "not-run"]},
+        "observed": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]}
+      }
+    },
+    "revision": {
+      "type": "object",
+      "required": ["commit", "dirty", "worktree"],
+      "additionalProperties": false,
+      "properties": {
+        "commit": {"type": ["string", "null"]},
+        "dirty": {"type": ["boolean", "null"]},
+        "worktree": {
+          "anyOf": [{"type": "null"}, {"type": "string", "pattern": "^[0-9a-f]{64}$"}]
+        }
+      }
+    },
+    "report": {
+      "type": "object",
+      "required": ["generated", "invocation", "revision", "requirements", "controls"],
+      "additionalProperties": false,
+      "properties": {
+        "generated": {"type": "string", "format": "date-time"},
+        "invocation": {"$ref": "#/$defs/text"},
+        "revision": {"$ref": "#/$defs/revision"},
+        "requirements": {"type": "array", "items": {"$ref": "#/$defs/requirement_row"}},
+        "controls": {"type": "array", "items": {"$ref": "#/$defs/control_row"}}
+      }
+    }
+  }
+}

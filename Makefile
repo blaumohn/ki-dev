@@ -5,6 +5,7 @@
 #   make setup-runtime  eigenes Betriebs-venv und ~/.local/bin/ki-dev
 #   make demo           Mock-Lauf ohne Anbieterzugang
 #   make test           Tests und Lint
+#   make spec-test      Anforderungstests mit Ergebnismatrix (dürfen rot sein)
 #   make readme-check   README-Einrichtung im Wegwerf-Container (braucht Docker)
 #   make clean          Temporäre Dateien und venv entfernen
 
@@ -23,6 +24,7 @@ help:
 	@echo "  make setup-runtime  Betriebs-venv und ~/.local/bin/ki-dev einrichten"
 	@echo "  make demo           Starten Sie einen Mock-Lauf ohne Anbieterzugang"
 	@echo "  make test           Führen Sie Tests und Lint aus"
+	@echo "  make spec-test      Anforderungstests mit Ergebnismatrix (dürfen rot sein)"
 	@echo "  make readme-check   README-Einrichtung im Wegwerf-Container (braucht Docker)"
 	@echo "  make clean          Entfernen Sie venv und temporäre Dateien"
 	@echo ""
@@ -30,7 +32,7 @@ help:
 	@echo "  make setup          # Initialisierung durchführen"
 	@echo "  make test           # Tests ausführen"
 
-.PHONY: setup setup-runtime demo test readme-check clean
+.PHONY: setup setup-runtime demo test spec-test readme-check clean
 
 setup: .venv/bin/ki-dev .venv/bin/bd
 
@@ -53,6 +55,12 @@ demo: setup
 test: setup
 	PATH=$(BIN):$$PATH $(BIN)/pytest -q
 	$(BIN)/ruff check .
+
+# Soll-/Istprüfung über die öffentliche CLI; rote Anforderungen sind ein
+# zulässiges Ergebnis und deshalb weder Teil von test noch readme-check.
+# Bericht: .local/var/spec-test/report.md und report.json.
+spec-test: setup
+	PATH=$(BIN):$$PATH $(BIN)/pytest -q --spec
 
 # Baut das Prüfimage und startet einen neuen Wegwerf-Container (--rm).
 readme-check: export READMECHECK_USER := $(shell id -u):$(shell id -g)
