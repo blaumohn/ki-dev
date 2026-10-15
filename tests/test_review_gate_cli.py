@@ -186,6 +186,19 @@ def test_oracle_tells_red_from_green(sandbox, operator, expected):
     assert outcome.code == expected, outcome.stdout
 
 
+def test_collection_error_is_no_assertion_failure(sandbox):
+    """Kontrolle des Testprüfers: ein Collection-Fehler ist frühe
+    Blockade (Exitcode 2) und kein roter Test, darf also nicht als
+    erwartetes xfail des Kernfalls durchgehen."""
+    _example(sandbox, "-")
+    broken = "import fehlt_absichtlich\n" + TEST_ADD
+    sandbox.write("test_add.py", broken)
+    outcome = sandbox.run(ORACLE)
+    assert outcome.code == 2, outcome.stdout
+    detail = (outcome.stdout + outcome.stderr).strip()
+    assert not _failed_by_assertion({"passed": False, "detail": detail})
+
+
 def test_green_tests_and_review_pass_integrate(sandbox):
     """Kontrolle des Testprüfers: Integration ist beobachtbar, ein
     ausbleibender Commit im roten Fall also kein Zufall der Fixture."""
