@@ -26,14 +26,25 @@ CLAUDE_DEFAULTS = {
     "language": "German",
 }
 CODEX_DEFAULTS = {"model": "gpt-b", "model_reasoning_effort": "low"}
+CLAUDE_POLICY_ARGS = [
+    "--dangerously-skip-permissions",
+    "--setting-sources",
+    "",
+]
+CODEX_POLICY_ARGS = ["--dangerously-bypass-approvals-and-sandbox"]
 POLICY = {
     "claude": {
+        "args": CLAUDE_POLICY_ARGS,
         "settings": {
             "skipDangerousModePermissionPrompt": True,
             "disableAllHooks": True,
-        }
+            "autoMemoryEnabled": False,
+        },
     },
-    "codex": {"config": {"features.hooks": False}},
+    "codex": {
+        "args": CODEX_POLICY_ARGS,
+        "config": {"features.hooks": False},
+    },
 }
 
 
@@ -74,12 +85,7 @@ def _replace_json(path: Path, data: object) -> None:
 
 
 def _claude_settings(args: list[str]) -> dict:
-    assert args[:4] == [
-        "--dangerously-skip-permissions",
-        "--setting-sources",
-        "",
-        "--settings",
-    ]
+    assert args[:4] == [*CLAUDE_POLICY_ARGS, "--settings"]
     return json.loads(Path(args[4]).read_text(encoding="utf-8"))
 
 
@@ -164,16 +170,6 @@ def test_keyword_outside_command_position_is_not_passthrough(
     assert args[-len(caller) :] == caller
 
 
-def test_claude_filters_host_sandbox_flags(dirs):
-    args = agent_cli.build_args(
-        "claude",
-        ["--permission-mode", "plan", "-p", "--", "--permission-mode"],
-        dirs,
-    )
-
-    assert args[5:] == ["-p", "--", "--permission-mode"]
-
-
 @pytest.mark.parametrize(
     ("caller", "removed"),
     [
@@ -195,16 +191,15 @@ def test_claude_caller_values_beat_defaults(dirs, caller, removed):
 @pytest.mark.parametrize(
     "caller",
     [
-        ["--settings", '{"hooks": {}}'],
-        ["--settings=/tmp/other.json"],
+        ["--settings", '{"autoMemoryEnabled": true}'],
         ["--setting-sources", "user,project"],
+        ["--permission-mode", "plan"],
     ],
 )
-def test_claude_rejects_extra_settings(dirs, caller):
-    with pytest.raises(agent_cli.SettingsError, match="--settings"):
-        agent_cli.build_args("claude", caller, dirs)
+def test_claude_caller_args_follow_policy(dirs, caller):
+    args = agent_cli.build_args("claude", caller, dirs)
 
-    assert list(dirs.generated.iterdir()) == []
+    assert args[5:] == caller
 
 
 def test_claude_calls_get_separate_files(dirs):
@@ -237,9 +232,7 @@ def test_claude_removes_files_of_ended_runs(dirs):
 
 
 def test_codex_uses_native_config_overlay(dirs):
-    args = agent_cli.build_args(
-        "codex", ["exec", "--sandbox", "read-only", "-"], dirs
-    )
+    args = agent_cli.build_args("codex", ["exec", "-"], dirs)
 
     assert args[0] == "--dangerously-bypass-approvals-and-sandbox"
     assert args[-2:] == ["exec", "-"]
@@ -282,67 +275,15 @@ def test_codex_caller_values_beat_defaults(dirs, caller, removed):
     "caller",
     [
         ["-c", "features.hooks=true"],
-        ["--config=features.hooks=true"],
         ["--enable", "hooks"],
-        ["--disable=hooks"],
-        # Inline table, quoted keys and dotted spacing all resolve to
-        # the same path as the plain dotted-key spelling above.
-        ["-c", "features={hooks=true}"],
-        ["-c", '"features"."hooks"=true'],
-        ["-c", "features . hooks = true"],
-        ["-c", 'features."hooks"=true'],
+        ["-c", "sandbox_mode=read-only"],
+        ["--sandbox", "read-only"],
     ],
 )
-def test_codex_rejects_policy_overrides(dirs, caller):
-    with pytest.raises(agent_cli.SettingsError, match="features.hooks"):
-        agent_cli.build_args("codex", ["exec", *caller], dirs)
-
-
-@pytest.mark.parametrize(
-    "caller",
-    [
-        # A dotted-key assignment only ever addresses its own leaf; it
-        # must not be rejected merely for sharing the "features"
-        # parent with the protected "features.hooks".
-        ["-c", "features.web_search=false"],
-        ["--config=features.other_key=true"],
-        # A quoted key may itself contain a literal ".": the whole
-        # quoted string is one segment, unrelated to the two-segment
-        # features.hooks path, and must neither crash nor be flagged.
-        ["-c", '"features.hooks"=true'],
-        ["-c", 'features."guardianv2.thread_context"=true'],
-    ],
-)
-def test_codex_allows_sibling_feature_overrides(dirs, caller):
+def test_codex_caller_args_follow_policy(dirs, caller):
     args = agent_cli.build_args("codex", ["exec", *caller], dirs)
 
     assert args[-len(caller) - 1 :] == ["exec", *caller]
-
-
-def test_codex_rejects_invalid_config_key(dirs):
-    with pytest.raises(agent_cli.SettingsError, match="invalid -c"):
-        agent_cli.build_args(
-            "codex", ["exec", "-c", "invalid key=value"], dirs
-        )
-
-
-def test_codex_drops_sandbox_config(dirs):
-    caller = [
-        "exec",
-        "-c",
-        "sandbox_mode=read-only",
-        "--config=approval_policy=never",
-        "-a",
-        "on-request",
-        "--full-auto",
-        "-c",
-        "tui.theme=dark",
-        "-",
-    ]
-
-    args = agent_cli.build_args("codex", caller, dirs)
-
-    assert args[-4:] == ["exec", "-c", "tui.theme=dark", "-"]
 
 
 def test_codex_rereads_defaults_per_call(dirs):
@@ -443,91 +384,23 @@ def test_invalid_model_defaults_fail(dirs, file_name, content, message):
     [
         ({"claude": POLICY["claude"]}, "policy must be an object"),
         (
-            {**POLICY, "claude": {"settings": {"model": "opus"}}},
-            "unsupported keys",
+            {**POLICY, "claude": {"settings": {}}},
+            "claude must be an object",
         ),
         (
-            {**POLICY, "codex": {"config": {"model": "gpt"}}},
-            "unsupported keys",
+            {**POLICY, "claude": {**POLICY["claude"], "args": "-x"}},
+            "claude.args must be a string list",
+        ),
+        (
+            {**POLICY, "claude": {**POLICY["claude"], "settings": []}},
+            "claude.settings must be an object",
         ),
         (
             {
                 **POLICY,
-                "codex": {"config": {"features.hooks": {"x": 1}}},
+                "codex": {**POLICY["codex"], "config": {"x": {"y": 1}}},
             },
             "boolean, integer or string",
-        ),
-        # An empty section is structurally an object, but it drops the
-        # execution policy the bead requires (hooks stay disabled).
-        (
-            {**POLICY, "claude": {"settings": {}}},
-            "disableAllHooks must be true",
-        ),
-        (
-            {
-                **POLICY,
-                "claude": {
-                    "settings": {
-                        "skipDangerousModePermissionPrompt": True,
-                        "disableAllHooks": False,
-                    }
-                },
-            },
-            "disableAllHooks must be true",
-        ),
-        (
-            {
-                **POLICY,
-                "claude": {
-                    "settings": {
-                        "skipDangerousModePermissionPrompt": False,
-                        "disableAllHooks": True,
-                    }
-                },
-            },
-            "skipDangerousModePermissionPrompt must be true",
-        ),
-        (
-            {
-                **POLICY,
-                "claude": {
-                    "settings": {
-                        "skipDangerousModePermissionPrompt": [],
-                        "disableAllHooks": True,
-                    }
-                },
-            },
-            "skipDangerousModePermissionPrompt must be true",
-        ),
-        (
-            {
-                **POLICY,
-                "claude": {
-                    "settings": {
-                        "skipDangerousModePermissionPrompt": "yes",
-                        "disableAllHooks": True,
-                    }
-                },
-            },
-            "skipDangerousModePermissionPrompt must be true",
-        ),
-        (
-            {
-                **POLICY,
-                "claude": {
-                    "settings": {
-                        "skipDangerousModePermissionPrompt": True,
-                        "disableAllHooks": True,
-                        "features.hooks": True,
-                    }
-                },
-            },
-            "unsupported keys",
-        ),
-        ({**POLICY, "codex": {"config": {}}}, "must be false"),
-        (
-            {**POLICY, "codex": {"config": {"features.hooks": True}}},
-            "must be false",
         ),
     ],
 )
@@ -556,7 +429,16 @@ def test_repository_sources_are_valid(tmp_path):
     claude = agent_cli.build_args("claude", [], dirs)
     codex = agent_cli.build_args("codex", ["exec"], dirs)
 
-    assert _claude_settings(claude)["disableAllHooks"] is True
+    policy = json.loads(
+        (REPO_SETTINGS / "access" / "policy.json").read_text("utf-8")
+    )
+    settings = _claude_settings(claude)
+    for key, value in policy["claude"]["settings"].items():
+        assert settings[key] == value
+    assert settings["autoMemoryEnabled"] is False
+    assert (
+        codex[: len(policy["codex"]["args"])] == policy["codex"]["args"]
+    )
     assert _codex_overlay(codex)["features"] == {"hooks": False}
 
 

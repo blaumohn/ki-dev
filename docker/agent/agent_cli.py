@@ -13,7 +13,6 @@ import re
 import secrets
 import sys
 import tempfile
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,23 +27,6 @@ CLIS = ("claude", "codex")
 PASSTHROUGH_FLAGS = frozenset({"--help", "-h", "--version", "-V"})
 PASSTHROUGH_COMMANDS = frozenset({"login", "logout", "auth", "doctor"})
 
-# Host sandbox options that the container isolation replaces.
-SANDBOX_OPTIONS = (
-    "--sandbox",
-    "-s",
-    "--ask-for-approval",
-    "-a",
-    "--permission-mode",
-)
-SANDBOX_FLAGS = frozenset(
-    {
-        "--full-auto",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "--dangerously-skip-permissions",
-    }
-)
-SANDBOX_CONFIG_KEYS = frozenset({"sandbox_mode", "approval_policy"})
-
 CLAUDE_MODEL_KEYS = frozenset(
     {
         "model",
@@ -57,13 +39,6 @@ CLAUDE_MODEL_KEYS = frozenset(
 CLAUDE_TEXT_KEYS = ("model", "advisorModel", "language")
 CLAUDE_EFFORTS = frozenset({"low", "medium", "high", "xhigh"})
 CODEX_MODEL_KEYS = frozenset({"model", "model_reasoning_effort"})
-
-# Allowed keys of the access policy (A). Unlike the model defaults (B),
-# these are a fixed, small set: A only ever states execution policy.
-CLAUDE_POLICY_KEYS = frozenset(
-    {"skipDangerousModePermissionPrompt", "disableAllHooks"}
-)
-CODEX_POLICY_KEYS = frozenset({"features.hooks"})
 
 CONFIG_OPTIONS = ("-c", "--config")
 GENERATED_NAME = re.compile(r"claude-(\d+)-[0-9a-f]+\.json")
@@ -117,10 +92,9 @@ def build_args(
         return args
     policy = load_policy(dirs.access)[name]
     defaults = load_model_defaults(dirs.model, name)
-    caller = remove_sandbox_options(args)
     if name == "codex":
-        return codex_args(policy, defaults, caller)
-    return claude_args(policy, defaults, caller, dirs.generated)
+        return codex_args(policy, defaults, args)
+    return claude_args(policy, defaults, args, dirs.generated)
 
 
 def is_diagnostics_passthrough(args: list[str]) -> bool:
@@ -136,24 +110,12 @@ def is_diagnostics_passthrough(args: list[str]) -> bool:
 def claude_args(
     policy: dict, defaults: dict, args: list[str], generated: Path
 ) -> list[str]:
-    # Only the generated file is loaded. User/project settings and their
-    # hooks stay excluded although the host auth directory is mounted.
-    if find_options(args, ("--settings", "--setting-sources")):
-        raise SettingsError(
-            "--settings/--setting-sources would replace the container "
-            "policy; change the model defaults instead"
-        )
+    # Container defaults come first; the caller's arguments follow and
+    # override them.
     chosen = claude_caller_choices(args)
     settings = {**without_keys(defaults, chosen), **policy["settings"]}
     path = write_settings(generated, settings)
-    return [
-        "--dangerously-skip-permissions",
-        "--setting-sources",
-        "",
-        "--settings",
-        str(path),
-        *args,
-    ]
+    return [*policy["args"], "--settings", str(path), *args]
 
 
 def claude_caller_choices(args: list[str]) -> set[str]:
@@ -214,135 +176,13 @@ def process_alive(pid: int) -> bool:
 def codex_args(
     policy: dict, defaults: dict, args: list[str]
 ) -> list[str]:
-    config = policy["config"]
-    caller = remove_config_keys(args, SANDBOX_CONFIG_KEYS)
-    reject_codex_policy_overrides(config, caller)
-    chosen = codex_caller_choices(caller)
+    chosen = codex_caller_choices(args)
     return [
-        "--dangerously-bypass-approvals-and-sandbox",
-        *config_overlay(config),
+        *policy["args"],
+        *config_overlay(policy["config"]),
         *config_overlay(without_keys(defaults, chosen)),
-        *caller,
+        *args,
     ]
-
-
-def reject_codex_policy_overrides(
-    config: dict, args: list[str]
-) -> None:
-    names = (*CONFIG_OPTIONS, "--enable", "--disable")
-    for option in find_options(args, names):
-        if option.name in CONFIG_OPTIONS:
-            paths = config_paths(option.value)
-        else:
-            paths = {("features", option.value)}
-        conflict = conflicting_key(config, paths)
-        if conflict is not None:
-            raise SettingsError(
-                f"{option.name} {option.value} conflicts with the "
-                f"access policy key {conflict!r}"
-            )
-
-
-def config_paths(assignment: str) -> set[tuple[str, ...]]:
-    # A dotted or quoted key is only the address this assignment
-    # writes to, not a claim on its parent table: "-c a.b=1" leaves
-    # siblings of "a" untouched, so only "a.b" (and anything the value
-    # itself replaces, see below) counts as assigned.
-    key, separator, value = assignment.partition("=")
-    if not separator:
-        raise SettingsError(f"invalid -c assignment {assignment!r}")
-    path = key_path(key)
-    data = parsed_value(key, value, assignment)
-    return assigned_paths(path, value_at_path(data, path))
-
-
-def key_path(key: str) -> tuple[str, ...]:
-    # Segments stay a tuple, never a joined string: a quoted TOML key
-    # may itself contain a literal ".", which must not be confused
-    # with the separator between path segments.
-    try:
-        (path,) = leaf_paths(tomllib.loads(f"{key} = 0"))
-    except tomllib.TOMLDecodeError as error:
-        raise SettingsError(
-            f"invalid -c key {key!r}: {error}"
-        ) from error
-    return path
-
-
-def leaf_paths(
-    table: dict, prefix: tuple[str, ...] = ()
-) -> set[tuple[str, ...]]:
-    paths = set()
-    for key, value in table.items():
-        path = (*prefix, key)
-        if isinstance(value, dict):
-            paths |= leaf_paths(value, path)
-        else:
-            paths.add(path)
-    return paths
-
-
-def parsed_value(key: str, value: str, assignment: str) -> dict:
-    # A bareword value that is not valid TOML on its own (e.g.
-    # "key=high") is retried as a plain string, matching Codex's own
-    # lenient -c parsing. The key was already validated by key_path.
-    try:
-        return tomllib.loads(assignment)
-    except tomllib.TOMLDecodeError:
-        pass
-    try:
-        return tomllib.loads(f"{key}={json.dumps(value)}")
-    except tomllib.TOMLDecodeError as error:
-        raise SettingsError(
-            f"invalid -c assignment {assignment!r}: {error}"
-        ) from error
-
-
-def value_at_path(data: dict, path: tuple[str, ...]) -> object:
-    value: object = data
-    for part in path:
-        value = value[part]
-    return value
-
-
-def assigned_paths(
-    path: tuple[str, ...], value: object
-) -> set[tuple[str, ...]]:
-    # A table value (an inline table on the right-hand side) wholesale
-    # replaces everything under it, so each of its own paths is
-    # assigned too. A scalar value only assigns the single leaf.
-    if isinstance(value, dict):
-        return {path} | flatten_table_paths(value, path)
-    return {path}
-
-
-def flatten_table_paths(
-    table: dict, prefix: tuple[str, ...]
-) -> set[tuple[str, ...]]:
-    paths = set()
-    for key, value in table.items():
-        path = (*prefix, key)
-        paths.add(path)
-        if isinstance(value, dict):
-            paths |= flatten_table_paths(value, path)
-    return paths
-
-
-def conflicting_key(
-    config: dict, paths: set[tuple[str, ...]]
-) -> str | None:
-    # Policy keys are a fixed, author-chosen dotted-string convention
-    # (not caller-supplied TOML), so a plain split is safe here.
-    for policy_key in config:
-        policy_path = tuple(policy_key.split("."))
-        for path in paths:
-            is_ancestor = (
-                len(path) < len(policy_path)
-                and policy_path[: len(path)] == path
-            )
-            if path == policy_path or is_ancestor:
-                return policy_key
-    return None
 
 
 def codex_caller_choices(args: list[str]) -> set[str]:
@@ -359,15 +199,6 @@ def codex_caller_choices(args: list[str]) -> set[str]:
         elif config_key(option.value) in CODEX_MODEL_KEYS:
             chosen.add(config_key(option.value))
     return chosen
-
-
-def remove_config_keys(args: list[str], keys: frozenset) -> list[str]:
-    options = [
-        option
-        for option in find_options(args, CONFIG_OPTIONS)
-        if config_key(option.value) in keys
-    ]
-    return remove_spans(args, options)
 
 
 def config_overlay(values: dict) -> list[str]:
@@ -391,14 +222,6 @@ def toml_value(value: bool | int | str) -> str:
 
 
 # --- Argument handling ----------------------------------------------
-
-
-def remove_sandbox_options(args: list[str]) -> list[str]:
-    kept = remove_spans(args, find_options(args, SANDBOX_OPTIONS))
-    leading = leading_args(kept)
-    return [arg for arg in leading if arg not in SANDBOX_FLAGS] + kept[
-        len(leading) :
-    ]
 
 
 def find_options(
@@ -432,17 +255,6 @@ def read_option(
     return Option(index, 1, name, "")
 
 
-def remove_spans(args: list[str], options: list[Option]) -> list[str]:
-    dropped = {
-        index
-        for option in options
-        for index in range(option.index, option.index + option.width)
-    }
-    return [
-        arg for index, arg in enumerate(args) if index not in dropped
-    ]
-
-
 def leading_args(args: list[str]) -> list[str]:
     return args[: args.index("--")] if "--" in args else args
 
@@ -460,42 +272,39 @@ def load_policy(access_dir: Path) -> dict:
     path = access_dir / POLICY_FILE
     policy = read_json_object(path)
     check_exact_keys(path, "policy", policy, {"claude", "codex"})
-    claude = policy["claude"]
-    check_exact_keys(path, "claude", claude, {"settings"})
-    check_claude_policy_settings(path, claude["settings"])
-    codex = policy["codex"]
-    check_exact_keys(path, "codex", codex, {"config"})
-    check_codex_policy_config(path, codex["config"])
-    return policy
-
-
-def check_claude_policy_settings(path: Path, settings: object) -> None:
-    if not isinstance(settings, dict):
+    check_exact_keys(
+        path, "claude", policy["claude"], {"args", "settings"}
+    )
+    check_exact_keys(path, "codex", policy["codex"], {"args", "config"})
+    for name in CLIS:
+        check_args(path, name, policy[name]["args"])
+    if not isinstance(policy["claude"]["settings"], dict):
         raise SettingsError(
             f"{path}: claude.settings must be an object"
         )
-    check_allowed_keys(path, settings, CLAUDE_POLICY_KEYS)
-    for key in sorted(CLAUDE_POLICY_KEYS):
-        if settings.get(key) is not True:
-            raise SettingsError(
-                f"{path}: claude.settings.{key} must be true"
-            )
+    check_codex_config(path, policy["codex"]["config"])
+    return policy
 
 
-def check_codex_policy_config(path: Path, config: object) -> None:
+def check_args(path: Path, name: str, args: object) -> None:
+    if not isinstance(args, list) or not all(
+        isinstance(arg, str) for arg in args
+    ):
+        raise SettingsError(
+            f"{path}: {name}.args must be a string list"
+        )
+
+
+def check_codex_config(path: Path, config: object) -> None:
+    # Values become -c overlays, so only TOML scalars are supported.
     if not isinstance(config, dict):
         raise SettingsError(f"{path}: codex.config must be an object")
-    check_allowed_keys(path, config, CODEX_POLICY_KEYS)
     for key, value in config.items():
         if not isinstance(value, bool | int | str):
             raise SettingsError(
                 f"{path}: codex.config.{key} must be a boolean, "
                 "integer or string"
             )
-    if config.get("features.hooks") is not False:
-        raise SettingsError(
-            f"{path}: codex.config['features.hooks'] must be false"
-        )
 
 
 # --- Model defaults (B) ---------------------------------------------

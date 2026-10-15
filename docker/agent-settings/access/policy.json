@@ -1,11 +1,14 @@
 {
   "claude": {
+    "args": ["--dangerously-skip-permissions", "--setting-sources", ""],
     "settings": {
       "skipDangerousModePermissionPrompt": true,
-      "disableAllHooks": true
+      "disableAllHooks": true,
+      "autoMemoryEnabled": false
     }
   },
   "codex": {
+    "args": ["--dangerously-bypass-approvals-and-sandbox"],
     "config": {
       "features.hooks": false
     }

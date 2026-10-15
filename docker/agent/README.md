@@ -318,8 +318,8 @@ Keine Schlüssel ins Image schreiben.
 - Python lädt über `PYTHONPATH=/workspace/src` den aktuellen Repo-Code.
   Bei geänderten Abhängigkeiten Image neu bauen und die Dev-Volumes mit
   `./scripts/agent-container reset` erneuern.
-- loope setzt selbst Sandbox-/Berechtigungsflags. Die Container-Launcher
-  ersetzen diese durch uneingeschränkte Ausführung **innerhalb des Containers**.
+- Die Launcher setzen die Container-Defaults aus A (uneingeschränkte
+  Ausführung **innerhalb des Containers**) vor die Aufruf-Argumente.
   Auch Reviewer haben damit Schreibzugriff; ihre fachliche Rolle bleibt im Prompt.
 - Claude lädt ausschließlich eine pro Aufruf erzeugte Settings-Datei (siehe
   „Container-Konfiguration“). Andere Benutzer-/Projekt-Settings und deren
@@ -355,15 +355,19 @@ Datei sofort.
 | C Lokale Regeln | – | tmpfs über `~/.claude/rules`, `~/.codex/rules`, `/workspace/.claude` | nur flüchtig im Container |
 | D Anmeldung | `~/.claude`, `~/.codex`, optional `~/.claude.json` | `/home/agent/…` | Host und Container (Token-Erneuerung) |
 
-**A** enthält die festen Vorgaben, die der Launcher (`agent_cli.py`) auswertet:
+**A** enthält die Container-Defaults; der Launcher (`agent_cli.py`) reicht
+sie ohne eigene Werte durch:
 
+- `claude.args`: stehen vor den Aufruf-Argumenten
+  (`--dangerously-skip-permissions --setting-sources ""`).
 - `claude.settings`: werden in die erzeugte Claude-Settings-Datei übernommen
-  (`skipDangerousModePermissionPrompt`, `disableAllHooks`).
+  (`skipDangerousModePermissionPrompt`, `disableAllHooks`,
+  `autoMemoryEnabled: false`).
+- `codex.args`: `--dangerously-bypass-approvals-and-sandbox`.
 - `codex.config`: werden als `-c key=value` übergeben (`features.hooks=false`).
-- Fest im Launcher: `--dangerously-skip-permissions` bzw.
-  `--dangerously-bypass-approvals-and-sandbox`, `--setting-sources ""`, das
-  Entfernen der loope-Sandbox-/Approval-Argumente (einschließlich
-  `-c sandbox_mode=…`/`-c approval_policy=…` bei Codex).
+
+Neue Schlüssel in A brauchen keine Launcher-Änderung. Geprüft wird nur die
+Struktur (Abschnitte, Listen, Objekte, TOML-Skalare bei Codex).
 
 Dass Agenten A weder lesen noch ändern, ist eine Arbeitsregel. Technisch
 verhindert ist nur das Schreiben im Container (beide Pfade read-only); lesen
@@ -388,10 +392,9 @@ und B neu. Aufrufe zur Anmeldung und Diagnose (`auth`, `login`, `logout`,
 `doctor`, `--help`, `--version`) werden unverändert durchgereicht und lesen A/B
 nicht.
 
-1. **A** gilt immer. B darf keine A-Schlüssel enthalten und umgekehrt.
-   Aufrufer-Argumente, die A widersprechen, brechen mit Fehler ab: bei Claude
-   `--settings` und `--setting-sources`, bei Codex `-c`/`--config` mit einem
-   A-Schlüssel sowie `--enable`/`--disable` für ein Feature aus A.
+1. **Aufruf-Argumente** stehen hinter den Defaults und überschreiben sie,
+   auch A (z. B. `--settings`, `--setting-sources`, `-c features.hooks=true`).
+   Das ist gewollt: A ist ein Vorschlag der Container-Schicht, keine Sperre.
 2. **Explizite Aufruferwerte** schlagen B. Für jeden gesetzten Wert lässt der
    Launcher den entsprechenden B-Default weg, statt einen zweiten,
    widersprüchlichen Wert zu erzeugen:
