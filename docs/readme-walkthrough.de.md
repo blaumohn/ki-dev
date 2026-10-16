@@ -43,6 +43,30 @@ Prüfer zusätzlich Schritt 7: Befehl und Testcode je in höchstens 2 Klicks.
 Die englische Fassung wird nur in Kopf und Prüfstand auf Gleichheit mit der
 deutschen geprüft.
 
+## Durchlauf mit einem Web-Agenten
+
+`./scripts/readme-walkthrough prepare` bereitet aus dem Arbeitsbaum je Persona
+einen Ordner vor und gibt auf stdout nur dessen Pfad aus. Auf stderr zeigt er
+zuerst, welche Konfigurationspfade geprüft wurden und welcher gilt. Den
+Arbeitsbaum bis zum fertigen Bericht nicht ändern.
+
+Die Konfiguration ist eine Datei mit dem Eintrag `ausgabe = <ordner>`. Die
+Suchpfade nennt das Script selbst; `./scripts/readme-walkthrough config`
+zeigt sie mit Status und Ergebnis, ohne etwas anzulegen. Der erste vorhandene
+Pfad gilt. Fehlt die Datei, landet der Lauf unter `.local/var/readme-walkthrough/`
+im Repo. Ist die Datei vorhanden, aber ohne oder mit doppeltem Eintrag, bricht
+der Befehl mit Fehler ab, ohne auf den Standard zurückzufallen.
+
+Der Lauf landet unter `<ordner>/<head>-<zeit>/`; `~/` im Eintrag wird aufgelöst.
+
+Je Persona einen neuen temporären Chat öffnen; Memory, eigene Anweisungen
+und Websuche ausschalten. Web-Chats laden nur Dateien, keine Ordner. Der
+Persona-Ordner ist deshalb flach: Die Dateien des Ordners hochladen, nicht
+den Ordner; beim Prüfer liegen verlinkte Unterordner als `ordner__datei`
+vor, `dateien.txt` nennt die Zuordnung. Danach `uebergabe.txt` als Nachricht einfügen.
+Die Antworten an den README-Bearbeiter geben. Dieser erhält die Vorbilder;
+der Web-Agent erhält sie nie.
+
 ## Protokoll
 
 | Datum | Commit | Persona | Entscheidung nach Zeile | 4 Fragen | Befund |

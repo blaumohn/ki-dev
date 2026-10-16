@@ -1,0 +1,179 @@
+#!/bin/sh
+set -eu
+
+main() {
+    if [ "$#" -ne 1 ]; then
+        usage
+    fi
+    repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+    cd "$repo"
+    case "$1" in
+        config) show_config ;;
+        prepare) prepare_run ;;
+        *) usage ;;
+    esac
+}
+
+usage() {
+    echo "Aufruf: $0 prepare | config" >&2
+    exit 2
+}
+
+die() {
+    echo "Fehler: $*" >&2
+    exit 1
+}
+
+# Suchpfade der Konfiguration, höchste Priorität zuerst. Die einzige Liste:
+# `config` und `prepare` lesen sie von hier, Doku verweist nur auf sie.
+config_candidates() {
+    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        echo "$XDG_CONFIG_HOME/ki-dev/readme-walkthrough"
+    else
+        echo "$HOME/.config/ki-dev/readme-walkthrough"
+    fi
+    echo "$repo/.local/etc/ki-dev/readme-walkthrough"
+}
+
+# Gibt den ersten vorhandenen Suchpfad aus; ohne Treffer nichts.
+select_config() {
+    config_candidates | while IFS= read -r candidate; do
+        if [ -e "$candidate" ]; then
+            echo "$candidate"
+            break
+        fi
+    done
+}
+
+# Liest den einzigen Eintrag `ausgabe = …`. Fehlt er oder ist er doppelt,
+# bricht das Script ab, statt still auf den Standard zu wechseln.
+read_output_setting() {
+    values=$(sed -n 's/^[[:space:]]*ausgabe[[:space:]]*=[[:space:]]*//p' "$1" \
+        | sed 's/[[:space:]]*$//')
+    if [ -z "$values" ]; then
+        die "$1: Eintrag ausgabe fehlt oder ist leer"
+    fi
+    if [ "$(printf '%s\n' "$values" | wc -l | tr -d ' ')" -ne 1 ]; then
+        die "$1: ausgabe ist mehrfach gesetzt"
+    fi
+    echo "$values"
+}
+
+# Ausgabeordner: Eintrag der gewählten Datei, sonst der Standard im Repo.
+output_base() {
+    if [ -z "$1" ]; then
+        echo "$repo/.local/var/readme-walkthrough"
+        return
+    fi
+    value=$(read_output_setting "$1")
+    case "$value" in
+        "~/"*) echo "$HOME/${value#"~/"}" ;;
+        *) echo "$value" ;;
+    esac
+}
+
+# Die Suche ist für beide Befehle gleich; nur die Ausgabe unterscheidet sich.
+print_search() {
+    file=$1
+    echo "Konfiguration (der erste vorhandene Pfad gilt):"
+    config_candidates | while IFS= read -r candidate; do
+        if [ "$candidate" = "$file" ]; then
+            status="vorhanden, benutzt"
+        elif [ -e "$candidate" ]; then
+            status="vorhanden, nicht benutzt"
+        else
+            status=fehlt
+        fi
+        printf '  %s (%s)\n' "$candidate" "$status"
+    done
+}
+
+print_source() {
+    if [ -n "$1" ]; then
+        printf 'Quelle: %s\n' "$1"
+    else
+        echo "Quelle: Standard (keine Konfigurationsdatei gefunden)"
+    fi
+}
+
+show_config() {
+    file=$(select_config)
+    print_search "$file"
+    base=$(output_base "$file")
+    printf 'Ausgabeordner: %s\n' "$base"
+    print_source "$file"
+}
+
+prepare_run() {
+    file=$(select_config)
+    print_search "$file" >&2
+    print_source "$file" >&2
+    base=$(output_base "$file")
+    target="$base/$(git rev-parse --short HEAD)-$(date +%y%m%dT%H%M)"
+    mkdir -p "$target"
+    target=$(CDPATH= cd -- "$target" && pwd)
+    for persona in techlead entwickler pruefer; do
+        prepare_persona "$target" "$persona"
+    done
+    link_pruefer_files "$target/pruefer"
+    printf '%s\n' "$target"
+}
+
+prepare_persona() {
+    directory="$1/$2"
+    mkdir -p "$directory"
+    case "$2" in
+        techlead)
+            PERSONA="ein Tech-Lead, der eine Bewerbung sichtet"
+            BUDGET="60 Sekunden"
+            ENTSCHEIDUNG="Lädst du die Person zum Gespräch ein? ja/nein, mit Grund"
+            ZUSATZ=""
+            head -n 40 README.md > "$directory/README.md"
+            ;;
+        entwickler)
+            PERSONA="ein Entwickler, der ein Werkzeug für sein Problem sucht"
+            BUDGET="5 Minuten"
+            ENTSCHEIDUNG="Probierst du es aus? ja/nein, und welchen Befehl tippst du an deinem eigenen Repo als Nächstes"
+            ZUSATZ=""
+            head -n 250 README.md > "$directory/README.md"
+            ;;
+        pruefer)
+            PERSONA="ein Prüfer, der Behauptungen nachgeht"
+            BUDGET="10 Minuten; folge nur Links, zähle die Klicks"
+            ENTSCHEIDUNG="Wähle 2 Behauptungen aus den ersten 20 Zeilen: belegt ja/nein"
+            ZUSATZ="Öffne den verlinkten Test. Prüft er die Behauptung wirklich oder nur etwas Ähnliches? Begründe mit Testcode. Die Dateien liegen flach; dateien.txt ordnet jedem Namen den Pfad zu, den README.md nennt."
+            cp README.md "$directory/README.md"
+            ;;
+    esac
+    git ls-files -co --exclude-standard | cut -d/ -f1 | sort -u > "$directory/root.txt"
+    sed -e "s|@PERSONA@|$PERSONA|g" \
+        -e "s|@BUDGET@|$BUDGET|g" \
+        -e "s|@ENTSCHEIDUNG@|$ENTSCHEIDUNG|g" \
+        -e "s|@ZUSATZ@|$ZUSATZ|g" \
+        scripts/readme-walkthrough-uebergabe.txt > "$directory/uebergabe.txt"
+}
+
+# Kopiert die lokalen Links aus README.md flach in den Prüfer-Ordner: Ordner
+# werden mit __ in den Namen geschrieben, weil Web-Chats nur Dateien annehmen.
+# dateien.txt ordnet jeden flachen Namen dem Pfad im Repo zu.
+link_pruefer_files() {
+    printf 'Flacher Name  Pfad im Repo\n' > "$1/dateien.txt"
+    awk '
+        {
+            while (match($0, /\]\([^)]*\)/)) {
+                print substr($0, RSTART + 2, RLENGTH - 3)
+                $0 = substr($0, RSTART + RLENGTH)
+            }
+        }
+    ' README.md | sed 's/#.*//' | sort -u | while IFS= read -r path; do
+        case "$path" in
+            ""|http://*|https://*|/*) continue ;;
+        esac
+        [ -f "$path" ] || continue
+        flat=$(printf '%s' "$path" | sed 's|/|__|g')
+        cp "$path" "$1/$flat"
+        printf '%s  %s\n' "$flat" "$path" >> "$1/dateien.txt"
+    done
+}
+
+main "$@"
