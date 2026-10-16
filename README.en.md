@@ -12,7 +12,7 @@ time, tokens and money while doing so.
 - **Workflow as data:** every loop is a back edge with a counter → [Example](#a-loop-is-an-edge-not-a-component)
 - **Deterministic control:** same state + same event → same edge, no extra model call → [Components](#components)
 - **Swappable roles:** Claude, Codex, a human or a mock per role → [Two commands](#two-commands)
-- **Backed by tests:** no cycle without a human runs unbounded → [Test bench](#test-bench)
+- **Backed by tests:** in the build workflow `implement` no cycle without a human runs unbounded → [Test bench](#test-bench)
 - **As of 2026-10-15 (`ab3c441`):** ✅ 6 proven · ❌ 1 specification red · ⬜ 3 open → [Test bench](#test-bench)
 
 ---
@@ -68,9 +68,9 @@ check the workflow data and the executor from the inside.
 
 | Capability | Status | Check it yourself | Contribute | Bead |
 | --- | --- | --- | --- | --- |
-| no unbounded cycle without a human; the whole state space is enumerated | ✅ passed | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
-| … visible in the data itself: every cycle has a counting edge | ✅ passed | `.venv/bin/pytest -q tests/test_flow_implement.py` | – | – |
-| `PASSED` only via verified integration | ✅ passed | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
+| build workflow `implement`: no unbounded cycle without a human; the whole state space is enumerated (`map`, `graph`, `materialize` lack the counter, below) | ✅ passed | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
+| … visible in the data of `implement.toml` itself: every cycle has a counting edge | ✅ passed | `.venv/bin/pytest -q tests/test_flow_implement.py` | – | – |
+| `implement`: `PASSED` only via verified integration | ✅ passed | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
 | workflow and executor share one vocabulary (`ki_dev.fsm.bind` checks on import) | ✅ passed | `.venv/bin/pytest -q tests/test_flow_implement.py tests/test_fsm.py` | – | – |
 | layers never import upwards (transitive, AST) | ✅ passed | `.venv/bin/pytest -q tests/test_schichten.py` | – | – |
 | the messenger halts the executor, not the workflow | ✅ passed | `.venv/bin/pytest -q tests/test_runner_runtime.py tests/test_runner_cli.py` | – | – |
@@ -102,8 +102,8 @@ FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_inte
 ```
 
 Shortened; the hashes change on every run. The run integrated into
-`main` despite red tests (ek1). Without `--runxfail` the
-same command reports `4 passed, 1 xfailed`.
+`main` despite red tests. Without `--runxfail` the same command
+reports `4 passed, 1 xfailed`.
 <!-- /readme-script -->
 
 Everything at once:

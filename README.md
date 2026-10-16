@@ -12,7 +12,7 @@ dabei Zeit, Token und Geld begrenzen müssen.
 - **Ablauf als Daten:** jede Schleife ist eine Rückkante mit Zähler → [Beispiel](#eine-schleife-ist-eine-kante-kein-baustein)
 - **Deterministische Steuerung:** gleicher Zustand + gleiches Ereignis → gleiche Kante, ohne zusätzlichen Modellaufruf → [Bausteine](#bausteine)
 - **Rollen austauschbar:** Claude, Codex, Mensch oder Mock je Rolle → [Zwei Befehle](#zwei-befehle)
-- **Durch Tests belegt:** kein Zyklus ohne Mensch läuft unbegrenzt → [Prüfstand](#prüfstand)
+- **Durch Tests belegt:** im Bauablauf `implement` läuft kein Zyklus ohne Mensch unbegrenzt → [Prüfstand](#prüfstand)
 - **Stand 2026-10-15 (`ab3c441`):** ✅ 6 belegt · ❌ 1 Spezifikation rot · ⬜ 3 offen → [Prüfstand](#prüfstand)
 
 ---
@@ -71,9 +71,9 @@ Ausführer von innen.
 
 | Fähigkeit | Stand | Selbst prüfen | Mitmachen | Bead |
 | --- | --- | --- | --- | --- |
-| Kein Zyklus ohne Mensch läuft unbegrenzt; der ganze Zustandsraum wird aufgezählt | ✅ bestanden | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
-| … und das schon an den Daten: jeder Zyklus hat eine zählende Kante | ✅ bestanden | `.venv/bin/pytest -q tests/test_flow_implement.py` | – | – |
-| `PASSED` nur über die geprüfte Integration | ✅ bestanden | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
+| Bauablauf `implement`: kein Zyklus ohne Mensch läuft unbegrenzt; der ganze Zustandsraum wird aufgezählt (für `map`, `graph`, `materialize` fehlt der Zähler, unten) | ✅ bestanden | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
+| … und das schon an den Daten von `implement.toml`: jeder Zyklus hat eine zählende Kante | ✅ bestanden | `.venv/bin/pytest -q tests/test_flow_implement.py` | – | – |
+| `implement`: `PASSED` nur über die geprüfte Integration | ✅ bestanden | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
 | Ablauf und Ausführer sprechen dasselbe Vokabular (`ki_dev.fsm.bind` prüft beim Import) | ✅ bestanden | `.venv/bin/pytest -q tests/test_flow_implement.py tests/test_fsm.py` | – | – |
 | Schichten importieren nie rückwärts (transitiv, per AST) | ✅ bestanden | `.venv/bin/pytest -q tests/test_schichten.py` | – | – |
 | Der Bote hält den Ausführer, nicht den Ablauf | ✅ bestanden | `.venv/bin/pytest -q tests/test_runner_runtime.py tests/test_runner_cli.py` | – | – |
@@ -105,8 +105,8 @@ FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_inte
 ```
 
 Gekürzt; die Hashes wechseln je Lauf. Der Lauf hat trotz roter Tests
-auf `main` integriert (ek1). Ohne `--runxfail` meldet
-derselbe Befehl `4 passed, 1 xfailed`.
+auf `main` integriert. Ohne `--runxfail` meldet derselbe Befehl
+`4 passed, 1 xfailed`.
 <!-- /readme-script -->
 
 Alles auf einmal:
@@ -421,7 +421,7 @@ src/ki_dev/
                Deklaration), events.py (Protokoll), safety.py
                (Kontext-, Kontingent-, Aufrufgrenzen)
   flow_ops/    Pakete: implement/ (Ops, Rollenprofil, eigener Ausführer
-               runtime.py bis ige.6)
+               runtime.py, entfällt mit dem einen Ausführer)
   ops/         checks/ (Vorlauf), context/ (Bead-Eingabe, Leitlinien,
                Grenzen, Kontextbausteine); kennt weder runner noch adapter
   adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),
@@ -430,7 +430,7 @@ src/ki_dev/
   step/        ein Turn eines Paketablaufs mit dem Executor manual,
                zustandslos: Bedienung, Eingaben mit Herkunft,
                Quellenimport
-  pilot/, safety_profile/   abgelegt, noch nicht angebunden (urq, wu0.10.5)
+  pilot/, safety_profile/   abgelegt, noch nicht angebunden
 ```
 
 Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
