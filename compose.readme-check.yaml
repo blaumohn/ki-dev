@@ -1,6 +1,7 @@
 # Wegwerf-Container für make readme-check (tests/readme/user-flow.sh).
-# Nur lesbares Dateisystem, Repo nur lesend, alles Schreibbare im tmpfs /tmp;
-# keine Volumes, keine Host-Caches, kein Docker-Socket. Netz für pip/go.
+# Nur lesbares Dateisystem und Repo; /tmp liegt pro Lauf auf der Platte.
+# Tool-Temp-Dateien auf der VM-Platte statt auf dem VM-Shared-Folder.
+# Projektlokale Download-/Build-Caches bleiben erhalten. Kein Docker-Socket.
 services:
   check:
     image: ki-dev-readme-check:local
@@ -14,14 +15,31 @@ services:
     # Host-UID: Repo-Dateien dürfen nur für den Eigentümer lesbar sein.
     user: ${READMECHECK_USER:?}
     read_only: true
-    tmpfs:
-      - /tmp:exec,mode=1777
     volumes:
       - .:/repo:ro
+      # Anonymes Volume: mit run --rm entfernt; Rechte kommen aus dem Image.
+      - type: volume
+        target: /tool-tmp
+      - type: bind
+        source: ${READMECHECK_TMP_DIR:?}
+        target: /tmp
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${READMECHECK_CACHE_DIR:?}
+        target: /cache
+        bind:
+          create_host_path: false
     environment:
+      TMPDIR: /tool-tmp
+      # Große Go-Build-Zwischendateien bleiben auf der Platte.
+      GOTMPDIR: /tmp
       HOME: /tmp/home
       XDG_CACHE_HOME: /tmp/cache
       GOPATH: /tmp/go
+      GOMODCACHE: /cache/go-mod
+      GOCACHE: /cache/go-build
+      PIP_CACHE_DIR: /cache/pip
       READMECHECK_WORK_BASE: /tmp/work
       # /repo gehört dem Host-Nutzer, nicht dem Container-Nutzer.
       GIT_CONFIG_COUNT: "1"

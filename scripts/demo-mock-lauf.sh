@@ -22,9 +22,11 @@ printf '.beads.gate.lock\n' >"$DEMO/ziel/.gitignore"
 git -C "$DEMO/ziel" add .gitignore
 git -C "$DEMO/ziel" commit -q -m start
 git -C "$DEMO/ziel" worktree add -q -b arbeit "$DEMO/arbeit"
+echo "[demo] Beads initialisieren: $DEMO/arbeit" >&2
 (cd "$DEMO/arbeit" && bd init --prefix demo --skip-agents --skip-hooks \
-  --stealth >/dev/null)
+  --stealth --non-interactive)
 
+echo "[demo] Bead erstellen" >&2
 BEAD="$(cd "$DEMO/arbeit" && bd create "MOCK.md je Runde ergänzen" \
   --description "MOCK.md um eine Zeile je Runde ergänzen" \
   --design "Mock-Adapter schreiben die Zeile" \
@@ -49,6 +51,7 @@ executor = "mock"
 answers = ["fix", "PASS"]
 EOF
 
+echo "[demo] Mock-Lauf starten: $BEAD" >&2
 (cd "$DEMO/arbeit" && "$KI_DEV" -f implement "$BEAD" \
   --profile "$DEMO/profil.toml" --run-id demo --runs-dir "$DEMO/runs")
 echo

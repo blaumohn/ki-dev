@@ -23,4 +23,6 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && tar -xzf /tmp/go.tar.gz -C /usr/local \
     && rm /tmp/go.tar.gz
 ENV PATH=/usr/local/go/bin:$PATH
+# Docker übernimmt diese Rechte beim Anlegen des anonymen Tool-Temp-Volumes.
+RUN mkdir -p /tool-tmp && chmod 1777 /tool-tmp
 # Nutzer setzt compose.readme-check.yaml (UID des Host-Nutzers, liest /repo).

@@ -63,14 +63,21 @@ spec-test: setup
 	PATH=$(BIN):$$PATH $(BIN)/pytest -q --spec
 
 # Baut das Prüfimage und startet einen neuen Wegwerf-Container (--rm).
+# Arbeitsdateien pro Lauf auf Platte; Download-/Build-Caches bleiben erhalten.
 readme-check: export READMECHECK_USER := $(shell id -u):$(shell id -g)
+readme-check: export READMECHECK_CACHE_DIR := $(CURDIR)/.local/cache/readme-check
 # Schlanke Variante des Python-Images aus tool-versions.json (eine Quelle).
 readme-check: export PYTHON_IMAGE := $(subst -bookworm,-slim-bookworm,$(call version,PYTHON_IMAGE))
 readme-check: export GO_VERSION      := $(call version,GO_VERSION)
 readme-check: export GO_SHA256_AMD64 := $(call version,GO_SHA256_AMD64)
 readme-check: export GO_SHA256_ARM64 := $(call version,GO_SHA256_ARM64)
 readme-check:
-	$(CHECK) build check
+	@set -eu; \
+	mkdir -p .local/var/readme-check "$$READMECHECK_CACHE_DIR"; \
+	READMECHECK_TMP_DIR=$$(mktemp -d "$(CURDIR)/.local/var/readme-check/run-XXXXXX"); \
+	export READMECHECK_TMP_DIR; \
+	trap 'rm -rf -- "$$READMECHECK_TMP_DIR"' EXIT; \
+	$(CHECK) build check; \
 	$(CHECK) run --rm check
 
 clean:
