@@ -20,6 +20,8 @@ dabei Zeit, Token und Geld begrenzen müssen.
 ## In einer Minute ausprobieren
 
 <!-- readme-script: readme-scripts/1-setup.sh -->
+> ⬜ nicht ausgeführt · selbst prüfen: make demo
+
 Ohne Anbieterzugang, mit Mock-Adaptern. Voraussetzungen: Python ≥ 3.12
 (mit `venv`), git ≥ 2.32, make, Go und ein C-Compiler. `make setup` legt
 venv, ki-dev und [Beads](https://github.com/steveyegge/beads) `bd` (Version
@@ -85,6 +87,8 @@ Ausführer von innen.
 Bead: Kurz-IDs der projektinternen Beads-Datenbank (`ki-dev-ablauf-…`); ein öffentliches Journal folgt.
 
 <!-- readme-script: readme-scripts/3-review-gate.sh -->
+> ❌ rot, erwartet (Spezifikation) · 2026-10-16 · selbst prüfen: .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py · [Prüfstand](#prüfstand)
+
 Stufe 2 über die öffentliche CLI: `ki-dev -f implement` mit
 Mock-Worker und Mock-Review (`PASS`) gegen ein Wegwerf-Repo mit
 `add.py` (falsch: `a - b`) und festem `test_add.py`. Kein
@@ -382,6 +386,8 @@ Voraussetzungen und Einrichtung: siehe [oben](#in-einer-minute-ausprobieren);
 das `Makefile` ist kurz und lesbar.
 
 <!-- readme-script: readme-scripts/2-runtime.sh -->
+> ⬜ nicht ausgeführt · selbst prüfen: make setup-runtime
+
 Für Entwicklung an ki-dev: separates Betriebs-venv und Symlink in
 `~/.local/bin` (XDG_DATA_HOME wird berücksichtigt).
 Vor jedem Update aktive und pausierte Läufe abschließen.
@@ -398,6 +404,12 @@ ki-dev --help
 make test           # pytest und ruff
 make readme-check   # README-Einrichtung im Wegwerf-Container (braucht Docker)
 ```
+
+`readme-check` verwendet pro Lauf ein neues Arbeitsverzeichnis auf der Platte
+und entfernt es anschließend. Go-Module, Go-Build-Ergebnisse und pip-Downloads
+werden unter `.local/cache/readme-check/` über mehrere Läufe wiederverwendet.
+Fehlende Pakete und Versionsprüfungen können weiterhin Netzwerkzugriffe auslösen.
+Für einen Lauf mit leerem Cache dieses Verzeichnis vorher entfernen.
 
 Oder der Agent-Container mit bd, Codex und Claude Code:
 `./scripts/agent-container shell` ([docker/agent/README.md](docker/agent/README.md)).

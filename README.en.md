@@ -20,6 +20,8 @@ time, tokens and money while doing so.
 ## Try it in a minute
 
 <!-- readme-script: readme-scripts/en/1-setup.sh -->
+> ⬜ not run · verify: make demo
+
 Offline, with mock adapters. Prerequisites: Python ≥ 3.12 (with `venv`),
 git ≥ 2.32, make, Go and a C compiler. `make setup` creates the venv,
 ki-dev and [Beads](https://github.com/steveyegge/beads) `bd` (version from
@@ -82,6 +84,8 @@ check the workflow data and the executor from the inside.
 Bead: short IDs from the project-internal Beads database (`ki-dev-ablauf-…`); a public journal will follow.
 
 <!-- readme-script: readme-scripts/en/3-review-gate.sh -->
+> ❌ red, expected (spec) · 2026-10-16 · verify: .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py · [test bench](#test-bench)
+
 Stage 2 through the public CLI: `ki-dev -f implement` with a mock
 worker and a mock review (`PASS`) against a throwaway repository with
 `add.py` (wrong: `a - b`) and a fixed `test_add.py`. No provider
@@ -242,6 +246,8 @@ Prerequisites and setup: see [above](#try-it-in-a-minute); the `Makefile`
 is short and readable.
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
+> ⬜ not run · verify: make setup-runtime
+
 For development on ki-dev: separate runtime venv and a symlink in
 `~/.local/bin` (honors XDG_DATA_HOME).
 Finish active and paused runs before each update.
@@ -258,6 +264,12 @@ ki-dev --help
 make test           # pytest and ruff
 make readme-check   # README setup in a throwaway container (needs Docker)
 ```
+
+`readme-check` uses a fresh working directory on disk for each run and removes
+it afterward. Go modules, Go build results, and pip downloads are reused across
+runs in `.local/cache/readme-check/`. Missing packages and version checks may
+still require network access. Remove this directory before a run to start with
+an empty cache.
 
 Or the agent container with bd, Codex and Claude Code:
 `./scripts/agent-container shell` ([docker/agent/README.md](docker/agent/README.md)).
