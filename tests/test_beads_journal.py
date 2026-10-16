@@ -435,14 +435,17 @@ def test_kill_during_ref_update_leaves_no_stuck_queue(journal_dir):
         "#!/bin/sh\n"
         '[ "$1" = prepared ] || exit 0\n'
         "git_pid=$PPID\n"
-        "drain_pid=$(ps -o ppid= -p \"$git_pid\" | tr -d ' ')\n"
-        'kill -9 "$git_pid" "$drain_pid"\n'
+        'kill -9 "$git_pid" "$JOURNAL_TEST_DRAIN_PID"\n'
     )
     hook.chmod(0o755)
     git(journal_dir, "config", "core.hooksPath", str(hooks))
     drain.enqueue(journal_dir, "create", issue())
 
-    killed = drain_process(journal_dir)
+    killed = drain_process(
+        journal_dir,
+        "from plumbum import local;"
+        'local.env["JOURNAL_TEST_DRAIN_PID"] = str(os.getpid())',
+    )
 
     assert killed.returncode == -9
     git_dir = journal_dir / ".git"
