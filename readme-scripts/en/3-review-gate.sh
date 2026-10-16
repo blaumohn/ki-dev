@@ -18,5 +18,5 @@
 # ```
 #
 # Shortened; the hashes change on every run. The run integrated into
-# `main` despite red tests (ki-dev-ablauf-ek1). Without `--runxfail` the
+# `main` despite red tests (ek1). Without `--runxfail` the
 # same command reports `4 passed, 1 xfailed`.

@@ -12,8 +12,8 @@ dabei Zeit, Token und Geld begrenzen müssen.
 - **Ablauf als Daten:** jede Schleife ist eine Rückkante mit Zähler → [Beispiel](#eine-schleife-ist-eine-kante-kein-baustein)
 - **Deterministische Steuerung:** gleicher Zustand + gleiches Ereignis → gleiche Kante, ohne zusätzlichen Modellaufruf → [Bausteine](#bausteine)
 - **Rollen austauschbar:** Claude, Codex, Mensch oder Mock je Rolle → [Zwei Befehle](#zwei-befehle)
-- **Durch Tests belegt:** kein Zyklus ohne Mensch läuft unbegrenzt → [Was die Tests belegen](#was-die-tests-belegen)
-- **Stand Alpha, 2026-10-15:** 2740 Tests grün, 1 bekannte rote Anforderung (Review-Gate) → [Bekannte Lücken](#bekannte-lücken)
+- **Durch Tests belegt:** kein Zyklus ohne Mensch läuft unbegrenzt → [Prüfstand](#prüfstand)
+- **Stand 2026-10-15 (`ab3c441`):** ✅ 6 belegt · ❌ 1 Spezifikation rot · ⬜ 3 offen → [Prüfstand](#prüfstand)
 
 ---
 
@@ -53,6 +53,92 @@ Der Lauf nimmt also die Rückkante einmal (`round_id: 2`), friert das
 geprüfte Ergebnis ein und integriert es per Fast-forward. Bead und
 Profil (`profil.toml`) legt das Demo-Skript selbst an.
 <!-- /readme-script -->
+
+---
+
+## Prüfstand
+
+Tests sind hier die Spezifikation: rot heißt festgelegt, noch nicht gebaut.
+
+**Legende:** ✅ bestanden · ❌ rot, erwartet (Spezifikation) · ⬜ nicht geprüft
+
+Die Stufen 1–4 beschreiben an einem kleinen Auftrag, was ki-dev leisten
+soll: `add()` in `add.py` korrigieren, geprüft durch feste Tests
+`add(2, 3) == 5` und `add(-1, 1) == 0`. Gezählt wird nur, was über die
+öffentliche CLI tatsächlich ausgeführt wurde; eine fehlende Prüfung steht
+als „nicht geprüft“ da. Die ersten sechs Zeilen prüfen die Ablaufdaten und den
+Ausführer von innen.
+
+| Fähigkeit | Stand | Selbst prüfen | Mitmachen | Bead |
+| --- | --- | --- | --- | --- |
+| Kein Zyklus ohne Mensch läuft unbegrenzt; der ganze Zustandsraum wird aufgezählt | ✅ bestanden | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
+| … und das schon an den Daten: jeder Zyklus hat eine zählende Kante | ✅ bestanden | `.venv/bin/pytest -q tests/test_flow_implement.py` | – | – |
+| `PASSED` nur über die geprüfte Integration | ✅ bestanden | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
+| Ablauf und Ausführer sprechen dasselbe Vokabular (`ki_dev.fsm.bind` prüft beim Import) | ✅ bestanden | `.venv/bin/pytest -q tests/test_flow_implement.py tests/test_fsm.py` | – | – |
+| Schichten importieren nie rückwärts (transitiv, per AST) | ✅ bestanden | `.venv/bin/pytest -q tests/test_schichten.py` | – | – |
+| Der Bote hält den Ausführer, nicht den Ablauf | ✅ bestanden | `.venv/bin/pytest -q tests/test_runner_runtime.py tests/test_runner_cli.py` | – | – |
+| Stufe 1 Auftrag: ein Lauf korrigiert `add()`; nur `add.py` ändert sich | ⬜ nicht geprüft: der Mock-Worker hängt nur Text an `MOCK.md` an, ein Test-Executor, der `add.py` ändert, fehlt; die Testorakel selbst sind geprüft (Stufe 2) | – | Spec-Test schreiben | unu, 1nf |
+| Stufe 2 Review: rote Tests + Review-`PASS` → keine Integration | ❌ rot, erwartet: `ki-dev -f implement` integriert trotzdem (unten) | `.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py` | Gate im Ausführer bauen; der Test sagt, wann es fertig ist | ek1 |
+| Stufe 3 Grenzen: Kontext 85 000 bei Grenze 80 000 → kein weiterer Agentenaufruf, sichtbarer Halt | ⬜ nicht geprüft: `mock` und `manual` messen nichts, die Wächter greifen dort nicht; die Wächter des alten Ausführers sind nur intern getestet (`tests/test_context_guard.py`, `tests/test_quota_guard.py`, `tests/test_runner_safety.py`) | – | Spec-Test schreiben | v5w, 1nf |
+| Stufe 4 Übergabe: Elternauftrag, Rolle und Testbefehl stehen in der Übergabe an den Agenten | ⬜ nicht geprüft: kein Test | – | Spec-Test schreiben | 76e |
+
+Bead: Kurz-IDs der projektinternen Beads-Datenbank (`ki-dev-ablauf-…`); ein öffentliches Journal folgt.
+
+<!-- readme-script: readme-scripts/3-review-gate.sh -->
+Stufe 2 über die öffentliche CLI: `ki-dev -f implement` mit
+Mock-Worker und Mock-Review (`PASS`) gegen ein Wegwerf-Repo mit
+`add.py` (falsch: `a - b`) und festem `test_add.py`. Kein
+Anbieterzugang; braucht git und `bd` aus `make setup`. Die Kontrollen
+prüfen den Test selbst: Orakel rot bei `a - b`, grün bei `a + b`; ein
+Collection-Fehler zählt nicht als roter Test; grüne Tests + PASS
+integrieren. Der Kernfall ist heute rot und als `xfail(strict=True)`
+markiert; `--runxfail` zeigt den Fehlschlag:
+
+```bash
+.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
+```
+
+```text
+E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
+FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
+1 failed, 4 passed
+```
+
+Gekürzt; die Hashes wechseln je Lauf. Der Lauf hat trotz roter Tests
+auf `main` integriert (ek1). Ohne `--runxfail` meldet
+derselbe Befehl `4 passed, 1 xfailed`.
+<!-- /readme-script -->
+
+Alles auf einmal:
+
+```bash
+.venv/bin/pytest -q && .venv/bin/ruff check .
+```
+
+Stand 2026-10-15 (Branch `dev` nach `ab3c441`): 2740 bestanden,
+1 erwartet rot (`xfail`, Stufe 2), 1 übersprungen (Docker-Test, ohne
+Docker in der Prüfumgebung), 14 abgewählt (Gerüstkontrollen der
+Anforderungstests, `make spec-test`); ruff ohne Befund. Mit Mock geprüft
+sind außerdem `make demo` und die Testsuite. Nicht geprüft:
+`make readme-check` und Läufe mit echten Anbietern (`claude`, `codex`);
+ihre Abnahme steht aus.
+
+### Was in der Architektur fehlt
+
+Quelle: [Ausführer-Architektur: was fehlt](docs/ausfuehrer-luecken.de.md)
+(Stand 2026-10-14) und der Befund aus Stufe 2.
+
+| Merkmal | heute → Ziel | Mitmachen | Bead |
+| --- | --- | --- | --- |
+| Review-`PASS` überstimmt keine roten Tests | `ki-dev -f implement` integriert nach Review-`PASS` trotz roter `[[tests]]` → Integration nur mit grünen Prüfungen | wie Stufe 2: Gate bauen, bis der Test grün ist | ek1 |
+| Schutzhalt bei Kontext-, Kontingent- und Budgetgrenze | Python-Wächter im alten Ausführer `flow_ops/implement/runtime.py` (`_context_guard`, `_quota_guard`, Budgetbuchung), nur für `-f implement` → Messung im Adapter, Vergleich als Kante in `runner/run.toml` (`measured` mit Wächter `within_limits`), Grenzwert im Profil | Spec-Test zu Stufe 3, dann Kante und Wächter bauen | ige.6.4.1 bis .4 |
+| Ein Ausführer | `-f implement` fährt den alten Ausführer, `step` den gemeinsamen `runner/package.py`; dessen Dispatch ruft den Executor ohne Schutzprüfung auf → `-f implement` und `step` auf `runner/package.py`, alter Ausführer entfällt | `-f implement` auf `runner/package.py` umstellen | ige.6.4.13, .14 |
+| Wiederholung bei Prozess- und Protokollfehlern, Halt-Notiz, Finalisierung | nur für `-f implement`: Kanten in `implement.toml`, Wirkung im alten Ausführer; der gemeinsame Ausführer hat sie nicht → Gerüst (`run.toml`) bzw. Muster mit Finalisierung | Kanten ins Gerüst bzw. Muster übernehmen | ige.6.4.5, .6, .10 bis .12 |
+| Rundengrenzen im Review-Muster (`map`, `graph`, `materialize`) | nur `implement.toml` zählt Runden; die Korrekturkante im Muster hat keinen Zähler → Paket-Wächter im Muster | Zähler an die Korrekturkante im Muster | ige.6.4.7, .8 |
+
+Noch zur Kartierung offen, ohne Test: Sitzungsbindung als Ablaufdatum
+(`neu | wie:<zustand>`) und adaptive Schnitte des Controllers
+([Zielbild](docs/zielbild.de.md)).
 
 ---
 
@@ -148,6 +234,10 @@ Prüfung wie bei einem Agenten.
 Der Mensch hat damit zwei getrennte Rollen: **Bote** (Adapter `manual`) und
 **Entscheider** (Zustände der Art `wait`, z. B. nach `NEEDS_DECISION`).
 
+`ki-dev -f implement` schreibt je Übergang eine Zeile nach
+`events.jsonl`, für Ablauf und Lauf (Operation, Halt) je mit ihrer Region
+([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
+
 ### `ki-dev -f ABLAUF step`: ein Turn von Hand
 
 ```bash
@@ -161,14 +251,21 @@ Der Zustand steht im Aufruf, Antworten kommen als Dateien je Zustand;
 gespeichert wird nichts. Braucht eine Übergabe Daten von weiter vorn,
 nennt der Ablauf ihre Herkunft, und step meldet, welche Antwort fehlt.
 
-Echte Ausgabe (gekürzt) für einen Bead dieses Repositorys:
+`step` fährt den gewählten Ablauf (`map`, `graph`, `materialize`,
+`implement_review` oder einen eigenen) ab dem genannten Zustand auf dem
+einen Ausführer (`runner/package.py`, Executor `manual`) bis zur nächsten
+Übergabe (`turn`/`ask`), in einem Lauf nur für diesen Aufruf; nur
+`implement_review` bindet den Vorlauf `implement.preflight`.
+`implement_review` und `implement` sollen ein Ablauf werden.
+
+Echte Ausgabe (gekürzt, Bead-ID durch `BEAD` ersetzt) für einen Bead dieses Repositorys:
 
 ```text
 Schritt: materialize
-Bead: ki-dev-ablauf-5we - Vor GitHub: begrenzte Reviewer-Prüfsteuerung in step anschließen
+Bead: BEAD - Vor GitHub: begrenzte Reviewer-Prüfsteuerung in step anschließen
 …
 Hinweis für den Menschen: Zustand materialize; Folgeschritte laut materialize.toml (Adapter manual, du trägst sie weiter):
-- done → materialize.review: `ki-dev -f materialize step ki-dev-ablauf-5we materialize.review`
+- done → materialize.review: `ki-dev -f materialize step BEAD materialize.review`
 ```
 
 Ein Review vergibt je Befund eine Klasse. Die stärkste Klasse bestimmt die
@@ -255,92 +352,6 @@ Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
 
 ---
 
-## Was die Tests belegen
-
-| Behauptung | Nachweis |
-| --- | --- |
-| Kein Zyklus ohne Mensch läuft unbegrenzt | `tests/machine/test_reachability.py` zählt den ganzen Zustandsraum auf |
-| … und das schon an den Daten | `tests/test_flow_implement.py`: jeder Zyklus hat eine zählende Kante |
-| `PASSED` nur über die geprüfte Integration | `tests/machine/test_reachability.py` |
-| Ablauf und Ausführer sprechen dasselbe Vokabular | `ki_dev.fsm.bind` prüft beim Import; `tests/test_flow_implement.py`, `tests/test_fsm.py` |
-| Schichten importieren nie rückwärts | `tests/test_schichten.py` (transitiv, per AST) |
-| Der Bote hält den Ausführer, nicht den Ablauf | `tests/test_runner_runtime.py`, `tests/test_runner_cli.py` |
-
-Diese Tests prüfen die Ablaufdaten und den Ausführer von innen. Ob ki-dev
-an einem Auftrag tut, was es soll, prüfen erst die Lehrstufen im
-nächsten Abschnitt über die öffentliche CLI.
-
-```bash
-.venv/bin/pytest -q && .venv/bin/ruff check .
-```
-
-Stand 2026-10-15 (Branch `dev` nach `ab3c441`): 2740 bestanden,
-1 erwartet rot (`xfail`, Stufe 2, ki-dev-ablauf-ek1), 1 übersprungen
-(Docker-Test, ohne Docker in der Prüfumgebung), 14 abgewählt
-(Gerüstkontrollen der Anforderungstests, `make spec-test`); ruff ohne
-Befund. Nicht ausgeführt: `make readme-check` und Läufe mit echten
-Anbietern.
-
----
-
-## Entwicklungsstand
-
-Vier Lehrstufen beschreiben an einem kleinen Auftrag, was ki-dev leisten
-soll: `add()` in `add.py` korrigieren, geprüft durch feste Tests
-`add(2, 3) == 5` und `add(-1, 1) == 0`. Gezählt wird nur, was über die
-öffentliche CLI tatsächlich ausgeführt wurde; ein roter Test ist ein
-gültiges Ergebnis, eine fehlende Prüfung steht als „nicht geprüft“ da.
-
-| Stufe | Soll | Prüfstand 2026-10-15 | Bead |
-| --- | --- | --- | --- |
-| 1 Auftrag | Ein Lauf korrigiert `add()`; nur `add.py` ändert sich | nicht geprüft: der Mock-Worker hängt nur Text an `MOCK.md` an, ein Test-Executor, der `add.py` ändert, fehlt; die Testorakel selbst sind geprüft (Stufe 2) | ki-dev-ablauf-unu, ki-dev-ablauf-1nf |
-| 2 Review | Rote Tests + Review-`PASS` → keine Integration | **rot:** `ki-dev -f implement` integriert trotzdem (unten) | ki-dev-ablauf-ek1 |
-| 3 Grenzen | Kontext 85 000 bei Grenze 80 000 → kein weiterer Agentenaufruf, sichtbarer Halt | nicht geprüft: `mock` und `manual` messen nichts, die Wächter greifen dort nicht; die Wächter des alten Ausführers sind nur intern getestet (`tests/test_context_guard.py`, `tests/test_quota_guard.py`, `tests/test_runner_safety.py`) | ki-dev-ablauf-v5w, ki-dev-ablauf-1nf |
-| 4 Übergabe | Elternauftrag, Rolle und Testbefehl stehen in der Übergabe an den Agenten | nicht geprüft: kein Test | ki-dev-ablauf-76e |
-
-<!-- readme-script: readme-scripts/3-review-gate.sh -->
-Stufe 2 über die öffentliche CLI: `ki-dev -f implement` mit
-Mock-Worker und Mock-Review (`PASS`) gegen ein Wegwerf-Repo mit
-`add.py` (falsch: `a - b`) und festem `test_add.py`. Kein
-Anbieterzugang; braucht git und `bd` aus `make setup`. Die Kontrollen
-prüfen den Test selbst: Orakel rot bei `a - b`, grün bei `a + b`; ein
-Collection-Fehler zählt nicht als roter Test; grüne Tests + PASS
-integrieren. Der Kernfall ist heute rot und als `xfail(strict=True)`
-markiert; `--runxfail` zeigt den Fehlschlag:
-
-```bash
-.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
-```
-
-```text
-E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
-FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
-1 failed, 4 passed
-```
-
-Gekürzt; die Hashes wechseln je Lauf. Der Lauf hat trotz roter Tests
-auf `main` integriert (ki-dev-ablauf-ek1). Ohne `--runxfail` meldet
-derselbe Befehl `4 passed, 1 xfailed`.
-<!-- /readme-script -->
-
-Bead-IDs (`ki-dev-ablauf-…`) verweisen auf die Beads-Datenbank des
-Projekts; sie liegt nicht im Repository. Ein geprüfter, datierter
-Journal-Snapshot zum Nachlesen ist noch nicht veröffentlicht
-(ki-dev-ablauf-rb2).
-
-## Bekannte Lücken
-
-Quelle: [Ausführer-Architektur: was fehlt](docs/ausfuehrer-luecken.de.md)
-(Stand 2026-10-14) und der Befund aus Stufe 2.
-
-| Merkmal | Heute | Ziel | Bead |
-| --- | --- | --- | --- |
-| Review-`PASS` überstimmt keine roten Tests | `ki-dev -f implement` integriert nach Review-`PASS` trotz roter `[[tests]]` | Integration nur mit grünen Prüfungen | ki-dev-ablauf-ek1 |
-| Schutzhalt bei Kontext-, Kontingent- und Budgetgrenze | Python-Wächter im alten Ausführer `flow_ops/implement/runtime.py` (`_context_guard`, `_quota_guard`, Budgetbuchung), nur für `-f implement` | Messung im Adapter, Vergleich als Kante in `runner/run.toml` (`measured` mit Wächter `within_limits`), Grenzwert im Profil | ki-dev-ablauf-ige.6.4.1 bis .4 |
-| Ein Ausführer | `-f implement` fährt den alten Ausführer, `step` den gemeinsamen `runner/package.py`; dessen Dispatch ruft den Executor ohne Schutzprüfung auf | `-f implement` und `step` auf `runner/package.py`, alter Ausführer entfällt | ki-dev-ablauf-ige.6.4.13, .14 |
-| Wiederholung bei Prozess- und Protokollfehlern, Halt-Notiz, Finalisierung | nur für `-f implement`: Kanten in `implement.toml`, Wirkung im alten Ausführer; der gemeinsame Ausführer hat sie nicht | Gerüst (`run.toml`) bzw. Muster mit Finalisierung | ki-dev-ablauf-ige.6.4.5, .6, .10 bis .12 |
-| Rundengrenzen im Review-Muster (`map`, `graph`, `materialize`) | nur `implement.toml` zählt Runden; die Korrekturkante im Muster hat keinen Zähler | Paket-Wächter im Muster | ki-dev-ablauf-ige.6.4.7, .8 |
-
 ## Grenzen, genau genommen
 
 - **Schutz nur, wo gemessen wird:** Die Grenzen wirken nur in
@@ -410,7 +421,7 @@ src/ki_dev/
                Deklaration), events.py (Protokoll), safety.py
                (Kontext-, Kontingent-, Aufrufgrenzen)
   flow_ops/    Pakete: implement/ (Ops, Rollenprofil, eigener Ausführer
-               runtime.py bis ki-dev-ablauf-ige.6)
+               runtime.py bis ige.6)
   ops/         checks/ (Vorlauf), context/ (Bead-Eingabe, Leitlinien,
                Grenzen, Kontextbausteine); kennt weder runner noch adapter
   adapter/     contract.py, agent.py, manual.py, mock.py (transportieren nur),
@@ -431,27 +442,6 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 [Zielbild und Hintergrund](docs/zielbild.de.md)
 
 ---
-
-## Funktionsumfang und offene Punkte
-
-- **Vorhanden:** `ki-dev -f ABLAUF step` (ein Turn eines Ablaufs von
-  Hand), `ki-dev -f implement` mit den Adaptern `claude`, `codex`,
-  `manual` und `mock` (Bauablauf). Geprüft sind `make demo` und die
-  Testsuite mit Mock; Läufe mit echten Anbietern gehören nicht dazu,
-  ihre Abnahme steht aus (ki-dev-ablauf-5wl.1).
-- **Abläufe von Hand:** `step` fährt den gewählten Ablauf (`map`,
-  `graph`, `materialize`, `implement_review` oder ein eigener) ab dem
-  genannten Zustand auf dem einen Ausführer (`runner/package.py`,
-  Executor `manual`) bis zur nächsten Übergabe (`turn`/`ask`), in einem
-  Lauf nur für diesen Aufruf; nur `implement_review` bindet den Vorlauf
-  `implement.preflight`. `implement_review` und `implement` werden ein
-  Ablauf (ki-dev-ablauf-ige.6).
-- **Beobachtbar:** `ki-dev -f implement` schreibt je Übergang eine Zeile nach
-  `events.jsonl`, für Ablauf und Lauf (Operation, Halt) je mit ihrer Region
-  ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
-- **Zur Kartierung offen:** Sitzungsbindung als Ablaufdatum
-  (`neu | wie:<zustand>`), adaptive Schnitte des Controllers
-  ([Zielbild](docs/zielbild.de.md)).
 
 ## Hintergrund
 

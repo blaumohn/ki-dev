@@ -12,8 +12,8 @@ time, tokens and money while doing so.
 - **Workflow as data:** every loop is a back edge with a counter → [Example](#a-loop-is-an-edge-not-a-component)
 - **Deterministic control:** same state + same event → same edge, no extra model call → [Components](#components)
 - **Swappable roles:** Claude, Codex, a human or a mock per role → [Two commands](#two-commands)
-- **Backed by tests:** no cycle without a human runs unbounded → [What the tests prove](#what-the-tests-prove)
-- **Alpha, 2026-10-15:** 2740 tests green, 1 known red requirement (review gate) → [Known gaps](#known-gaps)
+- **Backed by tests:** no cycle without a human runs unbounded → [Test bench](#test-bench)
+- **As of 2026-10-15 (`ab3c441`):** ✅ 6 proven · ❌ 1 specification red · ⬜ 3 open → [Test bench](#test-bench)
 
 ---
 
@@ -53,6 +53,91 @@ takes the back edge once (`round_id: 2`), freezes the reviewed result and
 fast-forwards it into `main`. The demo script creates the bead and the
 profile (`profil.toml`) itself.
 <!-- /readme-script -->
+
+## Test bench
+
+Tests are the specification here: red means specified, not built yet.
+
+**Legend:** ✅ passed · ❌ red, expected (specification) · ⬜ not checked
+
+Stages 1–4 describe, on a small task, what ki-dev is meant to do: fix
+`add()` in `add.py`, checked by fixed tests `add(2, 3) == 5` and
+`add(-1, 1) == 0`. Only what was actually run through the public CLI
+counts; a missing check is shown as "not checked". The first six rows
+check the workflow data and the executor from the inside.
+
+| Capability | Status | Check it yourself | Contribute | Bead |
+| --- | --- | --- | --- | --- |
+| no unbounded cycle without a human; the whole state space is enumerated | ✅ passed | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
+| … visible in the data itself: every cycle has a counting edge | ✅ passed | `.venv/bin/pytest -q tests/test_flow_implement.py` | – | – |
+| `PASSED` only via verified integration | ✅ passed | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
+| workflow and executor share one vocabulary (`ki_dev.fsm.bind` checks on import) | ✅ passed | `.venv/bin/pytest -q tests/test_flow_implement.py tests/test_fsm.py` | – | – |
+| layers never import upwards (transitive, AST) | ✅ passed | `.venv/bin/pytest -q tests/test_schichten.py` | – | – |
+| the messenger halts the executor, not the workflow | ✅ passed | `.venv/bin/pytest -q tests/test_runner_runtime.py tests/test_runner_cli.py` | – | – |
+| stage 1 task: a run fixes `add()`; only `add.py` changes | ⬜ not checked: the mock worker only appends text to `MOCK.md`, a test executor that changes `add.py` is missing; the test oracles themselves are checked (stage 2) | – | write a spec test | unu, 1nf |
+| stage 2 review: red tests + review `PASS` → no integration | ❌ red, expected: `ki-dev -f implement` integrates anyway (below) | `.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py` | build the gate in the executor; the test tells you when it is done | ek1 |
+| stage 3 limits: context 85,000 at limit 80,000 → no further agent call, visible halt | ⬜ not checked: `mock` and `manual` measure nothing, the guards do not apply there; the guards of the old executor are tested only internally (`tests/test_context_guard.py`, `tests/test_quota_guard.py`, `tests/test_runner_safety.py`) | – | write a spec test | v5w, 1nf |
+| stage 4 handoff: parent task, role and test command appear in the handoff to the agent | ⬜ not checked: no test | – | write a spec test | 76e |
+
+Bead: short IDs from the project-internal Beads database (`ki-dev-ablauf-…`); a public journal will follow.
+
+<!-- readme-script: readme-scripts/en/3-review-gate.sh -->
+Stage 2 through the public CLI: `ki-dev -f implement` with a mock
+worker and a mock review (`PASS`) against a throwaway repository with
+`add.py` (wrong: `a - b`) and a fixed `test_add.py`. No provider
+access; needs git and `bd` from `make setup`. The controls check the
+test itself: the oracle is red for `a - b` and green for `a + b`; a
+collection error does not count as a red test; green tests + PASS
+integrate. The core case is red today and marked `xfail(strict=True)`;
+`--runxfail` shows the failure:
+
+```bash
+.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
+```
+
+```text
+E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
+FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
+1 failed, 4 passed
+```
+
+Shortened; the hashes change on every run. The run integrated into
+`main` despite red tests (ek1). Without `--runxfail` the
+same command reports `4 passed, 1 xfailed`.
+<!-- /readme-script -->
+
+Everything at once:
+
+```bash
+.venv/bin/pytest -q && .venv/bin/ruff check .
+```
+
+As of 2026-10-15 (branch `dev` after `ab3c441`): 2740 passed,
+1 expectedly red (`xfail`, stage 2), 1 skipped (Docker test, no Docker
+in the test environment), 14 deselected (scaffold controls of the
+requirement tests, `make spec-test`); ruff clean. `make demo` and the
+test suite are also checked with mocks. Not checked: `make readme-check`
+and runs with real providers (`claude`, `codex`); their acceptance is
+pending.
+
+### What the architecture is missing
+
+Source: [executor architecture: what is missing (German)](docs/ausfuehrer-luecken.de.md)
+(as of 2026-10-14) and the stage 2 finding.
+
+| Property | today → target | Contribute | Bead |
+| --- | --- | --- | --- |
+| a review `PASS` does not override red tests | `ki-dev -f implement` integrates after a review `PASS` despite red `[[tests]]` → integration only with green checks | as in stage 2: build the gate until the test is green | ek1 |
+| safety halt at context, quota and budget limits | Python guards in the old executor `flow_ops/implement/runtime.py` (`_context_guard`, `_quota_guard`, budget ledger), only for `-f implement` → measured by the adapter, compared as an edge in `runner/run.toml` (`measured` with guard `within_limits`), limit value in the profile | spec test for stage 3, then build edge and guard | ige.6.4.1 to .4 |
+| one executor | `-f implement` drives the old executor, `step` the shared `runner/package.py`; its dispatch calls the executor without any safety check → `-f implement` and `step` on `runner/package.py`, old executor removed | move `-f implement` onto `runner/package.py` | ige.6.4.13, .14 |
+| retry on process and protocol errors, halt note, finalization | only for `-f implement`: edges in `implement.toml`, effects in the old executor; the shared executor lacks them → scaffold (`run.toml`) or pattern with finalization | move the edges into the scaffold or pattern | ige.6.4.5, .6, .10 to .12 |
+| round limits in the review pattern (`map`, `graph`, `materialize`) | only `implement.toml` counts rounds; the pattern's correction edge has no counter → package guards in the pattern | add a counter to the pattern's correction edge | ige.6.4.7, .8 |
+
+Still to be mapped, without a test: session binding as workflow data
+(`neu | wie:<zustand>`) and adaptive cuts by the controller
+([target picture, German](docs/zielbild.de.md)).
+
+---
 
 ## Components
 
@@ -129,88 +214,6 @@ the bundled package. The bead supplies the task, the profile
 With `manual` an empty answer halts the **executor** (`awaiting_input`), not
 the workflow; `resume` asks again. The human thus has two separate roles:
 messenger (adapter) and decider (states of kind `wait`).
-
-## What the tests prove
-
-| Claim | Evidence |
-| --- | --- |
-| no unbounded cycle without a human | `tests/machine/test_reachability.py` enumerates the state space |
-| … visible in the data itself | `tests/test_flow_implement.py`: every cycle has a counting edge |
-| `PASSED` only via verified integration | `tests/machine/test_reachability.py` |
-| workflow and executor share one vocabulary | `ki_dev.fsm.bind` checks on import; `tests/test_flow_implement.py`, `tests/test_fsm.py` |
-| layers never import upwards | `tests/test_schichten.py` (transitive, AST) |
-| the messenger halts the executor, not the workflow | `tests/test_runner_runtime.py`, `tests/test_runner_cli.py` |
-
-These tests check the workflow data and the executor from the inside.
-Whether ki-dev does its job on a task is checked only by the teaching
-stages in the next section, through the public CLI.
-
-```bash
-.venv/bin/pytest -q && .venv/bin/ruff check .
-```
-
-As of 2026-10-15 (branch `dev` after `ab3c441`): 2740 passed,
-1 expectedly red (`xfail`, stage 2, ki-dev-ablauf-ek1), 1 skipped
-(Docker test, no Docker in the test environment), 14 deselected
-(scaffold controls of the requirement tests, `make spec-test`); ruff
-clean. Not run: `make readme-check` and runs with real providers.
-
-## Development status
-
-Four teaching stages describe, on a small task, what ki-dev is meant to
-do: fix `add()` in `add.py`, checked by fixed tests `add(2, 3) == 5` and
-`add(-1, 1) == 0`. Only what was actually run through the public CLI
-counts; a red test is a valid result, a missing check is shown as "not
-checked".
-
-| Stage | Requirement | Status 2026-10-15 | Bead |
-| --- | --- | --- | --- |
-| 1 task | a run fixes `add()`; only `add.py` changes | not checked: the mock worker only appends text to `MOCK.md`, a test executor that changes `add.py` is missing; the test oracles themselves are checked (stage 2) | ki-dev-ablauf-unu, ki-dev-ablauf-1nf |
-| 2 review | red tests + review `PASS` → no integration | **red:** `ki-dev -f implement` integrates anyway (below) | ki-dev-ablauf-ek1 |
-| 3 limits | context 85,000 at limit 80,000 → no further agent call, visible halt | not checked: `mock` and `manual` measure nothing, the guards do not apply there; the guards of the old executor are tested only internally (`tests/test_context_guard.py`, `tests/test_quota_guard.py`, `tests/test_runner_safety.py`) | ki-dev-ablauf-v5w, ki-dev-ablauf-1nf |
-| 4 handoff | parent task, role and test command appear in the handoff to the agent | not checked: no test | ki-dev-ablauf-76e |
-
-<!-- readme-script: readme-scripts/en/3-review-gate.sh -->
-Stage 2 through the public CLI: `ki-dev -f implement` with a mock
-worker and a mock review (`PASS`) against a throwaway repository with
-`add.py` (wrong: `a - b`) and a fixed `test_add.py`. No provider
-access; needs git and `bd` from `make setup`. The controls check the
-test itself: the oracle is red for `a - b` and green for `a + b`; a
-collection error does not count as a red test; green tests + PASS
-integrate. The core case is red today and marked `xfail(strict=True)`;
-`--runxfail` shows the failure:
-
-```bash
-.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
-```
-
-```text
-E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
-FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
-1 failed, 4 passed
-```
-
-Shortened; the hashes change on every run. The run integrated into
-`main` despite red tests (ki-dev-ablauf-ek1). Without `--runxfail` the
-same command reports `4 passed, 1 xfailed`.
-<!-- /readme-script -->
-
-Bead IDs (`ki-dev-ablauf-…`) refer to the project's Beads database,
-which is not part of the repository. A reviewed, dated journal snapshot
-for reading them is not published yet (ki-dev-ablauf-rb2).
-
-## Known gaps
-
-Source: [executor architecture: what is missing (German)](docs/ausfuehrer-luecken.de.md)
-(as of 2026-10-14) and the stage 2 finding.
-
-| Property | Today | Target | Bead |
-| --- | --- | --- | --- |
-| a review `PASS` does not override red tests | `ki-dev -f implement` integrates after a review `PASS` despite red `[[tests]]` | integration only with green checks | ki-dev-ablauf-ek1 |
-| safety halt at context, quota and budget limits | Python guards in the old executor `flow_ops/implement/runtime.py` (`_context_guard`, `_quota_guard`, budget ledger), only for `-f implement` | measured by the adapter, compared as an edge in `runner/run.toml` (`measured` with guard `within_limits`), limit value in the profile | ki-dev-ablauf-ige.6.4.1 to .4 |
-| one executor | `-f implement` drives the old executor, `step` the shared `runner/package.py`; its dispatch calls the executor without any safety check | `-f implement` and `step` on `runner/package.py`, old executor removed | ki-dev-ablauf-ige.6.4.13, .14 |
-| retry on process and protocol errors, halt note, finalization | only for `-f implement`: edges in `implement.toml`, effects in the old executor; the shared executor lacks them | scaffold (`run.toml`) or pattern with finalization | ki-dev-ablauf-ige.6.4.5, .6, .10 to .12 |
-| round limits in the review pattern (`map`, `graph`, `materialize`) | only `implement.toml` counts rounds; the pattern's correction edge has no counter | package guards in the pattern | ki-dev-ablauf-ige.6.4.7, .8 |
 
 ## Limits, precisely
 

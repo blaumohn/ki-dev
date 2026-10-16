@@ -18,5 +18,5 @@
 # ```
 #
 # Gekürzt; die Hashes wechseln je Lauf. Der Lauf hat trotz roter Tests
-# auf `main` integriert (ki-dev-ablauf-ek1). Ohne `--runxfail` meldet
+# auf `main` integriert (ek1). Ohne `--runxfail` meldet
 # derselbe Befehl `4 passed, 1 xfailed`.
