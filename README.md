@@ -9,24 +9,30 @@ nicht im Prompt.**
 Für alle, die Claude oder Codex an echten Aufträgen arbeiten lassen und
 dabei Zeit, Token und Geld begrenzen müssen.
 
+- **Ausprobieren ohne Anbieterzugang:** `make setup && make demo` → [Ausprobieren](#ausprobieren)
 - **Ablauf als Daten:** jede Schleife ist eine Rückkante, im Bauablauf `implement` mit Zähler → [Beispiel](#eine-schleife-ist-eine-kante-kein-baustein)
-- **Deterministische Steuerung:** gleicher Zustand + gleiches Ereignis → gleiche Kante, ohne zusätzlichen Modellaufruf → [Bausteine](#bausteine)
-- **Rollen austauschbar:** Claude, Codex, Mensch oder Mock je Rolle → [Zwei Befehle](#zwei-befehle)
+- **Deterministische Steuerung:** gleicher Zustand + gleiches Ereignis → gleiche Kante, ohne zusätzlichen Modellaufruf → [Bausteine](#bausteine) · Test: [`test_reachability.py`](tests/machine/test_reachability.py)
+- **Rollen austauschbar:** Claude, Codex, Mensch oder Mock je Rolle → [Zwei Befehle](#zwei-befehle) · Test: [`test_cli_smoke.py`](tests/test_cli_smoke.py)
 - **Durch Tests belegt:** im Bauablauf `implement` läuft kein Zyklus ohne Mensch unbegrenzt → [Prüfstand](#prüfstand)
 - **Stand 2026-10-15 (`ab3c441`):** ✅ 6 belegt · ❌ 1 Spezifikation rot · ⬜ 3 offen → [Prüfstand](#prüfstand)
 
 ---
 
-## In einer Minute ausprobieren
+## Ausprobieren
 
 <!-- readme-script: readme-scripts/1-setup.sh -->
 > ⬜ nicht ausgeführt · selbst prüfen: make demo
+
+`make demo` lief lokal mit Mock (2026-10-15); der Lauf im
+Wegwerf-Container (`make readme-check`) steht aus, daher ⬜.
 
 Ohne Anbieterzugang, mit Mock-Adaptern. Voraussetzungen: Python ≥ 3.12
 (mit `venv`), git ≥ 2.32, make, Go und ein C-Compiler. `make setup` legt
 venv, ki-dev und [Beads](https://github.com/steveyegge/beads) `bd` (Version
 aus `src/ki_dev/tool-versions.json`) im Projekt an, außerhalb ändert es
-nichts. `$REPLACE_WITH_REPOSITORY_URL` steht für die Klon-Adresse dieses
+nichts. Go und den C-Compiler braucht es, weil `make setup` `bd` aus dem
+Quellcode baut (`go install`, mit CGO); das kann beim ersten Mal einige
+Minuten dauern. `$REPLACE_WITH_REPOSITORY_URL` steht für die Klon-Adresse dieses
 Repositorys; sie steht nach der Veröffentlichung fest.
 
 ```bash
@@ -56,6 +62,10 @@ geprüfte Ergebnis ein und integriert es per Fast-forward. Bead und
 Profil (`profil.toml`) legt das Demo-Skript selbst an.
 <!-- /readme-script -->
 
+Am eigenen Repo liefert ein Bead den Auftrag und ein Profil Rollen,
+Prüfungen und Grenzen: [Zwei Befehle](#zwei-befehle), Einzelheiten unter
+[Ausführer](docs/ausfuehrer.de.md).
+
 ---
 
 ## Prüfstand
@@ -73,14 +83,14 @@ Ausführer von innen.
 
 | Fähigkeit | Stand | Selbst prüfen | Mitmachen | Bead |
 | --- | --- | --- | --- | --- |
-| Bauablauf `implement`: kein Zyklus ohne Mensch läuft unbegrenzt; der ganze Zustandsraum wird aufgezählt (für `map`, `graph`, `materialize` fehlt der Zähler, unten) | ✅ bestanden | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
-| … und das schon an den Daten von `implement.toml`: jeder Zyklus hat eine zählende Kante | ✅ bestanden | `.venv/bin/pytest -q tests/test_flow_implement.py` | – | – |
-| `implement`: `PASSED` nur über die geprüfte Integration | ✅ bestanden | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
-| Ablauf und Ausführer sprechen dasselbe Vokabular (`ki_dev.fsm.bind` prüft beim Import) | ✅ bestanden | `.venv/bin/pytest -q tests/test_flow_implement.py tests/test_fsm.py` | – | – |
-| Schichten importieren nie rückwärts (transitiv, per AST) | ✅ bestanden | `.venv/bin/pytest -q tests/test_schichten.py` | – | – |
-| Der Bote hält den Ausführer, nicht den Ablauf | ✅ bestanden | `.venv/bin/pytest -q tests/test_runner_runtime.py tests/test_runner_cli.py` | – | – |
+| Bauablauf `implement`: kein Zyklus ohne Mensch läuft unbegrenzt; der ganze Zustandsraum wird aufgezählt (für `map`, `graph`, `materialize` fehlt der Zähler, unten) | ✅ bestanden | [Test](tests/machine/test_reachability.py): `.venv/bin/pytest -q tests/machine/test_reachability.py::test_no_free_cycle_exists` | – | – |
+| … und das schon an den Daten von `implement.toml`: jeder Zyklus hat eine zählende Kante | ✅ bestanden | [Test](tests/test_flow_implement.py): `.venv/bin/pytest -q tests/test_flow_implement.py::test_every_cycle_without_a_human_consumes_a_counter` | – | – |
+| `implement`: `PASSED` nur über die geprüfte Integration | ✅ bestanden | [Test](tests/machine/test_reachability.py): `.venv/bin/pytest -q tests/machine/test_reachability.py::test_passed_entered_only_by_integration` | – | – |
+| Ablauf und Ausführer sprechen dasselbe Vokabular (`ki_dev.fsm.bind` prüft beim Import) | ✅ bestanden | [Test](tests/test_flow_implement.py), [Bindung](tests/test_fsm.py): `.venv/bin/pytest -q tests/test_flow_implement.py::test_executor_must_speak_the_declared_vocabulary tests/test_fsm.py` | – | – |
+| Schichten importieren nie rückwärts (transitiv, per AST) | ✅ bestanden | [Test](tests/test_schichten.py): `.venv/bin/pytest -q tests/test_schichten.py::test_layers_never_import_upwards` | – | – |
+| Der Bote hält den Ausführer, nicht den Ablauf | ✅ bestanden | [Test](tests/test_runner_runtime.py): `.venv/bin/pytest -q tests/test_runner_runtime.py::test_manual_relay_halts_executor_not_flow_and_continues` | – | – |
 | Stufe 1 Auftrag: ein Lauf korrigiert `add()`; nur `add.py` ändert sich | ⬜ nicht geprüft: der Mock-Worker hängt nur Text an `MOCK.md` an, ein Test-Executor, der `add.py` ändert, fehlt; die Testorakel selbst sind geprüft (Stufe 2) | – | Spec-Test schreiben | unu, 1nf |
-| Stufe 2 Review: rote Tests + Review-`PASS` → keine Integration | ❌ rot, erwartet: `ki-dev -f implement` integriert trotzdem (unten) | `.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py` | Gate im Ausführer bauen; der Test sagt, wann es fertig ist | ek1 |
+| Stufe 2 Review: rote Tests + Review-`PASS` → keine Integration | ❌ rot, erwartet: `ki-dev -f implement` integriert trotzdem (unten) | [Test](tests/test_review_gate_cli.py): `.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py` | Gate im Ausführer bauen; der Test sagt, wann es fertig ist | ek1 |
 | Stufe 3 Grenzen: Kontext 85 000 bei Grenze 80 000 → kein weiterer Agentenaufruf, sichtbarer Halt | ⬜ nicht geprüft: `mock` und `manual` messen nichts, die Wächter greifen dort nicht; die Wächter des alten Ausführers sind nur intern getestet (`tests/test_context_guard.py`, `tests/test_quota_guard.py`, `tests/test_runner_safety.py`) | – | Spec-Test schreiben | v5w, 1nf |
 | Stufe 4 Übergabe: Elternauftrag, Rolle und Testbefehl stehen in der Übergabe an den Agenten | ⬜ nicht geprüft: kein Test | – | Spec-Test schreiben | 76e |
 
@@ -122,7 +132,7 @@ Alles auf einmal:
 Stand 2026-10-15 (Branch `dev` nach `ab3c441`): 2740 bestanden,
 1 erwartet rot (`xfail`, Stufe 2), 1 übersprungen (Docker-Test, ohne
 Docker in der Prüfumgebung), 14 abgewählt (Gerüstkontrollen der
-Anforderungstests, `make spec-test`); ruff ohne Befund. Mit Mock geprüft
+Anforderungstests, `make spec-test`); ruff ohne Befund. Lokal mit Mock geprüft
 sind außerdem `make demo` und die Testsuite. Nicht geprüft:
 `make readme-check` und Läufe mit echten Anbietern (`claude`, `codex`);
 ihre Abnahme steht aus.
@@ -354,7 +364,9 @@ stateDiagram-v2
 ```
 
 Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
-`scripts/render-flow-diagrams.py`); ein Test vergleicht sie mit der Ausgabe.
+`scripts/render-flow-diagrams.py`); ein Test vergleicht sie mit der Ausgabe
+(`test_readme_diagrams_equal_generated_output` in
+[`tests/test_flow_diagram.py`](tests/test_flow_diagram.py)).
 
 ---
 
@@ -382,7 +394,7 @@ Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
 
 ## Installation
 
-Voraussetzungen und Einrichtung: siehe [oben](#in-einer-minute-ausprobieren);
+Voraussetzungen und Einrichtung: siehe [oben](#ausprobieren);
 das `Makefile` ist kurz und lesbar.
 
 <!-- readme-script: readme-scripts/2-runtime.sh -->
@@ -483,7 +495,7 @@ Architekturanforderungen übergangen waren. Die Abläufe, die das verhindern sol
 Mitteln, die sie ersetzen sollen. Bis sie tragen, gilt von Hand: Aufträge
 in einer Größe schneiden, die in den Kontext eines Agenten passt,
 Anforderungen ausdrücklich machen und getrennt prüfen, wie in den
-Lehrstufen oben.
+Stufen 1–4 im [Prüfstand](#prüfstand).
 
 ### Nach der Veröffentlichung: V1
 

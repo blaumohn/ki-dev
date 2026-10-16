@@ -1,8 +1,13 @@
+# `make demo` lief lokal mit Mock (2026-10-15); der Lauf im
+# Wegwerf-Container (`make readme-check`) steht aus, daher ⬜.
+#
 # Ohne Anbieterzugang, mit Mock-Adaptern. Voraussetzungen: Python ≥ 3.12
 # (mit `venv`), git ≥ 2.32, make, Go und ein C-Compiler. `make setup` legt
 # venv, ki-dev und [Beads](https://github.com/steveyegge/beads) `bd` (Version
 # aus `src/ki_dev/tool-versions.json`) im Projekt an, außerhalb ändert es
-# nichts. `$REPLACE_WITH_REPOSITORY_URL` steht für die Klon-Adresse dieses
+# nichts. Go und den C-Compiler braucht es, weil `make setup` `bd` aus dem
+# Quellcode baut (`go install`, mit CGO); das kann beim ersten Mal einige
+# Minuten dauern. `$REPLACE_WITH_REPOSITORY_URL` steht für die Klon-Adresse dieses
 # Repositorys; sie steht nach der Veröffentlichung fest.
 #
 # ```bash

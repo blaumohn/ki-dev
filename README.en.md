@@ -9,24 +9,30 @@ the prompt.**
 For anyone who lets Claude or Codex work on real tasks and has to limit
 time, tokens and money while doing so.
 
+- **Try it offline:** `make setup && make demo` → [Try it](#try-it)
 - **Workflow as data:** every loop is a back edge, with a counter in the build workflow `implement` → [Example](#a-loop-is-an-edge-not-a-component)
-- **Deterministic control:** same state + same event → same edge, no extra model call → [Components](#components)
-- **Swappable roles:** Claude, Codex, a human or a mock per role → [Two commands](#two-commands)
+- **Deterministic control:** same state + same event → same edge, no extra model call → [Components](#components) · Test: [`test_reachability.py`](tests/machine/test_reachability.py)
+- **Swappable roles:** Claude, Codex, a human or a mock per role → [Two commands](#two-commands) · Test: [`test_cli_smoke.py`](tests/test_cli_smoke.py)
 - **Backed by tests:** in the build workflow `implement` no cycle without a human runs unbounded → [Test bench](#test-bench)
 - **As of 2026-10-15 (`ab3c441`):** ✅ 6 proven · ❌ 1 specification red · ⬜ 3 open → [Test bench](#test-bench)
 
 ---
 
-## Try it in a minute
+## Try it
 
 <!-- readme-script: readme-scripts/en/1-setup.sh -->
 > ⬜ not run · verify: make demo
+
+`make demo` ran locally with mocks (2026-10-15); the run in a throwaway
+container (`make readme-check`) is still pending, hence ⬜.
 
 Offline, with mock adapters. Prerequisites: Python ≥ 3.12 (with `venv`),
 git ≥ 2.32, make, Go and a C compiler. `make setup` creates the venv,
 ki-dev and [Beads](https://github.com/steveyegge/beads) `bd` (version from
 `src/ki_dev/tool-versions.json`) inside the project and changes nothing
-outside it. `$REPLACE_WITH_REPOSITORY_URL` stands for the clone address of
+outside it. Go and the C compiler are needed because `make setup` builds
+`bd` from source (`go install`, with CGO); the first time this can take a
+few minutes. `$REPLACE_WITH_REPOSITORY_URL` stands for the clone address of
 this repository; it is fixed once the repository is published.
 
 ```bash
@@ -56,6 +62,12 @@ fast-forwards it into `main`. The demo script creates the bead and the
 profile (`profil.toml`) itself.
 <!-- /readme-script -->
 
+On your own repository a bead supplies the task and a profile the roles,
+checks and limits: [Two commands](#two-commands), details in
+[executor (German)](docs/ausfuehrer.de.md).
+
+---
+
 ## Test bench
 
 Tests are the specification here: red means specified, not built yet.
@@ -70,14 +82,14 @@ check the workflow data and the executor from the inside.
 
 | Capability | Status | Check it yourself | Contribute | Bead |
 | --- | --- | --- | --- | --- |
-| build workflow `implement`: no unbounded cycle without a human; the whole state space is enumerated (`map`, `graph`, `materialize` lack the counter, below) | ✅ passed | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
-| … visible in the data of `implement.toml` itself: every cycle has a counting edge | ✅ passed | `.venv/bin/pytest -q tests/test_flow_implement.py` | – | – |
-| `implement`: `PASSED` only via verified integration | ✅ passed | `.venv/bin/pytest -q tests/machine/test_reachability.py` | – | – |
-| workflow and executor share one vocabulary (`ki_dev.fsm.bind` checks on import) | ✅ passed | `.venv/bin/pytest -q tests/test_flow_implement.py tests/test_fsm.py` | – | – |
-| layers never import upwards (transitive, AST) | ✅ passed | `.venv/bin/pytest -q tests/test_schichten.py` | – | – |
-| the messenger halts the executor, not the workflow | ✅ passed | `.venv/bin/pytest -q tests/test_runner_runtime.py tests/test_runner_cli.py` | – | – |
+| build workflow `implement`: no unbounded cycle without a human; the whole state space is enumerated (`map`, `graph`, `materialize` lack the counter, below) | ✅ passed | [test](tests/machine/test_reachability.py): `.venv/bin/pytest -q tests/machine/test_reachability.py::test_no_free_cycle_exists` | – | – |
+| … visible in the data of `implement.toml` itself: every cycle has a counting edge | ✅ passed | [test](tests/test_flow_implement.py): `.venv/bin/pytest -q tests/test_flow_implement.py::test_every_cycle_without_a_human_consumes_a_counter` | – | – |
+| `implement`: `PASSED` only via verified integration | ✅ passed | [test](tests/machine/test_reachability.py): `.venv/bin/pytest -q tests/machine/test_reachability.py::test_passed_entered_only_by_integration` | – | – |
+| workflow and executor share one vocabulary (`ki_dev.fsm.bind` checks on import) | ✅ passed | [test](tests/test_flow_implement.py), [binding](tests/test_fsm.py): `.venv/bin/pytest -q tests/test_flow_implement.py::test_executor_must_speak_the_declared_vocabulary tests/test_fsm.py` | – | – |
+| layers never import upwards (transitive, AST) | ✅ passed | [test](tests/test_schichten.py): `.venv/bin/pytest -q tests/test_schichten.py::test_layers_never_import_upwards` | – | – |
+| the messenger halts the executor, not the workflow | ✅ passed | [test](tests/test_runner_runtime.py): `.venv/bin/pytest -q tests/test_runner_runtime.py::test_manual_relay_halts_executor_not_flow_and_continues` | – | – |
 | stage 1 task: a run fixes `add()`; only `add.py` changes | ⬜ not checked: the mock worker only appends text to `MOCK.md`, a test executor that changes `add.py` is missing; the test oracles themselves are checked (stage 2) | – | write a spec test | unu, 1nf |
-| stage 2 review: red tests + review `PASS` → no integration | ❌ red, expected: `ki-dev -f implement` integrates anyway (below) | `.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py` | build the gate in the executor; the test tells you when it is done | ek1 |
+| stage 2 review: red tests + review `PASS` → no integration | ❌ red, expected: `ki-dev -f implement` integrates anyway (below) | [test](tests/test_review_gate_cli.py): `.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py` | build the gate in the executor; the test tells you when it is done | ek1 |
 | stage 3 limits: context 85,000 at limit 80,000 → no further agent call, visible halt | ⬜ not checked: `mock` and `manual` measure nothing, the guards do not apply there; the guards of the old executor are tested only internally (`tests/test_context_guard.py`, `tests/test_quota_guard.py`, `tests/test_runner_safety.py`) | – | write a spec test | v5w, 1nf |
 | stage 4 handoff: parent task, role and test command appear in the handoff to the agent | ⬜ not checked: no test | – | write a spec test | 76e |
 
@@ -120,7 +132,7 @@ As of 2026-10-15 (branch `dev` after `ab3c441`): 2740 passed,
 1 expectedly red (`xfail`, stage 2), 1 skipped (Docker test, no Docker
 in the test environment), 14 deselected (scaffold controls of the
 requirement tests, `make spec-test`); ruff clean. `make demo` and the
-test suite are also checked with mocks. Not checked: `make readme-check`
+test suite are also checked locally with mocks. Not checked: `make readme-check`
 and runs with real providers (`claude`, `codex`); their acceptance is
 pending.
 
@@ -198,6 +210,8 @@ edges and handles `raise`; the executor only knows guard and action
 names, not the topology. A pause belongs to the run (`runner/run.toml`):
 the workflow stays where it escalated.
 
+---
+
 ## Two commands
 
 ```bash
@@ -221,6 +235,8 @@ With `manual` an empty answer halts the **executor** (`awaiting_input`), not
 the workflow; `resume` asks again. The human thus has two separate roles:
 messenger (adapter) and decider (states of kind `wait`).
 
+---
+
 ## Limits, precisely
 
 - **Protection only where something is measured:** limits apply only in
@@ -240,9 +256,11 @@ messenger (adapter) and decider (states of kind `wait`).
 - **Access:** the access profile in a task is prompt text, not a lock;
   isolation comes from the [agent container](docker/agent/README.md).
 
+---
+
 ## Installation
 
-Prerequisites and setup: see [above](#try-it-in-a-minute); the `Makefile`
+Prerequisites and setup: see [above](#try-it); the `Makefile`
 is short and readable.
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
@@ -274,6 +292,8 @@ an empty cache.
 Or the agent container with bd, Codex and Claude Code:
 `./scripts/agent-container shell` ([docker/agent/README.md](docker/agent/README.md)).
 
+---
+
 ## Background
 
 ### Why ki-dev
@@ -299,7 +319,7 @@ main and architecture requirements had been skipped. The workflows meant
 to prevent this are therefore built with the means they are meant to
 replace. Until they carry the work, the rule applies by hand: cut tasks
 to a size that fits an agent's context, make requirements explicit and
-check them separately, as in the teaching stages above.
+check them separately, as in stages 1–4 of the [test bench](#test-bench).
 
 ### After publication: V1
 

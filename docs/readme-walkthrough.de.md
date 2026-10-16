@@ -57,3 +57,14 @@ EN-Abgleich `5d3d4c6`: Kopf und Prüfstand inhaltlich gleich (5 Punkte, Stand
 und Zähler, 10 Zeilen mit Status, Befehl und Bead). Abweichungen: vor
 „## Test bench“ fehlt die Trennlinie `---`; die Statuszeile des Review-Gates
 sagt „(spec)“, die Legende „(specification)“.
+
+korrigiert (ki-dev-ablauf-kor, 2026-10-16): Kopfpunkt „Ausprobieren ohne
+Anbieterzugang“ mit `make setup && make demo`; Abschnitt heißt jetzt
+„Ausprobieren“ (EN „Try it“), Go und C-Compiler begründet (`bd` aus dem
+Quellcode), das ⬜ über der Demo eingeordnet und „Lokal mit Mock geprüft“
+geschärft; Satz zum eigenen Repo nach der Demo; Prüfstand verlinkt die
+Testdatei und nennt die Testfunktion; Kopfzeilen 13/14 und der
+Diagrammsatz nennen ihren Test; „Lehrstufen oben“ → „Stufen 1–4 im
+Prüfstand“; Linktext „ki-dev am eigenen Repo entwickeln“; EN mit
+Trennlinien wie DE. Nicht vom Autor abgenommen; eine zweite Runde ist
+nicht vorgesehen.

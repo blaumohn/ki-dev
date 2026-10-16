@@ -44,7 +44,9 @@ def test_readmes_match_scripts():
 def test_changed_block_fails_check_and_is_rewritten(repo, name):
     readme = repo / name
     original = readme.read_text()
-    readme.write_text(original.replace("make demo", "make dem0", 1))
+    # Codezeile im Block, nicht die Erwähnung im Kopf
+    changed = original.replace("\nmake demo\n", "\nmake dem0\n", 1)
+    readme.write_text(changed)
     code, _, err = _render(repo, "--check")
     assert code == 1
     assert err == (
