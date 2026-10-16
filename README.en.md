@@ -9,7 +9,7 @@ the prompt.**
 For anyone who lets Claude or Codex work on real tasks and has to limit
 time, tokens and money while doing so.
 
-- **Workflow as data:** every loop is a back edge with a counter → [Example](#a-loop-is-an-edge-not-a-component)
+- **Workflow as data:** every loop is a back edge, with a counter in the build workflow `implement` → [Example](#a-loop-is-an-edge-not-a-component)
 - **Deterministic control:** same state + same event → same edge, no extra model call → [Components](#components)
 - **Swappable roles:** Claude, Codex, a human or a mock per role → [Two commands](#two-commands)
 - **Backed by tests:** in the build workflow `implement` no cycle without a human runs unbounded → [Test bench](#test-bench)
@@ -162,7 +162,9 @@ Low resource use is a design goal, not a measured saving.
 ## A loop is an edge, not a component
 
 Build, review, fix, review again is not a "loop" layer but a back edge in
-the workflow. Guards decide when it ends; every back edge consumes a counter.
+the workflow. Guards decide when it ends; in `implement` every back edge
+consumes a counter, the review pattern of `map`, `graph` and `materialize`
+lacks it so far ([Test bench](#what-the-architecture-is-missing)).
 From [`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml

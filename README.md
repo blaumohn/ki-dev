@@ -9,7 +9,7 @@ nicht im Prompt.**
 Für alle, die Claude oder Codex an echten Aufträgen arbeiten lassen und
 dabei Zeit, Token und Geld begrenzen müssen.
 
-- **Ablauf als Daten:** jede Schleife ist eine Rückkante mit Zähler → [Beispiel](#eine-schleife-ist-eine-kante-kein-baustein)
+- **Ablauf als Daten:** jede Schleife ist eine Rückkante, im Bauablauf `implement` mit Zähler → [Beispiel](#eine-schleife-ist-eine-kante-kein-baustein)
 - **Deterministische Steuerung:** gleicher Zustand + gleiches Ereignis → gleiche Kante, ohne zusätzlichen Modellaufruf → [Bausteine](#bausteine)
 - **Rollen austauschbar:** Claude, Codex, Mensch oder Mock je Rolle → [Zwei Befehle](#zwei-befehle)
 - **Durch Tests belegt:** im Bauablauf `implement` läuft kein Zyklus ohne Mensch unbegrenzt → [Prüfstand](#prüfstand)
@@ -167,8 +167,10 @@ Kostenersparnis.
 ## Eine Schleife ist eine Kante, kein Baustein
 
 Bau, Review, Korrektur, erneutes Review: das ist keine eigene „Loop“-Schicht,
-sondern eine Rückkante im Ablauf. Wann sie endet, entscheiden Wächter, und
-jede Rückkante verbraucht einen Zähler. Auszug aus
+sondern eine Rückkante im Ablauf. Wann sie endet, entscheiden Wächter; in
+`implement` verbraucht jede Rückkante einen Zähler, im Review-Muster von
+`map`, `graph` und `materialize` fehlt er noch ([Prüfstand](#was-in-der-architektur-fehlt)).
+Auszug aus
 [`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
