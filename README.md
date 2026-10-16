@@ -2,64 +2,18 @@
 
 # ki-dev
 
-**Agentenarbeit als deklarativer Ablauf: Zustände und Übergänge stehen in
-TOML, ein Ausführer fährt sie, Adapter sprechen mit Claude, Codex oder einem
-Menschen.**
+**KI-Agenten in einem prüfbaren Ablauf: Bau → Review → Korrektur, mit
+harten Grenzen. Was nach einem Agentenergebnis geschieht, steht im TOML,
+nicht im Prompt.**
 
-Die KI schreibt Code und urteilt über Ergebnisse. Was danach gilt (noch eine
-Korrekturrunde, Halt für eine Entscheidung, geprüfte Integration), steht nicht
-im Prompt und nicht im Python-Code, sondern im Ablauf.
+Für alle, die Claude oder Codex an echten Aufträgen arbeiten lassen und
+dabei Zeit, Token und Geld begrenzen müssen.
 
-Die drei Bausteine teilen sich die Verantwortung:
-
-| Baustein | Legt fest | Inhalt / Aufgabe |
-| --- | --- | --- |
-| `flow/*.toml` (`implement`, `map`, `graph`, …) | **Was** passieren darf | Daten: Zustände, Übergänge, Wächter und Aktionen |
-| `runner/` | **Wie** der Ablauf ausgeführt wird | Formale Antwort → Ereignis → Kante wählen (python-statemachine) → nächste Eingabe; Datensatz je Schritt, Halt beendet den Prozess |
-| `adapter/` | **Wer** die Eingabe bearbeitet | Anbindung von Claude, Codex, einem Menschen (`manual`) oder einer Simulation (`mock`) |
-
-Der Ausführer (`runner/`) liest die Ablaufdatei und ruft den jeweiligen
-Adapter auf. Bei `ki-dev -f implement BEAD` geschieht das automatisch.
-
-`ki-dev -f ABLAUF step` ist dieselbe Idee von Hand: genau ein Turn
-eines Ablaufs, zustandslos; die Übergabe trägt der Mensch als Bote
-weiter.
-
----
-
-## Eine Schleife ist eine Kante, kein Baustein
-
-Bau, Review, Korrektur, erneutes Review: das ist keine eigene „Loop“-Schicht,
-sondern eine Rückkante im Ablauf. Wann sie endet, entscheiden Wächter, und
-jede Rückkante verbraucht einen Zähler. Auszug aus
-[`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
-
-```toml
-# controller_step --fix [cond] / on--> target   (UML-Kante)
-
-# Korrekturbudget erschöpft → Mensch (ohne Ziel: der Lauf hält an,
-# der Ablauf bleibt hier)
-[[statechart.states.active.states.controller_step.transitions]]
-event = "fix"
-cond = "checked_result"
-unless = "changes_rounds_left"
-on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
-
-# sonst: neue Runde, Zähler +1
-[[statechart.states.active.states.controller_step.transitions]]
-event = "fix"
-cond = "checked_result"
-target = "worker_step_prepare"
-on = ["begin_correction", "drop_result"]
-```
-
-`[statechart]` ist das native Format von
-[python-statemachine](https://python-statemachine.readthedocs.io/)
-(SCXML-Semantik): Kanten werden in Dateireihenfolge geprüft, die erste passende
-gewinnt; passt keine, ist das Ereignis dort nicht erlaubt. Kantenwahl und
-`raise` übernimmt die Bibliothek; der Ausführer kennt nur die Namen der Wächter
-und Aktionen, nicht die Topologie. Eine Pause ist Sache des Laufs
-(`runner/run.toml`): der Ablauf bleibt, wo er eskaliert hat.
+- **Ablauf als Daten:** jede Schleife ist eine Rückkante mit Zähler → [Beispiel](#eine-schleife-ist-eine-kante-kein-baustein)
+- **Deterministische Steuerung:** gleicher Zustand + gleiches Ereignis → gleiche Kante, ohne zusätzlichen Modellaufruf → [Bausteine](#bausteine)
+- **Rollen austauschbar:** Claude, Codex, Mensch oder Mock je Rolle → [Zwei Befehle](#zwei-befehle)
+- **Durch Tests belegt:** kein Zyklus ohne Mensch läuft unbegrenzt → [Was die Tests belegen](#was-die-tests-belegen)
+- **Stand Alpha, 2026-10-15:** 2740 Tests grün, 1 bekannte rote Anforderung (Review-Gate) → [Bekannte Lücken](#bekannte-lücken)
 
 ---
 
@@ -99,6 +53,64 @@ Der Lauf nimmt also die Rückkante einmal (`round_id: 2`), friert das
 geprüfte Ergebnis ein und integriert es per Fast-forward. Bead und
 Profil (`profil.toml`) legt das Demo-Skript selbst an.
 <!-- /readme-script -->
+
+---
+
+## Bausteine
+
+Die drei Bausteine teilen sich die Verantwortung:
+
+| Baustein | Legt fest | Inhalt / Aufgabe |
+| --- | --- | --- |
+| `flow/*.toml` (`implement`, `map`, `graph`, …) | **Was** passieren darf | Daten: Zustände, Übergänge, Wächter und Aktionen |
+| `runner/` | **Wie** der Ablauf ausgeführt wird | Formale Antwort → Ereignis → Kante wählen (python-statemachine) → nächste Eingabe; Datensatz je Schritt, Halt beendet den Prozess |
+| `adapter/` | **Wer** die Eingabe bearbeitet | Anbindung von Claude, Codex, einem Menschen (`manual`) oder einer Simulation (`mock`) |
+
+Der Ausführer (`runner/`) liest die Ablaufdatei und ruft den jeweiligen
+Adapter auf. Bei `ki-dev -f implement BEAD` geschieht das automatisch.
+
+`ki-dev -f ABLAUF step` ist dieselbe Idee von Hand: genau ein Turn
+eines Ablaufs, zustandslos; die Übergabe trägt der Mensch als Bote
+weiter.
+
+Kantenwahl, Prüfung der Antwortformate und Grenzvergleiche brauchen
+keinen zusätzlichen Modellaufruf; das fachliche Review durch Mensch oder
+KI bleibt nötig. Ressourcenarm ist ein Entwurfsziel, keine gemessene
+Kostenersparnis.
+
+## Eine Schleife ist eine Kante, kein Baustein
+
+Bau, Review, Korrektur, erneutes Review: das ist keine eigene „Loop“-Schicht,
+sondern eine Rückkante im Ablauf. Wann sie endet, entscheiden Wächter, und
+jede Rückkante verbraucht einen Zähler. Auszug aus
+[`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
+
+```toml
+# controller_step --fix [cond] / on--> target   (UML-Kante)
+
+# Korrekturbudget erschöpft → Mensch (ohne Ziel: der Lauf hält an,
+# der Ablauf bleibt hier)
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = "checked_result"
+unless = "changes_rounds_left"
+on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
+
+# sonst: neue Runde, Zähler +1
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = "checked_result"
+target = "worker_step_prepare"
+on = ["begin_correction", "drop_result"]
+```
+
+`[statechart]` ist das native Format von
+[python-statemachine](https://python-statemachine.readthedocs.io/)
+(SCXML-Semantik): Kanten werden in Dateireihenfolge geprüft, die erste passende
+gewinnt; passt keine, ist das Ereignis dort nicht erlaubt. Kantenwahl und
+`raise` übernimmt die Bibliothek; der Ausführer kennt nur die Namen der Wächter
+und Aktionen, nicht die Topologie. Eine Pause ist Sache des Laufs
+(`runner/run.toml`): der Ablauf bleibt, wo er eskaliert hat.
 
 ---
 
@@ -254,22 +266,100 @@ Beide Diagramme sind aus der Quelle erzeugt (`ki-dev flow show`,
 | Schichten importieren nie rückwärts | `tests/test_schichten.py` (transitiv, per AST) |
 | Der Bote hält den Ausführer, nicht den Ablauf | `tests/test_runner_runtime.py`, `tests/test_runner_cli.py` |
 
+Diese Tests prüfen die Ablaufdaten und den Ausführer von innen. Ob ki-dev
+an einem Auftrag tut, was es soll, prüfen erst die Lehrstufen im
+nächsten Abschnitt über die öffentliche CLI.
+
 ```bash
 .venv/bin/pytest -q && .venv/bin/ruff check .
 ```
 
-## Bekannte Lücken
+Stand 2026-10-15 (Branch `dev` nach `ab3c441`): 2740 bestanden,
+1 erwartet rot (`xfail`, Stufe 2, ki-dev-ablauf-ek1), 1 übersprungen
+(Docker-Test, ohne Docker in der Prüfumgebung), 14 abgewählt
+(Gerüstkontrollen der Anforderungstests, `make spec-test`); ruff ohne
+Befund. Nicht ausgeführt: `make readme-check` und Läufe mit echten
+Anbietern.
 
-Geprüft über die öffentliche CLI, Stand 2026-10-15; der Test ist
-`xfail(strict=True)` und wird rot, sobald die Lücke geschlossen ist.
+---
 
-| Merkmal | Heute beobachtet | Nachweis | Bead |
+## Entwicklungsstand
+
+Vier Lehrstufen beschreiben an einem kleinen Auftrag, was ki-dev leisten
+soll: `add()` in `add.py` korrigieren, geprüft durch feste Tests
+`add(2, 3) == 5` und `add(-1, 1) == 0`. Gezählt wird nur, was über die
+öffentliche CLI tatsächlich ausgeführt wurde; ein roter Test ist ein
+gültiges Ergebnis, eine fehlende Prüfung steht als „nicht geprüft“ da.
+
+| Stufe | Soll | Prüfstand 2026-10-15 | Bead |
 | --- | --- | --- | --- |
-| Review-PASS überstimmt keine roten Tests | `ki-dev -f implement` integriert trotz roter `[[tests]]` nach Review-PASS (`Fast-forward integriert`) | `tests/test_review_gate_cli.py` | ki-dev-ablauf-ek1 |
+| 1 Auftrag | Ein Lauf korrigiert `add()`; nur `add.py` ändert sich | nicht geprüft: der Mock-Worker hängt nur Text an `MOCK.md` an, ein Test-Executor, der `add.py` ändert, fehlt; die Testorakel selbst sind geprüft (Stufe 2) | ki-dev-ablauf-unu, ki-dev-ablauf-1nf |
+| 2 Review | Rote Tests + Review-`PASS` → keine Integration | **rot:** `ki-dev -f implement` integriert trotzdem (unten) | ki-dev-ablauf-ek1 |
+| 3 Grenzen | Kontext 85 000 bei Grenze 80 000 → kein weiterer Agentenaufruf, sichtbarer Halt | nicht geprüft: `mock` und `manual` messen nichts, die Wächter greifen dort nicht; die Wächter des alten Ausführers sind nur intern getestet (`tests/test_context_guard.py`, `tests/test_quota_guard.py`, `tests/test_runner_safety.py`) | ki-dev-ablauf-v5w, ki-dev-ablauf-1nf |
+| 4 Übergabe | Elternauftrag, Rolle und Testbefehl stehen in der Übergabe an den Agenten | nicht geprüft: kein Test | ki-dev-ablauf-76e |
+
+<!-- readme-script: readme-scripts/3-review-gate.sh -->
+Stufe 2 über die öffentliche CLI: `ki-dev -f implement` mit
+Mock-Worker und Mock-Review (`PASS`) gegen ein Wegwerf-Repo mit
+`add.py` (falsch: `a - b`) und festem `test_add.py`. Kein
+Anbieterzugang; braucht git und `bd` aus `make setup`. Die Kontrollen
+prüfen den Test selbst: Orakel rot bei `a - b`, grün bei `a + b`; ein
+Collection-Fehler zählt nicht als roter Test; grüne Tests + PASS
+integrieren. Der Kernfall ist heute rot und als `xfail(strict=True)`
+markiert; `--runxfail` zeigt den Fehlschlag:
 
 ```bash
 .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
 ```
+
+```text
+E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
+FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
+1 failed, 4 passed
+```
+
+Gekürzt; die Hashes wechseln je Lauf. Der Lauf hat trotz roter Tests
+auf `main` integriert (ki-dev-ablauf-ek1). Ohne `--runxfail` meldet
+derselbe Befehl `4 passed, 1 xfailed`.
+<!-- /readme-script -->
+
+Bead-IDs (`ki-dev-ablauf-…`) verweisen auf die Beads-Datenbank des
+Projekts; sie liegt nicht im Repository. Ein geprüfter, datierter
+Journal-Snapshot zum Nachlesen ist noch nicht veröffentlicht
+(ki-dev-ablauf-rb2).
+
+## Bekannte Lücken
+
+Quelle: [Ausführer-Architektur: was fehlt](docs/ausfuehrer-luecken.de.md)
+(Stand 2026-10-14) und der Befund aus Stufe 2.
+
+| Merkmal | Heute | Ziel | Bead |
+| --- | --- | --- | --- |
+| Review-`PASS` überstimmt keine roten Tests | `ki-dev -f implement` integriert nach Review-`PASS` trotz roter `[[tests]]` | Integration nur mit grünen Prüfungen | ki-dev-ablauf-ek1 |
+| Schutzhalt bei Kontext-, Kontingent- und Budgetgrenze | Python-Wächter im alten Ausführer `flow_ops/implement/runtime.py` (`_context_guard`, `_quota_guard`, Budgetbuchung), nur für `-f implement` | Messung im Adapter, Vergleich als Kante in `runner/run.toml` (`measured` mit Wächter `within_limits`), Grenzwert im Profil | ki-dev-ablauf-ige.6.4.1 bis .4 |
+| Ein Ausführer | `-f implement` fährt den alten Ausführer, `step` den gemeinsamen `runner/package.py`; dessen Dispatch ruft den Executor ohne Schutzprüfung auf | `-f implement` und `step` auf `runner/package.py`, alter Ausführer entfällt | ki-dev-ablauf-ige.6.4.13, .14 |
+| Wiederholung bei Prozess- und Protokollfehlern, Halt-Notiz, Finalisierung | nur für `-f implement`: Kanten in `implement.toml`, Wirkung im alten Ausführer; der gemeinsame Ausführer hat sie nicht | Gerüst (`run.toml`) bzw. Muster mit Finalisierung | ki-dev-ablauf-ige.6.4.5, .6, .10 bis .12 |
+| Rundengrenzen im Review-Muster (`map`, `graph`, `materialize`) | nur `implement.toml` zählt Runden; die Korrekturkante im Muster hat keinen Zähler | Paket-Wächter im Muster | ki-dev-ablauf-ige.6.4.7, .8 |
+
+## Grenzen, genau genommen
+
+- **Schutz nur, wo gemessen wird:** Die Grenzen wirken nur in
+  `ki-dev -f implement` und nur für Executoren, die die Messung
+  deklarieren ([`adapter/executors.toml`](src/ki_dev/adapter/executors.toml)):
+  `claude` misst Kontext, Kontingent und Budget; `codex` Kontingent und
+  Budget, **keine Kontextgrenze**; `mock` und `manual` messen nichts,
+  dort greift keine Grenze, auch nicht `max_agent_calls`.
+- **Vor dem nächsten Aufruf:** `runner/safety.py` prüft Aufruf-, Token-
+  und Kostengrenzen *vor dem nächsten* Aufruf; ein einzelner Aufruf kann
+  `max_total_tokens` überschreiten, Cache-Lesen zählt voll. Innerhalb
+  eines Aufrufs begrenzt nur Claude (`--max-budget-usd`, `--max-turns`),
+  Codex nicht.
+- **`step`:** misst keine Token (Executor `manual`) und gleicht nichts
+  mit dem Repo ab; der Mensch verantwortet, welche Antworten er
+  mitgibt. PASS in `implement_review` braucht die Tatsachen des Vorlaufs
+  (Wächter `full_checks`, Eingabe aus `implement.preflight`).
+- **Zugriff:** Das Zugriffsprofil im Auftrag ist Prompttext, keine
+  Sperre; isoliert wird im [Agent-Container](docker/agent/README.md).
 
 ---
 
@@ -342,10 +432,13 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 
 ---
 
-## Stand und offene Punkte
+## Funktionsumfang und offene Punkte
 
-- **Benutzbar:** `ki-dev -f ABLAUF step` (ein Turn eines Ablaufs von
-  Hand), `ki-dev -f implement` mit allen vier Adaptern (Bauablauf).
+- **Vorhanden:** `ki-dev -f ABLAUF step` (ein Turn eines Ablaufs von
+  Hand), `ki-dev -f implement` mit den Adaptern `claude`, `codex`,
+  `manual` und `mock` (Bauablauf). Geprüft sind `make demo` und die
+  Testsuite mit Mock; Läufe mit echten Anbietern gehören nicht dazu,
+  ihre Abnahme steht aus (ki-dev-ablauf-5wl.1).
 - **Abläufe von Hand:** `step` fährt den gewählten Ablauf (`map`,
   `graph`, `materialize`, `implement_review` oder ein eigener) ab dem
   genannten Zustand auf dem einen Ausführer (`runner/package.py`,
@@ -356,20 +449,78 @@ Weiterführend: [Ausführer und Laufzeit](docs/ausfuehrer.de.md) ·
 - **Beobachtbar:** `ki-dev -f implement` schreibt je Übergang eine Zeile nach
   `events.jsonl`, für Ablauf und Lauf (Operation, Halt) je mit ihrer Region
   ([Ausführer](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
-- **Stand bei step:** step gleicht nichts mit dem Repo ab; der Mensch
-  verantwortet, welche Antworten er mitgibt. PASS in `implement_review`
-  braucht die Tatsachen des Vorlaufs (Wächter `full_checks`, Eingabe
-  aus `implement.preflight`).
-- **Grenzen, genau genommen:** `runner/safety.py` prüft Aufruf-, Token- und
-  Kostengrenzen *vor dem nächsten* Aufruf; ein einzelner Aufruf kann
-  `max_total_tokens` überschreiten, Cache-Lesen zählt voll. Innerhalb eines
-  Aufrufs begrenzt nur Claude (`--max-budget-usd`, `--max-turns`), Codex
-  nicht. `step` (Adapter manual) misst keine Token. Das Zugriffsprofil im
-  Auftrag ist Prompttext, keine Sperre; isoliert wird im
-  [Agent-Container](docker/agent/README.md).
 - **Zur Kartierung offen:** Sitzungsbindung als Ablaufdatum
   (`neu | wie:<zustand>`), adaptive Schnitte des Controllers
   ([Zielbild](docs/zielbild.de.md)).
+
+## Hintergrund
+
+### Warum ki-dev
+
+Für meine Anforderungen an eine ressourcenarme, deterministische
+Steuerung von KI-Entwicklungsabläufen habe ich keine passende einsetzbare
+Open-Source-Lösung gefunden. Daraus entstand ki-dev. Verwandte Forschung
+(unten) unterstützt den Ansatz und informiert die weitere Entwicklung.
+
+Der Ressourcenentwurf: Ein Überwachungsmodell, das zehn Agentenausgaben
+mit je 10 000 Token einmal vollständig liest, verbraucht 100 000
+Eingabetoken, bevor es selbst antwortet. ki-dev entscheidet formale
+Ereignisse, Antwortformate und Grenzwerte im Code; die vollständigen
+Texte bleiben als Artefakte zur Einsicht. Was das tatsächlich spart,
+hängt von Modell, Cache und Kontextauswahl ab und ist nicht gemessen.
+
+### Bootstrap-Problem
+
+Die Arbeit, aus der ki-dev entstand, lief nicht mit ki-dev-Abläufen:
+Ganze Epics wurden in wenigen Chats mit KI-Agenten geplant und
+umgesetzt. Das Ergebnis waren wiederholte Überraschungen und
+Erfolgsmeldungen, obwohl ausdrücklich vorgegebene Haupt- und
+Architekturanforderungen übergangen waren. Die Abläufe, die das verhindern sollen, entstehen also mit den
+Mitteln, die sie ersetzen sollen. Bis sie tragen, gilt von Hand: Aufträge
+in einer Größe schneiden, die in den Kontext eines Agenten passt,
+Anforderungen ausdrücklich machen und getrennt prüfen, wie in den
+Lehrstufen oben.
+
+### Nach der Veröffentlichung: V1
+
+V1 stellt die Einzelabläufe `map`, `graph`, `materialize` und
+`implement` fertig. Die Kette map → graph → materialize → Umsetzung
+wird in V1 von Hand verkettet, jeder Ablauf mit seinen Rollen, Reviews
+und Halten; eine vollautomatische Gesamtkette ist kein V1-Ziel.
+Beispiel: `map` hält die Anforderung „Schutz vor jedem Agentenaufruf“
+fest, `graph` ordnet Profil → Messung → Wächter → Anschluss,
+`materialize` schneidet daraus begrenzte Aufträge mit Grenzfall-Abnahme,
+die Umsetzung prüft am neuen Ausführer: Messwert 85 000 bei Grenze
+80 000 → kein Agentenaufruf, protokollierter Schutzhalt. Getrennt davon
+und optional später: KI-gestützte Kalibrierung von Abläufen und Profilen,
+kleine lokale Modelle.
+
+### Forschung und Verwandtes
+
+- [Why Do Multi-Agent LLM Systems Fail?](https://arxiv.org/html/2503.13657v3)
+  (Cemri et al., 2025) leitet aus einer empirischen Studie die
+  Fehlertaxonomie MAST ab, darunter vorzeitiger Abschluss (FM-3.1),
+  fehlende oder unvollständige (FM-3.2) und falsche Verifikation
+  (FM-3.3). In den Fallstudien verbesserten bei gleichem Modell klarere
+  Rollen, ein geänderter Ablauf und eine zusätzliche Prüfung des
+  Gesamtziels die Erfolgsquote (höchstens +15,6 %), die dennoch niedrig
+  blieb. Strukturierte Abläufe und Verifikation sind damit ein empirisch
+  gestützter Ansatz; ob ki-dev diese Fehler verhindert, ist nicht
+  gemessen.
+- [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)
+  (Anthropic, 2024) unterscheidet Workflows mit vordefinierten Codepfaden
+  von Agenten, die ihren Weg selbst steuern, und beschreibt
+  programmatische Prüfungen („gates“) zwischen Schritten. ki-dev legt die
+  Steuerung auf die Workflow-Seite; Agenten arbeiten innerhalb eines
+  Zustands.
+- [Gas City](https://github.com/gastownhall/gascity) arbeitet ebenfalls
+  mit Beads: ein austauschbarer `beads.Store` (bd, Datei, Speicher,
+  exec; [beads.md](https://github.com/gastownhall/gascity/blob/main/engdocs/architecture/beads.md))
+  und ein Controller, der Formeln als Graph aus Step- und Control-Beads
+  ausführt ([nine-concepts.md](https://github.com/gastownhall/gascity/blob/main/engdocs/architecture/nine-concepts.md);
+  beide gelesen am 2026-10-15). In beiden Projekten bleibt Beads das
+  Domänen- und Zustandsmodell der Arbeit. Ein Kosten- oder
+  Funktionsvergleich ist hier nicht gemacht.
 
 ## Einordnung und Nicht-Ziele
 

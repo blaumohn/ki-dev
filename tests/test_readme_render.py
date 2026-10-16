@@ -13,14 +13,16 @@ ROOT = Path(__file__).resolve().parents[1]
 RENDER = "scripts/render-readme.py"
 DE = "readme-scripts/1-setup.sh"
 EN = "readme-scripts/en/1-setup.sh"
-RUNTIME_DE = "readme-scripts/2-runtime.sh"
-RUNTIME_EN = "readme-scripts/en/2-runtime.sh"
 READMES = ("README.md", "README.en.md")
 
 
 @pytest.fixture
 def repo(tmp_path):
-    for name in (RENDER, DE, EN, RUNTIME_DE, RUNTIME_EN, *READMES):
+    scripts = (
+        path.relative_to(ROOT)
+        for path in (ROOT / "readme-scripts").rglob("*.sh")
+    )
+    for name in (RENDER, *scripts, *READMES):
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / name, tmp_path / name)
     return tmp_path
