@@ -1,6 +1,7 @@
 # Wegwerf-Container für make readme-check (tests/readme/user-flow.sh).
-# Nur lesbares Dateisystem und Repo; /tmp liegt pro Lauf auf der Platte.
-# Tool-Temp-Dateien auf der VM-Platte statt auf dem VM-Shared-Folder.
+# Nur lesbares Dateisystem und Repo.
+# /tmp: pro Lauf unter .local/var/readme-check (Projektordner).
+# TMPDIR=/tool-tmp: Docker-Volume auf der VM-Platte, nicht im Shared Folder.
 # Projektlokale Download-/Build-Caches bleiben erhalten. Kein Docker-Socket.
 services:
   check:
