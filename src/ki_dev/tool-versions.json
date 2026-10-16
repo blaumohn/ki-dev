@@ -10,10 +10,5 @@
   "GO_SHA256_AMD64": "ffb5f8de10c62550dfddab66b36b57030721e0a44a3218e9e1181d7b59f121ca",
   "GO_SHA256_ARM64": "5a4ec883379d51ee9ce1040d5e87f8d35e20387574dd8c947feb01eabc3c1b37",
   "GOLANGCI_LINT_VERSION": "2.10.1",
-  "RUSTUP_VERSION": "1.27.1",
-  "AGY_VERSION": "1.3.3",
-  "AGY_URL_AMD64": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.3.3-5524738307653632/linux-x64/cli_linux_x64.tar.gz",
-  "AGY_URL_ARM64": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.3.3-5524738307653632/linux-arm/cli_linux_arm64.tar.gz",
-  "AGY_SHA512_AMD64": "abe3ddf5cf30d3adaa586acf505221aa19702f5ca71af3c8b1f9b1a5976bd8e5c151c41ea33b39c41675d25843462a3e8c382c054f580e9d7e1688919d3b5110",
-  "AGY_SHA512_ARM64": "1bfd3503576219a102176c13579665a2f39e84ac86a904b117d3b33f3dd751f194a862496bad6ffe914ad46d2c877ba12b6c07e6db07128b706d238262fe430c"
+  "RUSTUP_VERSION": "1.27.1"
 }
