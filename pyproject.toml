@@ -6,6 +6,8 @@ build-backend = "hatchling.build"
 name = "ki-dev"
 version = "0.0.1"
 description = "Deklarative Abläufe für Agentensitzungen: Ablauf, Ausführer, Adapter"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
   "typer>=0.12",
