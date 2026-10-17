@@ -336,61 +336,66 @@ Arbeit eines Agenten.
 Jeder Schritt des Beispiels liegt auf einer eigenen Ebene, von oben nach
 unten:
 
-```text
- ◇ Bead-Graph-Durchgang   wählt den nächsten bereiten Vorgang
- ◇ Ablaufkette            verbindet Abläufe zu einem Lauf
-┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+```mermaid
+flowchart TB
+    subgraph zukunft [◇ Zielbild, noch nicht gebaut]
+        durchgang["Bead-Graph-Durchgang<br/>nächster bereiter Vorgang"]
+        kette["Ablaufkette<br/>Abläufe als ein Lauf"]
+    end
+    subgraph arbeit [Arbeitsgraph · Schritt 3]
+        beads["Beads<br/>Vorgänge, Abnahme,<br/>Abhängigkeiten"]
+    end
+    subgraph paket [Ablaufpaket · Schritt 1]
+        ablauf["Ablauf · TOML<br/>Zustände, Kanten,<br/>Wächter, Rollen"]
+        uebergaben["Übergaben · TOML<br/>Vorlage + Bausteine<br/>je Zustand"]
+        vorlagen["Vorlagen<br/>Rollentexte"]
+        pops["Ops · Python<br/>eigene Ops,<br/>Antwort → Ereignis"]
+    end
+    subgraph profil [Profil · Schritt 2]
+        rollen["Rollen<br/>Rolle → Executor"]
+        grenzen["Grenzwerte<br/>Runden, Tokens, Kontext"]
+        tests["Tests<br/>Befehle je Runde"]
+        ziel["Ziel<br/>Integration nach PASS"]
+    end
+    subgraph geruest [Gerüst · Schritt 4]
+        runner["Runner · run.toml<br/>Halt, Wiederholung,<br/>Grenzen vergleichen"]
+        uebergabe["Übergabe<br/>Vorlage + Eltern-Bead,<br/>Kriterien, Doku-Abschnitte"]
+        muster["Muster<br/>Review und Varianten"]
+        gops["Ops · Katalog<br/>Vorlauf, Git, Kontext"]
+        kern["Kern<br/>Statecharts, Lader"]
+        executor["Executor, misst<br/>claude · codex · manual<br/>inbox · mock"]
+    end
+    agent(["Agent oder Mensch"])
 
-┌─ Arbeitsgraph ─────────────────────────────────────┐
-│ Beads     Vorgänge mit Abnahme, Abhängigkeiten     │  Schritt 3
-└────────────────────────────────────────────────────┘
-       │ Auftrag: ein Vorgang je Lauf
-       ▼
-┌─ Ablaufpaket ──────────────────────────────────────┐
-│ Ablauf    TOML: Zustände, Kanten, Rollen, Ops      │  Schritt 1
-│ Vorlagen  Text der Übergaben an die Rollen         │
-│ Modell    Python: Wächter, Aktionen, nur intern    │
-│ Ops       Python: Wirkung nach außen → Ereignis    │
-└────────────────────────────────────────────────────┘
-       ▲ besetzt die Rollen
-       │
-┌─ Profil ───────────────────────────────────────────┐
-│ Rollen    Rolle → Executor, Sitzung, Modell        │  Schritt 2
-│ Grenzen   Runden, Aufrufe, Tokens, Kontext         │
-│ Tests     Befehle, die jede Runde laufen           │
-│ Ziel      wohin ein PASS integriert wird           │
-└────────────────────────────────────────────────────┘
-       │ wählt die Executoren
-       ▼
-┌─ Gerüst ───────────────────────────────────────────┐
-│ Runner    Halt, Fortsetzen, Grenzen; events.jsonl  │  Schritt 4
-│ Übergabe  Vorlage + Kontext → Executor der Rolle   │
-│ Muster    Review-Muster, von Abläufen geladen      │
-│ Ops       Vorlauf mit Tests; Kontext aus Bead      │
-│ Kern      Statecharts, Lader, Schemaprüfung        │
-│ Executor  claude · codex · manual · inbox · mock   │
-└──────┬──────────────────────────────▲──────────────┘
-       │ Übergabe                     │ Antwort
-       ▼                              │
-   Agent oder Mensch ─────────────────┘
+    zukunft ~~~ arbeit
+    arbeit -->|"Auftrag: ein Vorgang je Lauf"| paket
+    paket -->|"nennt Rollen"| profil
+    profil -->|"wählt Executoren"| geruest
+    executor -->|"Übergabe je Ablauf, Rolle, Bead"| agent
+    agent -->|"Antwort"| executor
+    style zukunft stroke-dasharray: 5 5
 ```
 
-Schritte im Beispiel: [1](#1-ablauf-modellieren) ·
-[2](#2-rollen-besetzen) · [3](#3-auftrag-wählen) · [4](#4-starten);
-◇ gibt es noch nicht ([Roadmap](#roadmap)).
+Schritte im Beispiel: [1](#1-ablauf-modellieren) · [2](#2-rollen-besetzen) ·
+[3](#3-auftrag-wählen) · [4](#4-starten); ◇ gibt es noch nicht
+([Roadmap](#roadmap)).
 
-- **Abhängigkeit nur Paket → Gerüst:** das Gerüst kennt keine Rollen-
-  oder Phasennamen, ein [Test](tests/test_schichten.py) weist sie dort ab
-  ([Gerüst und Paket](docs/ablaufpakete.de.md#gerüst-und-paket)).
-- **Executor:** ein Name aus
-  [`executors.toml`](src/ki_dev/adapter/executors.toml), dahinter ein
-  Transport (der Adapter-Code) und was er misst.
-- **Tests:** welche Befehle, sagt das Profil, beim Review-Muster die
-  `pyproject.toml` des Zielprojekts; wann sie laufen und was danach
-  folgt, der Ablauf.
-- **Heute** fährt `implement` noch einen eigenen Ausführer im Paket
-  ([`runtime.py`](src/ki_dev/flow_ops/implement/runtime.py)); nur dort
-  greifen die Grenzen. V1 legt ihn auf den Runner ([Roadmap](#roadmap)).
+Das Bild zeigt die vereinbarte Architektur
+([Schichten und Regeln](docs/ausfuehrer-luecken.de.md#schichten-und-orte)):
+Fachliches entscheidet der Ablauf, Schutz für jeden Ablauf gleich das
+Gerüst; Grenzwerte setzt das Profil, der Executor misst, ein Wächter
+vergleicht. Abhängigkeit nur Paket → Gerüst, das Gerüst kennt keine Rollen
+([Test](tests/test_schichten.py)). Tests: welche Befehle, sagt das Profil
+(Review-Muster: `pyproject.toml`); wann und was danach, der Ablauf.
+
+**Heute abweichend**, Umbau nach der Veröffentlichung, als Beads geschnitten:
+
+- `implement`: eigener Ausführer im Paket, Grenzen in Python (`ige.6.4.13`)
+- `run.toml`: noch ohne Schutzhalt, Messung, Budget, Wiederholung
+  (`ige.6.4.2`–`ige.6.4.5`)
+- Git-Abschluss: Paket-Ops statt Gerüst-Katalog (`ige.6.4.10`)
+- Review-Muster: ohne Rundengrenzen (`ige.6.4.7`)
+- Abläufe und Vorlagen: noch im Gerüst-Repo (`cak`, `ige.6.4.16`)
 
 Weitere Trennungen:
 

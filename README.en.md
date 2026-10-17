@@ -336,61 +336,68 @@ work.
 
 Each step of the example sits on its own layer, top to bottom:
 
-```text
- ◇ bead graph walk   picks the next ready issue
- ◇ flow chain        joins flows into one run
-┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+```mermaid
+flowchart TB
+    subgraph zukunft [◇ target picture, not built yet]
+        durchgang["bead graph walk<br/>next ready issue"]
+        kette["flow chain<br/>flows as one run"]
+    end
+    subgraph arbeit [work graph · step 3]
+        beads["Beads<br/>issues, acceptance,<br/>dependencies"]
+    end
+    subgraph paket [flow package · step 1]
+        ablauf["flow · TOML<br/>states, edges,<br/>guards, roles"]
+        uebergaben["handoffs · TOML<br/>template + blocks<br/>per state"]
+        vorlagen["templates<br/>role texts"]
+        pops["ops · Python<br/>own ops,<br/>answer → event"]
+    end
+    subgraph profil [profile · step 2]
+        rollen["roles<br/>role → executor"]
+        grenzen["limit values<br/>rounds, tokens, context"]
+        tests["tests<br/>commands per round"]
+        ziel["target<br/>integration after PASS"]
+    end
+    subgraph geruest [scaffold · step 4]
+        runner["runner · run.toml<br/>halt, retry,<br/>compare limits"]
+        uebergabe["handoff<br/>template + parent bead,<br/>criteria, doc sections"]
+        muster["patterns<br/>review and variants"]
+        gops["ops · catalog<br/>preflight, git, context"]
+        kern["core<br/>statecharts, loader"]
+        executor["executor, measures<br/>claude · codex · manual<br/>inbox · mock"]
+    end
+    agent(["agent or human"])
 
-┌─ work graph ───────────────────────────────────────┐
-│ Beads     issues with acceptance, dependencies     │  step 3
-└────────────────────────────────────────────────────┘
-       │ task: one issue per run
-       ▼
-┌─ flow package ─────────────────────────────────────┐
-│ flow      TOML: states, edges, roles, ops          │  step 1
-│ templates text of the handoffs to the roles        │
-│ model     Python: guards, actions, internal only   │
-│ ops       Python: effect outside → event           │
-└────────────────────────────────────────────────────┘
-       ▲ fills the roles
-       │
-┌─ profile ──────────────────────────────────────────┐
-│ roles     role → executor, session, model          │  step 2
-│ limits    rounds, calls, tokens, context           │
-│ tests     commands that run every round            │
-│ target    where a PASS gets integrated             │
-└────────────────────────────────────────────────────┘
-       │ picks the executors
-       ▼
-┌─ scaffold ─────────────────────────────────────────┐
-│ runner    halt, resume, limits; events.jsonl       │  step 4
-│ handoff   template + context → executor of role    │
-│ patterns  review pattern, loaded by flows          │
-│ ops       preflight with tests; context from bead  │
-│ core      statecharts, loader, schema checks       │
-│ executor  claude · codex · manual · inbox · mock   │
-└──────┬──────────────────────────────▲──────────────┘
-       │ handoff                      │ answer
-       ▼                              │
-   agent or human ────────────────────┘
+    zukunft ~~~ arbeit
+    arbeit -->|"task: one issue per run"| paket
+    paket -->|"names roles"| profil
+    profil -->|"picks executors"| geruest
+    executor -->|"handoff per flow, role, bead"| agent
+    agent -->|"answer"| executor
+    style zukunft stroke-dasharray: 5 5
 ```
 
 Steps in the example: [1](#1-model-the-flow) · [2](#2-cast-the-roles) ·
 [3](#3-pick-a-task) · [4](#4-run); ◇ does not exist yet
 ([Roadmap](#roadmap)).
 
-- **Dependencies point only package → scaffold:** the scaffold knows no
-  role or phase names, a [test](tests/test_schichten.py) rejects them
-  there ([scaffold and package, German](docs/ablaufpakete.de.md#gerüst-und-paket)).
-- **Executor:** a name from
-  [`executors.toml`](src/ki_dev/adapter/executors.toml), backed by a
-  transport (the adapter code) and what it measures.
-- **Tests:** which commands is up to the profile, for the review pattern
-  the target project's `pyproject.toml`; when they run and what follows
-  is up to the flow.
-- **Today** `implement` still runs its own executor inside the package
-  ([`runtime.py`](src/ki_dev/flow_ops/implement/runtime.py)); only there
-  do the limits apply. V1 moves it onto the runner ([Roadmap](#roadmap)).
+The picture shows the agreed architecture
+([layers and rules, German](docs/ausfuehrer-luecken.de.md#schichten-und-orte)):
+the flow makes domain decisions, the scaffold protects every flow the same
+way; the profile sets limit values, the executor measures, a guard
+compares. Dependencies point only package → scaffold, the scaffold knows no
+roles ([test](tests/test_schichten.py)). Tests: which commands is up to the
+profile (review pattern: `pyproject.toml`); when, and what follows, is up to
+the flow.
+
+**Deviating today**, rebuild after publication, cut into beads:
+
+- `implement`: own executor inside the package, limits in Python
+  (`ige.6.4.13`)
+- `run.toml`: no safety halt, metering, budget or retries yet
+  (`ige.6.4.2`–`ige.6.4.5`)
+- git wrap-up: package ops instead of the scaffold catalog (`ige.6.4.10`)
+- review pattern: no round limits (`ige.6.4.7`)
+- flows and templates: still in the scaffold repo (`cak`, `ige.6.4.16`)
 
 More separations:
 
