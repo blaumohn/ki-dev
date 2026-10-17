@@ -245,7 +245,7 @@ stateDiagram-v2
 ## Ausprobieren ohne Agenten
 
 <!-- readme-script: readme-scripts/1-setup.sh -->
-> ⬜ nicht ausgeführt · selbst prüfen: make readme-check
+> nicht ausgeführt · selbst prüfen: make readme-check
 
 Die Demo legt ein Wegwerf-Repo mit Auftrag und Profil an; Mock-Umsetzer
 und Mock-Review (`fix`, dann `PASS`) spielen das Beispiel ohne
@@ -480,7 +480,7 @@ make readme-check   # README-Einrichtung im Wegwerf-Container, braucht Docker
 ```
 
 <!-- readme-script: readme-scripts/2-runtime.sh -->
-> ⬜ nicht ausgeführt · selbst prüfen: make setup-runtime
+> nicht ausgeführt · selbst prüfen: make setup-runtime
 
 Wer ki-dev mit ki-dev weiterentwickelt, installiert es getrennt vom
 Quellbaum: eigenes venv, Symlink in `~/.local/bin`. Vor einem Update

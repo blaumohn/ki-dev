@@ -56,14 +56,14 @@ STATUS_TEXT = {
         "bench": "[Stand](#stand)",
         "passed": "✅ bestanden",
         "xfail": "❌ rot, erwartet (Spezifikation)",
-        "unchecked": "⬜ nicht ausgeführt",
+        "unchecked": "nicht ausgeführt",
     },
     "README.en.md": {
         "verify": "verify",
         "bench": "[Status](#status)",
         "passed": "✅ passed",
         "xfail": "❌ red, expected (spec)",
-        "unchecked": "⬜ not run",
+        "unchecked": "not run",
     },
 }
 STRIP_PREFIX = re.compile(r"^# ?")

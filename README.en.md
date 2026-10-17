@@ -240,7 +240,7 @@ stateDiagram-v2
 ## Try it without agents
 
 <!-- readme-script: readme-scripts/en/1-setup.sh -->
-> ⬜ not run · verify: make readme-check
+> not run · verify: make readme-check
 
 The demo creates a throwaway repo with a task and a profile; a mock
 implementer and a mock review (`fix`, then `PASS`) play through the
@@ -473,7 +473,7 @@ make readme-check   # README setup in a throwaway container, needs Docker
 ```
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
-> ⬜ not run · verify: make setup-runtime
+> not run · verify: make setup-runtime
 
 To develop ki-dev with ki-dev, install it apart from the source tree:
 own venv, symlink in `~/.local/bin`. Finish running jobs before an
