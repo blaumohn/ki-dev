@@ -1,11 +1,6 @@
-# Stufe 2 über die öffentliche CLI: `ki-dev -f implement` mit
-# Mock-Worker und Mock-Review (`PASS`) gegen ein Wegwerf-Repo mit
-# `add.py` (falsch: `a - b`) und festem `test_add.py`. Kein
-# Anbieterzugang; braucht git und `bd` aus `make setup`. Die Kontrollen
-# prüfen den Test selbst: Orakel rot bei `a - b`, grün bei `a + b`; ein
-# Collection-Fehler zählt nicht als roter Test; grüne Tests + PASS
-# integrieren. Der Kernfall ist heute rot und als `xfail(strict=True)`
-# markiert; `--runxfail` zeigt den Fehlschlag:
+# **Wann ist das Test-Tor fertig?** Wenn dieser Test grün ist. Er startet
+# `ki-dev -f implement` gegen ein Wegwerf-Repo mit falschem `add.py`
+# (`a - b`); die Tests sind rot, das Mock-Review sagt trotzdem `PASS`.
 #
 # ```bash
 .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
@@ -17,6 +12,5 @@
 # 1 failed, 4 passed
 # ```
 #
-# Gekürzt; die Hashes wechseln je Lauf. Der Lauf hat trotz roter Tests
-# auf `main` integriert. Ohne `--runxfail` meldet derselbe Befehl
-# `4 passed, 1 xfailed`.
+# Heute landet das Ergebnis trotz roter Tests auf `main`. Die vier grünen
+# Fälle prüfen den Test selbst, etwa: grüne Tests plus `PASS` integrieren.

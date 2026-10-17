@@ -1,14 +1,12 @@
-# `make demo` lief lokal mit Mock (2026-10-15); der Lauf im
-# Wegwerf-Container (`make readme-check`) steht aus, daher ⬜.
+# Die Demo legt ein Wegwerf-Repo mit Auftrag und Profil an; Mock-Umsetzer
+# und Mock-Review (`fix`, dann `PASS`) spielen das Beispiel ohne
+# Anbieterzugang durch. Die Statuszeile oben gilt der Einrichtung im
+# leeren Container.
 #
-# Ohne Anbieterzugang, mit Mock-Adaptern. Voraussetzungen: Python ≥ 3.12
-# (mit `venv`), git ≥ 2.32, make, Go und ein C-Compiler. `make setup` legt
-# venv, ki-dev und [Beads](https://github.com/steveyegge/beads) `bd` (Version
-# aus `src/ki_dev/tool-versions.json`) im Projekt an, außerhalb ändert es
-# nichts. Go und den C-Compiler braucht es, weil `make setup` `bd` aus dem
-# Quellcode baut (`go install`, mit CGO); das kann beim ersten Mal einige
-# Minuten dauern. `$REPLACE_WITH_REPOSITORY_URL` steht für die Klon-Adresse dieses
-# Repositorys; sie steht nach der Veröffentlichung fest.
+# Braucht Python ≥ 3.12, git ≥ 2.32, make, Go und einen C-Compiler:
+# `make setup` baut [Beads](https://github.com/steveyegge/beads) `bd` aus
+# dem Quellcode ins Projekt-venv (beim ersten Mal einige Minuten, mit Netz).
+# `$REPLACE_WITH_REPOSITORY_URL` = Klon-Adresse dieses Repos.
 #
 # ```bash
 git clone "$REPLACE_WITH_REPOSITORY_URL" ki-dev
@@ -17,21 +15,21 @@ make setup
 make demo
 # ```
 #
+# Ausgabe (gekürzt, Hashes wechseln):
+#
 # ```text
 # {
 #   "run_id": "demo",
 #   "status": "passed",
-#   "phase": "passed",
 #   "round_id": 2,
-#   "detail": null,
-#   "operation_id": null
+#   "detail": "Fast-forward integriert"
 # }
 #
-# 8ef6356 Geprüfter Abschluss (Demo)
-# 5c02782 start
+# ad543c6 Geprüfter Abschluss (Demo)
+# 091d542 start
 # ```
 #
-# Der Mock-Reviewer antwortet erst `fix` (Urteil `CHANGES`), dann `PASS`.
-# Der Lauf nimmt also die Rückkante einmal (`round_id: 2`), friert das
-# geprüfte Ergebnis ein und integriert es per Fast-forward. Bead und
-# Profil (`profil.toml`) legt das Demo-Skript selbst an.
+# `round_id: 2`: eine Korrekturrunde. `passed`: das Mock-Review hat
+# akzeptiert, das Ergebnis liegt per Fast-Forward auf `main`. Die Mocks
+# schreiben nur eine Textzeile; die Demo zeigt die Steuerung, nicht die
+# Arbeit eines Agenten.

@@ -66,11 +66,9 @@ def test_prepare_repository_from_another_directory(tmp_path):
     roots = sorted(
         {path.split("/")[0] for path in tracked.stdout.splitlines()}
     )
-    for persona, limit in zip(PERSONAS, (40, 250, None), strict=True):
+    for persona in PERSONAS:
         directory = target / persona
-        assert (directory / "README.md").read_bytes() == b"".join(
-            readme.splitlines(keepends=True)[:limit]
-        )
+        assert (directory / "README.md").read_bytes() == readme
         assert (
             directory / "root.txt"
         ).read_text().splitlines() == roots
@@ -78,14 +76,6 @@ def test_prepare_repository_from_another_directory(tmp_path):
         assert not re.search(r"@[^@\n]+@", handoff)
         assert "ja/nein" in handoff
         assert "Ändere nichts." in handoff
-    assert (
-        len((target / "techlead/README.md").read_text().splitlines())
-        == 40
-    )
-    assert (
-        len((target / "entwickler/README.md").read_text().splitlines())
-        <= 250
-    )
     for relative in (
         "tests/machine/test_reachability.py",
         "docs/ausfuehrer.de.md",

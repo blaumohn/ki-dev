@@ -5,48 +5,57 @@ Software-Test: ein Mensch oder ein Agent spielt die Personas nach und
 notiert je Schritt, was er sieht, welchen Eindruck er hat und was er tut
 (weiterlesen, klicken, schließen).
 
+## Maßstab
+
+Die README stellt ein Entwicklungsprojekt vor, das noch nicht betrieblich
+nutzbar ist. Der Leser soll das Problem, den Ansatz an einem kleinen Beispiel
+und den Abstand zwischen Ziel und Umsetzung verstehen. Tests machen diesen
+Abstand sichtbar. Eine rote Anforderung ist kein automatischer DX-Fehler;
+eine unerklärte Ausgabe oder unklare Betriebsreife ist einer.
+
 ## Personas
 
 | Persona | Zeit | Ziel | Entscheidung |
 | --- | --- | --- | --- |
-| Tech-Lead sichtet eine Bewerbung | 60 s | Kann die Person Systeme bauen? | zum Gespräch einladen oder nicht |
-| Entwickler sucht ein Werkzeug | 5 min | Löst es mein Problem, läuft es bei mir? | ausprobieren oder nicht |
-| KI-Agent im Repo | ein Lesedurchgang | Wo stehen Ablauf, Befehle, Stand? | richtige Datei öffnen |
-| Prüfer verfolgt eine Behauptung | 10 min | Ist sie belegt? Pfad: Befehl → Testnachweis → Details | Behauptung als belegt ansehen oder nicht |
+| Tech-Lead sichtet eine Bewerbung | 60 s | Problemverständnis und technische Umsetzung erkennen | Gespräch sinnvoll oder nicht |
+| Entwickler erkundet das Projekt | 5 min | Ansatz, Entwicklungsstand und nächsten Erkundungsschritt verstehen | erkunden, verfolgen oder verlassen; Betrieb gesondert beurteilen |
+| KI-Agent im Repo | ein Lesedurchgang | Beispiel, Ist/Ziel und zuständige Quellen verstehen | richtige Datei öffnen |
+| Prüfer verfolgt einen Nachweis | 10 min | Aussage → Test → Aussagegrenze nachvollziehen | Nachweis trägt die konkrete Behauptung oder nicht |
 
 ## Schritte
 
-1. Dateiliste auf GitHub (Root): Was fällt auf, bevor das README sichtbar ist?
-2. Zeilen 1–15 (5-Sekunden-Test): siehe Bestehenskriterium.
-3. Erster Link, den die Persona klicken würde: führt er zu dem, was der
-   Linktext verspricht?
-4. Erster Shell-Block: versteht man den Ablauf, ohne die Prosa zu lesen?
-5. Erste negative Aussage: Wo steht sie, und wie wirkt sie an dieser Stelle?
-6. Ende des Pfads: Welche Entscheidung trifft die Persona, nach wie vielen Zeilen?
-7. Nur Prüfer: eine Behauptung aus den Zeilen 1–15 wählen. Kann ich sie in
-   höchstens 2 Klicks bis zum Befehl und bis zum Testcode verfolgen? Klicks
-   ab der Startseite zählen, je Ziel getrennt.
+1. Dateiliste und erster Bildschirm: Welches Problem und welchen
+   Entwicklungsstand erwartet der Leser jetzt? Nicht erst den Hintergrund lesen.
+2. Erstes Beispiel: Kann er Ablauf-TOML, Rollenprofil und Aufruf miteinander
+   verbinden und die nächste Aktion erklären, ohne das Projekt zu kennen?
+3. Erweiterungen: Wird dasselbe Beispiel verständlich erweitert, oder muss
+   der Leser für jeden Abschnitt ein neues Modell des Projekts bilden?
+4. Ausgabe und Tests: Versteht er vor dem Nachweis, was dieser zeigen soll?
+   Kann er danach zwischen beobachtetem Verhalten, Lücke und Ziel unterscheiden?
+5. Nächste Handlung: Sind Voraussetzungen und Einrichtung erreichbar, wenn
+   er selbst erkunden möchte? Hilft `step`, Agenteneingaben und Übergänge zu verstehen?
+6. Abbruch: Wo endet das Interesse oder das Verständnis, und warum?
+7. Prüfer zusätzlich: Eine Ist-Aussage zum Beispiel und eine zum Entwicklungsstand
+   bis zum Testcode verfolgen. Prüft der Test genau das Behauptete?
 
-## Bestehenskriterium
+## Auswertung
 
-Nach den Zeilen 1–15 beantwortet jede Persona:
+Kein Punktestand aus vorhandenen Überschriften, Links oder Stichwörtern.
+Entscheidend ist die Erklärung in eigenen Worten: Problem → Beispiel →
+Entwicklungsstand → sinnvoller nächster Schritt. Fundstellen begründen das
+Urteil; bloße Auffindbarkeit genügt nicht. Ungeklärte Fragen und der tatsächliche
+Abbruchpunkt bleiben im Bericht stehen. Ein Agentenbericht ist eine Beobachtung,
+keine automatische Abnahme durch den Autor.
 
-- Was ist das?
-- Für wen?
-- Was ist anders als bei einem Prompt-Skript?
-- Wie probiere ich es aus?
-
-Bestanden bei 4 von 4. Dazu: keine negative Aussage ohne Einordnung in den
-ersten 15 Zeilen, kein Verweis ins Leere (z. B. Bead-ID ohne Link). Für den
-Prüfer zusätzlich Schritt 7: Befehl und Testcode je in höchstens 2 Klicks.
-
-Die englische Fassung wird nur in Kopf und Prüfstand auf Gleichheit mit der
-deutschen geprüft.
+DE und EN auf dieselbe Leserführung, Beispielbedeutung und Ist-/Zieltrennung
+prüfen. Der Prüfer unterscheidet Link-Erreichbarkeit von inhaltlicher Beweiskraft.
 
 ## Durchlauf mit einem Web-Agenten
 
 `./scripts/readme-walkthrough prepare` bereitet aus dem Arbeitsbaum je Persona
-einen Ordner vor und gibt auf stdout nur dessen Pfad aus. Auf stderr zeigt er
+einen Ordner mit der vollständigen README vor und gibt auf stdout nur dessen Pfad aus.
+Das Zeitbudget begrenzt den Lesedurchlauf; feste Zeilenschnitte würden Beispiele
+und Erklärungen mitten im Zusammenhang abschneiden. Auf stderr zeigt er
 zuerst, welche Konfigurationspfade geprüft wurden und welcher gilt. Den
 Arbeitsbaum bis zum fertigen Bericht nicht ändern.
 
@@ -67,7 +76,10 @@ vor, `dateien.txt` nennt die Zuordnung. Danach `uebergabe.txt` als Nachricht ein
 Die Antworten an den README-Bearbeiter geben. Dieser erhält die Vorbilder;
 der Web-Agent erhält sie nie.
 
-## Protokoll
+## Frühere Durchläufe
+
+Die folgenden Berichte beziehen sich auf die frühere Struktur und den alten
+Fragenkatalog. Sie gelten nicht als Abnahme der neu aufgebauten README.
 
 | Datum | Commit | Persona | Entscheidung nach Zeile | 4 Fragen | Befund |
 | --- | --- | --- | --- | --- | --- |

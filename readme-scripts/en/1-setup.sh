@@ -1,14 +1,12 @@
-# `make demo` ran locally with mocks (2026-10-15); the run in a throwaway
-# container (`make readme-check`) is still pending, hence ⬜.
+# The demo creates a throwaway repo with a task and a profile; a mock
+# implementer and a mock review (`fix`, then `PASS`) play through the
+# example without provider access. The status line above refers to
+# setup in an empty container.
 #
-# Offline, with mock adapters. Prerequisites: Python ≥ 3.12 (with `venv`),
-# git ≥ 2.32, make, Go and a C compiler. `make setup` creates the venv,
-# ki-dev and [Beads](https://github.com/steveyegge/beads) `bd` (version from
-# `src/ki_dev/tool-versions.json`) inside the project and changes nothing
-# outside it. Go and the C compiler are needed because `make setup` builds
-# `bd` from source (`go install`, with CGO); the first time this can take a
-# few minutes. `$REPLACE_WITH_REPOSITORY_URL` stands for the clone address of
-# this repository; it is fixed once the repository is published.
+# Needs Python ≥ 3.12, git ≥ 2.32, make, Go and a C compiler:
+# `make setup` builds [Beads](https://github.com/steveyegge/beads) `bd`
+# from source into the project venv (a few minutes the first time,
+# needs network). `$REPLACE_WITH_REPOSITORY_URL` = this repo's clone URL.
 #
 # ```bash
 git clone "$REPLACE_WITH_REPOSITORY_URL" ki-dev
@@ -17,21 +15,21 @@ make setup
 make demo
 # ```
 #
+# Output (shortened, hashes vary):
+#
 # ```text
 # {
 #   "run_id": "demo",
 #   "status": "passed",
-#   "phase": "passed",
 #   "round_id": 2,
-#   "detail": null,
-#   "operation_id": null
+#   "detail": "Fast-forward integriert"
 # }
 #
-# 8ef6356 Geprüfter Abschluss (Demo)
-# 5c02782 start
+# ad543c6 Geprüfter Abschluss (Demo)
+# 091d542 start
 # ```
 #
-# The mock reviewer answers `fix` (verdict `CHANGES`), then `PASS`: the run
-# takes the back edge once (`round_id: 2`), freezes the reviewed result and
-# fast-forwards it into `main`. The demo script creates the bead and the
-# profile (`profil.toml`) itself.
+# `round_id: 2`: one correction round. `passed`: the mock review
+# accepted, the result is fast-forwarded onto `main`. The mocks only
+# write a line of text; the demo shows the control flow, not an agent's
+# work.

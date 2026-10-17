@@ -1,7 +1,6 @@
-# For development on ki-dev: separate runtime venv and a symlink in
-# `~/.local/bin` (honors XDG_DATA_HOME).
-# Finish active and paused runs before each update.
-# Details: [self-development runbook (German)](docs/self-development.de.md).
+# To develop ki-dev with ki-dev, install it apart from the source tree:
+# own venv, symlink in `~/.local/bin`. Finish running jobs before an
+# update ([details, German](docs/self-development.de.md)).
 #
 # ```bash
 make setup-runtime

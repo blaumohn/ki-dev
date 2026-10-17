@@ -1,11 +1,6 @@
-# Stage 2 through the public CLI: `ki-dev -f implement` with a mock
-# worker and a mock review (`PASS`) against a throwaway repository with
-# `add.py` (wrong: `a - b`) and a fixed `test_add.py`. No provider
-# access; needs git and `bd` from `make setup`. The controls check the
-# test itself: the oracle is red for `a - b` and green for `a + b`; a
-# collection error does not count as a red test; green tests + PASS
-# integrate. The core case is red today and marked `xfail(strict=True)`;
-# `--runxfail` shows the failure:
+# **When is the test gate done?** When this test is green. It runs
+# `ki-dev -f implement` against a throwaway repo with a wrong `add.py`
+# (`a - b`); the tests are red, the mock review still says `PASS`.
 #
 # ```bash
 .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
@@ -17,6 +12,5 @@
 # 1 failed, 4 passed
 # ```
 #
-# Shortened; the hashes change on every run. The run integrated into
-# `main` despite red tests. Without `--runxfail` the same command
-# reports `4 passed, 1 xfailed`.
+# Today the result lands on `main` despite red tests. The four green
+# cases check the test itself, e.g. green tests plus `PASS` do integrate.

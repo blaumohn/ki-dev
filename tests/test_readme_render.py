@@ -125,11 +125,11 @@ def test_status_line_is_first_block_line_in_both_languages(repo):
     ) in en
     assert (
         "> ❌ rot, erwartet (Spezifikation) · 2026-01-02 · "
-        "selbst prüfen: pytest spec · [Prüfstand](#prüfstand)\n\n"
+        "selbst prüfen: pytest spec · [Stand](#stand)\n\n"
     ) in de
     assert (
         "> ❌ red, expected (spec) · 2026-01-02 · verify: pytest spec"
-        " · [test bench](#test-bench)\n\n"
+        " · [Status](#status)\n\n"
     ) in en
 
 
@@ -137,9 +137,12 @@ def test_passed_status_shows_symbol_date_and_command(repo):
     _set_status(repo, '["1-setup.sh"]', "passed", 'date = "2026-10-16"')
     assert _render(repo)[0] == 0
     de = (repo / "README.md").read_text()
-    line = "> ✅ bestanden · 2026-10-16 · selbst prüfen: make demo\n"
+    line = (
+        "> ✅ bestanden · 2026-10-16 · "
+        "selbst prüfen: make readme-check\n"
+    )
     assert line in de
-    assert "> ✅ passed · 2026-10-16 · verify: make demo\n" in (
+    assert "> ✅ passed · 2026-10-16 · verify: make readme-check\n" in (
         repo / "README.en.md"
     ).read_text()
 

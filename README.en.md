@@ -2,38 +2,208 @@
 
 # ki-dev
 
-**AI agents in a checkable workflow: build → review → correction, with
-hard limits. What happens after an agent's result lives in TOML, not in
-the prompt.**
+**Coding agents do the work; a flow written in TOML decides what happens next.**
+Implementation, separate review, correction, integration: no agent
+dispatches the next one, no human relays every answer by hand.
 
-For anyone who lets Claude or Codex work on real tasks and has to limit
-time, tokens and money while doing so.
+🚧 **In development, not ready for production use.** Flow control, the
+correction loop and adapters for Claude Code and Codex work. Still missing:
+a test gate before integration and budget limits on every path.
 
-- **Try it offline:** `make setup && make demo` → [Try it](#try-it)
-- **Workflow as data:** every loop is a back edge, with a counter in the build workflow `implement` → [Example](#a-loop-is-an-edge-not-a-component)
-- **Deterministic control:** same state + same event → same edge, no extra model call → [Components](#components) · Test: [`test_reachability.py`](tests/machine/test_reachability.py)
-- **Swappable roles:** Claude, Codex, a human or a mock per role → [Two commands](#two-commands) · Test: [`test_cli_smoke.py`](tests/test_cli_smoke.py)
-- **Backed by tests:** in the build workflow `implement` no cycle without a human runs unbounded → [Test bench](#test-bench)
-- **As of 2026-10-15 (`ab3c441`):** ✅ 6 proven · ❌ 1 specification red · ⬜ 3 open → [Test bench](#test-bench)
+## Contents
 
----
+1. [Why](#why)
+2. [Example: one bug, two agents](#example-one-bug-two-agents)
+3. [What happens in a run](#what-happens-in-a-run)
+4. [Try it without agents](#try-it-without-agents)
+5. [Status](#status)
+6. [Architecture](#architecture)
+7. [Contributing](#contributing)
 
-## Try it
+## Why
+
+Working with coding agents turns you into a messenger: hand over context,
+check the result, pass corrections back. On top of that, agents report
+"done" when they are not.
+
+ki-dev moves this control into files:
+
+- **Flow** (`flow/*.toml`): who acts when, where `fix` leads, when a human
+  decides.
+- **Profile** (`.ki-dev/profiles/*.toml`): who fills each role: Claude Code,
+  Codex, a human or a mock.
+- **Task** (an issue in [Beads](https://github.com/steveyegge/beads)):
+  what to do, with acceptance criteria.
+
+Agents work inside a state; ki-dev picks the transition.
+Background: workflows with checkpoints instead of free-steering agents
+([Anthropic](https://www.anthropic.com/engineering/building-effective-agents));
+premature completion and missing verification as typical failures of
+multi-agent systems ([MAST](https://arxiv.org/html/2503.13657v3)).
+
+<sub>[↑ Contents](#contents)</sub>
+
+## Example: one bug, two agents
+
+In a small repo, `add(a, b)` returns `a - b`.
+Codex should fix it, Claude Code reviews.
+
+**1 · Create the task**
+
+```bash
+bd create "add() does not add" \
+  --description "add(2, 3) returns -1" \
+  --design "fix add.py; do not change test_add.py" \
+  --acceptance "add(2, 3) == 5 and add(-1, 1) == 0"
+# → calc-7k2, the task ID
+```
+
+**2 · Flow: ships with ki-dev.** The part that makes the correction loop,
+from [`implement.toml`](src/ki_dev/flow/implement.toml):
+
+```toml
+# review says "fix", no rounds left → halt, a human decides
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = "checked_result"
+unless = "changes_rounds_left"
+on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
+
+# otherwise → back to implementation, round counter +1
+[[statechart.states.active.states.controller_step.transitions]]
+event = "fix"
+cond = "checked_result"
+target = "worker_step_prepare"
+on = ["begin_correction", "drop_result"]
+```
+
+The agent only returns its verdict (`fix` or `PASS`); ki-dev decides which
+edge follows. The first matching edge wins.
+
+**3 · Assign roles** in `.ki-dev/profiles/default.toml`:
+
+```toml
+workdir = "/home/me/calc-work"          # agents' working worktree
+access_profile = "write"
+
+[worker]                                # implements
+executor = "codex"
+session_id = "019a…"                    # existing Codex session
+model = "gpt-5.6-terra"
+effort = "high"
+
+[review]                                # reviews, in its own session
+executor = "claude"
+session_id = "b3f1…"                    # existing Claude Code session
+model = "sonnet"
+effort = "high"
+
+[[tests]]                               # runs each round, result goes to review
+name = "pytest"
+argv = [".venv/bin/python", "-m", "pytest", "-q"]
+
+[limits]
+changes_rounds = 3                      # then ki-dev asks a human
+
+[finalization]                          # where an accepted result goes
+target_workdir = "/home/me/calc"
+target_ref = "refs/heads/main"
+commit_message = "Fix add()"
+data_mode = "file_proposal"
+```
+
+**4 · Run**
+
+```bash
+ki-dev -f implement calc-7k2         # flow implement, profile default
+ki-dev -f implement status RUN_ID    # where is the run?
+ki-dev -f implement resume RUN_ID    # continue after a halt
+```
+
+**Status of this example:** flow, profile format and commands are real,
+the Codex and Claude Code adapters are built. Still open: an accepted run
+with real agents, and red tests do not yet stop integration.
+
+<sub>[↑ Contents](#contents)</sub>
+
+## What happens in a run
+
+Trace from a run's `events.jsonl`, shortened. The edges are the same with
+agents and with mocks:
+
+```text
+controller_step ─controller_task→ worker_step              # task to Codex
+worker_step ─worker_completed→ capture_step_result         # Codex made changes
+capture_step_result ─step_result_captured→ checkpoint      # diff and pytest as evidence
+checkpoint ─checkpoint_recorded→ controller_step           # Claude reviews
+controller_step ─fix→ worker_step_prepare                  # round 2
+  … same steps …
+controller_step ─PASS→ freeze_reviewed_result              # accepted
+fast_forward_integrate ─integration_completed→ passed      # fast-forward onto main
+```
+
+Every intermediate result is stored as an artifact in the run directory;
+a halted run continues with `resume`.
+
+<details>
+<summary>The whole flow as a diagram, generated from the TOML</summary>
+
+`ki-dev flow show implement --without-escalations`, without limit and
+safety halts:
+
+<!-- ki-dev flow show implement --without-escalations -->
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> start
+    start --> controller_step: run_started / drop_result
+    controller_step --> worker_step_prepare: controller_task / begin_task, drop_result
+    controller_step --> worker_step_prepare: fix [checked_result] / begin_correction, drop_result
+    controller_step --> waiting_decision: decision
+    controller_step --> freeze_reviewed_result: PASS [checked_result]
+    controller_step --> controller_step: protocol_error / retry_protocol
+    controller_step --> controller_step: process_error / retry_process
+    worker_step_prepare --> worker_step: worker_inputs_prepared
+    worker_step_prepare --> worker_step_prepare: process_error / retry_process
+    worker_step --> capture_step_result: worker_completed
+    worker_step --> waiting_decision: worker_needs_decision
+    worker_step --> worker_step_prepare: worker_process_error / retry_process
+    worker_step --> worker_step: protocol_error / retry_protocol
+    capture_step_result --> checkpoint: step_result_captured [delta_effective]
+    capture_step_result --> worker_step_prepare: step_result_captured / begin_correction, drop_result
+    capture_step_result --> capture_step_result: process_error / retry_process
+    checkpoint --> controller_step: checkpoint_recorded / keep_result
+    freeze_reviewed_result --> finalize_history: reviewed_result_frozen
+    freeze_reviewed_result --> error: finalization_error
+    finalize_history --> verify_final_result: history_finalized
+    finalize_history --> error: finalization_error
+    verify_final_result --> fast_forward_integrate: final_result_verified [result_ok]
+    verify_final_result --> error: finalization_error
+    fast_forward_integrate --> passed: integration_completed [result_ok]
+    fast_forward_integrate --> error: finalization_error
+    waiting_decision --> controller_step: resume_requested
+    passed --> [*]
+    error --> [*]
+```
+
+</details>
+
+<sub>[↑ Contents](#contents)</sub>
+
+## Try it without agents
 
 <!-- readme-script: readme-scripts/en/1-setup.sh -->
-> ⬜ not run · verify: make demo
+> ⬜ not run · verify: make readme-check
 
-`make demo` ran locally with mocks (2026-10-15); the run in a throwaway
-container (`make readme-check`) is still pending, hence ⬜.
+The demo creates a throwaway repo with a task and a profile; a mock
+implementer and a mock review (`fix`, then `PASS`) play through the
+example without provider access. The status line above refers to
+setup in an empty container.
 
-Offline, with mock adapters. Prerequisites: Python ≥ 3.12 (with `venv`),
-git ≥ 2.32, make, Go and a C compiler. `make setup` creates the venv,
-ki-dev and [Beads](https://github.com/steveyegge/beads) `bd` (version from
-`src/ki_dev/tool-versions.json`) inside the project and changes nothing
-outside it. Go and the C compiler are needed because `make setup` builds
-`bd` from source (`go install`, with CGO); the first time this can take a
-few minutes. `$REPLACE_WITH_REPOSITORY_URL` stands for the clone address of
-this repository; it is fixed once the repository is published.
+Needs Python ≥ 3.12, git ≥ 2.32, make, Go and a C compiler:
+`make setup` builds [Beads](https://github.com/steveyegge/beads) `bd`
+from source into the project venv (a few minutes the first time,
+needs network). `$REPLACE_WITH_REPOSITORY_URL` = this repo's clone URL.
 
 ```bash
 git clone "$REPLACE_WITH_REPOSITORY_URL" ki-dev
@@ -42,70 +212,62 @@ make setup
 make demo
 ```
 
+Output (shortened, hashes vary):
+
 ```text
 {
   "run_id": "demo",
   "status": "passed",
-  "phase": "passed",
   "round_id": 2,
-  "detail": null,
-  "operation_id": null
+  "detail": "Fast-forward integriert"
 }
 
-8ef6356 Geprüfter Abschluss (Demo)
-5c02782 start
+ad543c6 Geprüfter Abschluss (Demo)
+091d542 start
 ```
 
-The mock reviewer answers `fix` (verdict `CHANGES`), then `PASS`: the run
-takes the back edge once (`round_id: 2`), freezes the reviewed result and
-fast-forwards it into `main`. The demo script creates the bead and the
-profile (`profil.toml`) itself.
+`round_id: 2`: one correction round. `passed`: the mock review
+accepted, the result is fast-forwarded onto `main`. The mocks only
+write a line of text; the demo shows the control flow, not an agent's
+work.
 <!-- /readme-script -->
 
-On your own repository a bead supplies the task and a profile the roles,
-checks and limits: [Two commands](#two-commands), details in
-[executor (German)](docs/ausfuehrer.de.md).
+<sub>[↑ Contents](#contents)</sub>
 
----
+## Status
 
-## Test bench
+**Works**
 
-Tests are the specification here: red means specified, not built yet.
+- Flows as TOML statecharts on
+  [python-statemachine](https://python-statemachine.readthedocs.io/).
+  In `implement` every back edge consumes a counter; a
+  [test](tests/machine/test_reachability.py) enumerates the state space:
+  no cycle without a human runs unbounded.
+- `implement` from task to fast-forward integration, with halt and
+  `resume`; demonstrated with mock agents.
+- Adapters: Claude Code, Codex, human (`manual`, `inbox`), mock.
+- Safety halt at context, quota and budget limits for `claude`; `codex`
+  without context measurement.
+- `step`: shows the handoff to an agent for any state, without starting one.
 
-**Legend:** ✅ passed · ❌ red, expected (specification) · ⬜ not checked
+**In progress**
 
-Stages 1–4 describe, on a small task, what ki-dev is meant to do: fix
-`add()` in `add.py`, checked by fixed tests `add(2, 3) == 5` and
-`add(-1, 1) == 0`. Only what was actually run through the public CLI
-counts; a missing check is shown as "not checked". The first six rows
-check the workflow data and the executor from the inside.
+- Test gate: today a review `PASS` integrates even with red tests.
+- One shared executor for `implement` and `step`, so limits apply
+  everywhere.
+- An accepted run with real agents.
 
-| Capability | Status | Check it yourself | Contribute | Bead |
-| --- | --- | --- | --- | --- |
-| build workflow `implement`: no unbounded cycle without a human; the whole state space is enumerated (`map`, `graph`, `materialize` lack the counter, below) | ✅ passed | [test](tests/machine/test_reachability.py): `.venv/bin/pytest -q tests/machine/test_reachability.py::test_no_free_cycle_exists` | – | – |
-| … visible in the data of `implement.toml` itself: every cycle has a counting edge | ✅ passed | [test](tests/test_flow_implement.py): `.venv/bin/pytest -q tests/test_flow_implement.py::test_every_cycle_without_a_human_consumes_a_counter` | – | – |
-| `implement`: `PASSED` only via verified integration | ✅ passed | [test](tests/machine/test_reachability.py): `.venv/bin/pytest -q tests/machine/test_reachability.py::test_passed_entered_only_by_integration` | – | – |
-| workflow and executor share one vocabulary (`ki_dev.fsm.bind` checks on import) | ✅ passed | [test](tests/test_flow_implement.py), [binding](tests/test_fsm.py): `.venv/bin/pytest -q tests/test_flow_implement.py::test_executor_must_speak_the_declared_vocabulary tests/test_fsm.py` | – | – |
-| layers never import upwards (transitive, AST) | ✅ passed | [test](tests/test_schichten.py): `.venv/bin/pytest -q tests/test_schichten.py::test_layers_never_import_upwards` | – | – |
-| the messenger halts the executor, not the workflow | ✅ passed | [test](tests/test_runner_runtime.py): `.venv/bin/pytest -q tests/test_runner_runtime.py::test_manual_relay_halts_executor_not_flow_and_continues` | – | – |
-| stage 1 task: a run fixes `add()`; only `add.py` changes | ⬜ not checked: the mock worker only appends text to `MOCK.md`, a test executor that changes `add.py` is missing; the test oracles themselves are checked (stage 2) | – | write a spec test | unu, 1nf |
-| stage 2 review: red tests + review `PASS` → no integration | ❌ red, expected: `ki-dev -f implement` integrates anyway (below) | [test](tests/test_review_gate_cli.py): `.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py` | build the gate in the executor; the test tells you when it is done | ek1 |
-| stage 3 limits: context 85,000 at limit 80,000 → no further agent call, visible halt | ⬜ not checked: `mock` and `manual` measure nothing, the guards do not apply there; the guards of the old executor are tested only internally (`tests/test_context_guard.py`, `tests/test_quota_guard.py`, `tests/test_runner_safety.py`) | – | write a spec test | v5w, 1nf |
-| stage 4 handoff: parent task, role and test command appear in the handoff to the agent | ⬜ not checked: no test | – | write a spec test | 76e |
-
-Bead: short IDs from the project-internal Beads database (`ki-dev-ablauf-…`); a public journal will follow.
+**Goal for V1:** four flows, chained by hand. Map requirements (`map`) →
+dependencies (`graph`) → executable tasks (`materialize`) → implementation
+(`implement`). The first three exist today as review flows, driven by
+hand via `step`.
 
 <!-- readme-script: readme-scripts/en/3-review-gate.sh -->
-> ❌ red, expected (spec) · 2026-10-16 · verify: .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py · [test bench](#test-bench)
+> ❌ red, expected (spec) · 2026-10-17 · verify: .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py · [Status](#status)
 
-Stage 2 through the public CLI: `ki-dev -f implement` with a mock
-worker and a mock review (`PASS`) against a throwaway repository with
-`add.py` (wrong: `a - b`) and a fixed `test_add.py`. No provider
-access; needs git and `bd` from `make setup`. The controls check the
-test itself: the oracle is red for `a - b` and green for `a + b`; a
-collection error does not count as a red test; green tests + PASS
-integrate. The core case is red today and marked `xfail(strict=True)`;
-`--runxfail` shows the failure:
+**When is the test gate done?** When this test is green. It runs
+`ki-dev -f implement` against a throwaway repo with a wrong `add.py`
+(`a - b`); the tests are red, the mock review still says `PASS`.
 
 ```bash
 .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
@@ -117,159 +279,81 @@ FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_inte
 1 failed, 4 passed
 ```
 
-Shortened; the hashes change on every run. The run integrated into
-`main` despite red tests. Without `--runxfail` the same command
-reports `4 passed, 1 xfailed`.
+Today the result lands on `main` despite red tests. The four green
+cases check the test itself, e.g. green tests plus `PASS` do integrate.
 <!-- /readme-script -->
 
-Everything at once:
+<sub>[↑ Contents](#contents)</sub>
+
+## Architecture
+
+| Part | Job |
+| --- | --- |
+| `flow/*.toml` | states, edges, guards: what happens after which verdict |
+| `runner/` | checks the answer, takes the edge, builds the next handoff |
+| `adapter/` | passes the handoff to Claude Code, Codex, a human or the mock |
+
+Shared patterns live once in a catalog. `map`, `graph` and `materialize`
+only set parameters on the review pattern
+([`map.toml`](src/ki_dev/flow/map.toml)):
+
+<!-- ki-dev flow show map -->
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "map.review" as map_review
+    state "map.correction" as map_correction
+    state "map.decision" as map_decision
+    [*] --> map
+    map_review --> map_correction: fix
+    map_review --> source: source
+    map_review --> map_decision: decision
+    map_decision --> finished: accept
+    map_decision --> map_correction: correct
+    map_decision --> source: source
+    map --> map_review: done
+    map_correction --> map_review: done
+    map_review --> finished: PASS
+    source --> finished: imported
+    finished --> [*]
+```
+
+Play it through by hand, without agents:
 
 ```bash
-.venv/bin/pytest -q && .venv/bin/ruff check .
+ki-dev flow show map                                    # flow as Mermaid
+ki-dev -f map step BEAD map                             # handoff to the mapping agent
+ki-dev -f map step BEAD map.review map.review=verdict.json  # return verdict, next handoff
 ```
 
-As of 2026-10-15 (branch `dev` after `ab3c441`): 2740 passed,
-1 expectedly red (`xfail`, stage 2), 1 skipped (Docker test, no Docker
-in the test environment), 14 deselected (scaffold controls of the
-requirement tests, `make spec-test`); ruff clean. `make demo` and the
-test suite are also checked locally with mocks. Not checked: `make readme-check`
-and runs with real providers (`claude`, `codex`); their acceptance is
-pending.
+`ki-dev flow show` generates both diagrams from source; a test compares
+them with this README.
 
-### What the architecture is missing
+<sub>[↑ Contents](#contents)</sub>
 
-Source: [executor architecture: what is missing (German)](docs/ausfuehrer-luecken.de.md)
-(as of 2026-10-14) and the stage 2 finding.
+## Contributing
 
-| Property | today → target | Contribute | Bead |
-| --- | --- | --- | --- |
-| a review `PASS` does not override red tests | `ki-dev -f implement` integrates after a review `PASS` despite red `[[tests]]` → integration only with green checks | as in stage 2: build the gate until the test is green | ek1 |
-| safety halt at context, quota and budget limits | Python guards in the old executor `flow_ops/implement/runtime.py` (`_context_guard`, `_quota_guard`, budget ledger), only for `-f implement` → measured by the adapter, compared as an edge in `runner/run.toml` (`measured` with guard `within_limits`), limit value in the profile | spec test for stage 3, then build edge and guard | ige.6.4.1 to .4 |
-| one executor | `-f implement` drives the old executor, `step` the shared `runner/package.py`; its dispatch calls the executor without any safety check → `-f implement` and `step` on `runner/package.py`, old executor removed | move `-f implement` onto `runner/package.py` | ige.6.4.13, .14 |
-| retry on process and protocol errors, halt note, finalization | only for `-f implement`: edges in `implement.toml`, effects in the old executor; the shared executor lacks them → scaffold (`run.toml`) or pattern with finalization | move the edges into the scaffold or pattern | ige.6.4.5, .6, .10 to .12 |
-| round limits in the review pattern (`map`, `graph`, `materialize`) | only `implement.toml` counts rounds; the pattern's correction edge has no counter → package guards in the pattern | add a counter to the pattern's correction edge | ige.6.4.7, .8 |
+Good first tasks, each with a clear finish line:
 
-Still to be mapped, without a test: session binding as workflow data
-(`neu | wie:<zustand>`) and adaptive cuts by the controller
-([target picture, German](docs/zielbild.de.md)).
+- **Build the test gate**: done when the red test above is green.
+- **Round counter in the review pattern**: `map`, `graph`, `materialize`
+  do not count their correction rounds yet.
+- **One executor**: move `implement` onto the shared executor.
 
----
-
-## Components
-
-The three components divide responsibility:
-
-| Component | Defines | Contents / role |
-| --- | --- | --- |
-| `flow/*.toml` (`implement`, `map`, `graph`, …) | **What** may happen | Data: states, transitions, guards and actions |
-| `runner/` | **How** the workflow executes | Formal answer → event → select edge (python-statemachine) → next input; one record per step, a halt ends the process |
-| `adapter/` | **Who** handles the input | Connects Claude, Codex, a human (`manual`) or a simulation (`mock`) |
-
-The executor (`runner/`) reads the workflow file and calls the appropriate
-adapter. With `ki-dev -f implement BEAD`, this happens automatically.
-
-`ki-dev -f FLOW step` is the same idea by hand: exactly one turn of a
-workflow, stateless, carried on by a human as messenger.
-
-Selecting edges, checking answer formats and comparing limits need no
-extra model call; a domain review by a human or an AI is still needed.
-Low resource use is a design goal, not a measured saving.
-
-## A loop is an edge, not a component
-
-Build, review, fix, review again is not a "loop" layer but a back edge in
-the workflow. Guards decide when it ends; in `implement` every back edge
-consumes a counter, the review pattern of `map`, `graph` and `materialize`
-lacks it so far ([Test bench](#what-the-architecture-is-missing)).
-From [`src/ki_dev/flow/implement.toml`](src/ki_dev/flow/implement.toml):
-
-```toml
-# controller_step --fix [cond] / on--> target   (UML edge)
-
-# correction budget spent → human (no target: the run halts,
-# the workflow stays here)
-[[statechart.states.active.states.controller_step.transitions]]
-event = "fix"
-cond = "checked_result"
-unless = "changes_rounds_left"
-on = [{ raise = { event = "escalation.changes_rounds_exhausted" } }]
-
-# otherwise: next round, counter +1
-[[statechart.states.active.states.controller_step.transitions]]
-event = "fix"
-cond = "checked_result"
-target = "worker_step_prepare"
-on = ["begin_correction", "drop_result"]
-```
-
-`[statechart]` is the native format of
-[python-statemachine](https://python-statemachine.readthedocs.io/)
-(SCXML semantics). Transitions are tried in file order, the first match
-wins, no match means the event is not allowed there. The library selects
-edges and handles `raise`; the executor only knows guard and action
-names, not the topology. A pause belongs to the run (`runner/run.toml`):
-the workflow stays where it escalated.
-
----
-
-## Two commands
+More: [what the architecture still lacks (German)](docs/ausfuehrer-luecken.de.md).
 
 ```bash
-ki-dev -f implement BEAD                   # drive a bead to the next halt
-ki-dev -f implement BEAD --adapter manual  # you relay prompts via stdout/stdin
-ki-dev -f implement resume -v RUN_ID       # continue; transitions live
-ki-dev -f map step BEAD map.review         # one turn by hand, stateless
+make test           # pytest and ruff
+make spec-test      # requirement tests; red results are allowed
+make readme-check   # README setup in a throwaway container, needs Docker
 ```
-
-`-f NAME` searches like `make -f`: `./NAME.toml`, `$KI_DEV_FLOW_PATH`, then
-the bundled package. The bead supplies the task, the profile
-(`.ki-dev/profiles/default.toml`, `--profile NAME`) roles, checks and limits.
-
-| Adapter | Profile per role | Who answers |
-| --- | --- | --- |
-| `claude`, `codex` | `executor = "codex"`, `session_id`, `model`, `effort` | prepared agent session |
-| `manual` | `executor = "manual"` | you: prompt on stdout, answer on stdin |
-| `mock` | `executor = "mock"`, `answers = ["fix", "PASS"]` | scripted answers |
-
-With `manual` an empty answer halts the **executor** (`awaiting_input`), not
-the workflow; `resume` asks again. The human thus has two separate roles:
-messenger (adapter) and decider (states of kind `wait`).
-
----
-
-## Limits, precisely
-
-- **Protection only where something is measured:** limits apply only in
-  `ki-dev -f implement` and only for executors that declare the
-  measurement ([`adapter/executors.toml`](src/ki_dev/adapter/executors.toml)):
-  `claude` measures context, quota and budget; `codex` quota and budget,
-  **no context limit**; `mock` and `manual` measure nothing, no limit
-  applies there, not even `max_agent_calls`.
-- **Before the next call:** `runner/safety.py` checks call, token and
-  cost limits *before the next* call; a single call can exceed
-  `max_total_tokens`, cache reads count in full. Only Claude is bounded
-  within a call (`--max-budget-usd`, `--max-turns`), Codex is not.
-- **`step`:** measures no tokens (executor `manual`) and compares nothing
-  with the repository; the human answers for the answers passed in. PASS
-  in `implement_review` needs the preflight facts (guard `full_checks`,
-  input from `implement.preflight`).
-- **Access:** the access profile in a task is prompt text, not a lock;
-  isolation comes from the [agent container](docker/agent/README.md).
-
----
-
-## Installation
-
-Prerequisites and setup: see [above](#try-it); the `Makefile`
-is short and readable.
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
 > ⬜ not run · verify: make setup-runtime
 
-For development on ki-dev: separate runtime venv and a symlink in
-`~/.local/bin` (honors XDG_DATA_HOME).
-Finish active and paused runs before each update.
-Details: [self-development runbook (German)](docs/self-development.de.md).
+To develop ki-dev with ki-dev, install it apart from the source tree:
+own venv, symlink in `~/.local/bin`. Finish running jobs before an
+update ([details, German](docs/self-development.de.md)).
 
 ```bash
 make setup-runtime
@@ -278,86 +362,14 @@ ki-dev --help
 ```
 <!-- /readme-script -->
 
-```bash
-make test           # pytest and ruff
-make readme-check   # README setup in a throwaway container (needs Docker)
-```
+Further reading (German): [executor and profiles](docs/ausfuehrer.de.md) ·
+[`step` and handoffs](docs/step.de.md) ·
+[flow packages](docs/ablaufpakete.de.md) ·
+[CLI adapters](docs/cli-adapters.md) ·
+[target picture](docs/zielbild.de.md)
 
-`readme-check` uses a fresh working directory on disk for each run and removes
-it afterward. Go modules, Go build results, and pip downloads are reused across
-runs in `.local/cache/readme-check/`. Missing packages and version checks may
-still require network access. Remove this directory before a run to start with
-an empty cache.
+Questions, ideas, collaboration: open an issue or contact
+[@blaumohn](https://github.com/blaumohn) directly.
+License: [MIT](LICENSE).
 
-Or the agent container with bd, Codex and Claude Code:
-`./scripts/agent-container shell` ([docker/agent/README.md](docker/agent/README.md)).
-
----
-
-## Background
-
-### Why ki-dev
-
-For my requirements on low-resource, deterministic control of AI
-development workflows I did not find a suitable open-source solution I
-could use. That is how ki-dev started. Related research (below) supports
-the approach and informs further development.
-
-The resource design: a supervising model that reads ten agent outputs of
-10,000 tokens each once in full spends 100,000 input tokens before it
-answers itself. ki-dev decides formal events, answer formats and limit
-values in code; the full texts stay available as artifacts. What this
-actually saves depends on model, cache and context selection and has
-not been measured.
-
-### Bootstrap problem
-
-The work ki-dev grew out of did not run on ki-dev workflows: whole epics
-were planned and implemented in a few chats with AI agents. The result
-was repeated surprises and success reports even though explicitly given
-main and architecture requirements had been skipped. The workflows meant
-to prevent this are therefore built with the means they are meant to
-replace. Until they carry the work, the rule applies by hand: cut tasks
-to a size that fits an agent's context, make requirements explicit and
-check them separately, as in stages 1–4 of the [test bench](#test-bench).
-
-### After publication: V1
-
-V1 completes the single workflows `map`, `graph`, `materialize` and
-`implement`. In V1 the chain map → graph → materialize → implementation
-is linked by hand, each workflow with its roles, reviews and halts; a
-fully automated end-to-end chain is not a V1 goal. Example: `map` records
-the requirement "protection before every agent call", `graph` orders
-profile → measurement → guard → wiring, `materialize` cuts bounded tasks
-with boundary-case acceptance, and the implementation checks on the new
-executor: measured 85,000 at limit 80,000 → no agent call, logged safety
-halt. Separate and optional later: AI-assisted calibration of workflows
-and profiles, small local models.
-
-### Research and related work
-
-- [Why Do Multi-Agent LLM Systems Fail?](https://arxiv.org/html/2503.13657v3)
-  (Cemri et al., 2025) derives the failure taxonomy MAST from an
-  empirical study, including premature termination (FM-3.1), no or
-  incomplete verification (FM-3.2) and incorrect verification (FM-3.3).
-  In its case studies, clearer roles, a changed workflow and an added
-  check of the overall objective improved the success rate with the same
-  model (at most +15.6 %), which still stayed low. Structured workflows
-  and verification are thus an empirically supported approach; whether
-  ki-dev prevents these failures has not been measured.
-- [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)
-  (Anthropic, 2024) distinguishes workflows with predefined code paths
-  from agents that direct their own path, and describes programmatic
-  checks ("gates") between steps. ki-dev puts control on the workflow
-  side; agents work inside a state.
-- [Gas City](https://github.com/gastownhall/gascity) also works with
-  Beads: a swappable `beads.Store` (bd, file, memory, exec;
-  [beads.md](https://github.com/gastownhall/gascity/blob/main/engdocs/architecture/beads.md))
-  and a controller that executes formulas as a graph of step and control
-  beads ([nine-concepts.md](https://github.com/gastownhall/gascity/blob/main/engdocs/architecture/nine-concepts.md);
-  both read on 2026-10-15). In both projects Beads remains the domain and
-  state model of the work. No cost or feature comparison is made here.
-
-The German [README](README.md) has the diagrams, the layout of `src/`,
-the feature overview and the non-goals; background and target picture:
-[docs/zielbild.de.md](docs/zielbild.de.md).
+<sub>[↑ Contents](#contents)</sub>

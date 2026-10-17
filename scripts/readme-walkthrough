@@ -128,23 +128,21 @@ prepare_persona() {
             BUDGET="60 Sekunden"
             ENTSCHEIDUNG="Lädst du die Person zum Gespräch ein? ja/nein, mit Grund"
             ZUSATZ=""
-            head -n 40 README.md > "$directory/README.md"
             ;;
         entwickler)
             PERSONA="ein Entwickler, der ein Werkzeug für sein Problem sucht"
             BUDGET="5 Minuten"
-            ENTSCHEIDUNG="Probierst du es aus? ja/nein, und welchen Befehl tippst du an deinem eigenen Repo als Nächstes"
+            ENTSCHEIDUNG="Willst du das Entwicklungsprojekt näher erkunden? ja/nein, mit Grund und nächstem Schritt; Betriebsreife getrennt beurteilen"
             ZUSATZ=""
-            head -n 250 README.md > "$directory/README.md"
             ;;
         pruefer)
             PERSONA="ein Prüfer, der Behauptungen nachgeht"
             BUDGET="10 Minuten; folge nur Links, zähle die Klicks"
-            ENTSCHEIDUNG="Wähle 2 Behauptungen aus den ersten 20 Zeilen: belegt ja/nein"
+            ENTSCHEIDUNG="Wähle eine Ist-Behauptung zum Beispiel und eine zum Entwicklungsstand: belegt ja/nein; Zielaussagen gesondert benennen"
             ZUSATZ="Öffne den verlinkten Test. Prüft er die Behauptung wirklich oder nur etwas Ähnliches? Begründe mit Testcode. Die Dateien liegen flach; dateien.txt ordnet jedem Namen den Pfad zu, den README.md nennt."
-            cp README.md "$directory/README.md"
             ;;
     esac
+    cp README.md "$directory/README.md"
     git ls-files -co --exclude-standard | cut -d/ -f1 | sort -u > "$directory/root.txt"
     sed -e "s|@PERSONA@|$PERSONA|g" \
         -e "s|@BUDGET@|$BUDGET|g" \

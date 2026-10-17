@@ -53,14 +53,14 @@ DATED = ("passed", "xfail")
 STATUS_TEXT = {
     "README.md": {
         "verify": "selbst prüfen",
-        "bench": "[Prüfstand](#prüfstand)",
+        "bench": "[Stand](#stand)",
         "passed": "✅ bestanden",
         "xfail": "❌ rot, erwartet (Spezifikation)",
         "unchecked": "⬜ nicht ausgeführt",
     },
     "README.en.md": {
         "verify": "verify",
-        "bench": "[test bench](#test-bench)",
+        "bench": "[Status](#status)",
         "passed": "✅ passed",
         "xfail": "❌ red, expected (spec)",
         "unchecked": "⬜ not run",
