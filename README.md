@@ -334,12 +334,14 @@ unten:
  ◇ Bead-Graph-Durchgang   wählt den nächsten bereiten Vorgang
  ◇ Ablaufkette            verbindet Abläufe zu einem Lauf
 ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+
  Arbeitsgraph   Beads: Vorgang, Abnahme, Abhängigkeit   Schritt 3
 ┌─ Ablaufpaket ──────────────────────────────────────┐
 │ Ablauf    TOML: Zustände, Kanten, Wächter, Rollen  │  Schritt 1
 │ Ops       Python: die Arbeit hinter einem Zustand  │
 └────────────────────────────────────────────────────┘
  Profil         Rolle → Adapter, Grenzen, Tests         Schritt 2
+
 ┌─ Gerüst ───────────────────────────────────────────┐
 │ Runner    fährt jeden Ablauf, hält, setzt fort     │  Schritt 4
 │ Adapter   claude · codex · manual · inbox · mock   │
