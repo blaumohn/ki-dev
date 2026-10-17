@@ -385,16 +385,8 @@ Fachliches entscheidet der Ablauf, Schutz für jeden Ablauf gleich das
 Gerüst; Grenzwerte setzt das Profil, der Executor misst, ein Wächter
 vergleicht. Abhängigkeit nur Paket → Gerüst, das Gerüst kennt keine Rollen
 ([Test](tests/test_schichten.py)). Tests: welche Befehle, sagt das Profil
-(Review-Muster: `pyproject.toml`); wann und was danach, der Ablauf.
-
-**Heute abweichend**, Umbau nach der Veröffentlichung, als Beads geschnitten:
-
-- `implement`: eigener Ausführer im Paket, Grenzen in Python (`ige.6.4.13`)
-- `run.toml`: noch ohne Schutzhalt, Messung, Budget, Wiederholung
-  (`ige.6.4.2`–`ige.6.4.5`)
-- Git-Abschluss: Paket-Ops statt Gerüst-Katalog (`ige.6.4.10`)
-- Review-Muster: ohne Rundengrenzen (`ige.6.4.7`)
-- Abläufe und Vorlagen: noch im Gerüst-Repo (`cak`, `ige.6.4.16`)
+(Review-Muster: `pyproject.toml`); wann und was danach, der Ablauf. Wo der
+Code heute abweicht, steht in der [Roadmap](#roadmap) unter **V1**.
 
 Weitere Trennungen:
 
@@ -530,7 +522,9 @@ gemeinsame Muster und Ops; Abläufe mit ihren Ops, Vorlagen und Profilen
 liegen in eigenen Paket-Repos
 ([Paket außerhalb des Gerüsts](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
-Nach [Ebenen](#ebenen), von oben nach unten:
+Die **V1**-Punkte bringen den Code auf die vereinbarte Architektur aus
+[Ebenen](#ebenen); der Umbau folgt nach der Veröffentlichung. Gegliedert
+nach Ebenen, von oben nach unten:
 
 **Neue Oberebenen**
 
@@ -570,8 +564,10 @@ Nach [Ebenen](#ebenen), von oben nach unten:
 
 **Runner**
 
-- ◆ **V1** ein Runner für alle Abläufe: `implement` auf dem Review-Muster,
-  Grenzen und Wiederholung im Gerüst (`ige.6.4`, 17 Aufträge)
+- ◆ **V1** ein Runner für alle Abläufe (`ige.6.4`, 17 Aufträge): `implement`
+  ohne eigenen Ausführer im Paket (`ige.6.4.13`); Schutzhalt, Messung,
+  Budget und Wiederholung als Kanten in `run.toml` statt in Python
+  (`ige.6.4.2`–`ige.6.4.5`); Git-Abschluss im Gerüst-Katalog (`ige.6.4.10`)
 - ◆ **V1** Verbrauchsschutz: eigene Tokenmessung, Budgetreservierung,
   durchgesetzter Stop (`wu0.10`, 22 Aufträge)
 - ◆ adaptive Budgetprognose: mehrere Modelle schätzen einen Auftrag,

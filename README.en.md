@@ -386,17 +386,8 @@ way; the profile sets limit values, the executor measures, a guard
 compares. Dependencies point only package → scaffold, the scaffold knows no
 roles ([test](tests/test_schichten.py)). Tests: which commands is up to the
 profile (review pattern: `pyproject.toml`); when, and what follows, is up to
-the flow.
-
-**Deviating today**, rebuild after publication, cut into beads:
-
-- `implement`: own executor inside the package, limits in Python
-  (`ige.6.4.13`)
-- `run.toml`: no safety halt, metering, budget or retries yet
-  (`ige.6.4.2`–`ige.6.4.5`)
-- git wrap-up: package ops instead of the scaffold catalog (`ige.6.4.10`)
-- review pattern: no round limits (`ige.6.4.7`)
-- flows and templates: still in the scaffold repo (`cak`, `ige.6.4.16`)
+the flow. Where the code deviates today is listed in the
+[Roadmap](#roadmap) under **V1**.
 
 More separations:
 
@@ -530,7 +521,9 @@ adapters, shared patterns and ops; flows with their ops, templates and
 profiles live in their own package repos
 ([package outside the scaffold, German](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
-By [layer](#layers), top to bottom:
+The **V1** items bring the code to the agreed architecture from
+[Layers](#layers); the rebuild follows after publication. Grouped by
+layer, top to bottom:
 
 **New upper layers**
 
@@ -568,8 +561,11 @@ By [layer](#layers), top to bottom:
 
 **Runner**
 
-- ◆ **V1** one runner for all flows: `implement` on the review pattern,
-  limits and retries in the scaffold (`ige.6.4`, 17 tasks)
+- ◆ **V1** one runner for all flows (`ige.6.4`, 17 tasks): `implement`
+  without its own executor in the package (`ige.6.4.13`); safety halt,
+  metering, budget and retries as edges in `run.toml` instead of Python
+  (`ige.6.4.2`–`ige.6.4.5`); git wrap-up in the scaffold catalog
+  (`ige.6.4.10`)
 - ◆ **V1** usage protection: own token metering, budget reservation,
   enforced stop (`wu0.10`, 22 tasks)
 - ◆ adaptive budget forecast: several models estimate a task, learn the
