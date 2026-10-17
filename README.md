@@ -335,13 +335,22 @@ unten:
  ◇ Ablaufkette            verbindet Abläufe zu einem Lauf
 ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
 
- Arbeitsgraph   Beads: Vorgang, Abnahme, Abhängigkeit   Schritt 3
+┌─ Arbeitsgraph ─────────────────────────────────────┐
+│ Beads     Vorgänge mit Abnahme, Abhängigkeiten     │  Schritt 3
+└────────────────────────────────────────────────────┘
+       │ ein Vorgang je Lauf
+       ▼
 ┌─ Ablaufpaket ──────────────────────────────────────┐
 │ Ablauf    TOML: Zustände, Kanten, Wächter, Rollen  │  Schritt 1
 │ Ops       Python: die Arbeit hinter einem Zustand  │
 └────────────────────────────────────────────────────┘
- Profil         Rolle → Adapter, Grenzen, Tests         Schritt 2
-
+       ▲ besetzt die Rollen
+       │
+┌─ Profil ───────────────────────────────────────────┐
+│ TOML      Rolle → Adapter, Grenzen, Tests          │  Schritt 2
+└────────────────────────────────────────────────────┘
+       │ wählt die Adapter
+       ▼
 ┌─ Gerüst ───────────────────────────────────────────┐
 │ Runner    fährt jeden Ablauf, hält, setzt fort     │  Schritt 4
 │ Adapter   claude · codex · manual · inbox · mock   │
@@ -355,8 +364,7 @@ unten:
 
 Schritte im Beispiel: [1](#1-ablauf-modellieren) ·
 [2](#2-rollen-besetzen) · [3](#3-auftrag-wählen) · [4](#4-starten);
-◇ gibt es noch nicht ([Roadmap](#roadmap)). Das Profil verbindet Paket und
-Gerüst: Rollen aus dem Ablauf, Adapter aus dem Gerüst. Abhängigkeit nur
+◇ gibt es noch nicht ([Roadmap](#roadmap)). Abhängigkeit nur
 Paket → Gerüst; das Gerüst kennt keine Rollen- oder Phasennamen, ein
 [Test](tests/test_schichten.py) weist sie dort ab
 ([Gerüst und Paket](docs/ablaufpakete.de.md#gerüst-und-paket)).

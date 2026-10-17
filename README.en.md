@@ -335,13 +335,22 @@ Each step of the example sits on its own layer, top to bottom:
  ◇ flow chain        joins flows into one run
 ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
 
- work graph     Beads: issue, acceptance, dependencies  step 3
+┌─ work graph ───────────────────────────────────────┐
+│ Beads     issues with acceptance, dependencies     │  step 3
+└────────────────────────────────────────────────────┘
+       │ one issue per run
+       ▼
 ┌─ flow package ─────────────────────────────────────┐
 │ flow      TOML: states, edges, guards, roles       │  step 1
 │ ops       Python: the work behind a state          │
 └────────────────────────────────────────────────────┘
- profile        role → adapter, limits, tests           step 2
-
+       ▲ fills the roles
+       │
+┌─ profile ──────────────────────────────────────────┐
+│ TOML      role → adapter, limits, tests            │  step 2
+└────────────────────────────────────────────────────┘
+       │ picks the adapters
+       ▼
 ┌─ scaffold ─────────────────────────────────────────┐
 │ runner    drives any flow, halts, resumes          │  step 4
 │ adapters  claude · codex · manual · inbox · mock   │
@@ -355,10 +364,9 @@ Each step of the example sits on its own layer, top to bottom:
 
 Steps in the example: [1](#1-model-the-flow) · [2](#2-cast-the-roles) ·
 [3](#3-pick-a-task) · [4](#4-run); ◇ does not exist yet
-([Roadmap](#roadmap)). The profile connects package and scaffold: roles
-from the flow, adapters from the scaffold. Dependencies point only
-package → scaffold; the scaffold knows no role or phase names, a
-[test](tests/test_schichten.py) rejects them there
+([Roadmap](#roadmap)). Dependencies point only package → scaffold; the
+scaffold knows no role or phase names, a [test](tests/test_schichten.py)
+rejects them there
 ([scaffold and package, German](docs/ablaufpakete.de.md#gerüst-und-paket)).
 
 More separations:
