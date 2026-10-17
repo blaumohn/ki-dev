@@ -7,11 +7,16 @@ notiert je Schritt, was er sieht, welchen Eindruck er hat und was er tut
 
 ## Maßstab
 
-Die README stellt ein Entwicklungsprojekt vor, das noch nicht betrieblich
-nutzbar ist. Der Leser soll das Problem, den Ansatz an einem kleinen Beispiel
-und den Abstand zwischen Ziel und Umsetzung verstehen. Tests machen diesen
-Abstand sichtbar. Eine rote Anforderung ist kein automatischer DX-Fehler;
-eine unerklärte Ausgabe oder unklare Betriebsreife ist einer.
+Maßstab ist die [README-Leitlinie](readme-leitlinie.de.md): Auftrag, wie ein
+Mensch liest, Regeln mit Fehlbeispielen. Die README stellt ein
+Entwicklungsprojekt vor, das noch nicht betrieblich nutzbar ist. Eine rote
+Anforderung ist kein automatischer DX-Fehler; eine unerklärte Ausgabe, eine
+Stelle mit zwei Lesarten oder ein Beispiel, das eine Aufgabe statt eines
+Verfahrens zeigt, ist einer.
+
+Ein Durchlauf zählt nur, wenn er scheitern kann. Der alte Fragenkatalog
+prüfte Inhalt; ein Agent beantwortete ihn auch aus einer README, die für
+Menschen scheiterte (3,5 von 4, siehe unten).
 
 ## Personas
 
@@ -24,28 +29,38 @@ eine unerklärte Ausgabe oder unklare Betriebsreife ist einer.
 
 ## Schritte
 
-1. Dateiliste und erster Bildschirm: Welches Problem und welchen
-   Entwicklungsstand erwartet der Leser jetzt? Nicht erst den Hintergrund lesen.
-2. Erstes Beispiel: Kann er Ablauf-TOML, Rollenprofil und Aufruf miteinander
-   verbinden und die nächste Aktion erklären, ohne das Projekt zu kennen?
-3. Erweiterungen: Wird dasselbe Beispiel verständlich erweitert, oder muss
-   der Leser für jeden Abschnitt ein neues Modell des Projekts bilden?
-4. Ausgabe und Tests: Versteht er vor dem Nachweis, was dieser zeigen soll?
+1. Erster Bildschirm (bis zum Inhaltsverzeichnis): Der Leser hält an und
+   schreibt in drei Sätzen, was ki-dev ist, woraus es besteht und wie weit
+   es ist. Die Sätze bleiben stehen; wo das Weiterlesen sie widerlegt, ist
+   ein Befund gegen den Kopf.
+2. Erstes Beispiel: Zeigt es ein Verfahren oder eine einzelne Aufgabe? Kann
+   er jedem Schritt seine Ebene zuordnen, ohne zu raten?
+3. Begriffe und Lesarten: Welcher Begriff steht für zwei Dinge? Welche
+   Stelle, auch in einer Skizze, lässt zwei Lesarten zu (mit beiden
+   Lesarten)?
+4. Fährte und Modell: Hielt jede Überschrift und jeder Link, was er
+   versprach? Wo musste er springen oder fand die Antwort erst später? Baut
+   jeder Abschnitt auf dem Modell aus dem Beispiel auf?
+5. Ausgabe und Tests: Versteht er vor dem Nachweis, was dieser zeigen soll?
    Kann er danach zwischen beobachtetem Verhalten, Lücke und Ziel unterscheiden?
-5. Nächste Handlung: Sind Voraussetzungen und Einrichtung erreichbar, wenn
+6. Nächste Handlung: Sind Voraussetzungen und Einrichtung erreichbar, wenn
    er selbst erkunden möchte? Hilft `step`, Agenteneingaben und Übergänge zu verstehen?
-6. Abbruch: Wo endet das Interesse oder das Verständnis, und warum?
-7. Prüfer zusätzlich: Eine Ist-Aussage zum Beispiel und eine zum Entwicklungsstand
+7. Abbruch: Wo endet das Interesse oder das Verständnis, und warum?
+8. Prüfer zusätzlich: Eine Ist-Aussage zum Beispiel und eine zum Entwicklungsstand
    bis zum Testcode verfolgen. Prüft der Test genau das Behauptete?
 
 ## Auswertung
 
-Kein Punktestand aus vorhandenen Überschriften, Links oder Stichwörtern.
-Entscheidend ist die Erklärung in eigenen Worten: Problem → Beispiel →
-Entwicklungsstand → sinnvoller nächster Schritt. Fundstellen begründen das
-Urteil; bloße Auffindbarkeit genügt nicht. Ungeklärte Fragen und der tatsächliche
-Abbruchpunkt bleiben im Bericht stehen. Ein Agentenbericht ist eine Beobachtung,
-keine automatische Abnahme durch den Autor.
+Kein Punktestand und kein „bestanden“. Entscheidend ist die Erklärung in
+eigenen Worten: Problem → Beispiel → Entwicklungsstand → sinnvoller nächster
+Schritt, gemessen an den drei Sätzen nach dem ersten Bildschirm. Fundstellen
+begründen das Urteil; bloße Auffindbarkeit genügt nicht. Ungeklärte Fragen,
+Stellen mit zwei Lesarten und der tatsächliche Abbruchpunkt bleiben im
+Bericht stehen.
+
+Ein Agentenbericht ist ein Hinweis, nie die Abnahme; abgenommen wird von
+einem Menschen. Wer Befunde umsetzt, prüft zuerst die Gliederung gegen die
+Leitlinie und flickt nicht einzeln.
 
 DE und EN auf dieselbe Leserführung, Beispielbedeutung und Ist-/Zieltrennung
 prüfen. Der Prüfer unterscheidet Link-Erreichbarkeit von inhaltlicher Beweiskraft.

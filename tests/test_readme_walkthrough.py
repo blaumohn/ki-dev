@@ -76,6 +76,10 @@ def test_prepare_repository_from_another_directory(tmp_path):
         assert not re.search(r"@[^@\n]+@", handoff)
         assert "ja/nein" in handoff
         assert "Ändere nichts." in handoff
+        assert "in drei Sätzen" in handoff
+        assert "mit beiden\n   Lesarten" in handoff
+        assert "Fährte verloren" in handoff
+        assert "kein Gesamturteil" in handoff
     for relative in (
         "tests/machine/test_reachability.py",
         "docs/ausfuehrer.de.md",
@@ -233,6 +237,7 @@ def test_prepare_reports_search_on_stderr_and_matches_config(
 
     assert SEARCH_HEADER in result.stderr
     assert "vorhanden, benutzt" in result.stderr
+    assert "docs/readme-leitlinie.de.md" in result.stderr
     target = Path(result.stdout.strip())
     assert result.stdout.count("\n") == 1
     assert target.parent == tmp_path / "ziel"

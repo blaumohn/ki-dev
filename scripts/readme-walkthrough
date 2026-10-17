@@ -108,6 +108,7 @@ prepare_run() {
     file=$(select_config)
     print_search "$file" >&2
     print_source "$file" >&2
+    echo "Maßstab: docs/readme-leitlinie.de.md; ein Bericht ist ein Hinweis, keine Abnahme." >&2
     base=$(output_base "$file")
     target="$base/$(git rev-parse --short HEAD)-$(date +%y%m%dT%H%M)"
     mkdir -p "$target"

@@ -1,0 +1,146 @@
+# README-Leitlinie: Gestaltung für Menschen
+
+Für jeden, der `README.md` oder `README.en.md` schreibt oder prüft, Mensch
+oder Agent. Entstanden aus dem Umbau vom 2026-10-17
+(`ki-dev-ablauf-4lb3`). Vorher und nachher vergleichen:
+`git show 5a67ee1:README.md` gegen die aktuelle [README](../README.md).
+
+## Warum diese Seite
+
+Die README in `5d3d4c6` bekam im Agenten-Durchlauf mit
+`scripts/readme-walkthrough` 3,5 von 4 Punkten
+([Durchläufe](readme-walkthrough.de.md#frühere-durchläufe)), die
+Korrekturrunde `5a67ee1` flickte die Befunde einzeln. Für Menschen blieb
+sie ein Fehlschlag. Das Werkzeug konnte das nicht zeigen:
+
+- Die Fragen prüften Inhalt (Was tut ki-dev? Wie hängen TOML, Profil und
+  Aufruf zusammen?). Ein Agent beantwortet sie auch aus einer schlecht
+  gegliederten Prosa-README, denn er hat die ganze Datei vor sich.
+- Der Maßstab enthielt keine Anforderung an die Informationsarchitektur:
+  kein Leser-Modell, keine Fährte, keine Begriffstrennung, kein Verfahren
+  als Beispiel. Fehlte die Frage, fehlte der Befund.
+
+Agenten lesen vollständig, linear und geduldig, finden jede Antwort
+irgendwo und werten Fundstellen. Ein Mensch überfliegt, folgt der Fährte,
+baut aus dem ersten Bildschirm und dem ersten Beispiel ein Modell und geht
+bei der zweiten Unklarheit. Korrekte und vollständige Fakten ergeben noch
+keine README. Bewertet wird der Weg eines Menschen, nicht ob Antworten
+vorhanden sind. Einzelne Befunde zu flicken repariert keine falsche
+Gliederung.
+
+## Auftrag
+
+Nach Kopf, Inhaltsverzeichnis und erstem Beispiel kann ein Besucher sagen:
+was ki-dev ist (Idee), woraus es besteht (Ebenen) und wie weit es ist
+(Stand). Er weiß, was er tun kann: ausprobieren, mitmachen, den Autor
+ansprechen, das Repo beobachten. Alles Weitere verlinkt die README. Sie ist
+kein Handbuch, kein Bericht, keine Testmatrix und kein Prosabuch.
+
+## Wie ein Mensch liest
+
+Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
+
+- **Überfliegen:** Kopf, Inhaltsverzeichnis, Überschriften, Codeblöcke,
+  Skizzen. Prosa liest er nur, wo er hängen bleibt.
+- **Der Fährte folgen:** Überschriften, Linktexte und Inhaltsverzeichnis
+  kündigen an, was dahinter steht. Er folgt der stärksten Fährte; findet er
+  dort nicht, was sie versprach, verliert er Vertrauen. Wer für ein Team
+  sichtet (Tech-Lead, Kollegin), sucht nur Signale für seine Entscheidung:
+  Problem, Ansatz, Reife, Sorgfalt.
+- **Ein Modell aus dem ersten Beispiel:** Alles Spätere ordnet er dort ein.
+  Trägt das erste Beispiel die Kernbegriffe nicht, baut er ein falsches.
+- **Nähe ist Bedeutung:** Was nah beieinander steht, gehört zusammen; was
+  darüber steht, liegt darüber; eine Zeile ohne Bezeichnung setzt die
+  vorige fort.
+- **Zwei Lesarten sind ein Fehler:** Bei der ersten rät er, bei der zweiten
+  geht er.
+- **Springen kostet:** Er liest in der Reihenfolge des Inhaltsverzeichnisses
+  und will zurück, ohne zu scrollen.
+
+## Regeln mit Fehlbeispiel
+
+1. **Zeigen statt beschreiben.** Ein echtes Minimalbeispiel aus echten
+   Dateien (Ablauf-TOML, Profil, Befehle) mit Halbsatz-Kommentaren, auch
+   wenn es noch nicht betriebsbereit ist. Fehler: „ki-dev legt diese
+   Steuerung in Dateien: Ablauf …, Profil …, Auftrag …“ als Prosaliste.
+   Besser: `[op.review]` mit `role = "review"  # eine Rolle, kein Agent: den
+   wählt das Profil`.
+2. **Das Verfahren zeigen, nicht die Aufgabe.** Fehler: „Beispiel: ein Bug,
+   zwei Agenten“, und der Leser hält ki-dev für einen Bugfixer. Besser:
+   „Umsetzer und Reviewer als Ablauf“; der Bug ist nur der Auftrag in
+   Schritt 3.
+3. **Ebenen im Fluss benennen, Begriffe ab dem ersten Satz trennen.** Jeder
+   Beispielschritt beginnt mit seiner Ebene („**Ebene Profil.**“). Ein Wort,
+   ein Begriff: Op (wirkt nach außen) ≠ Aktion (ändert Laufdaten), Executor
+   (Name im Profil) ≠ Adapter (Transport-Code), Ablauf ≠ Ablaufkette,
+   Lauf ≠ Bead-Graph-Durchgang.
+4. **Ein Modell vertiefen, nicht neu ansetzen.** Die Abschnitte folgen dem
+   Modell aus dem Beispiel: Idee → Beispiel → was im Lauf passiert → Ebenen
+   → weitere Abläufe → Stand → Roadmap → Mitmachen. Jeder verweist auf den
+   Beispielschritt zurück, den er vertieft. Fehler: ein Abschnitt, für den
+   der Leser ein neues Bild des Projekts bauen muss.
+5. **Fährte legen.** Überschrift und Linktext sagen, was dort steht:
+   „Ausprobieren ohne Agenten“, „Was im Lauf passiert“. Aktive Links ab dem
+   ersten Satz führen zu der Stelle, die den Begriff zeigt
+   („[Ablauf aus TOML](../README.md#1-ablauf-modellieren)“). Fehler: Kopf
+   ohne Links, Motivation erst ab Zeile 462 (Durchlauf `5d3d4c6`).
+6. **Linear navigieren.** Inhaltsverzeichnis in Lesereihenfolge mit
+   Unterlinks auf die Beispielschritte; `↑ Inhalt` am Ende jedes Abschnitts
+   und Unterabschnitts.
+7. **Skizzieren, was skizzierbar ist, und jedes Element eindeutig.**
+   - Codeblock, höchstens 72 Zeichen breit. Kasten = Ebene, Zeile mit
+     Bezeichnung = Teil, beschrifteter Pfeil = Beziehung, Abstand zwischen
+     Ebenen.
+   - Fehler: `│ Muster und gemeinsame Ops │` ohne Bezeichnung unter
+     `Adapter … mock`: Fortsetzung oder eigener Teil? Fehler: `Arbeitsgraph
+     Beads: …` direkt über dem Paket-Kasten: Ist Beads ein Teil davon oder
+     eine Ebene darüber?
+   - Mermaid nur, wo GitHub es lesbar setzt: ein Zustandspfad ja, ein
+     Ebenenbild nein (gerendert unleserlich, `7f37f10`).
+8. **Gegen den Code prüfen, nicht gegen das Gedächtnis.** Fehler: die Spur
+   `controller_step ─controller_task→ worker_step` war ausgedacht, echt ist
+   `worker_step_prepare`. Echte Artefakte zeigen und ganz verlinken
+   ([`demo-lauf.events.jsonl`](beispiele/demo-lauf.events.jsonl)); was von
+   Hand übertragen ist, so benennen.
+9. **Architektur heißt Vereinbarung.** Die Skizze zeigt die vereinbarte
+   Architektur
+   ([Schichten und Orte](ausfuehrer-luecken.de.md#schichten-und-orte)),
+   nicht den Ist-Code. Abweichungen stehen knapp mit Bead-ID in der
+   Roadmap. Verschweigen ist so falsch wie den Ist-Stand als Architektur zu
+   zeichnen.
+10. **Stand ehrlich.** Läuft und fehlt getrennt; rote Spezifikationstests
+    als solche; ein Ziel nie als Funktion; nichts Ungemessenes als
+    Ersparnis.
+11. **Für wen.** Zielgruppe ausdrücklich (knappe Token-Budgets, kein
+    Aufseher-Modell); Späteres als Option, nicht als Voraussetzung.
+12. **Knapp und genau.** Halbsätze statt Absätze. Genauigkeit vor Kürze:
+    keine künstliche Grenze, wenn ein Begriff sonst falsch wäre.
+
+## Arbeitsweise
+
+- Vor jeder README-Änderung den aktuellen Stand committen, auch fremde
+  Änderungen; sie sind absichtlich.
+- Kleine Runden. Der Mensch sichtet und entscheidet. Eine Frage
+  beantworten heißt nicht ändern.
+- Erst die Gliederung gegen Auftrag und Regeln prüfen, dann Befunde einzeln
+  beheben.
+- DE und EN gleich aufgebaut. Erzeugte Blöcke nur über ihre Quellen:
+  `readme-scripts/` mit `scripts/render-readme.py`, Ablaufdiagramme mit
+  `scripts/render-flow-diagrams.py`.
+- Prüfen: `render-readme.py --check`, `render-flow-diagrams.py --check`,
+  `pytest tests/test_doku_links.py tests/test_readme_render.py
+  tests/test_readme_walkthrough.py tests/test_flow_diagram.py`.
+
+## Abnahme
+
+- Ein Agenten-Durchlauf ([README-Durchlauf](readme-walkthrough.de.md)) ist
+  ein Hinweis, nie die Abnahme; abgenommen wird von einem Menschen. Seine
+  Fragen (`scripts/readme-walkthrough-uebergabe.txt`) richten sich an den
+  Durchlauf-Agenten und prüfen die Regeln oben.
+- Ein Durchlauf zählt nur, wenn er scheitern kann: je Persona das Modell
+  nach dem ersten Bildschirm in drei Sätzen, verglichen mit dem Auftrag
+  oben; jede Stelle mit zwei Lesarten samt beiden Lesarten; jede Fährte,
+  die nicht hielt, was sie versprach; der Abbruchpunkt. Liefert erst ein
+  späterer Abschnitt die Antwort, ist das ein Befund gegen den früheren.
+- Kleinere Grenze: Markdown-Darstellung (Zeilenumbruch mit zwei
+  Leerzeichen, Mermaid-Layout) in der GitHub-Vorschau nachsehen.
