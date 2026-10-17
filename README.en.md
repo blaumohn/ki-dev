@@ -334,16 +334,19 @@ Each step of the example sits on its own layer, top to bottom:
  ◇ bead graph walk   picks the next ready issue
  ◇ flow chain        joins flows into one run
 ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+
  work graph     Beads: issue, acceptance, dependencies  step 3
 ┌─ flow package ─────────────────────────────────────┐
 │ flow      TOML: states, edges, guards, roles       │  step 1
 │ ops       Python: the work behind a state          │
 └────────────────────────────────────────────────────┘
  profile        role → adapter, limits, tests           step 2
+
 ┌─ scaffold ─────────────────────────────────────────┐
 │ runner    drives any flow, halts, resumes          │  step 4
 │ adapters  claude · codex · manual · inbox · mock   │
-│ patterns and shared ops                            │
+│ patterns  review pattern, loaded by flows          │
+│ ops       for all packages: checks, context        │
 └──────┬──────────────────────────────▲──────────────┘
        │ handoff                      │ answer
        ▼                              │

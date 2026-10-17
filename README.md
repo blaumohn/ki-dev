@@ -345,7 +345,8 @@ unten:
 ┌─ Gerüst ───────────────────────────────────────────┐
 │ Runner    fährt jeden Ablauf, hält, setzt fort     │  Schritt 4
 │ Adapter   claude · codex · manual · inbox · mock   │
-│ Muster und gemeinsame Ops                          │
+│ Muster    Review-Muster, von Abläufen geladen      │
+│ Ops       für alle Pakete: Prüfungen, Kontext      │
 └──────┬──────────────────────────────▲──────────────┘
        │ Übergabe                     │ Antwort
        ▼                              │
