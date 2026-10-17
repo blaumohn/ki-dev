@@ -82,17 +82,21 @@ target = "worker_step_prepare"
 on = ["begin_correction", "drop_result"]
 ```
 
-The flow binds the work behind a state to an op, shortened:
+What a state does outside, the flow binds to an op; its result comes back
+as an event. Shortened:
 
 ```toml
-[op.review]                       # work of the state controller_step
+[op.review]                       # effect of the state controller_step
 role = "review"                   # a role, not an agent: the profile picks it
 do = "review.decide"              # entry in the ops catalog
 events = ["PASS", "fix", "decision", "escalate"]   # allowed verdicts
 ```
 
 The agent only returns its verdict; ki-dev decides which edge follows.
-The first matching edge wins. Ops interface:
+The first matching edge wins. Guards (`checked_result`,
+`changes_rounds_left`) and actions (`begin_correction`) are Python in the
+package ([`machine/model.py`](src/ki_dev/flow_ops/implement/machine/model.py))
+and only read or change run data. Ops interface:
 [bindings (German)](docs/ablaufpakete.de.md#eine-bindung); the ops of
 `implement` live in
 [`flow_ops/implement/ops.py`](src/ki_dev/flow_ops/implement/ops.py),
@@ -110,7 +114,7 @@ workdir = "/home/me/calc-work"          # agents' working worktree
 access_profile = "write"
 
 [worker]                                # implements
-executor = "codex"                      # adapter from the scaffold
+executor = "codex"                      # executor from the scaffold
 session_id = "019a…"                    # existing Codex session
 model = "gpt-5.6-terra"
 effort = "high"
@@ -136,7 +140,7 @@ data_mode = "file_proposal"
 ```
 
 A human (`manual`), a mock or another model: only `executor` changes
-([adapters](docs/cli-adapters.md)).
+([executors, German](docs/ausfuehrer.de.md#executoren)).
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -162,9 +166,10 @@ through the bead graph yet ([Roadmap](#roadmap)).
 ### 4. Run
 
 **Layer: scaffold.** The runner drives the flow to the next halt; the
-adapters pass the handoffs to Codex and Claude Code. Halt, resume and
-safety limits work the same for every flow
-([`run.toml`](src/ki_dev/runner/run.toml)).
+executors pass the handoffs to Codex and Claude Code.
+[`run.toml`](src/ki_dev/runner/run.toml) handles halt and resume the same
+for every flow; today only `implement` has the safety limits
+([Layers](#layers)).
 
 ```bash
 ki-dev -f implement calc-7k2         # flow implement, profile default
@@ -198,7 +203,8 @@ edge from [step 1](#1-model-the-flow), wrapped:
 
 `region` `ablauf`: an edge of the flow TOML, counted by `seq`;
 `operation` and `halt`: 31 edges of the runner from
-[`run.toml`](src/ki_dev/runner/run.toml). `adapter`: who answered, with
+[`run.toml`](src/ki_dev/runner/run.toml), per op
+`hold → start → artifact_saved`. `adapter`: who answered, with
 the profile from [step 2](#2-cast-the-roles) `claude-cli`
 ([format, German](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
 
@@ -338,24 +344,31 @@ Each step of the example sits on its own layer, top to bottom:
 ┌─ work graph ───────────────────────────────────────┐
 │ Beads     issues with acceptance, dependencies     │  step 3
 └────────────────────────────────────────────────────┘
-       │ one issue per run
+       │ task: one issue per run
        ▼
 ┌─ flow package ─────────────────────────────────────┐
-│ flow      TOML: states, edges, guards, roles       │  step 1
-│ ops       Python: the work behind a state          │
+│ flow      TOML: states, edges, roles, ops          │  step 1
+│ templates text of the handoffs to the roles        │
+│ model     Python: guards, actions, internal only   │
+│ ops       Python: effect outside → event           │
 └────────────────────────────────────────────────────┘
        ▲ fills the roles
        │
 ┌─ profile ──────────────────────────────────────────┐
-│ TOML      role → adapter, limits, tests            │  step 2
+│ roles     role → executor, session, model          │  step 2
+│ limits    rounds, calls, tokens, context           │
+│ tests     commands that run every round            │
+│ target    where a PASS gets integrated             │
 └────────────────────────────────────────────────────┘
-       │ picks the adapters
+       │ picks the executors
        ▼
 ┌─ scaffold ─────────────────────────────────────────┐
-│ runner    drives any flow, halts, resumes          │  step 4
-│ adapters  claude · codex · manual · inbox · mock   │
+│ runner    halt, resume, limits; events.jsonl       │  step 4
+│ handoff   template + context → executor of role    │
 │ patterns  review pattern, loaded by flows          │
-│ ops       for all packages: checks, context        │
+│ ops       preflight with tests; context from bead  │
+│ core      statecharts, loader, schema checks       │
+│ executor  claude · codex · manual · inbox · mock   │
 └──────┬──────────────────────────────▲──────────────┘
        │ handoff                      │ answer
        ▼                              │
@@ -364,13 +377,25 @@ Each step of the example sits on its own layer, top to bottom:
 
 Steps in the example: [1](#1-model-the-flow) · [2](#2-cast-the-roles) ·
 [3](#3-pick-a-task) · [4](#4-run); ◇ does not exist yet
-([Roadmap](#roadmap)). Dependencies point only package → scaffold; the
-scaffold knows no role or phase names, a [test](tests/test_schichten.py)
-rejects them there
-([scaffold and package, German](docs/ablaufpakete.de.md#gerüst-und-paket)).
+([Roadmap](#roadmap)).
+
+- **Dependencies point only package → scaffold:** the scaffold knows no
+  role or phase names, a [test](tests/test_schichten.py) rejects them
+  there ([scaffold and package, German](docs/ablaufpakete.de.md#gerüst-und-paket)).
+- **Executor:** a name from
+  [`executors.toml`](src/ki_dev/adapter/executors.toml), backed by a
+  transport (the adapter code) and what it measures.
+- **Tests:** which commands is up to the profile, for the review pattern
+  the target project's `pyproject.toml`; when they run and what follows
+  is up to the flow.
+- **Today** `implement` still runs its own executor inside the package
+  ([`runtime.py`](src/ki_dev/flow_ops/implement/runtime.py)); only there
+  do the limits apply. V1 moves it onto the runner ([Roadmap](#roadmap)).
 
 More separations:
 
+- **Op ≠ action:** an op acts outside and ends in an event; an action
+  only changes run data during a transition, a guard reads it.
 - **Flow ≠ flow chain:** a flow is one procedure; the chain
   `map` → `graph` → `materialize` → `implement` connects several, by hand
   today.

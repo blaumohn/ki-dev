@@ -83,17 +83,21 @@ target = "worker_step_prepare"
 on = ["begin_correction", "drop_result"]
 ```
 
-Die Arbeit hinter einem Zustand bindet der Ablauf an eine Op, gekürzt:
+Was ein Zustand nach außen tut, bindet der Ablauf an eine Op; ihr Ergebnis
+kommt als Ereignis zurück. Gekürzt:
 
 ```toml
-[op.review]                       # Arbeit des Zustands controller_step
+[op.review]                       # Wirkung des Zustands controller_step
 role = "review"                   # eine Rolle, kein Agent: den wählt das Profil
 do = "review.decide"              # Eintrag im Ops-Katalog
 events = ["PASS", "fix", "decision", "escalate"]   # erlaubte Urteile
 ```
 
 Der Agent liefert nur sein Urteil; welche Kante folgt, entscheidet ki-dev.
-Die erste passende Kante gewinnt. Ops-Schnittstelle:
+Die erste passende Kante gewinnt. Wächter (`checked_result`,
+`changes_rounds_left`) und Aktionen (`begin_correction`) sind Python im
+Paket ([`machine/model.py`](src/ki_dev/flow_ops/implement/machine/model.py))
+und lesen oder ändern nur Laufdaten. Ops-Schnittstelle:
 [Bindungen](docs/ablaufpakete.de.md#eine-bindung); die Ops von `implement`
 liegen in [`flow_ops/implement/ops.py`](src/ki_dev/flow_ops/implement/ops.py),
 gemeinsame Ops des Gerüsts in [`ops/`](src/ki_dev/ops/).
@@ -110,7 +114,7 @@ workdir = "/home/me/rechner-arbeit"     # Arbeits-Worktree der Agenten
 access_profile = "write"
 
 [worker]                                # setzt um
-executor = "codex"                      # Adapter aus dem Gerüst
+executor = "codex"                      # Executor aus dem Gerüst
 session_id = "019a…"                    # bestehende Codex-Sitzung
 model = "gpt-5.6-terra"
 effort = "high"
@@ -136,7 +140,7 @@ data_mode = "file_proposal"
 ```
 
 Ein Mensch (`manual`), ein Mock oder ein anderes Modell: Es wechselt nur
-`executor` ([Adapter](docs/cli-adapters.md)).
+`executor` ([Executoren](docs/ausfuehrer.de.md#executoren)).
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -162,9 +166,10 @@ durch den Bead-Graphen gibt es noch nicht ([Roadmap](#roadmap)).
 ### 4. Starten
 
 **Ebene Gerüst.** Der Runner fährt den Ablauf bis zum nächsten Halt, die
-Adapter reichen die Übergaben an Codex und Claude Code. Halt, Fortsetzen
-und Schutzgrenzen gelten für jeden Ablauf gleich
-([`run.toml`](src/ki_dev/runner/run.toml)).
+Executoren reichen die Übergaben an Codex und Claude Code. Halt und
+Fortsetzen regelt [`run.toml`](src/ki_dev/runner/run.toml) für jeden
+Ablauf gleich; die Schutzgrenzen hat heute nur `implement`
+([Ebenen](#ebenen)).
 
 ```bash
 ki-dev -f implement rechner-7k2      # Ablauf implement, Profil default
@@ -198,7 +203,8 @@ Rückkante aus [Schritt 1](#1-ablauf-modellieren), umbrochen:
 
 `region` `ablauf`: eine Kante der Ablauf-TOML, `seq` zählt sie;
 `operation` und `halt`: 31 Kanten des Runners aus
-[`run.toml`](src/ki_dev/runner/run.toml). `adapter`: wer antwortete, mit
+[`run.toml`](src/ki_dev/runner/run.toml), je Op
+`hold → start → artifact_saved`. `adapter`: wer antwortete, mit
 dem Profil aus [Schritt 2](#2-rollen-besetzen) `claude-cli`
 ([Format](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
 
@@ -338,24 +344,31 @@ unten:
 ┌─ Arbeitsgraph ─────────────────────────────────────┐
 │ Beads     Vorgänge mit Abnahme, Abhängigkeiten     │  Schritt 3
 └────────────────────────────────────────────────────┘
-       │ ein Vorgang je Lauf
+       │ Auftrag: ein Vorgang je Lauf
        ▼
 ┌─ Ablaufpaket ──────────────────────────────────────┐
-│ Ablauf    TOML: Zustände, Kanten, Wächter, Rollen  │  Schritt 1
-│ Ops       Python: die Arbeit hinter einem Zustand  │
+│ Ablauf    TOML: Zustände, Kanten, Rollen, Ops      │  Schritt 1
+│ Vorlagen  Text der Übergaben an die Rollen         │
+│ Modell    Python: Wächter, Aktionen, nur intern    │
+│ Ops       Python: Wirkung nach außen → Ereignis    │
 └────────────────────────────────────────────────────┘
        ▲ besetzt die Rollen
        │
 ┌─ Profil ───────────────────────────────────────────┐
-│ TOML      Rolle → Adapter, Grenzen, Tests          │  Schritt 2
+│ Rollen    Rolle → Executor, Sitzung, Modell        │  Schritt 2
+│ Grenzen   Runden, Aufrufe, Tokens, Kontext         │
+│ Tests     Befehle, die jede Runde laufen           │
+│ Ziel      wohin ein PASS integriert wird           │
 └────────────────────────────────────────────────────┘
-       │ wählt die Adapter
+       │ wählt die Executoren
        ▼
 ┌─ Gerüst ───────────────────────────────────────────┐
-│ Runner    fährt jeden Ablauf, hält, setzt fort     │  Schritt 4
-│ Adapter   claude · codex · manual · inbox · mock   │
+│ Runner    Halt, Fortsetzen, Grenzen; events.jsonl  │  Schritt 4
+│ Übergabe  Vorlage + Kontext → Executor der Rolle   │
 │ Muster    Review-Muster, von Abläufen geladen      │
-│ Ops       für alle Pakete: Prüfungen, Kontext      │
+│ Ops       Vorlauf mit Tests; Kontext aus Bead      │
+│ Kern      Statecharts, Lader, Schemaprüfung        │
+│ Executor  claude · codex · manual · inbox · mock   │
 └──────┬──────────────────────────────▲──────────────┘
        │ Übergabe                     │ Antwort
        ▼                              │
@@ -364,13 +377,25 @@ unten:
 
 Schritte im Beispiel: [1](#1-ablauf-modellieren) ·
 [2](#2-rollen-besetzen) · [3](#3-auftrag-wählen) · [4](#4-starten);
-◇ gibt es noch nicht ([Roadmap](#roadmap)). Abhängigkeit nur
-Paket → Gerüst; das Gerüst kennt keine Rollen- oder Phasennamen, ein
-[Test](tests/test_schichten.py) weist sie dort ab
-([Gerüst und Paket](docs/ablaufpakete.de.md#gerüst-und-paket)).
+◇ gibt es noch nicht ([Roadmap](#roadmap)).
+
+- **Abhängigkeit nur Paket → Gerüst:** das Gerüst kennt keine Rollen-
+  oder Phasennamen, ein [Test](tests/test_schichten.py) weist sie dort ab
+  ([Gerüst und Paket](docs/ablaufpakete.de.md#gerüst-und-paket)).
+- **Executor:** ein Name aus
+  [`executors.toml`](src/ki_dev/adapter/executors.toml), dahinter ein
+  Transport (der Adapter-Code) und was er misst.
+- **Tests:** welche Befehle, sagt das Profil, beim Review-Muster die
+  `pyproject.toml` des Zielprojekts; wann sie laufen und was danach
+  folgt, der Ablauf.
+- **Heute** fährt `implement` noch einen eigenen Ausführer im Paket
+  ([`runtime.py`](src/ki_dev/flow_ops/implement/runtime.py)); nur dort
+  greifen die Grenzen. V1 legt ihn auf den Runner ([Roadmap](#roadmap)).
 
 Weitere Trennungen:
 
+- **Op ≠ Aktion:** eine Op wirkt nach außen und endet in einem Ereignis;
+  eine Aktion ändert beim Übergang nur Laufdaten, ein Wächter liest sie.
 - **Ablauf ≠ Ablaufkette:** ein Ablauf ist ein Verfahren; die Kette
   `map` → `graph` → `materialize` → `implement` verbindet mehrere, heute
   von Hand.
