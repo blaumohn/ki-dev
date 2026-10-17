@@ -2,23 +2,36 @@
 
 # ki-dev
 
-**Coding-Agenten arbeiten, ein Ablauf aus TOML entscheidet, was danach passiert.**
-Umsetzung, getrenntes Review, Korrektur, Integration: Kein Agent beauftragt
-den nächsten, kein Mensch reicht jede Antwort von Hand weiter.
+**KI-Agenten arbeiten, ein [Ablauf aus TOML](#1-ablauf-modellieren) entscheidet, was danach passiert.**
+Der Ablauf modelliert ein Arbeitsverfahren, etwa Umsetzung mit getrenntem
+Review oder [Planung](#nicht-nur-code). Die [Rollen](#2-rollen-besetzen)
+besetzt ein Profil, der [Auftrag](#3-auftrag-wählen) ist ein beliebiger
+Vorgang. Kein Agent beauftragt den nächsten, kein Mensch reicht jede Antwort
+von Hand weiter.
+
+Gedacht für knappe Token-Budgets: Den nächsten Schritt wählt Code, kein
+Aufseher-Modell ([Warum](#warum)).
 
 🚧 **In Entwicklung, noch nicht betriebsbereit.** Ablaufsteuerung,
 Korrekturschleife und Adapter für Claude Code und Codex laufen. Es fehlen
-noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden.
+noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden:
+[Stand](#stand) · [Roadmap](#roadmap).
 
 ## Inhalt
 
 1. [Warum](#warum)
-2. [Beispiel: ein Bug, zwei Agenten](#beispiel-ein-bug-zwei-agenten)
+2. [Beispiel: Umsetzer und Reviewer als Ablauf](#beispiel-umsetzer-und-reviewer-als-ablauf)
+   1. [Ablauf modellieren](#1-ablauf-modellieren)
+   2. [Rollen besetzen](#2-rollen-besetzen)
+   3. [Auftrag wählen](#3-auftrag-wählen)
+   4. [Starten](#4-starten)
 3. [Was im Lauf passiert](#was-im-lauf-passiert)
 4. [Ausprobieren ohne Agenten](#ausprobieren-ohne-agenten)
-5. [Stand](#stand)
-6. [Aufbau](#aufbau)
-7. [Mitmachen](#mitmachen)
+5. [Ebenen](#ebenen)
+6. [Nicht nur Code](#nicht-nur-code)
+7. [Stand](#stand)
+8. [Roadmap](#roadmap)
+9. [Mitmachen](#mitmachen)
 
 ## Warum
 
@@ -26,16 +39,14 @@ Wer mit Coding-Agenten arbeitet, wird zum Boten: Kontext geben, Ergebnis
 prüfen, Nachbesserung zurückreichen. Dazu melden Agenten „fertig“, auch
 wenn es nicht stimmt.
 
-ki-dev legt diese Steuerung in Dateien:
+**Für wen:** für alle, die mit begrenzten Tokens arbeiten. Ein
+Aufseher-Modell, das jede Ausgabe liest, kostet zusätzlich; wer das nicht
+bezahlen kann, legt die Steuerung in Dateien. In ki-dev sind Kantenwahl,
+Formatprüfung und Grenzvergleich Code, Modelle machen die Arbeit und das
+fachliche Review. Später darf KI Parameter steuern und Abläufe kalibrieren
+([Roadmap](#roadmap)), als Option, nicht als Voraussetzung. Gemessen ist
+die Ersparnis noch nicht.
 
-- **Ablauf** (`flow/*.toml`): wer wann dran ist, wohin `fix` führt, wann
-  der Mensch entscheidet.
-- **Profil** (`.ki-dev/profiles/*.toml`): wer die Rollen übernimmt, also
-  Claude Code, Codex, ein Mensch oder ein Mock.
-- **Auftrag** (ein Vorgang in [Beads](https://github.com/steveyegge/beads)):
-  was zu tun ist, mit Abnahmekriterien.
-
-Agenten arbeiten innerhalb eines Zustands; den Übergang wählt ki-dev.
 Hintergrund: Workflows mit Prüfstellen statt frei steuernder Agenten
 ([Anthropic](https://www.anthropic.com/engineering/building-effective-agents));
 vorzeitiger Abschluss und fehlende Verifikation als typische Fehler von
@@ -43,23 +54,18 @@ Mehr-Agenten-Systemen ([MAST](https://arxiv.org/html/2503.13657v3)).
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
-## Beispiel: ein Bug, zwei Agenten
+## Beispiel: Umsetzer und Reviewer als Ablauf
 
-In einem kleinen Repo liefert `add(a, b)` das Ergebnis `a - b`.
-Codex soll es beheben, Claude Code prüft.
+Modelliert wird ein Verfahren, keine einzelne Aufgabe: Ein Agent setzt um,
+ein zweiter prüft in eigener Sitzung, `fix` führt zurück, nach drei Runden
+entscheidet der Mensch. Jeder Schritt gehört zu einer eigenen
+[Ebene](#ebenen).
 
-**1 · Auftrag anlegen**
+### 1. Ablauf modellieren
 
-```bash
-bd create "add() addiert nicht" \
-  --description "add(2, 3) liefert -1" \
-  --design "add.py korrigieren; test_add.py nicht ändern" \
-  --acceptance "add(2, 3) == 5 und add(-1, 1) == 0"
-# → rechner-7k2, die ID des Auftrags
-```
-
-**2 · Ablauf: mitgeliefert.** Der Teil, der die Korrekturschleife ausmacht,
-aus [`implement.toml`](src/ki_dev/flow/implement.toml):
+**Ebene Ablaufpaket.** Der mitgelieferte Ablauf `implement` legt fest, was
+nach welchem Urteil passiert. Die Korrekturschleife, aus
+[`implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
 # Review sagt „fix“, keine Runde mehr übrig → Halt, der Mensch entscheidet
@@ -77,17 +83,34 @@ target = "worker_step_prepare"
 on = ["begin_correction", "drop_result"]
 ```
 
-Der Agent liefert nur sein Urteil (`fix` oder `PASS`); welche Kante folgt,
-entscheidet ki-dev. Die erste passende Kante gewinnt.
+Die Arbeit hinter einem Zustand bindet der Ablauf an eine Op, gekürzt:
 
-**3 · Rollen festlegen** in `.ki-dev/profiles/default.toml`:
+```toml
+[op.review]                       # Arbeit des Zustands controller_step
+role = "review"                   # eine Rolle, kein Agent: den wählt das Profil
+do = "review.decide"              # Eintrag im Ops-Katalog
+events = ["PASS", "fix", "decision", "escalate"]   # erlaubte Urteile
+```
+
+Der Agent liefert nur sein Urteil; welche Kante folgt, entscheidet ki-dev.
+Die erste passende Kante gewinnt. Ops-Schnittstelle:
+[Bindungen](docs/ablaufpakete.de.md#eine-bindung); die Ops von `implement`
+liegen in [`flow_ops/implement/ops.py`](src/ki_dev/flow_ops/implement/ops.py),
+gemeinsame Ops des Gerüsts in [`ops/`](src/ki_dev/ops/).
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+### 2. Rollen besetzen
+
+**Ebene Profil.** Wer die Rollen übernimmt und mit welchen Grenzen, steht
+in `.ki-dev/profiles/default.toml`; der Ablauf bleibt derselbe:
 
 ```toml
 workdir = "/home/me/rechner-arbeit"     # Arbeits-Worktree der Agenten
 access_profile = "write"
 
 [worker]                                # setzt um
-executor = "codex"
+executor = "codex"                      # Adapter aus dem Gerüst
 session_id = "019a…"                    # bestehende Codex-Sitzung
 model = "gpt-5.6-terra"
 effort = "high"
@@ -112,7 +135,36 @@ commit_message = "add() korrigiert"
 data_mode = "file_proposal"
 ```
 
-**4 · Starten**
+Ein Mensch (`manual`), ein Mock oder ein anderes Modell: Es wechselt nur
+`executor` ([Adapter](docs/cli-adapters.md)).
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+### 3. Auftrag wählen
+
+**Ebene Arbeitsgraph** ([Beads](https://github.com/steveyegge/beads)).
+Der Ablauf passt zu jedem Vorgang mit Abnahmekriterien, hier ein kleiner
+Bug: `add(a, b)` liefert `a - b`.
+
+```bash
+bd create "add() addiert nicht" \
+  --description "add(2, 3) liefert -1" \
+  --design "add.py korrigieren; test_add.py nicht ändern" \
+  --acceptance "add(2, 3) == 5 und add(-1, 1) == 0"
+# → rechner-7k2, die ID des Auftrags
+```
+
+Welchen Vorgang ein Lauf bekommt, wählt heute der Mensch; einen Durchgang
+durch den Bead-Graphen gibt es noch nicht ([Roadmap](#roadmap)).
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+### 4. Starten
+
+**Ebene Gerüst.** Der Runner fährt den Ablauf bis zum nächsten Halt, die
+Adapter reichen die Übergaben an Codex und Claude Code. Halt, Fortsetzen
+und Schutzgrenzen gelten für jeden Ablauf gleich
+([`run.toml`](src/ki_dev/runner/run.toml)).
 
 ```bash
 ki-dev -f implement rechner-7k2      # Ablauf implement, Profil default
@@ -128,8 +180,9 @@ Lauf mit echten Agenten, und rote Tests halten die Integration noch nicht auf.
 
 ## Was im Lauf passiert
 
-Spur aus `events.jsonl` eines Laufs, gekürzt. Die Kanten sind mit Agenten
-und mit Mocks dieselben:
+Der Runner schreibt jeden Übergang nach `events.jsonl`; die Kanten stammen
+aus dem Ablauf ([Schritt 1](#1-ablauf-modellieren)). Gekürzt, mit Agenten
+und mit Mocks gleich:
 
 ```text
 controller_step ─controller_task→ worker_step              # Auftrag an Codex
@@ -233,69 +286,62 @@ Arbeit eines Agenten.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
-## Stand
+## Ebenen
 
-**Läuft**
+Jeder Schritt des Beispiels liegt auf einer eigenen Ebene:
 
-- Abläufe als TOML-Statecharts auf
-  [python-statemachine](https://python-statemachine.readthedocs.io/).
-  In `implement` verbraucht jede Rückkante einen Zähler; ein
-  [Test](tests/machine/test_reachability.py) zählt den Zustandsraum durch:
-  kein Zyklus ohne Mensch läuft unbegrenzt.
-- `implement` vom Auftrag bis zur Fast-Forward-Integration, mit Halt und
-  `resume`; vorgeführt mit Mock-Agenten.
-- Adapter: Claude Code, Codex, Mensch (`manual`, `inbox`), Mock.
-- Schutzhalt bei Kontext-, Kontingent- und Budgetgrenze für `claude`;
-  `codex` ohne Kontextmessung.
-- `step`: zeigt für jeden Zustand die Übergabe an einen Agenten, ohne
-  einen zu starten.
+| Ebene | legt fest | im Beispiel |
+| --- | --- | --- |
+| Ablauf | Zustände, Kanten, Wächter: was nach welchem Urteil passiert | [1](#1-ablauf-modellieren): `implement.toml` |
+| Ops | die Arbeit hinter einem Zustand, einmal in Python | [1](#1-ablauf-modellieren): `[op.review]` |
+| Profil | Rolle → Agent, Grenzwerte, Tests | [2](#2-rollen-besetzen) |
+| Arbeitsgraph | Vorgänge mit Abnahmekriterien und Abhängigkeiten | [3](#3-auftrag-wählen) |
+| Runner (Ausführer) | Halt, Fortsetzen, Wiederholung, Schutzgrenzen | [4](#4-starten), [Spur](#was-im-lauf-passiert) |
+| Adapter | Übergabe an Claude Code, Codex, Mensch oder Mock; misst Kontext und Verbrauch | [2](#2-rollen-besetzen): `executor` |
 
-**Im Bau**
+Ablauf und Ops bilden ein **Ablaufpaket**; Runner, Adapter, gemeinsame
+Muster und Ops das **Gerüst**. Das Gerüst kennt keine Rollen- oder Phasennamen, ein
+[Test](tests/test_schichten.py) weist sie dort ab; Abhängigkeit nur
+Paket → Gerüst ([Gerüst und Paket](docs/ablaufpakete.de.md#gerüst-und-paket)).
 
-- Test-Tor: Heute integriert ein Review-`PASS` auch bei roten Tests.
-- Ein gemeinsamer Ausführer für `implement` und `step`, damit die Grenzen
-  überall greifen.
-- Ein abgenommener Lauf mit echten Agenten.
+Weitere Trennungen:
 
-**Ziel V1:** vier Abläufe, von Hand verkettet. Anforderungen kartieren
-(`map`) → Abhängigkeiten (`graph`) → ausführbare Aufträge (`materialize`) →
-Umsetzung (`implement`). Die ersten drei gibt es heute als Review-Abläufe,
-bedient von Hand über `step`.
-
-<!-- readme-script: readme-scripts/3-review-gate.sh -->
-> ❌ rot, erwartet (Spezifikation) · 2026-10-17 · selbst prüfen: .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py · [Stand](#stand)
-
-**Wann ist das Test-Tor fertig?** Wenn dieser Test grün ist. Er startet
-`ki-dev -f implement` gegen ein Wegwerf-Repo mit falschem `add.py`
-(`a - b`); die Tests sind rot, das Mock-Review sagt trotzdem `PASS`.
-
-```bash
-.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
-```
-
-```text
-E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
-FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
-1 failed, 4 passed
-```
-
-Heute landet das Ergebnis trotz roter Tests auf `main`. Die vier grünen
-Fälle prüfen den Test selbst, etwa: grüne Tests plus `PASS` integrieren.
-<!-- /readme-script -->
+- **Ablauf ≠ Ablaufkette:** ein Ablauf ist ein Verfahren; die Kette
+  `map` → `graph` → `materialize` → `implement` verbindet mehrere, heute
+  von Hand.
+- **Lauf ≠ Durchgang durch den Bead-Graphen:** ein Lauf bearbeitet einen
+  Vorgang; welcher als Nächstes dran ist, wählt heute der Mensch.
+- **Mensch als Bote ≠ Mensch als Entscheider:** als Rolle (`manual`) trägt
+  er Übergaben weiter, im Zustand `waiting_decision` entscheidet er.
+- **Arbeitsgraph ≠ Ereignisprotokoll:** Beads hält, was zu tun ist,
+  `events.jsonl`, was wann passiert ist.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
-## Aufbau
+## Nicht nur Code
 
-| Teil | Aufgabe |
-| --- | --- |
-| `flow/*.toml` | Zustände, Kanten, Wächter: was nach welchem Urteil passiert |
-| `runner/` | prüft die Antwort, nimmt die Kante, baut die nächste Übergabe |
-| `adapter/` | gibt die Übergabe an Claude Code, Codex, einen Menschen oder den Mock |
+Schreiben, getrennt prüfen, korrigieren, entscheiden: Dieses Verfahren liegt
+einmal als Muster im Gerüst
+([`patterns/review.toml`](src/ki_dev/flow/patterns/review.toml), Ops in
+[`flow_ops/review/`](src/ki_dev/flow_ops/review/)). Die Planungsabläufe
+`map`, `graph` und `materialize` setzen nur Parameter darauf, etwa die
+Kartierung von Anforderungen ([`map.toml`](src/ki_dev/flow/map.toml),
+gekürzt):
 
-Gemeinsame Muster liegen einmal im Katalog. `map`, `graph` und
-`materialize` setzen nur Parameter auf das Review-Muster
-([`map.toml`](src/ki_dev/flow/map.toml)):
+```toml
+pattern_catalog = ["ki_dev:review"]   # Muster und seine Ops aus dem Gerüst
+start = "map"
+
+[[phase]]
+id = "map"
+use = "write_review"                  # schreiben → Review → Korrektur → Entscheidung
+next = "finished"
+
+[phase.role]                          # dieselben Rollen wie in implement
+write = "worker"
+review = "review"
+correction = "worker"
+```
 
 <!-- ki-dev flow show map -->
 ```mermaid
@@ -326,8 +372,93 @@ ki-dev -f map step BEAD map                             # Übergabe an den Karti
 ki-dev -f map step BEAD map.review map.review=urteil.json  # Urteil zurück, nächste Übergabe
 ```
 
+Nächster Ablauf dieser Art, schon als Beads geschnitten: Planungssitzungen
+und Designnotizen in die Gesamtplanung einarbeiten ([Roadmap](#roadmap)).
 Beide Diagramme erzeugt `ki-dev flow show` aus der Quelle; ein Test
 vergleicht sie mit diesem README.
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+## Stand
+
+**Läuft**
+
+- Abläufe als TOML-Statecharts auf
+  [python-statemachine](https://python-statemachine.readthedocs.io/).
+  In `implement` verbraucht jede Rückkante einen Zähler; ein
+  [Test](tests/machine/test_reachability.py) zählt den Zustandsraum durch:
+  kein Zyklus ohne Mensch läuft unbegrenzt.
+- `implement` vom Auftrag bis zur Fast-Forward-Integration, mit Halt und
+  `resume`; vorgeführt mit Mock-Agenten.
+- Adapter: Claude Code, Codex, Mensch (`manual`, `inbox`), Mock.
+- Schutzhalt bei Kontext-, Kontingent- und Budgetgrenze für `claude`;
+  `codex` ohne Kontextmessung.
+- `step`: zeigt für jeden Zustand die Übergabe an einen Agenten, ohne
+  einen zu starten.
+- Abläufe aus einem Paketverzeichnis außerhalb des Gerüsts laden
+  (`KI_DEV_FLOW_PATH`).
+
+**Fehlt noch:** das Test-Tor (unten), ein Runner für alle Abläufe, damit
+die Grenzen überall greifen, und ein abgenommener Lauf mit echten Agenten
+([Roadmap](#roadmap)).
+
+<!-- readme-script: readme-scripts/3-review-gate.sh -->
+> ❌ rot, erwartet (Spezifikation) · 2026-10-17 · selbst prüfen: .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py · [Stand](#stand)
+
+**Wann ist das Test-Tor fertig?** Wenn dieser Test grün ist. Er startet
+`ki-dev -f implement` gegen ein Wegwerf-Repo mit falschem `add.py`
+(`a - b`); die Tests sind rot, das Mock-Review sagt trotzdem `PASS`.
+
+```bash
+.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
+```
+
+```text
+E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
+FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
+1 failed, 4 passed
+```
+
+Heute landet das Ergebnis trotz roter Tests auf `main`. Die vier grünen
+Fälle prüfen den Test selbst, etwa: grüne Tests plus `PASS` integrieren.
+<!-- /readme-script -->
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+## Roadmap
+
+◆ als Beads geschnitten, mit Abnahmekriterien · ◇ Zielbild, noch nicht
+geschnitten. Bead-IDs stammen aus der projektinternen Datenbank; ein
+öffentliches Journal folgt.
+
+**V1: Gerüst und Ablaufpakete getrennt.** ki-dev bringt Runner, Adapter,
+gemeinsame Muster und Ops; Abläufe mit ihren Ops, Vorlagen und Profilen
+liegen in eigenen Paket-Repos
+([Paket außerhalb des Gerüsts](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
+
+- ◆ ein Runner für alle Abläufe: `implement` auf dem Review-Muster, Grenzen
+  und Wiederholung im Gerüst (`ige.6.4`, 17 Aufträge)
+- ◆ Test-Tor: rote Tests halten die Integration auf (`ek1`)
+- ◆ Paket-Repo ohne kopierten Runner, Gerüst ohne Ablaufkopien
+  (`cak`, `ige.6.4.16`)
+- ◆ Verbrauchsschutz: eigene Tokenmessung, Budgetreservierung, durchgesetzter
+  Stop (`wu0.10`, 22 Aufträge)
+- ◆ vier Einzelabläufe `map` → `graph` → `materialize` → `implement`, von
+  Hand verkettet; Rundengrenzen auch im Review-Muster (`ige.6.4.7`)
+
+**Danach**
+
+- ◇ Ablaufkette: mehrere Abläufe als ein Lauf
+- ◇ Durchgang durch den Bead-Graphen: nächster bereiter Vorgang, Reihenfolge
+  nach Abhängigkeiten
+- ◆ Abflachung: Planungssitzungen und Designnotizen in die Gesamtplanung
+  einarbeiten, als eigener Ablauf mit Review (`urq`, 8 Aufträge)
+- ◆ lernende Budgetprognose: mehrere Modelle schätzen einen Auftrag,
+  Abgleich mit dem Ist-Verbrauch (`wu0`)
+- ◇ adaptive Schnitte: der Reviewer teilt einen Vorgang in Schritte, ein
+  Größen-Gate vor dem Umsetzer ([Zielbild](docs/zielbild.de.md))
+- ◇ KI-gestützte Kalibrierung von Ablauf und Profil, KI-gesteuerte
+  Parameter; optional, die Steuerung bleibt deterministisch
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -338,7 +469,7 @@ Gute Einstiege, je mit klarer Abnahme:
 - **Test-Tor bauen**: fertig, wenn der rote Test oben grün ist.
 - **Rundenzähler im Review-Muster**: `map`, `graph`, `materialize` zählen
   ihre Korrekturrunden noch nicht.
-- **Ein Ausführer**: `implement` auf den gemeinsamen Ausführer umstellen.
+- **Ein Runner**: `implement` auf den gemeinsamen Runner umstellen.
 
 Mehr dazu: [Was in der Architektur fehlt](docs/ausfuehrer-luecken.de.md).
 
