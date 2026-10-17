@@ -336,51 +336,50 @@ Arbeit eines Agenten.
 Jeder Schritt des Beispiels liegt auf einer eigenen Ebene, von oben nach
 unten:
 
-```mermaid
-flowchart TB
-    subgraph zukunft [◇ Zielbild, noch nicht gebaut]
-        durchgang["Bead-Graph-Durchgang<br/>nächster bereiter Vorgang"]
-        kette["Ablaufkette<br/>Abläufe als ein Lauf"]
-    end
-    subgraph arbeit [Arbeitsgraph · Schritt 3]
-        beads["Beads<br/>Vorgänge, Abnahme,<br/>Abhängigkeiten"]
-    end
-    subgraph paket [Ablaufpaket · Schritt 1]
-        ablauf["Ablauf · TOML<br/>Zustände, Kanten,<br/>Wächter, Rollen"]
-        uebergaben["Übergaben · TOML<br/>Vorlage + Bausteine<br/>je Zustand"]
-        vorlagen["Vorlagen<br/>Rollentexte"]
-        pops["Ops · Python<br/>eigene Ops,<br/>Antwort → Ereignis"]
-    end
-    subgraph profil [Profil · Schritt 2]
-        rollen["Rollen<br/>Rolle → Executor"]
-        grenzen["Grenzwerte<br/>Runden, Tokens, Kontext"]
-        tests["Tests<br/>Befehle je Runde"]
-        ziel["Ziel<br/>Integration nach PASS"]
-    end
-    subgraph geruest [Gerüst · Schritt 4]
-        runner["Runner · run.toml<br/>Halt, Wiederholung,<br/>Grenzen vergleichen"]
-        uebergabe["Übergabe<br/>Vorlage + Eltern-Bead,<br/>Kriterien, Doku-Abschnitte"]
-        muster["Muster<br/>Review und Varianten"]
-        gops["Ops · Katalog<br/>Vorlauf, Git, Kontext"]
-        kern["Kern<br/>Statecharts, Lader"]
-        executor["Executor, misst<br/>claude · codex · manual<br/>inbox · mock"]
-    end
-    agent(["Agent oder Mensch"])
+```text
+ ◇ Bead-Graph-Durchgang   wählt den nächsten bereiten Vorgang
+ ◇ Ablaufkette            verbindet Abläufe zu einem Lauf
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
 
-    zukunft ~~~ arbeit
-    arbeit -->|"Auftrag: ein Vorgang je Lauf"| paket
-    paket -->|"nennt Rollen"| profil
-    profil -->|"wählt Executoren"| geruest
-    executor -->|"Übergabe je Ablauf, Rolle, Bead"| agent
-    agent -->|"Antwort"| executor
-    style zukunft stroke-dasharray: 5 5
+┌─ Arbeitsgraph ─────────────────────────────────────┐
+│ Beads     Vorgänge mit Abnahme, Abhängigkeiten     │  Schritt 3
+└────────────────────────────────────────────────────┘
+       │ Auftrag: ein Vorgang je Lauf
+       ▼
+┌─ Ablaufpaket ──────────────────────────────────────┐
+│ Ablauf    TOML: Zustände, Kanten, Wächter, Rollen  │  Schritt 1
+│ Übergaben TOML: Vorlage + Bausteine je Zustand     │
+│ Vorlagen  Rollentexte mit Platzhaltern             │
+│ Ops       Python: eigene Ops, Antwort → Ereignis   │
+└────────────────────────────────────────────────────┘
+       ▲ besetzt die Rollen
+       │
+┌─ Profil ───────────────────────────────────────────┐
+│ Rollen    Rolle → Executor, Sitzung, Modell        │  Schritt 2
+│ Grenzen   Grenzwerte: Runden, Tokens, Kontext      │
+│ Tests     Befehle, die jede Runde laufen           │
+│ Ziel      wohin ein PASS integriert wird           │
+└────────────────────────────────────────────────────┘
+       │ wählt die Executoren
+       ▼
+┌─ Gerüst ───────────────────────────────────────────┐
+│ Runner    run.toml: Halt, Wiederholung, Grenzen    │  Schritt 4
+│ Übergabe  Vorlage + Eltern-Bead, Kriterien, Doku   │
+│ Muster    Review-Muster und Varianten              │
+│ Ops       Katalog: Vorlauf, Git-Abschluss, Kontext │
+│ Kern      Statecharts, Lader, Schemaprüfung        │
+│ Executor  claude · codex · manual · inbox · mock   │
+└──────┬──────────────────────────────────────▲──────┘
+       │ Übergabe je Ablauf, Rolle und Bead   │ Antwort
+       ▼                                      │
+   Agent oder Mensch ─────────────────────────┘
 ```
 
 Schritte im Beispiel: [1](#1-ablauf-modellieren) · [2](#2-rollen-besetzen) ·
 [3](#3-auftrag-wählen) · [4](#4-starten); ◇ gibt es noch nicht
 ([Roadmap](#roadmap)).
 
-Das Bild zeigt die vereinbarte Architektur
+Die Skizze zeigt die vereinbarte Architektur
 ([Schichten und Regeln](docs/ausfuehrer-luecken.de.md#schichten-und-orte)):
 Fachliches entscheidet der Ablauf, Schutz für jeden Ablauf gleich das
 Gerüst; Grenzwerte setzt das Profil, der Executor misst, ein Wächter

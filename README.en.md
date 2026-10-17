@@ -336,51 +336,50 @@ work.
 
 Each step of the example sits on its own layer, top to bottom:
 
-```mermaid
-flowchart TB
-    subgraph zukunft [◇ target picture, not built yet]
-        durchgang["bead graph walk<br/>next ready issue"]
-        kette["flow chain<br/>flows as one run"]
-    end
-    subgraph arbeit [work graph · step 3]
-        beads["Beads<br/>issues, acceptance,<br/>dependencies"]
-    end
-    subgraph paket [flow package · step 1]
-        ablauf["flow · TOML<br/>states, edges,<br/>guards, roles"]
-        uebergaben["handoffs · TOML<br/>template + blocks<br/>per state"]
-        vorlagen["templates<br/>role texts"]
-        pops["ops · Python<br/>own ops,<br/>answer → event"]
-    end
-    subgraph profil [profile · step 2]
-        rollen["roles<br/>role → executor"]
-        grenzen["limit values<br/>rounds, tokens, context"]
-        tests["tests<br/>commands per round"]
-        ziel["target<br/>integration after PASS"]
-    end
-    subgraph geruest [scaffold · step 4]
-        runner["runner · run.toml<br/>halt, retry,<br/>compare limits"]
-        uebergabe["handoff<br/>template + parent bead,<br/>criteria, doc sections"]
-        muster["patterns<br/>review and variants"]
-        gops["ops · catalog<br/>preflight, git, context"]
-        kern["core<br/>statecharts, loader"]
-        executor["executor, measures<br/>claude · codex · manual<br/>inbox · mock"]
-    end
-    agent(["agent or human"])
+```text
+ ◇ bead graph walk   picks the next ready issue
+ ◇ flow chain        joins flows into one run
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
 
-    zukunft ~~~ arbeit
-    arbeit -->|"task: one issue per run"| paket
-    paket -->|"names roles"| profil
-    profil -->|"picks executors"| geruest
-    executor -->|"handoff per flow, role, bead"| agent
-    agent -->|"answer"| executor
-    style zukunft stroke-dasharray: 5 5
+┌─ work graph ───────────────────────────────────────┐
+│ Beads     issues with acceptance, dependencies     │  step 3
+└────────────────────────────────────────────────────┘
+       │ task: one issue per run
+       ▼
+┌─ flow package ─────────────────────────────────────┐
+│ flow      TOML: states, edges, guards, roles       │  step 1
+│ handoffs  TOML: template + blocks per state        │
+│ templates role texts with placeholders             │
+│ ops       Python: own ops, answer → event          │
+└────────────────────────────────────────────────────┘
+       ▲ fills the roles
+       │
+┌─ profile ──────────────────────────────────────────┐
+│ roles     role → executor, session, model          │  step 2
+│ limits    values: rounds, tokens, context          │
+│ tests     commands that run every round            │
+│ target    where a PASS gets integrated             │
+└────────────────────────────────────────────────────┘
+       │ picks the executors
+       ▼
+┌─ scaffold ─────────────────────────────────────────┐
+│ runner    run.toml: halt, retries, limits          │  step 4
+│ handoff   template + parent bead, criteria, docs   │
+│ patterns  review pattern and variants              │
+│ ops       catalog: preflight, git wrap-up, context │
+│ core      statecharts, loader, schema checks       │
+│ executor  claude · codex · manual · inbox · mock   │
+└──────┬──────────────────────────────────────▲──────┘
+       │ handoff per flow, role and bead      │ answer
+       ▼                                      │
+   agent or human ────────────────────────────┘
 ```
 
 Steps in the example: [1](#1-model-the-flow) · [2](#2-cast-the-roles) ·
 [3](#3-pick-a-task) · [4](#4-run); ◇ does not exist yet
 ([Roadmap](#roadmap)).
 
-The picture shows the agreed architecture
+The sketch shows the agreed architecture
 ([layers and rules, German](docs/ausfuehrer-luecken.de.md#schichten-und-orte)):
 the flow makes domain decisions, the scaffold protects every flow the same
 way; the profile sets limit values, the executor measures, a guard
