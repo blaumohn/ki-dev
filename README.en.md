@@ -98,6 +98,8 @@ The first matching edge wins. Ops interface:
 [`flow_ops/implement/ops.py`](src/ki_dev/flow_ops/implement/ops.py),
 shared ops of the scaffold in [`ops/`](src/ki_dev/ops/).
 
+<sub>[↑ Contents](#contents)</sub>
+
 ### 2. Cast the roles
 
 **Layer: profile.** Who fills each role, and with which limits, is set in
@@ -136,6 +138,8 @@ data_mode = "file_proposal"
 A human (`manual`), a mock or another model: only `executor` changes
 ([adapters](docs/cli-adapters.md)).
 
+<sub>[↑ Contents](#contents)</sub>
+
 ### 3. Pick a task
 
 **Layer: work graph** ([Beads](https://github.com/steveyegge/beads)).
@@ -152,6 +156,8 @@ bd create "add() does not add" \
 
 Which issue a run gets is a human's choice today; there is no walk
 through the bead graph yet ([Roadmap](#roadmap)).
+
+<sub>[↑ Contents](#contents)</sub>
 
 ### 4. Run
 
@@ -174,19 +180,58 @@ with real agents, and red tests do not yet stop integration.
 
 ## What happens in a run
 
-The runner writes every transition to `events.jsonl`; the edges come from
-the flow ([step 1](#1-model-the-flow)). Shortened, the same with agents and
-with mocks:
+The mock run from [Try it](#try-it-without-agents) (`make demo`: flow
+`implement`, review says `fix`, then `PASS`) writes one line per transition
+to `events.jsonl`, 47 here
+([whole file](docs/beispiele/demo-lauf.events.jsonl)). Line 16 is the back
+edge from [step 1](#1-model-the-flow), wrapped:
 
-```text
-controller_step ─controller_task→ worker_step              # task to Codex
-worker_step ─worker_completed→ capture_step_result         # Codex made changes
-capture_step_result ─step_result_captured→ checkpoint      # diff and pytest as evidence
-checkpoint ─checkpoint_recorded→ controller_step           # Claude reviews
-controller_step ─fix→ worker_step_prepare                  # round 2
-  … same steps …
-controller_step ─PASS→ freeze_reviewed_result              # accepted
-fast_forward_integrate ─integration_completed→ passed      # fast-forward onto main
+```json
+{"line": 16, "region": "ablauf", "seq": 7,
+ "ts": "2026-10-17T09:47:00.737137+00:00",
+ "flow": "implement", "run": "demo",
+ "state": "controller_step", "event": "fix",
+ "target": "worker_step_prepare", "cond": ["checked_result"],
+ "actions": ["begin_correction", "drop_result"], "escalation": null,
+ "actor": "Controller (Review-Sitzung)", "adapter": "mock"}
+```
+
+`region` `ablauf`: an edge of the flow TOML, counted by `seq`;
+`operation` and `halt`: 31 edges of the runner from
+[`run.toml`](src/ki_dev/runner/run.toml). `adapter`: who answered, with
+the profile from [step 2](#2-cast-the-roles) `claude-cli`
+([format, German](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
+
+The 16 flow lines as a path, transcribed by hand, number = `seq`:
+
+```mermaid
+flowchart TB
+    start([start])
+    controller_step["controller_step<br/>review"]
+    passed([passed])
+    subgraph rounds [rounds 1 and 2]
+        worker_step_prepare
+        worker_step["worker_step<br/>implementer"]
+        capture_step_result
+        checkpoint
+    end
+    subgraph wrapup [wrap-up]
+        freeze_reviewed_result
+        finalize_history
+        verify_final_result
+        fast_forward_integrate
+    end
+    start -->|"1 run_started"| controller_step
+    controller_step -->|"2 controller_task<br/>7 fix"| worker_step_prepare
+    worker_step_prepare -->|"3, 8 worker_inputs_prepared"| worker_step
+    worker_step -->|"4, 9 worker_completed"| capture_step_result
+    capture_step_result -->|"5, 10 step_result_captured"| checkpoint
+    checkpoint -->|"6, 11 checkpoint_recorded"| controller_step
+    controller_step -->|"12 PASS"| freeze_reviewed_result
+    freeze_reviewed_result -->|"13 reviewed_result_frozen"| finalize_history
+    finalize_history -->|"14 history_finalized"| verify_final_result
+    verify_final_result -->|"15 final_result_verified"| fast_forward_integrate
+    fast_forward_integrate -->|"16 integration_completed"| passed
 ```
 
 Every intermediate result is stored as an artifact in the run directory;
@@ -283,21 +328,34 @@ work.
 
 ## Layers
 
-Each step of the example sits on its own layer:
+Each step of the example sits on its own layer, top to bottom:
 
-| Layer | Defines | In the example |
-| --- | --- | --- |
-| Flow | states, edges, guards: what happens after which verdict | [1](#1-model-the-flow): `implement.toml` |
-| Ops | the work behind a state, once in Python | [1](#1-model-the-flow): `[op.review]` |
-| Profile | role → agent, limits, tests | [2](#2-cast-the-roles) |
-| Work graph | issues with acceptance criteria and dependencies | [3](#3-pick-a-task) |
-| Runner (executor) | halt, resume, retries, safety limits | [4](#4-run), [trace](#what-happens-in-a-run) |
-| Adapter | handoff to Claude Code, Codex, a human or a mock; measures context and usage | [2](#2-cast-the-roles): `executor` |
+```text
+ ◇ bead graph walk   picks the next ready issue
+ ◇ flow chain        joins flows into one run
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+ work graph     Beads: issue, acceptance, dependencies  step 3
+┌─ flow package ─────────────────────────────────────┐
+│ flow      TOML: states, edges, guards, roles       │  step 1
+│ ops       Python: the work behind a state          │
+└────────────────────────────────────────────────────┘
+ profile        role → adapter, limits, tests           step 2
+┌─ scaffold ─────────────────────────────────────────┐
+│ runner    drives any flow, halts, resumes          │  step 4
+│ adapters  claude · codex · manual · inbox · mock   │
+│ patterns and shared ops                            │
+└──────┬──────────────────────────────▲──────────────┘
+       │ handoff                      │ answer
+       ▼                              │
+   agent or human ────────────────────┘
+```
 
-Flow and ops form a **flow package**; runner, adapters, shared patterns
-and ops form the **scaffold**. The scaffold knows no role or phase names, a
-[test](tests/test_schichten.py) rejects them there; dependencies point only
-package → scaffold
+Steps in the example: [1](#1-model-the-flow) · [2](#2-cast-the-roles) ·
+[3](#3-pick-a-task) · [4](#4-run); ◇ does not exist yet
+([Roadmap](#roadmap)). The profile connects package and scaffold: roles
+from the flow, adapters from the scaffold. Dependencies point only
+package → scaffold; the scaffold knows no role or phase names, a
+[test](tests/test_schichten.py) rejects them there
 ([scaffold and package, German](docs/ablaufpakete.de.md#gerüst-und-paket)).
 
 More separations:
@@ -369,8 +427,8 @@ ki-dev -f map step BEAD map.review map.review=verdict.json  # return verdict, ne
 
 The next flow of this kind is already cut into beads: folding planning
 sessions and design notes into the overall plan ([Roadmap](#roadmap)).
-`ki-dev flow show` generates both diagrams from source; a test compares
-them with this README.
+`ki-dev flow show` generates both flow diagrams from source; a test
+compares them with this README.
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -422,36 +480,58 @@ cases check the test itself, e.g. green tests plus `PASS` do integrate.
 ## Roadmap
 
 ◆ cut into beads, with acceptance criteria · ◇ target picture, not cut
-yet. Bead IDs come from the project's internal database; a public journal
-will follow.
+yet · **V1** first release. Bead IDs come from the project's internal
+database; a public journal will follow.
 
 **V1: scaffold and flow packages separated.** ki-dev ships the runner,
 adapters, shared patterns and ops; flows with their ops, templates and
 profiles live in their own package repos
 ([package outside the scaffold, German](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
-- ◆ one runner for all flows: `implement` on the review pattern, limits
-  and retries in the scaffold (`ige.6.4`, 17 tasks)
-- ◆ test gate: red tests stop integration (`ek1`)
-- ◆ package repo without a copied runner, scaffold without flow copies
-  (`cak`, `ige.6.4.16`)
-- ◆ usage protection: own token metering, budget reservation, enforced
-  stop (`wu0.10`, 22 tasks)
-- ◆ four single flows `map` → `graph` → `materialize` → `implement`,
-  chained by hand; round limits in the review pattern too (`ige.6.4.7`)
+By [layer](#layers), top to bottom:
 
-**After that**
+**New upper layers**
 
-- ◇ flow chain: several flows as one run
-- ◇ walk through the bead graph: next ready issue, order by dependencies
-- ◆ folding: planning sessions and design notes folded into the overall
-  plan, as a flow of its own with review (`urq`, 8 tasks)
-- ◆ learning budget forecast: several models estimate a task, compared
-  with actual usage (`wu0`)
+- ◇ flow chain: several flows as one run; chained by hand in V1
+- ◇ bead graph walk: next ready issue, order by dependencies
+
+**Work graph and flow**
+
 - ◇ adaptive slicing: the reviewer splits an issue into steps, a size gate
   before the implementer ([target picture, German](docs/zielbild.de.md))
-- ◇ AI-assisted calibration of flow and profile, AI-tuned parameters;
+
+**Flow packages**
+
+- ◆ **V1** four single flows `map` → `graph` → `materialize` →
+  `implement`; round limits in the review pattern too (`ige.6.4.7`)
+- ◆ **V1** package repo without a copied runner, scaffold without flow
+  copies (`cak`, `ige.6.4.16`)
+- ◆ planning folding: planning sessions and design notes folded into the
+  overall plan, as a flow of its own with review (`urq`, 8 tasks)
+
+**Flow and ops**
+
+- ◆ **V1** test gate: red tests stop integration (`ek1`)
+- ◆ adaptive parameters, AI steers, code bounds: the reviewer picks the
+  test scope of the next round, `PASS` only after a full run; available
+  in `step` ([check control, German](docs/step.de.md#antworten-im-review-muster)),
+  in runs with agents with `ige.6.4.12`
+
+**Flow and profile**
+
+- ◆ check expected usage per op against the limits at binding (`asr`);
+  parameters per layer from TOML instead of Python (`7z3`)
+- ◇ calibrating flow parameters from actual runs, AI-assisted too;
   optional, control stays deterministic
+
+**Runner**
+
+- ◆ **V1** one runner for all flows: `implement` on the review pattern,
+  limits and retries in the scaffold (`ige.6.4`, 17 tasks)
+- ◆ **V1** usage protection: own token metering, budget reservation,
+  enforced stop (`wu0.10`, 22 tasks)
+- ◆ adaptive budget forecast: several models estimate a task, learn the
+  estimation error from actual usage (`wu0.4`–`wu0.7`)
 
 <sub>[↑ Contents](#contents)</sub>
 

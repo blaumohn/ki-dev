@@ -117,11 +117,11 @@ def test_status_line_is_first_block_line_in_both_languages(repo):
     en = (repo / "README.en.md").read_text()
     assert (
         f"<!-- readme-script: {DE} -->\n"
-        "> ⬜ nicht ausgeführt · selbst prüfen: make demo\n\n"
+        "> nicht ausgeführt · selbst prüfen: make demo\n\n"
     ) in de
     assert (
         f"<!-- readme-script: {EN} -->\n"
-        "> ⬜ not run · verify: make demo\n\n"
+        "> not run · verify: make demo\n\n"
     ) in en
     assert (
         "> ❌ rot, erwartet (Spezifikation) · 2026-01-02 · "

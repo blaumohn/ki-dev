@@ -180,19 +180,58 @@ Lauf mit echten Agenten, und rote Tests halten die Integration noch nicht auf.
 
 ## Was im Lauf passiert
 
-Der Runner schreibt jeden Übergang nach `events.jsonl`; die Kanten stammen
-aus dem Ablauf ([Schritt 1](#1-ablauf-modellieren)). Gekürzt, mit Agenten
-und mit Mocks gleich:
+Der Mock-Lauf aus [Ausprobieren](#ausprobieren-ohne-agenten) (`make demo`:
+Ablauf `implement`, Review erst `fix`, dann `PASS`) schreibt je Übergang
+eine Zeile nach `events.jsonl`, hier 47
+([ganze Datei](docs/beispiele/demo-lauf.events.jsonl)). Zeile 16 ist die
+Rückkante aus [Schritt 1](#1-ablauf-modellieren), umbrochen:
 
-```text
-controller_step ─controller_task→ worker_step              # Auftrag an Codex
-worker_step ─worker_completed→ capture_step_result         # Codex hat geändert
-capture_step_result ─step_result_captured→ checkpoint      # Diff und pytest als Nachweis
-checkpoint ─checkpoint_recorded→ controller_step           # Claude prüft
-controller_step ─fix→ worker_step_prepare                  # Runde 2
-  … dieselben Schritte …
-controller_step ─PASS→ freeze_reviewed_result              # akzeptiert
-fast_forward_integrate ─integration_completed→ passed      # Fast-Forward auf main
+```json
+{"line": 16, "region": "ablauf", "seq": 7,
+ "ts": "2026-10-17T09:47:00.737137+00:00",
+ "flow": "implement", "run": "demo",
+ "state": "controller_step", "event": "fix",
+ "target": "worker_step_prepare", "cond": ["checked_result"],
+ "actions": ["begin_correction", "drop_result"], "escalation": null,
+ "actor": "Controller (Review-Sitzung)", "adapter": "mock"}
+```
+
+`region` `ablauf`: eine Kante der Ablauf-TOML, `seq` zählt sie;
+`operation` und `halt`: 31 Kanten des Runners aus
+[`run.toml`](src/ki_dev/runner/run.toml). `adapter`: wer antwortete, mit
+dem Profil aus [Schritt 2](#2-rollen-besetzen) `claude-cli`
+([Format](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
+
+Die 16 Ablaufzeilen als Pfad, von Hand übertragen, Nummer = `seq`:
+
+```mermaid
+flowchart TB
+    start([start])
+    controller_step["controller_step<br/>Review"]
+    passed([passed])
+    subgraph runde [Runde 1 und 2]
+        worker_step_prepare
+        worker_step["worker_step<br/>Umsetzer"]
+        capture_step_result
+        checkpoint
+    end
+    subgraph abschluss [Abschluss]
+        freeze_reviewed_result
+        finalize_history
+        verify_final_result
+        fast_forward_integrate
+    end
+    start -->|"1 run_started"| controller_step
+    controller_step -->|"2 controller_task<br/>7 fix"| worker_step_prepare
+    worker_step_prepare -->|"3, 8 worker_inputs_prepared"| worker_step
+    worker_step -->|"4, 9 worker_completed"| capture_step_result
+    capture_step_result -->|"5, 10 step_result_captured"| checkpoint
+    checkpoint -->|"6, 11 checkpoint_recorded"| controller_step
+    controller_step -->|"12 PASS"| freeze_reviewed_result
+    freeze_reviewed_result -->|"13 reviewed_result_frozen"| finalize_history
+    finalize_history -->|"14 history_finalized"| verify_final_result
+    verify_final_result -->|"15 final_result_verified"| fast_forward_integrate
+    fast_forward_integrate -->|"16 integration_completed"| passed
 ```
 
 Jeder Zwischenstand liegt als Artefakt im Laufverzeichnis; ein Halt lässt
@@ -288,21 +327,36 @@ Arbeit eines Agenten.
 
 ## Ebenen
 
-Jeder Schritt des Beispiels liegt auf einer eigenen Ebene:
+Jeder Schritt des Beispiels liegt auf einer eigenen Ebene, von oben nach
+unten:
 
-| Ebene | legt fest | im Beispiel |
-| --- | --- | --- |
-| Ablauf | Zustände, Kanten, Wächter: was nach welchem Urteil passiert | [1](#1-ablauf-modellieren): `implement.toml` |
-| Ops | die Arbeit hinter einem Zustand, einmal in Python | [1](#1-ablauf-modellieren): `[op.review]` |
-| Profil | Rolle → Agent, Grenzwerte, Tests | [2](#2-rollen-besetzen) |
-| Arbeitsgraph | Vorgänge mit Abnahmekriterien und Abhängigkeiten | [3](#3-auftrag-wählen) |
-| Runner (Ausführer) | Halt, Fortsetzen, Wiederholung, Schutzgrenzen | [4](#4-starten), [Spur](#was-im-lauf-passiert) |
-| Adapter | Übergabe an Claude Code, Codex, Mensch oder Mock; misst Kontext und Verbrauch | [2](#2-rollen-besetzen): `executor` |
+```text
+ ◇ Bead-Graph-Durchgang   wählt den nächsten bereiten Vorgang
+ ◇ Ablaufkette            verbindet Abläufe zu einem Lauf
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+ Arbeitsgraph   Beads: Vorgang, Abnahme, Abhängigkeit   Schritt 3
+┌─ Ablaufpaket ──────────────────────────────────────┐
+│ Ablauf    TOML: Zustände, Kanten, Wächter, Rollen  │  Schritt 1
+│ Ops       Python: die Arbeit hinter einem Zustand  │
+└────────────────────────────────────────────────────┘
+ Profil         Rolle → Adapter, Grenzen, Tests         Schritt 2
+┌─ Gerüst ───────────────────────────────────────────┐
+│ Runner    fährt jeden Ablauf, hält, setzt fort     │  Schritt 4
+│ Adapter   claude · codex · manual · inbox · mock   │
+│ Muster und gemeinsame Ops                          │
+└──────┬──────────────────────────────▲──────────────┘
+       │ Übergabe                     │ Antwort
+       ▼                              │
+   Agent oder Mensch ─────────────────┘
+```
 
-Ablauf und Ops bilden ein **Ablaufpaket**; Runner, Adapter, gemeinsame
-Muster und Ops das **Gerüst**. Das Gerüst kennt keine Rollen- oder Phasennamen, ein
-[Test](tests/test_schichten.py) weist sie dort ab; Abhängigkeit nur
-Paket → Gerüst ([Gerüst und Paket](docs/ablaufpakete.de.md#gerüst-und-paket)).
+Schritte im Beispiel: [1](#1-ablauf-modellieren) ·
+[2](#2-rollen-besetzen) · [3](#3-auftrag-wählen) · [4](#4-starten);
+◇ gibt es noch nicht ([Roadmap](#roadmap)). Das Profil verbindet Paket und
+Gerüst: Rollen aus dem Ablauf, Adapter aus dem Gerüst. Abhängigkeit nur
+Paket → Gerüst; das Gerüst kennt keine Rollen- oder Phasennamen, ein
+[Test](tests/test_schichten.py) weist sie dort ab
+([Gerüst und Paket](docs/ablaufpakete.de.md#gerüst-und-paket)).
 
 Weitere Trennungen:
 
@@ -374,7 +428,7 @@ ki-dev -f map step BEAD map.review map.review=urteil.json  # Urteil zurück, nä
 
 Nächster Ablauf dieser Art, schon als Beads geschnitten: Planungssitzungen
 und Designnotizen in die Gesamtplanung einarbeiten ([Roadmap](#roadmap)).
-Beide Diagramme erzeugt `ki-dev flow show` aus der Quelle; ein Test
+Beide Ablaufdiagramme erzeugt `ki-dev flow show` aus der Quelle; ein Test
 vergleicht sie mit diesem README.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
@@ -428,37 +482,60 @@ Fälle prüfen den Test selbst, etwa: grüne Tests plus `PASS` integrieren.
 ## Roadmap
 
 ◆ als Beads geschnitten, mit Abnahmekriterien · ◇ Zielbild, noch nicht
-geschnitten. Bead-IDs stammen aus der projektinternen Datenbank; ein
-öffentliches Journal folgt.
+geschnitten · **V1** erste Ausgabe. Bead-IDs stammen aus der
+projektinternen Datenbank; ein öffentliches Journal folgt.
 
 **V1: Gerüst und Ablaufpakete getrennt.** ki-dev bringt Runner, Adapter,
 gemeinsame Muster und Ops; Abläufe mit ihren Ops, Vorlagen und Profilen
 liegen in eigenen Paket-Repos
 ([Paket außerhalb des Gerüsts](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
-- ◆ ein Runner für alle Abläufe: `implement` auf dem Review-Muster, Grenzen
-  und Wiederholung im Gerüst (`ige.6.4`, 17 Aufträge)
-- ◆ Test-Tor: rote Tests halten die Integration auf (`ek1`)
-- ◆ Paket-Repo ohne kopierten Runner, Gerüst ohne Ablaufkopien
-  (`cak`, `ige.6.4.16`)
-- ◆ Verbrauchsschutz: eigene Tokenmessung, Budgetreservierung, durchgesetzter
-  Stop (`wu0.10`, 22 Aufträge)
-- ◆ vier Einzelabläufe `map` → `graph` → `materialize` → `implement`, von
-  Hand verkettet; Rundengrenzen auch im Review-Muster (`ige.6.4.7`)
+Nach [Ebenen](#ebenen), von oben nach unten:
 
-**Danach**
+**Neue Oberebenen**
 
-- ◇ Ablaufkette: mehrere Abläufe als ein Lauf
-- ◇ Durchgang durch den Bead-Graphen: nächster bereiter Vorgang, Reihenfolge
-  nach Abhängigkeiten
-- ◆ Abflachung: Planungssitzungen und Designnotizen in die Gesamtplanung
-  einarbeiten, als eigener Ablauf mit Review (`urq`, 8 Aufträge)
-- ◆ lernende Budgetprognose: mehrere Modelle schätzen einen Auftrag,
-  Abgleich mit dem Ist-Verbrauch (`wu0`)
+- ◇ Ablaufkette: mehrere Abläufe als ein Lauf; in V1 von Hand verkettet
+- ◇ Bead-Graph-Durchgang: nächster bereiter Vorgang, Reihenfolge nach
+  Abhängigkeiten
+
+**Arbeitsgraph und Ablauf**
+
 - ◇ adaptive Schnitte: der Reviewer teilt einen Vorgang in Schritte, ein
   Größen-Gate vor dem Umsetzer ([Zielbild](docs/zielbild.de.md))
-- ◇ KI-gestützte Kalibrierung von Ablauf und Profil, KI-gesteuerte
-  Parameter; optional, die Steuerung bleibt deterministisch
+
+**Ablaufpakete**
+
+- ◆ **V1** vier Einzelabläufe `map` → `graph` → `materialize` →
+  `implement`; Rundengrenzen auch im Review-Muster (`ige.6.4.7`)
+- ◆ **V1** Paket-Repo ohne kopierten Runner, Gerüst ohne Ablaufkopien
+  (`cak`, `ige.6.4.16`)
+- ◆ Planungs-Abflachung: Planungssitzungen und Designnotizen in die
+  Gesamtplanung einarbeiten, als eigener Ablauf mit Review (`urq`,
+  8 Aufträge)
+
+**Ablauf und Ops**
+
+- ◆ **V1** Test-Tor: rote Tests halten die Integration auf (`ek1`)
+- ◆ adaptive Parameter, KI steuert, Code begrenzt: der Reviewer wählt den
+  Testumfang der nächsten Runde, `PASS` nur nach Volllauf; in `step`
+  vorhanden ([Prüfsteuerung](docs/step.de.md#antworten-im-review-muster)),
+  im Lauf mit Agenten mit `ige.6.4.12`
+
+**Ablauf und Profil**
+
+- ◆ erwarteter Verbrauch je Op gegen die Grenzen beim Binden prüfen
+  (`asr`); Parameter je Ebene aus TOML statt Python (`7z3`)
+- ◇ Kalibrierung der Ablaufparameter aus Ist-Läufen, auch KI-gestützt;
+  optional, die Steuerung bleibt deterministisch
+
+**Runner**
+
+- ◆ **V1** ein Runner für alle Abläufe: `implement` auf dem Review-Muster,
+  Grenzen und Wiederholung im Gerüst (`ige.6.4`, 17 Aufträge)
+- ◆ **V1** Verbrauchsschutz: eigene Tokenmessung, Budgetreservierung,
+  durchgesetzter Stop (`wu0.10`, 22 Aufträge)
+- ◆ adaptive Budgetprognose: mehrere Modelle schätzen einen Auftrag,
+  Schätzfehler aus dem Ist-Verbrauch lernen (`wu0.4`–`wu0.7`)
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
