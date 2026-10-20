@@ -27,7 +27,7 @@ a test gate before integration and budget limits on every path
    4. [Run](#4-run)
 3. [What happens in a run](#what-happens-in-a-run)
 4. [Try it without agents](#try-it-without-agents)
-5. [Layers](#layers)
+5. [Layers and locations](#layers-and-locations)
 6. [Not just code](#not-just-code)
 7. [Roadmap](#roadmap)
 8. [Contributing](#contributing)
@@ -58,12 +58,13 @@ multi-agent systems ([MAST](https://arxiv.org/html/2503.13657v3)).
 
 What gets modeled is a procedure, not a single task: one agent implements,
 a second reviews in its own session, `fix` leads back, after three rounds a
-human decides. Each step belongs to its own [layer](#layers).
+human decides. Each step names its
+[layer or input](#layers-and-locations).
 
 ### 1. Model the flow
 
-**Layer: flow package.** The bundled flow `implement` defines what happens
-after which verdict. The correction loop, from
+**[Layer: flow](#layers-and-locations).** The bundled flow `implement`
+defines what happens after which verdict. The correction loop, from
 [`implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
@@ -116,8 +117,9 @@ the scaffold (`KI_DEV_FLOW_PATH`,
 
 ### 2. Cast the roles
 
-**Layer: profile.** Who fills each role, and with which limits, is set in
-`.ki-dev/profiles/default.toml`; the flow stays the same:
+**[Input: profile](#layers-and-locations).** Who fills each role, and
+with which limits, is set in `.ki-dev/profiles/default.toml`; the flow
+stays the same:
 
 ```toml
 workdir = "."                           # agents' worktree, ki-dev starts here
@@ -161,9 +163,9 @@ puts it into the throwaway repo.
 
 ### 3. Pick a task
 
-**Layer: work graph** ([Beads](https://github.com/steveyegge/beads)).
-The flow fits any issue with acceptance criteria, here a small bug:
-`add(a, b)` returns `a - b`.
+**[Input: task](#layers-and-locations)**, an issue from the work graph
+([Beads](https://github.com/steveyegge/beads)). The flow fits any issue
+with acceptance criteria, here a small bug: `add(a, b)` returns `a - b`.
 
 <!-- readme-script: readme-scripts/en/4-auftrag.sh -->
 > ✅ passed · verify: make readme-check
@@ -205,11 +207,12 @@ through the bead graph yet ([Roadmap](#roadmap)).
 
 ### 4. Run
 
-**Layer: scaffold.** The runner drives the flow to the next halt; the
-executors pass the handoffs to Codex and Claude Code.
+**[Layers: runner and executor](#layers-and-locations).** The runner
+drives the flow to the next halt; the executors pass the handoffs to Codex
+and Claude Code.
 [`run.toml`](src/ki_dev/runner/run.toml) handles halt and resume the same
 for every flow; today only `implement` has the safety limits
-([Layers](#layers)).
+([Roadmap](#roadmap)).
 
 <!-- readme-script: readme-scripts/en/5-starten.sh -->
 > ⏳ not checked · runs up to the first agent call, which needs real sessions · verify: make readme-check
@@ -382,76 +385,61 @@ work.
 
 <sub>[↑ Contents](#contents)</sub>
 
-## Layers
+## Layers and locations
 
-Each step of the example sits on its own layer, top to bottom:
+The sketch has two dimensions:
 
-```text
- ◇ bead graph walk   picks the next ready issue
- ◇ flow chain        joins flows into one run
-┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+- **Layer**, a box: who drives whom, top to bottom. Each layer starts the
+  one below; the answer comes back as an event.
+- **Location**, the row label: the package brings the domain logic
+  (what `fix` means, when the human decides), the scaffold what holds the
+  same for every flow (halt, safety). Dependencies point only package →
+  scaffold ([test](tests/test_schichten.py);
+  [package and scaffold, German](docs/ablaufpakete.de.md#gerüst-und-paket)).
 
-┌─ work graph ───────────────────────────────────────┐
-│ Beads     issues with acceptance, dependencies     │  step 3
-└────────────────────────────────────────────────────┘
-       │ task: one issue per run
-       ▼
-┌─ flow package ─────────────────────────────────────┐
-│ flow      TOML: states, edges, guards, roles       │  step 1
-│ handoffs  TOML: template + blocks per state        │
-│ templates role texts with placeholders             │
-│ ops       Python: own ops, answer → event          │
-└────────────────────────────────────────────────────┘
-       ▲ fills the roles
-       │
-┌─ profile ──────────────────────────────────────────┐
-│ roles     role → executor, session, model          │  step 2
-│ limits    values: rounds, tokens, context          │
-│ tests     commands that run every round            │
-│ target    where a PASS gets integrated             │
-└────────────────────────────────────────────────────┘
-       │ picks the executors
-       ▼
-┌─ scaffold ─────────────────────────────────────────┐
-│ runner    run.toml: halt, retries, limits          │  step 4
-│ handoff   template + parent bead, criteria, docs   │
-│ patterns  review pattern and variants              │
-│ ops       catalog: preflight, git wrap-up, context │
-│ core      statecharts, loader, schema checks       │
-│ executor  claude · codex · manual · inbox · mock   │
-└──────┬──────────────────────────────────────▲──────┘
-       │ handoff per flow, role and bead      │ answer
-       ▼                                      │
-   agent or human ────────────────────────────┘
-```
+<pre>
+ <a href="#roadmap">◇ bead graph walk</a>   picks the next issue; a human does it today
+ <a href="#roadmap">◇ flow chain</a>        joins flows; by hand today
 
-Steps in the example: [1](#1-model-the-flow) · [2](#2-cast-the-roles) ·
-[3](#3-pick-a-task) · [4](#4-run); ◇ does not exist yet
-([Roadmap](#roadmap)).
+┌─ <a href="docs/ablaufpakete.de.md">flow</a> ──────────────────────────────────────────────┐
+│ package   <a href="src/ki_dev/flow/implement.toml">states, edges</a>, roles, <a href="docs/ablaufpakete.de.md#eine-bindung">one op per state</a>    │  <a href="#1-model-the-flow">step 1</a>
+│           <a href="src/ki_dev/flow_ops/implement/machine/model.py">guards, actions</a>: Python, run data only    │
+│ scaffold  <a href="src/ki_dev/flow/patterns/review.toml">patterns</a>: review pattern and variants     │
+└─────────────────────────┬───────────────────────▲───┘
+                          │ op of the state       │ event
+┌─ <a href="docs/ablaufpakete.de.md#ausführer">runner</a> ────────────────▼───────────────────────┴───┐
+│ scaffold  <a href="src/ki_dev/runner/run.toml">run.toml</a>: halt, retries, safety           │  <a href="#4-run">step 4</a>
+│           <a href="docs/ausfuehrer-luecken.de.md#schichten-und-orte">guards: measured value against limit</a>      │
+└─────────────────────────┬───────────────────────▲───┘
+                          │ starts the op         │ result
+┌─ <a href="docs/ablaufpakete.de.md#eine-bindung">effect</a> ────────────────▼───────────────────────┴───┐
+│ package   <a href="src/ki_dev/flow_ops/implement/ops.py">own ops</a>, <a href="src/ki_dev/flow/templates">role templates</a>                   │
+│ scaffold  <a href="src/ki_dev/ops">ops catalog</a>: preflight, git wrap-up       │
+│           <a href="docs/ablaufpakete.de.md#parametrisierte-übergaben">handoff</a>: template + blocks from bead      │
+└─────────────────────────┬───────────────────────▲───┘
+                          │ handoff               │ answer
+┌─ <a href="docs/ausfuehrer.de.md#executoren">executor</a> ──────────────▼───────────────────────┴───┐
+│ scaffold  <a href="src/ki_dev/adapter/executors.toml">claude · codex · manual · inbox · mock</a>    │  <a href="#4-run">step 4</a>
+│           <a href="docs/ausfuehrer.de.md#verbrauchsschutz">measures context, quota, budget</a>           │
+└─────────────────────────┬───────────────────────▲───┘
+                          ▼                       │
+                       agent or human ────────────┘
 
-The sketch shows the agreed architecture
-([layers and rules, German](docs/ausfuehrer-luecken.de.md#schichten-und-orte)):
-the flow makes domain decisions, the scaffold protects every flow the same
-way; the profile sets limit values, the executor measures, a guard
-compares. Dependencies point only package → scaffold, the scaffold knows no
-roles ([test](tests/test_schichten.py)). Tests: which commands is up to the
-profile (review pattern: `pyproject.toml`); when, and what follows, is up to
-the flow. Where the code deviates today is listed in the
-[Roadmap](#roadmap) under **V1**.
+ inputs per run, not a layer: <a href="#2-cast-the-roles">profile (step 2)</a> · <a href="#3-pick-a-task">task (step 3)</a>
+</pre>
 
-More separations:
+◇ does not exist yet ([Roadmap](#roadmap)). The sketch shows the
+[agreed architecture, German](docs/ausfuehrer-luecken.de.md#schichten-und-orte);
+where the code deviates is listed in the [Roadmap](#roadmap) under **V1**.
 
+- **Input ≠ layer:** executor per role, limit values and tests come from
+  the [profile](#2-cast-the-roles); in the review pattern the tests come
+  from the target repo's `pyproject.toml`. When they apply and what
+  follows is up to the flow. The executor measures, a guard compares.
 - **Op ≠ action:** an op acts outside and ends in an event; an action
   only changes run data during a transition, a guard reads it.
-- **Flow ≠ flow chain:** a flow is one procedure; the chain
-  `map` → `graph` → `materialize` → `implement` connects several, by hand
-  today.
-- **Run ≠ walk through the bead graph:** a run works on one issue; which
-  one comes next is a human's choice today.
-- **Human as messenger ≠ human as decider:** as a role (`manual`) they
-  relay handoffs, in the state `waiting_decision` they decide.
-- **Work graph ≠ event log:** Beads holds what is to be done,
-  `events.jsonl` what happened when.
+- **Human as messenger ≠ human as decider:** as the executor `manual`
+  they relay handoffs, in the state `waiting_decision` they decide.
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -564,45 +552,31 @@ adapters, shared patterns and ops; flows with their ops, templates and
 profiles live in their own package repos
 ([package outside the scaffold, German](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
-The **V1** items bring the code to the agreed architecture from
-[Layers](#layers); the rebuild follows after publication. Grouped by
-layer, top to bottom:
+The **V1** items bring the code to the agreed architecture; the rebuild
+follows after publication. Grouped like the
+[sketch](#layers-and-locations): layers top to bottom, then locations
+and inputs.
 
-**New upper layers**
+**New layers**
 
-- ◇ flow chain: several flows as one run; chained by hand in V1
 - ◇ bead graph walk: next ready issue, order by dependencies
+- ◇ flow chain: several flows as one run; chained by hand in V1
 
-**Work graph and flow**
-
-- ◇ adaptive slicing: the reviewer splits an issue into steps, a size gate
-  before the implementer ([target picture, German](docs/zielbild.de.md))
-
-**Flow packages**
+**Flow**
 
 - ◆ **V1** four single flows `map` → `graph` → `materialize` →
   `implement`; round limits in the review pattern too (`ige.6.4.7`)
-- ◆ **V1** package repo without a copied runner, scaffold without flow
-  copies (`cak`, `ige.6.4.16`)
-- ◆ planning folding: planning sessions and design notes folded into the
-  overall plan, as a flow of its own with review (`urq`, 8 tasks)
-
-**Flow and ops**
-
 - ◆ **V1** test gate: red tests stop integration (`ek1`)
 - ◆ adaptive parameters, AI steers, code bounds: the reviewer picks the
   test scope of the next round, `PASS` only after a full run; available
   in `step` ([check control, German](docs/step.de.md#antworten-im-review-muster)),
   in runs with agents with `ige.6.4.12`
+- ◆ planning folding: planning sessions and design notes folded into the
+  overall plan, as a flow of its own with review (`urq`, 8 tasks)
+- ◇ adaptive slicing: the reviewer splits an issue into steps, a size gate
+  before the implementer ([target picture, German](docs/zielbild.de.md))
 
-**Flow and profile**
-
-- ◆ check expected usage per op against the limits at binding (`asr`);
-  parameters per layer from TOML instead of Python (`7z3`)
-- ◇ calibrating flow parameters from actual runs, AI-assisted too;
-  optional, control stays deterministic
-
-**Runner**
+**Runner and executor**
 
 - ◆ **V1** one runner for all flows (`ige.6.4`, 17 tasks): `implement`
   without its own executor in the package (`ige.6.4.13`); safety halt,
@@ -613,6 +587,18 @@ layer, top to bottom:
   enforced stop (`wu0.10`, 22 tasks)
 - ◆ adaptive budget forecast: several models estimate a task, learn the
   estimation error from actual usage (`wu0.4`–`wu0.7`)
+
+**Locations: package and scaffold**
+
+- ◆ **V1** package repo without a copied runner, scaffold without flow
+  copies (`cak`, `ige.6.4.16`)
+
+**Inputs: profile and parameters**
+
+- ◆ check expected usage per op against the limits at binding (`asr`);
+  parameters per layer from TOML instead of Python (`7z3`)
+- ◇ calibrating flow parameters from actual runs, AI-assisted too;
+  optional, control stays deterministic
 
 <sub>[↑ Contents](#contents)</sub>
 

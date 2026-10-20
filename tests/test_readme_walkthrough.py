@@ -111,9 +111,11 @@ def example_repo(tmp_path):
         shutil.copy2(REPO / "scripts" / name, repo / "scripts" / name)
     (repo / "docs").mkdir()
     (repo / "docs/proof.txt").write_text("Inhalt aus dem Arbeitsbaum\n")
+    (repo / "docs/skizze.txt").write_text("nur in der Skizze\n")
     (repo / "README.en.md").write_text("Nicht hochladen\n")
     (repo / "README.md").write_text(
         '<a href="README.en.md">English</a>\n'
+        '<pre>┌─ <a href="docs/skizze.txt#teil">Ebene</a> ─┐</pre>\n'
         "[Beleg](docs/proof.txt#anker), [nochmals](docs/proof.txt)\n"
         "[fehlt](missing.txt) [Ordner](docs) [intern](#anker)\n"
         "[Web](https://example.org/docs) [Web](http://example.org)\n"
@@ -152,7 +154,11 @@ def test_prepare_default_destination_and_link_selection(
         }
         expected = {"README.md", "root.txt", "uebergabe.txt"}
         if persona == "pruefer":
-            expected |= {"docs__proof.txt", "dateien.txt"}
+            expected |= {
+                "docs__proof.txt",
+                "docs__skizze.txt",
+                "dateien.txt",
+            }
         assert files == expected
     assert (target / "pruefer/docs__proof.txt").read_text() == (
         "Inhalt aus dem Arbeitsbaum\n"

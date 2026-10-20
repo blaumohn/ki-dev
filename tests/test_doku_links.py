@@ -1,8 +1,9 @@
 """Relative Links und Anker der öffentlichen Doku sind gültig.
 
 Geprüft werden README.md, README.en.md und ``docs/*.md`` (ohne
-Unterordner; ``docs/architecture`` ist Verlauf).
-Anker folgen der GitHub-Schreibweise für Überschriften.
+Unterordner; ``docs/architecture`` ist Verlauf),
+Markdown-Links und ``<a href>`` (Links in ``<pre>``-Skizzen). Anker
+folgen der GitHub-Schreibweise für Überschriften.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ DOCS = [
     *sorted((ROOT / "docs").glob("*.md")),
 ]
 LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
+HREF = re.compile(r'<a href="([^"]+)">')
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 FENCE = re.compile(r"^```.*?^```", re.M | re.S)
 
@@ -38,7 +40,7 @@ def _links(path: Path) -> list[str]:
     text = FENCE.sub("", path.read_text(encoding="utf-8"))
     return [
         target
-        for target in LINK.findall(text)
+        for target in LINK.findall(text) + HREF.findall(text)
         if not re.match(r"^[a-z]+:", target)
     ]
 

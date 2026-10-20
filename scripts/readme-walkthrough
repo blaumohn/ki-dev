@@ -154,19 +154,25 @@ prepare_persona() {
 
 # Kopiert die lokalen Links aus README.md flach in den Prüfer-Ordner: Ordner
 # werden mit __ in den Namen geschrieben, weil Web-Chats nur Dateien annehmen.
-# dateien.txt ordnet jeden flachen Namen dem Pfad im Repo zu.
+# dateien.txt ordnet jeden flachen Namen dem Pfad im Repo zu. Links sind
+# Markdown-Links und <a href> (Skizzen in <pre>); die Übersetzung
+# README.en.md hinter dem Sprachumschalter ist kein Beleg.
 link_pruefer_files() {
     printf 'Flacher Name  Pfad im Repo\n' > "$1/dateien.txt"
     awk '
         {
-            while (match($0, /\]\([^)]*\)/)) {
-                print substr($0, RSTART + 2, RLENGTH - 3)
+            while (match($0, /\]\([^)]*\)|href="[^"]*"/)) {
+                link = substr($0, RSTART, RLENGTH)
+                if (substr(link, 1, 1) == "]")
+                    print substr(link, 3, RLENGTH - 3)
+                else
+                    print substr(link, 7, RLENGTH - 7)
                 $0 = substr($0, RSTART + RLENGTH)
             }
         }
     ' README.md | sed 's/#.*//' | sort -u | while IFS= read -r path; do
         case "$path" in
-            ""|http://*|https://*|/*) continue ;;
+            ""|http://*|https://*|/*|README.en.md) continue ;;
         esac
         [ -f "$path" ] || continue
         flat=$(printf '%s' "$path" | sed 's|/|__|g')

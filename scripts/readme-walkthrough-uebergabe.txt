@@ -5,8 +5,8 @@ Lies README.md von oben nach unten, Zeitbudget: @BUDGET@. Die ganze Datei
 liegt bei; das ist keine Aufforderung, sie vollständig zu lesen. Ein Mensch
 überfliegt: Kopf, Inhaltsverzeichnis, Überschriften, Codeblöcke, Skizzen;
 Prosa nur, wo er hängen bleibt; er folgt Überschriften und Links, die
-versprechen, was er sucht. Lies so. Codeblöcke mit Kästen und Pfeilen sind
-Skizzen: lies sie als Bild.
+versprechen, was er sucht. Lies so. Codeblöcke und <pre>-Blöcke mit Kästen
+und Pfeilen sind Skizzen: lies sie als Bild, ihre Links als Verweise.
 
 Erster Bildschirm: Lies bis einschließlich Inhaltsverzeichnis und halte
 dann an. Schreibe in drei Sätzen, was ki-dev ist, woraus es besteht und wie
@@ -23,8 +23,8 @@ je mit Zeilenbeleg; "weiß ich nicht" ist eine gültige Antwort:
 1. Welche konkrete Arbeit soll ki-dev einem Menschen abnehmen, für wen, und warum?
 2. Was zeigt das erste Beispiel: wie man ein Verfahren modelliert, das für
    viele Aufgaben gilt, oder wie man eine bestimmte Aufgabe löst? Woran
-   erkennst du das? Nenne zu jedem Beispielschritt die Ebene, zu der er
-   gehört, und wo du sie raten musstest.
+   erkennst du das? Nenne zu jedem Beispielschritt die Ebene oder Eingabe,
+   zu der er gehört, und wo du sie raten musstest.
 3. Liste die Fachbegriffe bis zu deinem Abbruch, je mit einer Zeile
    Bedeutung. Welcher Begriff steht für zwei Dinge, welche zwei Begriffe
    für dasselbe?

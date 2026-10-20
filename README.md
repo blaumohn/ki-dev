@@ -27,7 +27,7 @@ noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden
    4. [Starten](#4-starten)
 3. [Was im Lauf passiert](#was-im-lauf-passiert)
 4. [Ausprobieren ohne Agenten](#ausprobieren-ohne-agenten)
-5. [Ebenen](#ebenen)
+5. [Ebenen und Orte](#ebenen-und-orte)
 6. [Nicht nur Code](#nicht-nur-code)
 7. [Roadmap](#roadmap)
 8. [Mitmachen](#mitmachen)
@@ -58,13 +58,14 @@ Mehr-Agenten-Systemen ([MAST](https://arxiv.org/html/2503.13657v3)).
 
 Modelliert wird ein Verfahren, keine einzelne Aufgabe: Ein Agent setzt um,
 ein zweiter prüft in eigener Sitzung, `fix` führt zurück, nach drei Runden
-entscheidet der Mensch. Jeder Schritt gehört zu einer eigenen
-[Ebene](#ebenen).
+entscheidet der Mensch. Jeder Schritt nennt seine
+[Ebene oder Eingabe](#ebenen-und-orte).
 
 ### 1. Ablauf modellieren
 
-**Ebene Ablaufpaket.** Der mitgelieferte Ablauf `implement` legt fest, was
-nach welchem Urteil passiert. Die Korrekturschleife, aus
+**[Ebene Ablauf](#ebenen-und-orte).** Der mitgelieferte Ablauf
+`implement` legt fest, was nach welchem Urteil passiert. Die
+Korrekturschleife, aus
 [`implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
@@ -116,8 +117,9 @@ des Gerüsts (`KI_DEV_FLOW_PATH`,
 
 ### 2. Rollen besetzen
 
-**Ebene Profil.** Wer die Rollen übernimmt und mit welchen Grenzen, steht
-in `.ki-dev/profiles/default.toml`; der Ablauf bleibt derselbe:
+**[Eingabe Profil](#ebenen-und-orte).** Wer die Rollen übernimmt und
+mit welchen Grenzen, steht in `.ki-dev/profiles/default.toml`; der
+Ablauf bleibt derselbe:
 
 ```toml
 workdir = "."                           # Arbeits-Worktree, hier startet ki-dev
@@ -161,9 +163,10 @@ bei; Schritt 3 legt sie ins Wegwerf-Repo.
 
 ### 3. Auftrag wählen
 
-**Ebene Arbeitsgraph** ([Beads](https://github.com/steveyegge/beads)).
-Der Ablauf passt zu jedem Vorgang mit Abnahmekriterien, hier ein kleiner
-Bug: `add(a, b)` liefert `a - b`.
+**[Eingabe Auftrag](#ebenen-und-orte)**, ein Vorgang aus dem Arbeitsgraph
+([Beads](https://github.com/steveyegge/beads)). Der Ablauf passt zu
+jedem Vorgang mit Abnahmekriterien, hier ein kleiner Bug: `add(a, b)`
+liefert `a - b`.
 
 <!-- readme-script: readme-scripts/4-auftrag.sh -->
 > ✅ bestanden · selbst prüfen: make readme-check
@@ -206,11 +209,11 @@ durch den Bead-Graphen gibt es noch nicht ([Roadmap](#roadmap)).
 
 ### 4. Starten
 
-**Ebene Gerüst.** Der Runner fährt den Ablauf bis zum nächsten Halt, die
-Executoren reichen die Übergaben an Codex und Claude Code. Halt und
-Fortsetzen regelt [`run.toml`](src/ki_dev/runner/run.toml) für jeden
-Ablauf gleich; die Schutzgrenzen hat heute nur `implement`
-([Ebenen](#ebenen)).
+**[Ebenen Runner und Executor](#ebenen-und-orte).** Der Runner fährt
+den Ablauf bis zum nächsten Halt, die Executoren reichen die Übergaben
+an Codex und Claude Code. Halt und Fortsetzen regelt
+[`run.toml`](src/ki_dev/runner/run.toml) für jeden Ablauf gleich; die
+Schutzgrenzen hat heute nur `implement` ([Roadmap](#roadmap)).
 
 <!-- readme-script: readme-scripts/5-starten.sh -->
 > ⏳ ungeprüft · läuft bis zum ersten Agentenaufruf, der braucht echte Sitzungen · selbst prüfen: make readme-check
@@ -381,76 +384,62 @@ Arbeit eines Agenten.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
-## Ebenen
+## Ebenen und Orte
 
-Jeder Schritt des Beispiels liegt auf einer eigenen Ebene, von oben nach
-unten:
+Die Skizze hat zwei Dimensionen:
 
-```text
- ◇ Bead-Graph-Durchgang   wählt den nächsten bereiten Vorgang
- ◇ Ablaufkette            verbindet Abläufe zu einem Lauf
-┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+- **Ebene**, ein Kasten: wer wen steuert, von oben nach unten. Jede
+  Ebene startet die darunter, die Antwort kommt als Ereignis zurück.
+- **Ort**, die Zeilenbezeichnung: Das
+  [Paket](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts) bringt
+  Fachliches mit (was `fix` bedeutet, wann der Mensch entscheidet), das
+  [Gerüst](docs/ablaufpakete.de.md#gerüst-und-paket), was für jeden
+  Ablauf gleich gilt (Halt, Schutz). Abhängigkeit nur Paket → Gerüst
+  ([Test](tests/test_schichten.py)).
 
-┌─ Arbeitsgraph ─────────────────────────────────────┐
-│ Beads     Vorgänge mit Abnahme, Abhängigkeiten     │  Schritt 3
-└────────────────────────────────────────────────────┘
-       │ Auftrag: ein Vorgang je Lauf
-       ▼
-┌─ Ablaufpaket ──────────────────────────────────────┐
-│ Ablauf    TOML: Zustände, Kanten, Wächter, Rollen  │  Schritt 1
-│ Übergaben TOML: Vorlage + Bausteine je Zustand     │
-│ Vorlagen  Rollentexte mit Platzhaltern             │
-│ Ops       Python: eigene Ops, Antwort → Ereignis   │
-└────────────────────────────────────────────────────┘
-       ▲ besetzt die Rollen
-       │
-┌─ Profil ───────────────────────────────────────────┐
-│ Rollen    Rolle → Executor, Sitzung, Modell        │  Schritt 2
-│ Grenzen   Grenzwerte: Runden, Tokens, Kontext      │
-│ Tests     Befehle, die jede Runde laufen           │
-│ Ziel      wohin ein PASS integriert wird           │
-└────────────────────────────────────────────────────┘
-       │ wählt die Executoren
-       ▼
-┌─ Gerüst ───────────────────────────────────────────┐
-│ Runner    run.toml: Halt, Wiederholung, Grenzen    │  Schritt 4
-│ Übergabe  Vorlage + Eltern-Bead, Kriterien, Doku   │
-│ Muster    Review-Muster und Varianten              │
-│ Ops       Katalog: Vorlauf, Git-Abschluss, Kontext │
-│ Kern      Statecharts, Lader, Schemaprüfung        │
-│ Executor  claude · codex · manual · inbox · mock   │
-└──────┬──────────────────────────────────────▲──────┘
-       │ Übergabe je Ablauf, Rolle und Bead   │ Antwort
-       ▼                                      │
-   Agent oder Mensch ─────────────────────────┘
-```
+<pre>
+ <a href="#roadmap">◇ Bead-Graph-Durchgang</a>   wählt den nächsten Vorgang; heute der Mensch
+ <a href="#roadmap">◇ Ablaufkette</a>            verbindet Abläufe; heute von Hand
 
-Schritte im Beispiel: [1](#1-ablauf-modellieren) · [2](#2-rollen-besetzen) ·
-[3](#3-auftrag-wählen) · [4](#4-starten); ◇ gibt es noch nicht
-([Roadmap](#roadmap)).
+┌─ <a href="docs/ablaufpakete.de.md">Ablauf</a> ──────────────────────────────────────────┐
+│ Paket   <a href="src/ki_dev/flow/implement.toml">Zustände, Kanten</a>, Rollen, <a href="docs/ablaufpakete.de.md#eine-bindung">Op je Zustand</a>   │  <a href="#1-ablauf-modellieren">Schritt 1</a>
+│         <a href="src/ki_dev/flow_ops/implement/machine/model.py">Wächter, Aktionen</a>: Python, nur Laufdaten  │
+│ Gerüst  <a href="src/ki_dev/flow/patterns/review.toml">Muster</a>: Review-Muster und Varianten       │
+└─────────────────────────┬─────────────────────▲───┘
+                          │ Op des Zustands     │ Ereignis
+┌─ <a href="docs/ablaufpakete.de.md#ausführer">Runner</a> ────────────────▼─────────────────────┴───┐
+│ Gerüst  <a href="src/ki_dev/runner/run.toml">run.toml</a>: Halt, Wiederholung, Schutz      │  <a href="#4-starten">Schritt 4</a>
+│         <a href="docs/ausfuehrer-luecken.de.md#schichten-und-orte">Wächter: Messwert gegen Grenzwert</a>         │
+└─────────────────────────┬─────────────────────▲───┘
+                          │ startet die Op      │ Ergebnis
+┌─ <a href="docs/ablaufpakete.de.md#eine-bindung">Wirkung</a> ───────────────▼─────────────────────┴───┐
+│ Paket   <a href="src/ki_dev/flow_ops/implement/ops.py">eigene Ops</a>, <a href="src/ki_dev/flow/templates">Rollenvorlagen</a>                │
+│ Gerüst  <a href="src/ki_dev/ops">Ops-Katalog</a>: Vorlauf, Git-Abschluss       │
+│         <a href="docs/ablaufpakete.de.md#parametrisierte-übergaben">Übergabe</a>: Vorlage + Bausteine aus Bead    │
+└─────────────────────────┬─────────────────────▲───┘
+                          │ Übergabe            │ Antwort
+┌─ <a href="docs/ausfuehrer.de.md#executoren">Executor</a> ──────────────▼─────────────────────┴───┐
+│ Gerüst  <a href="src/ki_dev/adapter/executors.toml">claude · codex · manual · inbox · mock</a>    │  <a href="#4-starten">Schritt 4</a>
+│         <a href="docs/ausfuehrer.de.md#verbrauchsschutz">misst Kontext, Kontingent, Budget</a>         │
+└─────────────────────────┬─────────────────────▲───┘
+                          ▼                     │
+                       Agent oder Mensch ───────┘
 
-Die Skizze zeigt die vereinbarte Architektur
-([Schichten und Regeln](docs/ausfuehrer-luecken.de.md#schichten-und-orte)):
-Fachliches entscheidet der Ablauf, Schutz für jeden Ablauf gleich das
-Gerüst; Grenzwerte setzt das Profil, der Executor misst, ein Wächter
-vergleicht. Abhängigkeit nur Paket → Gerüst, das Gerüst kennt keine Rollen
-([Test](tests/test_schichten.py)). Tests: welche Befehle, sagt das Profil
-(Review-Muster: `pyproject.toml`); wann und was danach, der Ablauf. Wo der
-Code heute abweicht, steht in der [Roadmap](#roadmap) unter **V1**.
+ Eingaben je Lauf, keine Ebene: <a href="#2-rollen-besetzen">Profil (Schritt 2)</a> · <a href="#3-auftrag-wählen">Auftrag (Schritt 3)</a>
+</pre>
 
-Weitere Trennungen:
+◇ gibt es noch nicht ([Roadmap](#roadmap)). Die Skizze zeigt die
+[vereinbarte Architektur](docs/ausfuehrer-luecken.de.md#schichten-und-orte);
+wo der Code abweicht, steht in der [Roadmap](#roadmap) unter **V1**.
 
+- **Eingabe ≠ Ebene:** Executor je Rolle, Grenzwerte und Tests setzt das
+  [Profil](#2-rollen-besetzen); im Review-Muster kommen die Tests aus der
+  `pyproject.toml` des Ziel-Repos. Wann sie gelten und was folgt,
+  entscheidet der Ablauf. Der Executor misst, ein Wächter vergleicht.
 - **Op ≠ Aktion:** eine Op wirkt nach außen und endet in einem Ereignis;
   eine Aktion ändert beim Übergang nur Laufdaten, ein Wächter liest sie.
-- **Ablauf ≠ Ablaufkette:** ein Ablauf ist ein Verfahren; die Kette
-  `map` → `graph` → `materialize` → `implement` verbindet mehrere, heute
-  von Hand.
-- **Lauf ≠ Durchgang durch den Bead-Graphen:** ein Lauf bearbeitet einen
-  Vorgang; welcher als Nächstes dran ist, wählt heute der Mensch.
-- **Mensch als Bote ≠ Mensch als Entscheider:** als Rolle (`manual`) trägt
-  er Übergaben weiter, im Zustand `waiting_decision` entscheidet er.
-- **Arbeitsgraph ≠ Ereignisprotokoll:** Beads hält, was zu tun ist,
-  `events.jsonl`, was wann passiert ist.
+- **Mensch als Bote ≠ Mensch als Entscheider:** als Executor `manual`
+  trägt er Übergaben weiter, im Zustand `waiting_decision` entscheidet er.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -564,47 +553,33 @@ gemeinsame Muster und Ops; Abläufe mit ihren Ops, Vorlagen und Profilen
 liegen in eigenen Paket-Repos
 ([Paket außerhalb des Gerüsts](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
-Die **V1**-Punkte bringen den Code auf die vereinbarte Architektur aus
-[Ebenen](#ebenen); der Umbau folgt nach der Veröffentlichung. Gegliedert
-nach Ebenen, von oben nach unten:
+Die **V1**-Punkte bringen den Code auf die vereinbarte Architektur; der
+Umbau folgt nach der Veröffentlichung. Gegliedert wie die
+[Skizze](#ebenen-und-orte): Ebenen von oben nach unten, dann Orte und
+Eingaben.
 
-**Neue Oberebenen**
+**Neue Ebenen**
 
-- ◇ Ablaufkette: mehrere Abläufe als ein Lauf; in V1 von Hand verkettet
 - ◇ Bead-Graph-Durchgang: nächster bereiter Vorgang, Reihenfolge nach
   Abhängigkeiten
+- ◇ Ablaufkette: mehrere Abläufe als ein Lauf; in V1 von Hand verkettet
 
-**Arbeitsgraph und Ablauf**
-
-- ◇ adaptive Schnitte: der Reviewer teilt einen Vorgang in Schritte, ein
-  Größen-Gate vor dem Umsetzer ([Zielbild](docs/zielbild.de.md))
-
-**Ablaufpakete**
+**Ablauf**
 
 - ◆ **V1** vier Einzelabläufe `map` → `graph` → `materialize` →
   `implement`; Rundengrenzen auch im Review-Muster (`ige.6.4.7`)
-- ◆ **V1** Paket-Repo ohne kopierten Runner, Gerüst ohne Ablaufkopien
-  (`cak`, `ige.6.4.16`)
-- ◆ Planungs-Abflachung: Planungssitzungen und Designnotizen in die
-  Gesamtplanung einarbeiten, als eigener Ablauf mit Review (`urq`,
-  8 Aufträge)
-
-**Ablauf und Ops**
-
 - ◆ **V1** Test-Tor: rote Tests halten die Integration auf (`ek1`)
 - ◆ adaptive Parameter, KI steuert, Code begrenzt: der Reviewer wählt den
   Testumfang der nächsten Runde, `PASS` nur nach Volllauf; in `step`
   vorhanden ([Prüfsteuerung](docs/step.de.md#antworten-im-review-muster)),
   im Lauf mit Agenten mit `ige.6.4.12`
+- ◆ Planungs-Abflachung: Planungssitzungen und Designnotizen in die
+  Gesamtplanung einarbeiten, als eigener Ablauf mit Review (`urq`,
+  8 Aufträge)
+- ◇ adaptive Schnitte: der Reviewer teilt einen Vorgang in Schritte, ein
+  Größen-Gate vor dem Umsetzer ([Zielbild](docs/zielbild.de.md))
 
-**Ablauf und Profil**
-
-- ◆ erwarteter Verbrauch je Op gegen die Grenzen beim Binden prüfen
-  (`asr`); Parameter je Ebene aus TOML statt Python (`7z3`)
-- ◇ Kalibrierung der Ablaufparameter aus Ist-Läufen, auch KI-gestützt;
-  optional, die Steuerung bleibt deterministisch
-
-**Runner**
+**Runner und Executor**
 
 - ◆ **V1** ein Runner für alle Abläufe (`ige.6.4`, 17 Aufträge): `implement`
   ohne eigenen Ausführer im Paket (`ige.6.4.13`); Schutzhalt, Messung,
@@ -614,6 +589,18 @@ nach Ebenen, von oben nach unten:
   durchgesetzter Stop (`wu0.10`, 22 Aufträge)
 - ◆ adaptive Budgetprognose: mehrere Modelle schätzen einen Auftrag,
   Schätzfehler aus dem Ist-Verbrauch lernen (`wu0.4`–`wu0.7`)
+
+**Orte: Paket und Gerüst**
+
+- ◆ **V1** Paket-Repo ohne kopierten Runner, Gerüst ohne Ablaufkopien
+  (`cak`, `ige.6.4.16`)
+
+**Eingaben: Profil und Parameter**
+
+- ◆ erwarteter Verbrauch je Op gegen die Grenzen beim Binden prüfen
+  (`asr`); Parameter je Ebene aus TOML statt Python (`7z3`)
+- ◇ Kalibrierung der Ablaufparameter aus Ist-Läufen, auch KI-gestützt;
+  optional, die Steuerung bleibt deterministisch
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 

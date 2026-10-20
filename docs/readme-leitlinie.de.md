@@ -31,10 +31,10 @@ Gliederung.
 ## Auftrag
 
 Nach Kopf, Inhaltsverzeichnis und erstem Beispiel kann ein Besucher sagen:
-was ki-dev ist (Idee), woraus es besteht (Ebenen) und wie weit es ist
-(Stand). Er weiß, was er tun kann: ausprobieren, mitmachen, den Autor
-ansprechen, das Repo beobachten. Alles Weitere verlinkt die README. Sie ist
-kein Handbuch, kein Bericht, keine Testmatrix und kein Prosabuch.
+was ki-dev ist (Idee), woraus es besteht (Ebenen und Orte) und wie weit
+es ist (Stand). Er weiß, was er tun kann: ausprobieren, mitmachen, den
+Autor ansprechen, das Repo beobachten. Alles Weitere verlinkt die README.
+Sie ist kein Handbuch, kein Bericht, keine Testmatrix und kein Prosabuch.
 
 ## Wie ein Mensch liest
 
@@ -70,27 +70,44 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    „Umsetzer und Reviewer als Ablauf“; der Bug ist nur der Auftrag in
    Schritt 3.
 3. **Ebenen im Fluss benennen, Begriffe ab dem ersten Satz trennen.** Jeder
-   Beispielschritt beginnt mit seiner Ebene („**Ebene Profil.**“). Ein Wort,
-   ein Begriff: Op (wirkt nach außen) ≠ Aktion (ändert Laufdaten), Executor
+   Beispielschritt beginnt mit seiner Ebene oder Eingabe, verlinkt auf
+   [Ebenen und Orte](../README.md#ebenen-und-orte) („**Ebene Ablauf.**“,
+   „**Eingabe Profil.**“). Ein Wort, ein Begriff: Ebene (wer wen steuert) ≠
+   Ort (wo es liegt: Paket, Gerüst) ≠ Eingabe (Profil, Auftrag), Op (wirkt
+   nach außen) ≠ Aktion (ändert Laufdaten), Rolle (im Ablauf) ≠ Executor
    (Name im Profil) ≠ Adapter (Transport-Code), Ablauf ≠ Ablaufkette,
    Lauf ≠ Bead-Graph-Durchgang.
 4. **Ein Modell vertiefen, nicht neu ansetzen.** Die Abschnitte folgen dem
    Modell aus dem Beispiel: Idee → Beispiel → was im Lauf passiert → Ebenen
-   → weitere Abläufe → Roadmap → Mitmachen → Lizenz. Jeder verweist auf den
-   Beispielschritt zurück, den er vertieft. Fehler: ein Abschnitt, für den
-   der Leser ein neues Bild des Projekts bauen muss.
+   und Orte → weitere Abläufe → Roadmap → Mitmachen → Lizenz. Jeder
+   verweist auf den Beispielschritt zurück, den er vertieft. Fehler: ein
+   Abschnitt, für den der Leser ein neues Bild des Projekts bauen muss.
 5. **Fährte legen.** Überschrift und Linktext sagen, was dort steht:
    „Ausprobieren ohne Agenten“, „Was im Lauf passiert“. Aktive Links ab dem
    ersten Satz führen zu der Stelle, die den Begriff zeigt
-   („[Ablauf aus TOML](../README.md#1-ablauf-modellieren)“). Fehler: Kopf
-   ohne Links, Motivation erst ab Zeile 462 (Durchlauf `5d3d4c6`).
+   („[Ablauf aus TOML](../README.md#1-ablauf-modellieren)“). Stark
+   verlinken: jeder Begriff beim ersten Auftreten im Abschnitt, jede
+   genannte Datei, jedes Skizzenelement mit Fundstelle; die Schritte
+   verlinken auf ihre Ebene, die Skizze zurück auf die Schritte. Fehler:
+   Kopf ohne Links, Motivation erst ab Zeile 462 (Durchlauf `5d3d4c6`).
 6. **Linear navigieren.** Inhaltsverzeichnis in Lesereihenfolge mit
    Unterlinks auf die Beispielschritte; `↑ Inhalt` am Ende jedes Abschnitts
    und Unterabschnitts.
 7. **Skizzieren, was skizzierbar ist, und jedes Element eindeutig.**
-   - Codeblock, höchstens 72 Zeichen breit. Kasten = Ebene, Zeile mit
-     Bezeichnung = Teil, beschrifteter Pfeil = Beziehung, Abstand zwischen
-     Ebenen.
+   - Erst das Kriterium, dann die Kästen: Jede Dimension steht in einem
+     Satz vor der Skizze (Ebene = wer wen steuert, Ort = wo es liegt).
+     Kasten = Ebene, Zeilenbezeichnung = Ort, beschrifteter Pfeil =
+     Beziehung, Abstand zwischen Ebenen. Eine geplante Ebene steht als
+     ◇-Zeile darüber, Eingaben als Zeile darunter, nie als Kasten im
+     Stapel.
+   - `<pre>` mit `<a href>`, damit Elemente verlinkt sind; höchstens 72
+     Zeichen sichtbar, Kastenkanten in einer Spalte, DE und EN gleich
+     gebaut (`tests/test_readme_skizze.py`).
+   - Fehler: Kästen nach Beispielschritten statt nach einem Kriterium
+     (`e322b79`). Das Profil teilt als Kasten mit ↑-Pfeil die Skizze, kein
+     Pfeil führt vom Paket zum Gerüst, `Muster` und `Ops` stehen im Kasten
+     Gerüst statt auf ihrer Ebene, Ops, Übergabe und Grenzen in zwei
+     Kästen.
    - Fehler: `│ Muster und gemeinsame Ops │` ohne Bezeichnung unter
      `Adapter … mock`: Fortsetzung oder eigener Teil? Fehler: `Arbeitsgraph
      Beads: …` direkt über dem Paket-Kasten: Ist Beads ein Teil davon oder
@@ -115,8 +132,9 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
     eigenen Abschnitt; was keinem Abschnitt zugehört, entfällt.
 11. **Für wen.** Zielgruppe ausdrücklich (knappe Token-Budgets, kein
     Aufseher-Modell); Späteres als Option, nicht als Voraussetzung.
-12. **Knapp und genau.** Halbsätze statt Absätze. Genauigkeit vor Kürze:
-    keine künstliche Grenze, wenn ein Begriff sonst falsch wäre.
+12. **Knapp und genau.** Halbsätze statt Absätze; was Skizze oder Link
+    tragen, wiederholt die Prosa nicht. Genauigkeit vor Kürze: keine
+    künstliche Grenze, wenn ein Begriff sonst falsch wäre.
 
 ## Arbeitsweise
 
@@ -137,7 +155,7 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
 - Prüfen: `render-readme.py --check`, `render-flow-diagrams.py --check`,
   `pytest tests/test_doku_links.py tests/test_readme_render.py
   tests/test_readme_walkthrough.py tests/test_flow_diagram.py
-  tests/test_readme_profile.py`.
+  tests/test_readme_profile.py tests/test_readme_skizze.py`.
 
 ## Abnahme
 
