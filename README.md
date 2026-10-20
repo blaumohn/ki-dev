@@ -14,8 +14,8 @@ Aufseher-Modell ([Warum](#warum)).
 
 🚧 **In Entwicklung, noch nicht betriebsbereit.** Ablaufsteuerung,
 Korrekturschleife und Adapter für Claude Code und Codex laufen. Es fehlen
-noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden:
-[Stand](#stand) · [Roadmap](#roadmap).
+noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden
+([Roadmap](#roadmap)).
 
 ## Inhalt
 
@@ -29,9 +29,8 @@ noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden:
 4. [Ausprobieren ohne Agenten](#ausprobieren-ohne-agenten)
 5. [Ebenen](#ebenen)
 6. [Nicht nur Code](#nicht-nur-code)
-7. [Stand](#stand)
-8. [Roadmap](#roadmap)
-9. [Mitmachen](#mitmachen)
+7. [Roadmap](#roadmap)
+8. [Mitmachen](#mitmachen)
 
 ## Warum
 
@@ -83,6 +82,12 @@ target = "worker_step_prepare"
 on = ["begin_correction", "drop_result"]
 ```
 
+Die Statecharts laufen auf
+[python-statemachine](https://python-statemachine.readthedocs.io/). In
+`implement` verbraucht jede Rückkante einen Zähler; ein
+[Test](tests/machine/test_reachability.py) zählt den Zustandsraum durch:
+Kein Zyklus ohne Mensch läuft unbegrenzt.
+
 Was ein Zustand nach außen tut, bindet der Ablauf an eine Op; ihr Ergebnis
 kommt als Ereignis zurück. Gekürzt:
 
@@ -101,6 +106,10 @@ und lesen oder ändern nur Laufdaten. Ops-Schnittstelle:
 [Bindungen](docs/ablaufpakete.de.md#eine-bindung); die Ops von `implement`
 liegen in [`flow_ops/implement/ops.py`](src/ki_dev/flow_ops/implement/ops.py),
 gemeinsame Ops des Gerüsts in [`ops/`](src/ki_dev/ops/).
+
+**Stand:** Eigene Abläufe lädt ki-dev aus einem Paketverzeichnis außerhalb
+des Gerüsts (`KI_DEV_FLOW_PATH`,
+[Paket außerhalb](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -141,6 +150,9 @@ data_mode = "file_proposal"
 
 Ein Mensch (`manual`), ein Mock oder ein anderes Modell: Es wechselt nur
 `executor` ([Executoren](docs/ausfuehrer.de.md#executoren)).
+
+**Stand:** Schutzhalt an Kontext-, Kontingent- und Budgetgrenze mit
+`claude`; `codex` ohne Kontextmessung.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -465,52 +477,6 @@ vergleicht sie mit diesem README.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
-## Stand
-
-**Läuft**
-
-- Abläufe als TOML-Statecharts auf
-  [python-statemachine](https://python-statemachine.readthedocs.io/).
-  In `implement` verbraucht jede Rückkante einen Zähler; ein
-  [Test](tests/machine/test_reachability.py) zählt den Zustandsraum durch:
-  kein Zyklus ohne Mensch läuft unbegrenzt.
-- `implement` vom Auftrag bis zur Fast-Forward-Integration, mit Halt und
-  `resume`; vorgeführt mit Mock-Agenten.
-- Adapter: Claude Code, Codex, Mensch (`manual`, `inbox`), Mock.
-- Schutzhalt bei Kontext-, Kontingent- und Budgetgrenze für `claude`;
-  `codex` ohne Kontextmessung.
-- `step`: zeigt für jeden Zustand die Übergabe an einen Agenten, ohne
-  einen zu starten.
-- Abläufe aus einem Paketverzeichnis außerhalb des Gerüsts laden
-  (`KI_DEV_FLOW_PATH`).
-
-**Fehlt noch:** das Test-Tor (unten), ein Runner für alle Abläufe, damit
-die Grenzen überall greifen, und ein abgenommener Lauf mit echten Agenten
-([Roadmap](#roadmap)).
-
-<!-- readme-script: readme-scripts/3-review-gate.sh -->
-> ❌ rot, erwartet (Spezifikation) · 2026-10-17 · selbst prüfen: .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py · [Stand](#stand)
-
-**Wann ist das Test-Tor fertig?** Wenn dieser Test grün ist. Er startet
-`ki-dev -f implement` gegen ein Wegwerf-Repo mit falschem `add.py`
-(`a - b`); die Tests sind rot, das Mock-Review sagt trotzdem `PASS`.
-
-```bash
-.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
-```
-
-```text
-E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
-FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
-1 failed, 4 passed
-```
-
-Heute landet das Ergebnis trotz roter Tests auf `main`. Die vier grünen
-Fälle prüfen den Test selbst, etwa: grüne Tests plus `PASS` integrieren.
-<!-- /readme-script -->
-
-<sub>[↑ Inhalt](#inhalt)</sub>
-
 ## Roadmap
 
 ◆ als Beads geschnitten, mit Abnahmekriterien · ◇ Zielbild, noch nicht
@@ -579,7 +545,8 @@ nach Ebenen, von oben nach unten:
 
 Gute Einstiege, je mit klarer Abnahme:
 
-- **Test-Tor bauen**: fertig, wenn der rote Test oben grün ist.
+- **Test-Tor bauen**: fertig, wenn rote Tests die Integration aufhalten
+  ([`tests/test_review_gate_cli.py`](tests/test_review_gate_cli.py) grün).
 - **Rundenzähler im Review-Muster**: `map`, `graph`, `materialize` zählen
   ihre Korrekturrunden noch nicht.
 - **Ein Runner**: `implement` auf den gemeinsamen Runner umstellen.

@@ -14,8 +14,8 @@ model ([Why](#why)).
 
 🚧 **In development, not ready for production use.** Flow control, the
 correction loop and adapters for Claude Code and Codex work. Still missing:
-a test gate before integration and budget limits on every path:
-[Status](#status) · [Roadmap](#roadmap).
+a test gate before integration and budget limits on every path
+([Roadmap](#roadmap)).
 
 ## Contents
 
@@ -29,9 +29,8 @@ a test gate before integration and budget limits on every path:
 4. [Try it without agents](#try-it-without-agents)
 5. [Layers](#layers)
 6. [Not just code](#not-just-code)
-7. [Status](#status)
-8. [Roadmap](#roadmap)
-9. [Contributing](#contributing)
+7. [Roadmap](#roadmap)
+8. [Contributing](#contributing)
 
 ## Why
 
@@ -82,6 +81,12 @@ target = "worker_step_prepare"
 on = ["begin_correction", "drop_result"]
 ```
 
+The statecharts run on
+[python-statemachine](https://python-statemachine.readthedocs.io/). In
+`implement` every back edge consumes a counter; a
+[test](tests/machine/test_reachability.py) enumerates the state space: no
+cycle without a human runs unbounded.
+
 What a state does outside, the flow binds to an op; its result comes back
 as an event. Shortened:
 
@@ -101,6 +106,10 @@ and only read or change run data. Ops interface:
 `implement` live in
 [`flow_ops/implement/ops.py`](src/ki_dev/flow_ops/implement/ops.py),
 shared ops of the scaffold in [`ops/`](src/ki_dev/ops/).
+
+**Status:** ki-dev loads your own flows from a package directory outside
+the scaffold (`KI_DEV_FLOW_PATH`,
+[package outside, German](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -141,6 +150,9 @@ data_mode = "file_proposal"
 
 A human (`manual`), a mock or another model: only `executor` changes
 ([executors, German](docs/ausfuehrer.de.md#executoren)).
+
+**Status:** safety halt at context, quota and budget limits with
+`claude`; `codex` without context measurement.
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -465,51 +477,6 @@ compares them with this README.
 
 <sub>[↑ Contents](#contents)</sub>
 
-## Status
-
-**Works**
-
-- Flows as TOML statecharts on
-  [python-statemachine](https://python-statemachine.readthedocs.io/).
-  In `implement` every back edge consumes a counter; a
-  [test](tests/machine/test_reachability.py) enumerates the state space:
-  no cycle without a human runs unbounded.
-- `implement` from task to fast-forward integration, with halt and
-  `resume`; demonstrated with mock agents.
-- Adapters: Claude Code, Codex, human (`manual`, `inbox`), mock.
-- Safety halt at context, quota and budget limits for `claude`; `codex`
-  without context measurement.
-- `step`: shows the handoff to an agent for any state, without starting one.
-- Loading flows from a package directory outside the scaffold
-  (`KI_DEV_FLOW_PATH`).
-
-**Still missing:** the test gate (below), one runner for all flows so the
-limits apply everywhere, and an accepted run with real agents
-([Roadmap](#roadmap)).
-
-<!-- readme-script: readme-scripts/en/3-review-gate.sh -->
-> ❌ red, expected (spec) · 2026-10-17 · verify: .venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py · [Status](#status)
-
-**When is the test gate done?** When this test is green. It runs
-`ki-dev -f implement` against a throwaway repo with a wrong `add.py`
-(`a - b`); the tests are red, the mock review still says `PASS`.
-
-```bash
-.venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py
-```
-
-```text
-E   tests.test_review_gate_cli.IntegratedDespiteRedTests: 3e696bb -> d14aedd: Fast-forward integriert
-FAILED tests/test_review_gate_cli.py::test_red_tests_and_review_pass_do_not_integrate
-1 failed, 4 passed
-```
-
-Today the result lands on `main` despite red tests. The four green
-cases check the test itself, e.g. green tests plus `PASS` do integrate.
-<!-- /readme-script -->
-
-<sub>[↑ Contents](#contents)</sub>
-
 ## Roadmap
 
 ◆ cut into beads, with acceptance criteria · ◇ target picture, not cut
@@ -577,7 +544,8 @@ layer, top to bottom:
 
 Good first tasks, each with a clear finish line:
 
-- **Build the test gate**: done when the red test above is green.
+- **Build the test gate**: done when red tests stop integration
+  ([`tests/test_review_gate_cli.py`](tests/test_review_gate_cli.py) green).
 - **Round counter in the review pattern**: `map`, `graph`, `materialize`
   do not count their correction rounds yet.
 - **One runner**: move `implement` onto the shared runner.

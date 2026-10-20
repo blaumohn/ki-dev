@@ -108,8 +108,7 @@ def test_staged_german_change_needs_english(repo):
 def test_status_line_is_first_block_line_in_both_languages(repo):
     (repo / STATUS).write_text(
         '["1-setup.sh"]\nstatus = "unchecked"\ncommand = "make demo"\n'
-        '["2-runtime.sh"]\nstatus = "unchecked"\ncommand = "x"\n'
-        '["3-review-gate.sh"]\nstatus = "xfail"\n'
+        '["2-runtime.sh"]\nstatus = "xfail"\n'
         'date = "2026-01-02"\ncommand = "pytest spec"\n'
     )
     assert _render(repo)[0] == 0
@@ -125,11 +124,11 @@ def test_status_line_is_first_block_line_in_both_languages(repo):
     ) in en
     assert (
         "> ❌ rot, erwartet (Spezifikation) · 2026-01-02 · "
-        "selbst prüfen: pytest spec · [Stand](#stand)\n\n"
+        "selbst prüfen: pytest spec\n\n"
     ) in de
     assert (
-        "> ❌ red, expected (spec) · 2026-01-02 · verify: pytest spec"
-        " · [Status](#status)\n\n"
+        "> ❌ red, expected (spec) · 2026-01-02 · "
+        "verify: pytest spec\n\n"
     ) in en
 
 

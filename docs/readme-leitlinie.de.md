@@ -76,7 +76,7 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    Lauf ≠ Bead-Graph-Durchgang.
 4. **Ein Modell vertiefen, nicht neu ansetzen.** Die Abschnitte folgen dem
    Modell aus dem Beispiel: Idee → Beispiel → was im Lauf passiert → Ebenen
-   → weitere Abläufe → Stand → Roadmap → Mitmachen. Jeder verweist auf den
+   → weitere Abläufe → Roadmap → Mitmachen. Jeder verweist auf den
    Beispielschritt zurück, den er vertieft. Fehler: ein Abschnitt, für den
    der Leser ein neues Bild des Projekts bauen muss.
 5. **Fährte legen.** Überschrift und Linktext sagen, was dort steht:
@@ -110,7 +110,9 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    zeichnen.
 10. **Stand ehrlich.** Läuft und fehlt getrennt; rote Spezifikationstests
     als solche; ein Ziel nie als Funktion; nichts Ungemessenes als
-    Ersparnis.
+    Ersparnis. Der Stand steht als Notiz (`**Stand:** …`, in etwa 10
+    Sekunden lesbar) in dem Abschnitt, den er betrifft, nicht in einem
+    eigenen Abschnitt; was keinem Abschnitt zugehört, entfällt.
 11. **Für wen.** Zielgruppe ausdrücklich (knappe Token-Budgets, kein
     Aufseher-Modell); Späteres als Option, nicht als Voraussetzung.
 12. **Knapp und genau.** Halbsätze statt Absätze. Genauigkeit vor Kürze:

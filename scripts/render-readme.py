@@ -53,14 +53,12 @@ DATED = ("passed", "xfail")
 STATUS_TEXT = {
     "README.md": {
         "verify": "selbst prüfen",
-        "bench": "[Stand](#stand)",
         "passed": "✅ bestanden",
         "xfail": "❌ rot, erwartet (Spezifikation)",
         "unchecked": "nicht ausgeführt",
     },
     "README.en.md": {
         "verify": "verify",
-        "bench": "[Status](#status)",
         "passed": "✅ passed",
         "xfail": "❌ red, expected (spec)",
         "unchecked": "not run",
@@ -136,8 +134,6 @@ def status_line(readme: str, entry: dict) -> str:
     if status in DATED:
         parts.append(entry["date"])
     parts.append(f"{text['verify']}: {entry['command']}")
-    if status == "xfail":
-        parts.append(text["bench"])
     return "> " + " · ".join(parts)
 
 

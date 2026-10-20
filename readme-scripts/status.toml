@@ -10,7 +10,3 @@ command = "make readme-check"
 status = "unchecked"
 command = "make setup-runtime"
 
-["3-review-gate.sh"]
-status = "xfail"
-date = "2026-10-17"
-command = ".venv/bin/pytest -q --runxfail tests/test_review_gate_cli.py"
