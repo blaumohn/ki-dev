@@ -66,7 +66,8 @@ spec-test: setup
 # Arbeitsdateien pro Lauf auf Platte; Download-/Build-Caches bleiben erhalten.
 # Danach setzt der Renderer (Host-venv) Statuszeile und Ausgabe jedes
 # README-Blocks aus den Ergebnissen genau dieses Laufs, auch bei rotem
-# Test. Exit: der des Containers, wenn ≠ 0, sonst der des Renderers.
+# Test oder gescheitertem Imagebau (dann überall „nicht ausgeführt“).
+# Exit: der von Build oder Container, wenn ≠ 0, sonst der des Renderers.
 readme-check: .venv/bin/ki-dev
 readme-check: export READMECHECK_USER := $(shell id -u):$(shell id -g)
 readme-check: export READMECHECK_CACHE_DIR := $(CURDIR)/.local/cache/readme-check
@@ -82,8 +83,8 @@ readme-check:
 	export READMECHECK_TMP_DIR; \
 	trap 'rm -rf -- "$$READMECHECK_TMP_DIR"' EXIT; \
 	mkdir "$$READMECHECK_TMP_DIR/readme-ergebnisse"; \
-	$(CHECK) build check; \
-	check=0; $(CHECK) run --rm check || check=$$?; \
+	check=0; $(CHECK) build check || check=$$?; \
+	if [ "$$check" -eq 0 ]; then $(CHECK) run --rm check || check=$$?; fi; \
 	render=0; $(BIN)/python scripts/render-readme.py \
 		--write "$$READMECHECK_TMP_DIR/readme-ergebnisse" || render=$$?; \
 	if [ "$$check" -ne 0 ]; then exit "$$check"; fi; \
