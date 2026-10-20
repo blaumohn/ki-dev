@@ -71,9 +71,9 @@ def test_comment_lines_become_prose(repo):
     (repo / DE).write_text("# Erklärung\n#\n# ```bash\necho a\n# ```\n")
     (repo / EN).write_text("# Note\n#\n# ```bash\necho a\n# ```\n")
     assert _render(repo)[0] == 0
-    assert "Erklärung\n\n```bash\necho a\n```\n<!--" in (
-        repo / "README.md"
-    ).read_text()
+    # Ausgabeblock aus dem letzten Lauf bleibt ohne --write dahinter.
+    block = BLOCK_RE.search((repo / "README.md").read_text())
+    assert "Erklärung\n\n```bash\necho a\n```\n" in block.group(0)
 
 
 def test_missing_script_fails(repo):
