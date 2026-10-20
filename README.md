@@ -120,7 +120,7 @@ des Gerüsts (`KI_DEV_FLOW_PATH`,
 in `.ki-dev/profiles/default.toml`; der Ablauf bleibt derselbe:
 
 ```toml
-workdir = "/home/me/rechner-arbeit"     # Arbeits-Worktree der Agenten
+workdir = "."                           # Arbeits-Worktree, hier startet ki-dev
 access_profile = "write"
 
 [worker]                                # setzt um
@@ -136,21 +136,23 @@ model = "sonnet"
 effort = "high"
 
 [[tests]]                               # läuft je Runde, Ergebnis ans Review
-name = "pytest"
-argv = [".venv/bin/python", "-m", "pytest", "-q"]
+name = "test_add"
+argv = ["python3", "test_add.py"]
 
 [limits]
 changes_rounds = 3                      # danach fragt ki-dev den Menschen
 
 [finalization]                          # wohin ein akzeptiertes Ergebnis geht
-target_workdir = "/home/me/rechner"
+target_workdir = "../calc"              # Ziel-Worktree desselben Repos
 target_ref = "refs/heads/main"
-commit_message = "add() korrigiert"
+commit_message = "Fix add()"
 data_mode = "file_proposal"
 ```
 
 Ein Mensch (`manual`), ein Mock oder ein anderes Modell: Es wechselt nur
-`executor` ([Executoren](docs/ausfuehrer.de.md#executoren)).
+`executor` ([Executoren](docs/ausfuehrer.de.md#executoren)). Die Datei
+liegt als [`docs/beispiele/default.toml`](docs/beispiele/default.toml)
+bei; Schritt 3 legt sie ins Wegwerf-Repo.
 
 **Stand:** Schutzhalt an Kontext-, Kontingent- und Budgetgrenze mit
 `claude`; `codex` ohne Kontextmessung.
@@ -167,12 +169,23 @@ Bug: `add(a, b)` liefert `a - b`.
 > ✅ bestanden · selbst prüfen: make readme-check
 
 Im ki-dev-Klon nach [Ausprobieren](#ausprobieren-ohne-agenten): `bd`
-liegt im Projekt-venv, der Auftrag entsteht in einem Wegwerf-Repo mit
-eigenem Beads-Projekt.
+liegt im Projekt-venv. Ein Wegwerf-Repo `calc` mit dem Bug, daneben der
+Arbeits-Worktree `calc-work` der Agenten mit eigenem Beads-Projekt und
+dem Profil aus Schritt 2. `.ki-dev/` (Profil, Läufe) und die
+Beads-Sperrdatei bleiben außerhalb von git: ki-dev verlangt saubere
+Worktrees.
 
 ```bash
 export PATH="$PWD/.venv/bin:$PATH"
-cd "$(mktemp -d)" && git init -q
+PROFILE="$PWD/docs/beispiele/default.toml"
+cd "$(mktemp -d)" && git init -q -b main calc && cd calc
+git config user.name calc && git config user.email calc@example.invalid
+printf 'def add(a, b):\n    return a - b\n' >add.py
+printf 'from add import add\n\nassert add(2, 3) == 5\n' >test_add.py
+printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude
+git add . && git commit -q -m "add()"
+git worktree add -q -b work ../calc-work && cd ../calc-work
+mkdir -p .ki-dev/profiles && cp "$PROFILE" .ki-dev/profiles/default.toml
 bd init --quiet --prefix calc --stealth --non-interactive
 BEAD="$(bd create "add() does not add" \
   --description "add(2, 3) returns -1" \
@@ -182,7 +195,8 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 ```
 
-`$BEAD` ist die ID des Auftrags, etwa `calc-7k2`; Schritt 4 nutzt sie.
+`$BEAD` ist die ID des Auftrags, etwa `calc-7k2`; Schritt 4 nutzt sie im
+selben Terminal, in `calc-work`.
 <!-- /readme-script -->
 
 Welchen Vorgang ein Lauf bekommt, wählt heute der Mensch; einen Durchgang
@@ -202,14 +216,16 @@ Ablauf gleich; die Schutzgrenzen hat heute nur `implement`
 > ⏳ ungeprüft · braucht echte Agenten; Mock-Fassung in Ausprobieren ohne Agenten · selbst prüfen: make readme-check
 
 ```bash
-ki-dev -f implement "$BEAD"
-ki-dev -f implement status RUN_ID
-ki-dev -f implement resume RUN_ID
+ki-dev -f implement "$BEAD" --run-id add-fix
+ki-dev -f implement status add-fix
 ```
 
-Ablauf `implement` mit dem Profil `default` aus Schritt 2; `status`
-zeigt, wo der Lauf steht, `resume` setzt ihn nach einem Halt fort.
-`RUN_ID` steht in der Ausgabe des ersten Befehls (`run_id`).
+Ablauf `implement` mit dem Profil `default` aus Schritt 2, Lauf
+`add-fix`; `status` zeigt, wo er steht. Nach einem Halt setzt
+`ki-dev -f implement resume add-fix` ihn fort, mit `--answer`, wenn der
+Halt eine Antwort verlangt. Mit den Platzhaltern `019a…` und `b3f1…`
+hält der Lauf vor dem ersten Agentenaufruf an; für einen echten Lauf
+eigene Sitzungs-IDs ins Profil eintragen.
 <!-- /readme-script -->
 
 **Stand dieses Beispiels:** Ablauf, Profilformat und Befehle sind echt,

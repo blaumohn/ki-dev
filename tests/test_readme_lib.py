@@ -74,7 +74,7 @@ def test_stub_writes_both_half_sentences(env, tmp_path):
     code, out, err = _run(env, test)
     assert code == 0
     assert "nie" not in out
-    assert "1-ok.sh: noch kein Test (Stub): braucht Agenten" in err
+    assert "1-ok.sh: ungeprüft (Stub): braucht Agenten" in err
     [entry] = _entries(env, "1-ok")
     assert entry["ergebnis"] == "stub"
     assert entry["grund_de"] == "braucht Agenten"
@@ -153,6 +153,27 @@ def test_unstable_excerpt_is_rejected(env, tmp_path, excerpt, message):
     assert code != 0
     assert message in err
     assert _entries(env, "1-ok")[0]["ergebnis"] == "failed"
+
+
+def test_scripts_share_one_shell(env, tmp_path):
+    """Wie im selben Terminal: Variable und Verzeichnis gehen weiter."""
+    scripts = Path(env["README_SCRIPTS_DIR"])
+    (scripts / "3-vor.sh").write_text(f'X=vor\ncd "{tmp_path}"\n')
+    (scripts / "4-nach.sh").write_text('echo "$X $PWD"\n')
+    test = _test(
+        tmp_path,
+        "test_4_nach.sh",
+        "readme_run 3-vor.sh 4-nach.sh\n"
+        'cp "$README_LOG" "$README_LOG.kopie"\n'
+        "readme_result passed\n",
+    )
+    code, out, err = _run(env, test)
+    assert code == 0, err
+    assert out == f"vor {tmp_path}\n"
+    log = Path(env["README_LOG_DIR"]) / "4-nach.log.kopie"
+    assert log.read_text() == out
+    [entry] = _entries(env, "4-nach")
+    assert entry["ergebnis"] == "passed"
 
 
 def _test(tmp_path, name, body):

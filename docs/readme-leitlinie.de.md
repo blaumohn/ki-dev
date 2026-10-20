@@ -128,13 +128,16 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
   beheben.
 - DE und EN gleich aufgebaut. Erzeugte Blöcke nur über ihre Quellen:
   `readme-scripts/` mit `scripts/render-readme.py`, Ablaufdiagramme mit
-  `scripts/render-flow-diagrams.py`. Statuszeile und Ausgabe eines
-  README-Skripts setzt nur `make readme-check` (je Skript ein Test in
-  `tests/readme/`, Stub mit Halbsatz, wo er vorläufig fehlt); der
+  `scripts/render-flow-diagrams.py`; das Profil in Schritt 2 ist
+  `docs/beispiele/default.toml`, das Schritt 3 ins Wegwerf-Repo legt.
+  Statuszeile und Ausgabe eines README-Skripts setzt nur
+  `make readme-check` (je Skript ein Test in `tests/readme/`, Stub mit
+  Halbsatz für den Teil, den der Container nicht prüfen kann); der
   pre-push-Hook hält sie beim Push nach `dev` aktuell.
 - Prüfen: `render-readme.py --check`, `render-flow-diagrams.py --check`,
   `pytest tests/test_doku_links.py tests/test_readme_render.py
-  tests/test_readme_walkthrough.py tests/test_flow_diagram.py`.
+  tests/test_readme_walkthrough.py tests/test_flow_diagram.py
+  tests/test_readme_profile.py`.
 
 ## Abnahme
 

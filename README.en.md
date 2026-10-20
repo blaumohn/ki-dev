@@ -120,7 +120,7 @@ the scaffold (`KI_DEV_FLOW_PATH`,
 `.ki-dev/profiles/default.toml`; the flow stays the same:
 
 ```toml
-workdir = "/home/me/calc-work"          # agents' working worktree
+workdir = "."                           # agents' worktree, ki-dev starts here
 access_profile = "write"
 
 [worker]                                # implements
@@ -136,21 +136,23 @@ model = "sonnet"
 effort = "high"
 
 [[tests]]                               # runs each round, result goes to review
-name = "pytest"
-argv = [".venv/bin/python", "-m", "pytest", "-q"]
+name = "test_add"
+argv = ["python3", "test_add.py"]
 
 [limits]
 changes_rounds = 3                      # then ki-dev asks a human
 
 [finalization]                          # where an accepted result goes
-target_workdir = "/home/me/calc"
+target_workdir = "../calc"              # target worktree of the same repo
 target_ref = "refs/heads/main"
 commit_message = "Fix add()"
 data_mode = "file_proposal"
 ```
 
 A human (`manual`), a mock or another model: only `executor` changes
-([executors, German](docs/ausfuehrer.de.md#executoren)).
+([executors, German](docs/ausfuehrer.de.md#executoren)). The file ships
+as [`docs/beispiele/default.toml`](docs/beispiele/default.toml); step 3
+puts it into the throwaway repo.
 
 **Status:** safety halt at context, quota and budget limits with
 `claude`; `codex` without context measurement.
@@ -167,12 +169,22 @@ The flow fits any issue with acceptance criteria, here a small bug:
 > ✅ passed · verify: make readme-check
 
 In the ki-dev clone after [Try it](#try-it-without-agents): `bd` lives
-in the project venv, the task goes into a throwaway repo with its own
-Beads project.
+in the project venv. A throwaway repo `calc` with the bug, next to it
+the agents' worktree `calc-work` with its own Beads project and the
+profile from step 2. `.ki-dev/` (profile, runs) and the Beads lock file
+stay out of git: ki-dev requires clean worktrees.
 
 ```bash
 export PATH="$PWD/.venv/bin:$PATH"
-cd "$(mktemp -d)" && git init -q
+PROFILE="$PWD/docs/beispiele/default.toml"
+cd "$(mktemp -d)" && git init -q -b main calc && cd calc
+git config user.name calc && git config user.email calc@example.invalid
+printf 'def add(a, b):\n    return a - b\n' >add.py
+printf 'from add import add\n\nassert add(2, 3) == 5\n' >test_add.py
+printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude
+git add . && git commit -q -m "add()"
+git worktree add -q -b work ../calc-work && cd ../calc-work
+mkdir -p .ki-dev/profiles && cp "$PROFILE" .ki-dev/profiles/default.toml
 bd init --quiet --prefix calc --stealth --non-interactive
 BEAD="$(bd create "add() does not add" \
   --description "add(2, 3) returns -1" \
@@ -182,7 +194,8 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 ```
 
-`$BEAD` is the task ID, e.g. `calc-7k2`; step 4 uses it.
+`$BEAD` is the task ID, e.g. `calc-7k2`; step 4 uses it in the same
+terminal, in `calc-work`.
 <!-- /readme-script -->
 
 Which issue a run gets is a human's choice today; there is no walk
@@ -202,14 +215,16 @@ for every flow; today only `implement` has the safety limits
 > ⏳ not checked · needs real agents; mock version in Try without agents · verify: make readme-check
 
 ```bash
-ki-dev -f implement "$BEAD"
-ki-dev -f implement status RUN_ID
-ki-dev -f implement resume RUN_ID
+ki-dev -f implement "$BEAD" --run-id add-fix
+ki-dev -f implement status add-fix
 ```
 
-Flow `implement` with the profile `default` from step 2; `status` shows
-where the run is, `resume` continues after a halt. `RUN_ID` is in the
-output of the first command (`run_id`).
+Flow `implement` with the profile `default` from step 2, run `add-fix`;
+`status` shows where it is. After a halt,
+`ki-dev -f implement resume add-fix` continues it, with `--answer` when
+the halt asks for one. With the placeholders `019a…` and `b3f1…` the
+run halts before the first agent call; for a real run put your own
+session IDs into the profile.
 <!-- /readme-script -->
 
 **Status of this example:** flow, profile format and commands are real,

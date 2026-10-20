@@ -24,13 +24,19 @@ README_SCRIPTS_DIR="${README_SCRIPTS_DIR:-$README_REPO_DIR/readme-scripts}"
 README_RESULTS_DIR="${README_RESULTS_DIR:-/tmp/readme-ergebnisse}"
 README_LOG_DIR="${README_LOG_DIR:-${TMPDIR:-/tmp}/readme-logs}"
 
-# Führt readme-scripts/<skript> wie ein Besucher im aktuellen Verzeichnis
-# aus; die Ausgabe steht zusätzlich in $README_LOG.
+# Führt readme-scripts/<skript> … wie ein Besucher im aktuellen
+# Verzeichnis aus, mehrere nacheinander in einer Shell wie im selben
+# Terminal (Variablen und Verzeichnis gehen weiter). Die Ausgabe steht
+# zusätzlich in $README_LOG, benannt nach dem letzten Skript.
 readme_run() {
-  local script="$1"
+  local script session
   mkdir -p "$README_LOG_DIR"
-  README_LOG="$(readme_log_file "$script")"
-  bash -eu -o pipefail "$README_SCRIPTS_DIR/$script" 2>&1 | tee "$README_LOG"
+  README_LOG="$(readme_log_file "${!#}")"
+  session="$README_LOG.sh"
+  for script in "$@"; do
+    cat "$README_SCRIPTS_DIR/$script"
+  done >"$session"
+  bash -eu -o pipefail "$session" 2>&1 | tee "$README_LOG"
 }
 
 # Ergebnis des laufenden Tests; failed endet mit Exit 1.
@@ -47,13 +53,14 @@ readme_result() {
   fi
 }
 
-# Vorläufig fehlender Test: Begründung als Halbsatz DE/EN, erscheint in
-# der Statuszeile der README. Beendet den Test mit Exit 0.
+# Vorläufig fehlender Test oder ungeprüfter Rest nach den Prüfungen
+# davor: Begründung als Halbsatz DE/EN, erscheint in der Statuszeile der
+# README. Beendet den Test mit Exit 0.
 readme_test_missing() {
   local reason_de="$1" reason_en="$2" script
   script="$(readme_script_for_test "$0")"
   readme_write_entry "$script" stub "" "$reason_de" "$reason_en"
-  echo "[readme-check] $script: noch kein Test (Stub): $reason_de" >&2
+  echo "[readme-check] $script: ungeprüft (Stub): $reason_de" >&2
   exit 0
 }
 

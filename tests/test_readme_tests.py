@@ -59,6 +59,31 @@ def test_stub_counts_as_test(tmp_path):
     assert completeness_problems(repo) == []
 
 
+def test_script_after_its_precondition_counts(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / SCRIPTS / "0-vor.sh").write_text("echo vor\n")
+    (repo / TESTS / "test_0_vor.sh").write_text("readme_run 0-vor.sh\n")
+    (repo / TESTS / "test_1_a.sh").write_text(
+        "readme_run 0-vor.sh 1-a.sh\n"
+    )
+    (repo / FLOW).write_text(
+        'run_readme_test "$d/tests/readme/test_0_vor.sh"\n'
+        'run_readme_test "$d/tests/readme/test_1_a.sh"\n'
+    )
+    assert completeness_problems(repo) == []
+
+
+def test_precondition_alone_does_not_count(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / TESTS / "test_1_a.sh").write_text(
+        "readme_run 1-a.sh.alt 2-b.sh\n"
+    )
+    assert completeness_problems(repo) == [
+        'FAIL: tests/readme/test_1_a.sh: weder readme_run "1-a.sh"'
+        " noch readme_test_missing"
+    ]
+
+
 def test_python_test_is_accepted(tmp_path):
     repo = _repo(tmp_path)
     (repo / TESTS / "test_1_a.sh").unlink()
@@ -132,7 +157,10 @@ def called_in_flow(flow: str, test: Path) -> bool:
 
 
 def runs_or_stubs(text: str, script: str) -> bool:
-    run = rf"^\s*readme_run[\s(]+[\"']?{re.escape(script)}[\"']?"
+    """Das Skript als ein Argument von readme_run, auch nach anderen
+    (mehrere Skripte in einer Shell)."""
+    name = rf"[\"']?{re.escape(script)}[\"']?(?=[\s,)]|$)"
+    run = rf"^\s*readme_run\b[^\n]*?[\s(,]{name}"
     return bool(re.search(run, text, re.MULTILINE) or STUB.search(text))
 
 
