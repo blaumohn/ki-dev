@@ -212,7 +212,7 @@ for every flow; today only `implement` has the safety limits
 ([Layers](#layers)).
 
 <!-- readme-script: readme-scripts/en/5-starten.sh -->
-> ⏳ not checked · needs real agents; mock version in Try without agents · verify: make readme-check
+> ⏳ not checked · runs up to the first agent call, which needs real sessions · verify: make readme-check
 
 ```bash
 ki-dev -f implement "$BEAD" --run-id add-fix

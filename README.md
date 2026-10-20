@@ -213,7 +213,7 @@ Ablauf gleich; die Schutzgrenzen hat heute nur `implement`
 ([Ebenen](#ebenen)).
 
 <!-- readme-script: readme-scripts/5-starten.sh -->
-> ⏳ ungeprüft · braucht echte Agenten; Mock-Fassung in Ausprobieren ohne Agenten · selbst prüfen: make readme-check
+> ⏳ ungeprüft · läuft bis zum ersten Agentenaufruf, der braucht echte Sitzungen · selbst prüfen: make readme-check
 
 ```bash
 ki-dev -f implement "$BEAD" --run-id add-fix
