@@ -168,8 +168,6 @@ puts it into the throwaway repo.
 with acceptance criteria, here a small bug: `add(a, b)` returns `a - b`.
 
 <!-- readme-script: readme-scripts/en/4-auftrag.sh -->
-> ✅ passed · verify: make readme-check
-
 In the ki-dev clone after [Try it](#try-it-without-agents): `bd` lives
 in the project venv. A throwaway repo `calc` with the bug, next to it
 the agents' worktree `calc-work` with its own Beads project and the
@@ -196,6 +194,8 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 ```
 
+> ✅ Run in an empty container · [test](tests/readme/test_4_auftrag.sh)
+
 `$BEAD` is the task ID, e.g. `calc-7k2`; step 4 uses it in the same
 terminal, in `calc-work`.
 <!-- /readme-script -->
@@ -215,12 +215,12 @@ for every flow; today only `implement` has the safety limits
 ([Roadmap](#roadmap)).
 
 <!-- readme-script: readme-scripts/en/5-starten.sh -->
-> ⏳ not checked · runs up to the first agent call, which needs real sessions · verify: make readme-check
-
 ```bash
 ki-dev -f implement "$BEAD" --run-id add-fix
 ki-dev -f implement status add-fix
 ```
+
+> ⏳ Not checked: runs up to the first agent call, which needs real sessions · [test](tests/readme/test_5_starten.sh)
 
 Flow `implement` with the profile `default` from step 2, run `add-fix`;
 `status` shows where it is. After a halt,
@@ -344,8 +344,6 @@ stateDiagram-v2
 ## Try it without agents
 
 <!-- readme-script: readme-scripts/en/1-setup.sh -->
-> ✅ passed · verify: make readme-check
-
 The demo creates a throwaway repo with a task and a profile; a mock
 implementer and a mock review (`fix`, then `PASS`) play through the
 example without provider access. Status line and output come from
@@ -362,6 +360,8 @@ cd ki-dev
 make setup
 make demo
 ```
+
+> ✅ Run in an empty container · [test](tests/readme/test_1_setup.sh)
 
 ```text
 {
@@ -489,8 +489,6 @@ stateDiagram-v2
 ```
 
 <!-- readme-script: readme-scripts/en/6-map-step.sh -->
-> ✅ passed · verify: make readme-check
-
 Play it through by hand, without agents, starting in the ki-dev clone:
 a throwaway repo with a Beads project, ki-dev's guidelines in it (the
 handoffs of `map` carry the target repo's guidelines from
@@ -515,6 +513,8 @@ ki-dev flow show map
 ki-dev -f map step "$BEAD" map
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
+
+> ✅ Run in an empty container · [test](tests/readme/test_6_map_step.sh)
 
 ```text
 Empfänger: Umsetzer (bisherige Sitzung)
@@ -615,13 +615,13 @@ Good first tasks, each with a clear finish line:
 More: [what the architecture still lacks (German)](docs/ausfuehrer-luecken.de.md).
 
 <!-- readme-script: readme-scripts/en/7-entwickeln.sh -->
-> ⏳ not checked · developer commands; make readme-check is this run itself · verify: make readme-check
-
 ```bash
 make test
 make spec-test
 make readme-check
 ```
+
+> ⏳ Not checked: developer commands; make readme-check is this run itself · [test](tests/readme/test_7_entwickeln.sh)
 
 `make test`: pytest and ruff. `make spec-test`: requirement tests, red
 results are allowed. `make readme-check`: every README command in a
@@ -629,8 +629,6 @@ throwaway container, sets the status lines, needs Docker.
 <!-- /readme-script -->
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
-> ✅ passed · verify: make readme-check
-
 To develop ki-dev with ki-dev, install it apart from the source tree:
 own venv, symlink in `~/.local/bin`. Finish running jobs before an
 update ([details, German](docs/self-development.de.md)).
@@ -640,6 +638,8 @@ make setup-runtime
 export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```
+
+> ✅ Run in an empty container · [test](tests/readme/test_2_runtime.sh)
 <!-- /readme-script -->
 
 Further reading (German): [executor and profiles](docs/ausfuehrer.de.md) ·

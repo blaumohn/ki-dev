@@ -6,6 +6,7 @@ echten Lauf deckt make readme-check auf dem Host ab.
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -51,10 +52,10 @@ def test_failed_build_sets_all_not_run(repo, tmp_path):
     assert "Error 3" in err
     assert (tmp_path / "calls").read_text() == "build check\n"
     for name, not_run in (
-        ("README.md", "> nicht ausgeführt"),
-        ("README.en.md", "> not run"),
+        ("README.md", "> Im letzten Prüflauf nicht ausgeführt"),
+        ("README.en.md", "> Not run in the last check"),
     ):
-        lines = _status_lines(repo / name)
+        lines = _status_lines(repo / name).values()
         assert lines
         assert all(line.startswith(not_run) for line in lines)
 
@@ -66,13 +67,12 @@ def test_run_results_set_status_lines(repo, tmp_path):
         "build check",
         "run --rm check",
     ]
-    text = (repo / "README.md").read_text()
-    block = text.split("readme-scripts/4-auftrag.sh -->\n", 1)[1]
-    assert block.startswith("> ✅ bestanden")
-    assert (
-        text.count("> nicht ausgeführt")
-        == len(_status_lines(repo / "README.md")) - 1
+    lines = _status_lines(repo / "README.md")
+    assert lines["readme-scripts/4-auftrag.sh"].startswith(
+        "> ✅ Im leeren Container ausgeführt"
     )
+    not_run = [line for line in lines.values() if "nicht aus" in line]
+    assert len(not_run) == len(lines) - 1
 
 
 def _make(repo, tmp_path, **env):
@@ -87,10 +87,18 @@ def _make(repo, tmp_path, **env):
         )
 
 
-def _status_lines(readme: Path) -> list[str]:
-    lines = readme.read_text().splitlines()
-    return [
-        lines[i + 1]
-        for i, line in enumerate(lines[:-1])
-        if line.startswith("<!-- readme-script:")
-    ]
+def _status_lines(readme: Path) -> dict[str, str]:
+    """Statuszeile je Skript: nach dem letzten bash-Block des Blocks."""
+    blocks = re.findall(
+        r"^<!-- readme-script: (\S+) -->\n"
+        r"(.*?)^<!-- /readme-script -->",
+        readme.read_text(),
+        re.MULTILINE | re.DOTALL,
+    )
+    status = {}
+    for script, body in blocks:
+        lines = body.splitlines()
+        opening = len(lines) - 1 - lines[::-1].index("```bash")
+        close = lines.index("```", opening + 1)
+        status[script] = lines[close + 2]
+    return status

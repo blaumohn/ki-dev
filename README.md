@@ -169,8 +169,6 @@ jedem Vorgang mit Abnahmekriterien, hier ein kleiner Bug: `add(a, b)`
 liefert `a - b`.
 
 <!-- readme-script: readme-scripts/4-auftrag.sh -->
-> ✅ bestanden · selbst prüfen: make readme-check
-
 Im ki-dev-Klon nach [Ausprobieren](#ausprobieren-ohne-agenten): `bd`
 liegt im Projekt-venv. Ein Wegwerf-Repo `calc` mit dem Bug, daneben der
 Arbeits-Worktree `calc-work` der Agenten mit eigenem Beads-Projekt und
@@ -198,6 +196,8 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 ```
 
+> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_4_auftrag.sh)
+
 `$BEAD` ist die ID des Auftrags, etwa `calc-7k2`; Schritt 4 nutzt sie im
 selben Terminal, in `calc-work`.
 <!-- /readme-script -->
@@ -216,12 +216,12 @@ an Codex und Claude Code. Halt und Fortsetzen regelt
 Schutzgrenzen hat heute nur `implement` ([Roadmap](#roadmap)).
 
 <!-- readme-script: readme-scripts/5-starten.sh -->
-> ⏳ ungeprüft · läuft bis zum ersten Agentenaufruf, der braucht echte Sitzungen · selbst prüfen: make readme-check
-
 ```bash
 ki-dev -f implement "$BEAD" --run-id add-fix
 ki-dev -f implement status add-fix
 ```
+
+> ⏳ Ungeprüft: läuft bis zum ersten Agentenaufruf, der braucht echte Sitzungen · [Test](tests/readme/test_5_starten.sh)
 
 Ablauf `implement` mit dem Profil `default` aus Schritt 2, Lauf
 `add-fix`; `status` zeigt, wo er steht. Nach einem Halt setzt
@@ -344,8 +344,6 @@ stateDiagram-v2
 ## Ausprobieren ohne Agenten
 
 <!-- readme-script: readme-scripts/1-setup.sh -->
-> ✅ bestanden · selbst prüfen: make readme-check
-
 Die Demo legt ein Wegwerf-Repo mit Auftrag und Profil an; Mock-Umsetzer
 und Mock-Review (`fix`, dann `PASS`) spielen das Beispiel ohne
 Anbieterzugang durch. Statuszeile und Ausgabe stammen aus
@@ -361,6 +359,8 @@ cd ki-dev
 make setup
 make demo
 ```
+
+> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_1_setup.sh)
 
 ```text
 {
@@ -490,8 +490,6 @@ stateDiagram-v2
 ```
 
 <!-- readme-script: readme-scripts/6-map-step.sh -->
-> ✅ bestanden · selbst prüfen: make readme-check
-
 Ohne Agenten von Hand durchspielen, im ki-dev-Klon begonnen: ein
 Wegwerf-Repo mit Beads-Projekt, darin die Leitlinien von ki-dev (die
 Übergaben von `map` tragen die Leitlinien des Ziel-Repos aus
@@ -516,6 +514,8 @@ ki-dev flow show map
 ki-dev -f map step "$BEAD" map
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
+
+> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_6_map_step.sh)
 
 ```text
 Empfänger: Umsetzer (bisherige Sitzung)
@@ -617,13 +617,13 @@ Gute Einstiege, je mit klarer Abnahme:
 Mehr dazu: [Was in der Architektur fehlt](docs/ausfuehrer-luecken.de.md).
 
 <!-- readme-script: readme-scripts/7-entwickeln.sh -->
-> ⏳ ungeprüft · Entwicklerbefehle; make readme-check ist dieser Lauf selbst · selbst prüfen: make readme-check
-
 ```bash
 make test
 make spec-test
 make readme-check
 ```
+
+> ⏳ Ungeprüft: Entwicklerbefehle; make readme-check ist dieser Lauf selbst · [Test](tests/readme/test_7_entwickeln.sh)
 
 `make test`: pytest und ruff. `make spec-test`: Anforderungstests, rote
 Ergebnisse sind zulässig. `make readme-check`: alle README-Befehle im
@@ -631,8 +631,6 @@ Wegwerf-Container, setzt die Statuszeilen, braucht Docker.
 <!-- /readme-script -->
 
 <!-- readme-script: readme-scripts/2-runtime.sh -->
-> ✅ bestanden · selbst prüfen: make readme-check
-
 Wer ki-dev mit ki-dev weiterentwickelt, installiert es getrennt vom
 Quellbaum: eigenes venv, Symlink in `~/.local/bin`. Vor einem Update
 laufende Läufe abschließen ([Details](docs/self-development.de.md)).
@@ -642,6 +640,8 @@ make setup-runtime
 export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```
+
+> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_2_runtime.sh)
 <!-- /readme-script -->
 
 Weiterlesen: [Ausführer und Profile](docs/ausfuehrer.de.md) ·

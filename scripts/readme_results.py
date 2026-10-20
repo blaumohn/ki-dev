@@ -3,8 +3,10 @@
 tests/readme/lib.sh schreibt je README-Skript DIR/<Name ohne .sh>.json:
 eine JSON-Liste mit einem Eintrag je Parameter (RESULT_SCHEMA). Daraus
 entstehen Statuszeile und Ausgabeblock eines README-Blocks, DE und EN.
-Kein Datum in der README: zwei Läufe ergäben sonst ohne Grund einen
-Diff; die Frische sichert der pre-push-Hook (.beads/hooks/pre-push).
+Die Statuszeile sagt, was geprüft wurde, und verlinkt den Test des
+Skripts. Kein Datum in der README: zwei Läufe ergäben sonst ohne Grund
+einen Diff; die Frische sichert der pre-push-Hook
+(.beads/hooks/pre-push).
 """
 
 from __future__ import annotations
@@ -14,24 +16,25 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-VERIFY = "make readme-check"
 TEXT = {
     "README.md": {
-        "passed": "bestanden",
-        "failed": "fehlgeschlagen",
-        "skipped": "ungeprüft",
-        "stub": "ungeprüft",
-        "not_run": "nicht ausgeführt",
-        "verify": "selbst prüfen",
+        "passed": "Im leeren Container ausgeführt",
+        "failed": "Im leeren Container fehlgeschlagen",
+        "skipped": "Im leeren Container übersprungen",
+        "stub": "Ungeprüft",
+        "not_run": "Im letzten Prüflauf nicht ausgeführt",
+        "container": "Im leeren Container",
+        "test": "Test",
         "reason": "grund_de",
     },
     "README.en.md": {
-        "passed": "passed",
-        "failed": "failed",
-        "skipped": "not checked",
-        "stub": "not checked",
-        "not_run": "not run",
-        "verify": "verify",
+        "passed": "Run in an empty container",
+        "failed": "Failed in an empty container",
+        "skipped": "Skipped in an empty container",
+        "stub": "Not checked",
+        "not_run": "Not run in the last check",
+        "container": "In an empty container",
+        "test": "test",
         "reason": "grund_en",
     },
 }
@@ -145,23 +148,28 @@ def entry_problems(
     return problems
 
 
-def status_line(readme: str, entries: list[dict] | None) -> str:
+def status_line(
+    readme: str, entries: list[dict] | None, test: str | None = None
+) -> str:
+    """``> ✅ Im leeren Container ausgeführt · [Test](tests/…)``."""
     text = TEXT[readme]
     if entries is None:
-        parts = [text["not_run"]]
+        status = text["not_run"]
     elif len(entries) == 1 and not entries[0]["parameter"]:
-        parts = [single_status(text, entries[0])]
+        status = single_status(text, entries[0])
     else:
         parts = [parameter_status(text, entry) for entry in entries]
-    parts.append(f"{text['verify']}: {VERIFY}")
-    return "> " + " · ".join(parts)
+        status = f"{text['container']}: " + " · ".join(parts)
+    if test:
+        status += f" · [{text['test']}]({test})"
+    return f"> {status}"
 
 
 def single_status(text: dict[str, str], entry: dict) -> str:
     result = entry["ergebnis"]
     status = f"{SYMBOL[result]} {text[result]}"
     if result == "stub":
-        status += f" · {entry[text['reason']]}"
+        status += f": {entry[text['reason']]}"
     return status
 
 

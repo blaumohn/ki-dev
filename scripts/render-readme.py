@@ -2,26 +2,31 @@
 lebenslauf-web-vorlage: scripts/gen-readme.py,
 scripts/check-readme-en-sync.py).
 
-Ein Skript ist ausführbar und zugleich Markdown: ``# ``-Zeilen werden
-Prosa, die übrigen Zeilen Code zwischen ``# ```bash`` und ``# ````.
-Codezeilen tragen keine Kommentare; Erklärungen stehen als Prosa davor.
-README.md nimmt readme-scripts/*.sh, README.en.md
-readme-scripts/en/*.sh:
+Ein Skript ist ausführbar und zugleich Markdown: Zeilen, die mit ``#``
+beginnen, werden Prosa (auch in einem HERE-Doc), die übrigen Zeilen
+Code zwischen ``# ```bash`` und ``# ````. Codezeilen dürfen einen
+Halbsatz als Zeilenend-Kommentar tragen (``  # …``); der
+Befehlsvergleich DE/EN lässt ihn weg. README.md nimmt
+readme-scripts/*.sh, README.en.md readme-scripts/en/*.sh:
 
     <!-- readme-script: readme-scripts/1-setup.sh -->
-    > ✅ bestanden · selbst prüfen: make readme-check
     …Prosa und bash-Block aus dem Skript…
+
+    > ✅ Im leeren Container ausgeführt · [Test](tests/readme/…)
+
     ```text
     …Ausgabeblock…
     ```
     …Prosa aus dem Skript…
     <!-- /readme-script -->
 
-Statuszeile und Ausgabeblock kommen aus einem Lauf von make readme-check
-(Format: scripts/readme_results.py). Nur --write DIR setzt sie aus DIR;
-ohne --write bleiben sie, wie sie in der README stehen, ein neuer Block
-beginnt mit „nicht ausgeführt“. Der Ausgabeblock folgt direkt dem
-letzten bash-Block; dort darf das Skript selbst keinen text-Block haben.
+Statuszeile und Ausgabeblock folgen direkt dem letzten bash-Block und
+kommen aus einem Lauf von make readme-check (Format:
+scripts/readme_results.py); die Statuszeile verlinkt den Test des
+Skripts (tests/readme/test_<Name>.sh oder .py). Nur --write DIR setzt
+sie aus DIR; ohne --write bleiben sie, wie sie in der README stehen, ein
+neuer Block beginnt mit „nicht ausgeführt“. Direkt nach dem letzten
+bash-Block darf das Skript selbst keinen text-Block haben.
 
 Standard schreibt abweichende READMEs; --check meldet Abweichungen ohne
 zu schreiben. --staged prüft zusätzlich, dass eine gestagte deutsche
@@ -52,6 +57,10 @@ STRIP_PREFIX = re.compile(r"^# ?")
 FENCE_MARKER = "```"
 BASH_FENCE = "```bash"
 TEXT_FENCE = "```text"
+TESTS_DIR = Path("tests/readme")
+TEST_SUFFIXES = (".sh", ".py")
+LINE_COMMENT = re.compile(r"\s+# .*$")
+TEST_LINK = re.compile(r" · \[[Tt]est\]\([^)]*\)$")
 BLOCK = re.compile(
     r"^<!-- readme-script: (\S+) -->\n.*?^<!-- /readme-script -->$",
     re.MULTILINE | re.DOTALL,
@@ -144,7 +153,9 @@ def output_slot_problems(scripts_dir: Path) -> list[str]:
         f"{script}: text-Block direkt nach dem letzten bash-Block "
         "ist der Ausgabe aus make readme-check vorbehalten"
         for script in section_paths(scripts_dir)
-        if output_lines(render_body((ROOT / script).read_text()))
+        if text_block_after_bash(
+            render_body((ROOT / script).read_text())
+        )
         is not None
     ]
 
@@ -156,52 +167,82 @@ def render_block(
     problems: list[str],
 ) -> str:
     script = match.group(1)
+    test = test_path(script)
     if results is None:
-        line, output = kept_status(match.group(0), readme)
+        line, output = kept_status(match.group(0), readme, test)
     else:
         entries = results.get(Path(script).name)
-        line, output = status_line(readme, entries), excerpt(entries)
+        line = status_line(readme, entries, test)
+        output = excerpt(entries)
     body = render_body((ROOT / script).read_text())
-    if output and bash_close_index(body.split("\n")) is None:
-        problems.append(f"{script}: Ausgabe ohne bash-Block")
-    body = with_output(body, output)
+    if bash_close_index(body.split("\n")) is None:
+        problems.append(f"{script}: kein bash-Block")
+        return match.group(0)
+    body = with_status(body, line, output)
     return (
-        f"<!-- readme-script: {script} -->\n{line}\n\n{body}"
+        f"<!-- readme-script: {script} -->\n{body}"
         "<!-- /readme-script -->"
     )
 
 
+def test_path(script: str) -> str | None:
+    """Test des Skripts über den Dateinamen, wie tests/readme/lib.sh."""
+    stem = Path(script).stem.replace("-", "_")
+    for suffix in TEST_SUFFIXES:
+        test = TESTS_DIR / f"test_{stem}{suffix}"
+        if (ROOT / test).is_file():
+            return test.as_posix()
+    return None
+
+
 def kept_status(
-    block: str, readme: str
+    block: str, readme: str, test: str | None
 ) -> tuple[str, list[str] | None]:
-    """Statuszeile und Ausgabeblock, wie sie in der README stehen."""
+    """Statuszeile und Ausgabeblock, wie sie in der README stehen; der
+    Testlink folgt dem aktuellen Dateinamen."""
+    line, output = rendered_status(block)
+    if line is None:
+        return status_line(readme, None, test), output
+    link = status_line(readme, None, test).removeprefix(
+        status_line(readme, None)
+    )
+    return TEST_LINK.sub("", line) + link, output
+
+
+def rendered_status(block: str) -> tuple[str | None, list[str] | None]:
+    """Statuszeile und Ausgabe direkt nach dem letzten bash-Block."""
     lines = block.splitlines()
-    if len(lines) > 1 and lines[1].startswith("> "):
-        return lines[1], output_lines(block)
-    return status_line(readme, None), output_lines(block)
-
-
-def output_lines(text: str) -> list[str] | None:
-    """Zeilen des text-Blocks direkt nach dem letzten bash-Block."""
-    lines = text.splitlines()
-    close = bash_close_index(lines)
-    after = lines[close + 1 : close + 3] if close is not None else []
-    if after != ["", TEXT_FENCE]:
-        return None
-    start = close + 3
-    end = lines.index(FENCE_MARKER, start)
-    return lines[start:end]
-
-
-def with_output(body: str, output: list[str] | None) -> str:
-    if not output:
-        return body
-    lines = body.split("\n")
     close = bash_close_index(lines)
     if close is None:
-        return body  # gemeldet in render_block
-    block = ["", TEXT_FENCE, *output, FENCE_MARKER]
+        return None, None
+    after = lines[close + 1 : close + 3]
+    if len(after) == 2 and after[0] == "" and after[1].startswith("> "):
+        return after[1], text_block_at(lines, close + 3)
+    return None, text_block_at(lines, close + 1)
+
+
+def with_status(body: str, line: str, output: list[str] | None) -> str:
+    lines = body.split("\n")
+    close = bash_close_index(lines)
+    block = ["", line]
+    if output:
+        block += ["", TEXT_FENCE, *output, FENCE_MARKER]
     return "\n".join(lines[: close + 1] + block + lines[close + 1 :])
+
+
+def text_block_after_bash(text: str) -> list[str] | None:
+    lines = text.splitlines()
+    close = bash_close_index(lines)
+    return None if close is None else text_block_at(lines, close + 1)
+
+
+def text_block_at(lines: list[str], index: int) -> list[str] | None:
+    """Zeilen eines text-Blocks nach einer Leerzeile bei index."""
+    if lines[index : index + 2] != ["", TEXT_FENCE]:
+        return None
+    start = index + 2
+    end = lines.index(FENCE_MARKER, start)
+    return lines[start:end]
 
 
 def bash_close_index(lines: list[str]) -> int | None:
@@ -248,7 +289,7 @@ def command_parity_problems() -> list[str]:
 def extract_commands(script: Path) -> list[str]:
     body = render_body((ROOT / script).read_text())
     return [
-        line.rstrip()
+        LINE_COMMENT.sub("", line).rstrip()
         for block in fenced_blocks(body)
         for line in block.splitlines()
         if line.strip()

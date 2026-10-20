@@ -18,7 +18,9 @@ DE = "readme-scripts/1-setup.sh"
 EN = "readme-scripts/en/1-setup.sh"
 READMES = ("README.md", "README.en.md")
 LATER = "2026-10-21T09:30:00Z"
-CHECK = "make readme-check"
+TEST = "tests/readme/test_1_setup.sh"
+DE_LINK = f"[Test]({TEST})"
+EN_LINK = f"[test]({TEST})"
 BLOCK_RE = re.compile(
     r"^<!-- readme-script: \S*1-setup\.sh -->\n"
     r".*?^<!-- /readme-script -->\n",
@@ -32,7 +34,11 @@ def repo(tmp_path):
         path.relative_to(ROOT)
         for path in (ROOT / "readme-scripts").rglob("*.sh")
     )
-    for name in (RENDER, RESULTS_MODULE, *scripts, *READMES):
+    tests = (
+        path.relative_to(ROOT)
+        for path in (ROOT / "tests/readme").glob("test_*")
+    )
+    for name in (RENDER, RESULTS_MODULE, *scripts, *tests, *READMES):
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / name, tmp_path / name)
     return tmp_path
@@ -95,6 +101,18 @@ def test_script_without_block_fails(repo, name):
     assert f"{name}: kein Block für {script}" in err
 
 
+def test_line_comments_may_differ_between_languages(repo):
+    for script, comment in ((DE, "Mock-Lauf"), (EN, "mock run")):
+        path = repo / script
+        path.write_text(
+            path.read_text().replace(
+                "\nmake demo\n", f"\nmake demo  # {comment}\n"
+            )
+        )
+    code, _, err = _render(repo, "--check")
+    assert "Befehle weichen voneinander ab" not in err
+
+
 def test_commands_differ_between_languages(repo):
     en = repo / EN
     en.write_text(en.read_text().replace("make demo", "make test"))
@@ -135,33 +153,34 @@ def test_new_block_starts_not_run(repo):
     )
     assert _render(repo)[0] == 0
     assert (
-        f"<!-- readme-script: {DE} -->\n"
-        "> nicht ausgeführt · selbst prüfen: make readme-check\n\n"
+        "make demo\n```\n\n"
+        f"> Im letzten Prüflauf nicht ausgeführt · [Test]({TEST})\n\n"
     ) in readme.read_text()
 
 
 def test_missing_result_is_not_run(repo, results):
     assert _render(repo, "--write", results)[0] == 0
     assert (
-        "> nicht ausgeführt · selbst prüfen: make readme-check\n"
+        f"> Im letzten Prüflauf nicht ausgeführt · [Test]({TEST})\n"
         in (repo / "README.md").read_text()
     )
-    assert "> not run · verify: make readme-check\n" in (
+    assert f"> Not run in the last check · [test]({TEST})\n" in (
         repo / "README.en.md"
     ).read_text()
 
 
-def test_passed_writes_output_after_bash(repo, results):
+def test_passed_line_and_output_follow_the_bash_block(repo, results):
     _result(results, "1-setup", "passed", auszug=['"status": "passed"'])
     assert _render(repo, "--write", results)[0] == 0
+    de, en = DE_LINK, EN_LINK
     for name, line in (
-        ("README.md", f"> ✅ bestanden · selbst prüfen: {CHECK}"),
-        ("README.en.md", f"> ✅ passed · verify: {CHECK}"),
+        ("README.md", f"> ✅ Im leeren Container ausgeführt · {de}"),
+        ("README.en.md", f"> ✅ Run in an empty container · {en}"),
     ):
         block = _block(repo / name)
-        assert block.splitlines()[1] == line
+        assert not block.splitlines()[1].startswith("> ")
         assert (
-            "make demo\n```\n\n```text\n"
+            f"make demo\n```\n\n{line}\n\n```text\n"
             '"status": "passed"\n```\n\n`round_id: 2`'
         ) in block
         assert "2026-" not in block
@@ -171,8 +190,8 @@ def test_failed_has_no_output_block(repo, results):
     _result(results, "1-setup", "failed")
     assert _render(repo, "--write", results)[0] == 0
     de, en = (_block(repo / name) for name in READMES)
-    assert f"> ❌ fehlgeschlagen · selbst prüfen: {CHECK}" in de
-    assert "> ❌ failed · verify: make readme-check" in en
+    assert f"> ❌ Im leeren Container fehlgeschlagen · {DE_LINK}" in de
+    assert f"> ❌ Failed in an empty container · {EN_LINK}" in en
     assert "```text" not in de
 
 
@@ -180,12 +199,11 @@ def test_stub_shows_reason_per_language(repo, results):
     reasons = {"grund_de": "braucht X", "grund_en": "needs X"}
     _result(results, "1-setup", "stub", **reasons)
     assert _render(repo, "--write", results)[0] == 0
-    assert (
-        "> ⏳ ungeprüft · braucht X · selbst prüfen: make readme-check"
-        in _block(repo / "README.md")
+    assert f"> ⏳ Ungeprüft: braucht X · [Test]({TEST})" in _block(
+        repo / "README.md"
     )
-    assert "> ⏳ not checked · needs X · verify: make readme-check" in (
-        _block(repo / "README.en.md")
+    assert f"> ⏳ Not checked: needs X · [test]({TEST})" in _block(
+        repo / "README.en.md"
     )
 
 
@@ -197,9 +215,29 @@ def test_parameters_share_one_line(repo, results):
     (results / "1-setup.json").write_text(json.dumps(entries))
     assert _render(repo, "--write", results)[0] == 0
     assert (
-        "> ✅ mock · ⏳ claude · selbst prüfen: make readme-check"
+        f"> Im leeren Container: ✅ mock · ⏳ claude · [Test]({TEST})"
         in _block(repo / "README.md")
     )
+
+
+def test_without_test_file_no_link(repo, results):
+    (repo / TEST).unlink()
+    _result(results, "1-setup", "passed")
+    assert _render(repo, "--write", results)[0] == 0
+    assert "> ✅ Im leeren Container ausgeführt\n" in _block(
+        repo / "README.md"
+    )
+
+
+def test_kept_status_follows_the_test_file(repo, results):
+    _result(results, "1-setup", "passed")
+    assert _render(repo, "--write", results)[0] == 0
+    (repo / TEST).rename(repo / "tests/readme/test_1_setup.py")
+    assert _render(repo)[0] == 0
+    assert (
+        "> ✅ Im leeren Container ausgeführt · "
+        "[Test](tests/readme/test_1_setup.py)\n"
+    ) in _block(repo / "README.md")
 
 
 def test_two_writes_give_the_same_readme(repo, results):
