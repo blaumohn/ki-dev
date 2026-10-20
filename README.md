@@ -227,17 +227,17 @@ flowchart TB
         verify_final_result
         fast_forward_integrate
     end
-    start -->|"1 run_started"| controller_step
-    controller_step -->|"2 controller_task<br/>7 fix"| worker_step_prepare
-    worker_step_prepare -->|"3, 8 worker_inputs_prepared"| worker_step
-    worker_step -->|"4, 9 worker_completed"| capture_step_result
-    capture_step_result -->|"5, 10 step_result_captured"| checkpoint
-    checkpoint -->|"6, 11 checkpoint_recorded"| controller_step
-    controller_step -->|"12 PASS"| freeze_reviewed_result
-    freeze_reviewed_result -->|"13 reviewed_result_frozen"| finalize_history
-    finalize_history -->|"14 history_finalized"| verify_final_result
-    verify_final_result -->|"15 final_result_verified"| fast_forward_integrate
-    fast_forward_integrate -->|"16 integration_completed"| passed
+    start -->|"① run_started"| controller_step
+    controller_step -->|"② controller_task<br/>⑦ fix"| worker_step_prepare
+    worker_step_prepare -->|"③ ⑧ worker_inputs_prepared"| worker_step
+    worker_step -->|"④ ⑨ worker_completed"| capture_step_result
+    capture_step_result -->|"⑤ ⑩ step_result_captured"| checkpoint
+    checkpoint -->|"⑥ ⑪ checkpoint_recorded"| controller_step
+    controller_step -->|"⑫ PASS"| freeze_reviewed_result
+    freeze_reviewed_result -->|"⑬ reviewed_result_frozen"| finalize_history
+    finalize_history -->|"⑭ history_finalized"| verify_final_result
+    verify_final_result -->|"⑮ final_result_verified"| fast_forward_integrate
+    fast_forward_integrate -->|"⑯ integration_completed"| passed
 ```
 
 Jeder Zwischenstand liegt als Artefakt im Laufverzeichnis; ein Halt lässt
