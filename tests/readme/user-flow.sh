@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # README-Einrichtung wie ein Besucher: aus einem leeren Verzeichnis klonen,
-# readme-scripts/1-setup.sh ausführen, Demo-Endzustand, README-Abschnitte,
-# Tests, Lint.
+# dann je README-Skript seinen Test (tests/readme/test_*.sh, Helfer in
+# lib.sh), README-Abschnitte, Tests, Lint. Reihenfolge und Arbeitsverzeichnis
+# legt dieser Ablauf fest; jeder Test schreibt sein Ergebnis nach
+# $README_RESULTS_DIR. Scheitert ein Test, bleiben die folgenden Skripte
+# ohne Ergebnis („nicht ausgeführt“).
 #
 # Läuft im Wegwerf-Container (make readme-check, compose.readme-check.yaml).
 # Geprüft wird der lokale Arbeitsstand: versionierte Änderungen und
 # unversionierte, nicht ignorierte Dateien, committet nur im temporären Klon.
-set -euo pipefail
-set -E
-shopt -s inherit_errexit
-trap 'echo "[readme-check] Fehler in Zeile $LINENO: $BASH_COMMAND" >&2' ERR
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SOURCE_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK_BASE="${READMECHECK_WORK_BASE:-$(mktemp -d)}"
@@ -18,7 +18,7 @@ git_daemon_pid=""
 staging_dir=""
 
 main() {
-  local user_dir log
+  local user_dir
   trap 'stop_git_server' EXIT
   mkdir -p "$WORK_BASE" "$HOME"
 
@@ -27,20 +27,21 @@ main() {
   step "Git-Server starten"
   start_git_server "$staging_dir"
 
+  export README_SCRIPTS_DIR="$staging_dir/readme-scripts"
+  export README_LOG_DIR="$WORK_BASE/logs"
+
   step "README-Einrichtung aus leerem Verzeichnis"
   user_dir="$(mktemp -d "$WORK_BASE/visitor-XXXXXX")"
-  log="$WORK_BASE/einrichten.log"
-  (cd "$user_dir" && bash -eu -o pipefail \
-    "$staging_dir/readme-scripts/1-setup.sh") 2>&1 | tee "$log"
-  step "Demo-Endzustand prüfen"
-  check_demo_result "$log"
+  cd "$user_dir"
+  run_readme_test "$staging_dir/tests/readme/test_1_setup.sh"
 
+  # Ab hier wie ein Besucher nach 1-setup.sh: im ki-dev-Klon.
   cd "$user_dir/ki-dev"
   step "README-Abschnitte gegen readme-scripts prüfen"
   .venv/bin/python scripts/render-readme.py --check
-  step "Separate Runtime und Update prüfen"
-  bash -eu -o pipefail readme-scripts/2-runtime.sh
-  check_runtime_installation
+  step "Übrige README-Skripte im Klon des Besuchers"
+  run_readme_test "$staging_dir/tests/readme/test_2_runtime.sh"
+  run_readme_test "$staging_dir/tests/readme/test_3_review_gate.sh"
   step "Tests und Lint im Klon des Besuchers"
   # bd liegt im venv; Tests finden es wie bei aktiviertem venv im PATH.
   PATH="$PWD/.venv/bin:$PATH" .venv/bin/pytest -q -m "not docker"
@@ -50,23 +51,6 @@ main() {
 
 step() {
   echo "[readme-check] $*" >&2
-}
-
-check_runtime_installation() {
-  local runtime="${XDG_DATA_HOME:-$HOME/.local/share}/ki-dev/venv"
-  local module=src/ki_dev/runtime_setup_probe.py
-  local installed="$runtime/bin/python"
-  # Nur im Besucher-Klon: gleichbleibende Paketversion, neuer Quellinhalt.
-  printf 'VALUE = "first"\n' > "$module"
-  make setup-runtime
-  "$installed" -I -c 'from ki_dev.runtime_setup_probe import VALUE; assert VALUE == "first"'
-  printf 'VALUE = "second"\n' > "$module"
-  "$installed" -I -c 'from ki_dev.runtime_setup_probe import VALUE; assert VALUE == "first"'
-  make setup-runtime
-  "$installed" -I -c 'from ki_dev.runtime_setup_probe import VALUE; assert VALUE == "second"'
-  [[ $(readlink "$HOME/.local/bin/ki-dev") == "$runtime/bin/ki-dev" ]]
-  "$HOME/.local/bin/ki-dev" --help >/dev/null
-  rm "$module"
 }
 
 # Klon des Quell-Repos mit dessen Arbeitsstand, committet nur im Klon.
@@ -129,20 +113,6 @@ stop_git_server() {
     kill "$git_daemon_pid" 2>/dev/null || true
     wait "$git_daemon_pid" 2>/dev/null || true
   fi
-}
-
-# `ki-dev -f implement` gibt den Endzustand als JSON-Objekt ab einer Zeile "{" aus.
-check_demo_result() {
-  python3 - "$1" <<'PY'
-import json, re, sys
-text = open(sys.argv[1]).read()
-start = re.search(r"^\{$", text, re.MULTILINE)
-if start is None:
-    sys.exit("Demo-Endzustand fehlt in der Ausgabe")
-result, _ = json.JSONDecoder().raw_decode(text[start.start():])
-if (result.get("status"), result.get("round_id")) != ("passed", 2):
-    sys.exit(f"Demo-Endzustand {result!r} statt status passed, round_id 2")
-PY
 }
 
 # Nur direkt aufgerufen ausführen; Tests laden die Funktionen per source.
