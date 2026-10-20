@@ -41,6 +41,10 @@ main() {
   .venv/bin/python scripts/render-readme.py --check
   step "Übrige README-Skripte im Klon des Besuchers"
   run_readme_test "$staging_dir/tests/readme/test_2_runtime.sh"
+  run_readme_test "$staging_dir/tests/readme/test_4_auftrag.sh"
+  run_readme_test "$staging_dir/tests/readme/test_5_starten.sh"
+  run_readme_test "$staging_dir/tests/readme/test_6_map_step.sh"
+  run_readme_test "$staging_dir/tests/readme/test_7_entwickeln.sh"
   step "Tests und Lint im Klon des Besuchers"
   # bd liegt im venv; Tests finden es wie bei aktiviertem venv im PATH.
   PATH="$PWD/.venv/bin:$PATH" .venv/bin/pytest -q -m "not docker"

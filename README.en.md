@@ -162,13 +162,27 @@ A human (`manual`), a mock or another model: only `executor` changes
 The flow fits any issue with acceptance criteria, here a small bug:
 `add(a, b)` returns `a - b`.
 
+<!-- readme-script: readme-scripts/en/4-auftrag.sh -->
+> not run · verify: make readme-check
+
+In the ki-dev clone after [Try it](#try-it-without-agents): `bd` lives
+in the project venv, the task goes into a throwaway repo with its own
+Beads project.
+
 ```bash
-bd create "add() does not add" \
+export PATH="$PWD/.venv/bin:$PATH"
+cd "$(mktemp -d)" && git init -q
+bd init --quiet --prefix calc --stealth --non-interactive
+BEAD="$(bd create "add() does not add" \
   --description "add(2, 3) returns -1" \
   --design "fix add.py; do not change test_add.py" \
-  --acceptance "add(2, 3) == 5 and add(-1, 1) == 0"
-# → calc-7k2, the task ID
+  --acceptance "add(2, 3) == 5 and add(-1, 1) == 0" \
+  --silent)"
+echo "$BEAD"
 ```
+
+`$BEAD` is the task ID, e.g. `calc-7k2`; step 4 uses it.
+<!-- /readme-script -->
 
 Which issue a run gets is a human's choice today; there is no walk
 through the bead graph yet ([Roadmap](#roadmap)).
@@ -183,11 +197,19 @@ executors pass the handoffs to Codex and Claude Code.
 for every flow; today only `implement` has the safety limits
 ([Layers](#layers)).
 
+<!-- readme-script: readme-scripts/en/5-starten.sh -->
+> not run · verify: make readme-check
+
 ```bash
-ki-dev -f implement calc-7k2         # flow implement, profile default
-ki-dev -f implement status RUN_ID    # where is the run?
-ki-dev -f implement resume RUN_ID    # continue after a halt
+ki-dev -f implement "$BEAD"
+ki-dev -f implement status RUN_ID
+ki-dev -f implement resume RUN_ID
 ```
+
+Flow `implement` with the profile `default` from step 2; `status` shows
+where the run is, `resume` continues after a halt. `RUN_ID` is in the
+output of the first command (`run_id`).
+<!-- /readme-script -->
 
 **Status of this example:** flow, profile format and commands are real,
 the Codex and Claude Code adapters are built. Still open: an accepted run
@@ -448,13 +470,39 @@ stateDiagram-v2
     finished --> [*]
 ```
 
-Play it through by hand, without agents:
+<!-- readme-script: readme-scripts/en/6-map-step.sh -->
+> not run · verify: make readme-check
+
+Play it through by hand, without agents, starting in the ki-dev clone:
+a throwaway repo with a Beads project, ki-dev's guidelines in it (the
+handoffs of `map` carry the target repo's guidelines from
+`docs/policies/`), a mapping task with a source (`source_refs`) and the
+review's verdict as a file.
 
 ```bash
-ki-dev flow show map                                    # flow as Mermaid
-ki-dev -f map step BEAD map                             # handoff to the mapping agent
-ki-dev -f map step BEAD map.review map.review=verdict.json  # return verdict, next handoff
+export PATH="$PWD/.venv/bin:$PATH"
+POLICIES="$PWD/docs/policies"
+cd "$(mktemp -d)" && git init -q
+bd init --quiet --prefix calc --stealth --non-interactive
+mkdir docs && cp -r "$POLICIES" docs/
+BEAD="$(bd create "Map the notes on add()" \
+  --description "Source map of notes.md" \
+  --acceptance "1. Every section of notes.md is mapped" \
+  --metadata '{"handoff": {"source_refs": ["notes.md"]}}' \
+  --silent)"
+cat >verdict.json <<'EOF'
+{"event": "fix", "detail": "Section 2 is not mapped", "requirement_ref": "AC1"}
+EOF
+ki-dev flow show map
+ki-dev -f map step "$BEAD" map
+ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
+
+`flow show` prints the flow as Mermaid (above), the first `step` the
+handoff to the mapping agent. The second returns the verdict `fix` and
+prints the handoff to the correction (German), here without the line
+with the bead ID.
+<!-- /readme-script -->
 
 The next flow of this kind is already cut into beads: folding planning
 sessions and design notes into the overall plan ([Roadmap](#roadmap)).
@@ -538,11 +586,19 @@ Good first tasks, each with a clear finish line:
 
 More: [what the architecture still lacks (German)](docs/ausfuehrer-luecken.de.md).
 
+<!-- readme-script: readme-scripts/en/7-entwickeln.sh -->
+> not run · verify: make readme-check
+
 ```bash
-make test           # pytest and ruff
-make spec-test      # requirement tests; red results are allowed
-make readme-check   # README setup in a throwaway container, needs Docker
+make test
+make spec-test
+make readme-check
 ```
+
+`make test`: pytest and ruff. `make spec-test`: requirement tests, red
+results are allowed. `make readme-check`: every README command in a
+throwaway container, sets the status lines, needs Docker.
+<!-- /readme-script -->
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
 > not run · verify: make readme-check

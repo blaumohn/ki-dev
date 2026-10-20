@@ -162,13 +162,27 @@ Ein Mensch (`manual`), ein Mock oder ein anderes Modell: Es wechselt nur
 Der Ablauf passt zu jedem Vorgang mit Abnahmekriterien, hier ein kleiner
 Bug: `add(a, b)` liefert `a - b`.
 
+<!-- readme-script: readme-scripts/4-auftrag.sh -->
+> nicht ausgeführt · selbst prüfen: make readme-check
+
+Im ki-dev-Klon nach [Ausprobieren](#ausprobieren-ohne-agenten): `bd`
+liegt im Projekt-venv, der Auftrag entsteht in einem Wegwerf-Repo mit
+eigenem Beads-Projekt.
+
 ```bash
-bd create "add() addiert nicht" \
-  --description "add(2, 3) liefert -1" \
-  --design "add.py korrigieren; test_add.py nicht ändern" \
-  --acceptance "add(2, 3) == 5 und add(-1, 1) == 0"
-# → rechner-7k2, die ID des Auftrags
+export PATH="$PWD/.venv/bin:$PATH"
+cd "$(mktemp -d)" && git init -q
+bd init --quiet --prefix calc --stealth --non-interactive
+BEAD="$(bd create "add() does not add" \
+  --description "add(2, 3) returns -1" \
+  --design "fix add.py; do not change test_add.py" \
+  --acceptance "add(2, 3) == 5 and add(-1, 1) == 0" \
+  --silent)"
+echo "$BEAD"
 ```
+
+`$BEAD` ist die ID des Auftrags, etwa `calc-7k2`; Schritt 4 nutzt sie.
+<!-- /readme-script -->
 
 Welchen Vorgang ein Lauf bekommt, wählt heute der Mensch; einen Durchgang
 durch den Bead-Graphen gibt es noch nicht ([Roadmap](#roadmap)).
@@ -183,11 +197,19 @@ Fortsetzen regelt [`run.toml`](src/ki_dev/runner/run.toml) für jeden
 Ablauf gleich; die Schutzgrenzen hat heute nur `implement`
 ([Ebenen](#ebenen)).
 
+<!-- readme-script: readme-scripts/5-starten.sh -->
+> nicht ausgeführt · selbst prüfen: make readme-check
+
 ```bash
-ki-dev -f implement rechner-7k2      # Ablauf implement, Profil default
-ki-dev -f implement status RUN_ID    # wo steht der Lauf?
-ki-dev -f implement resume RUN_ID    # nach einem Halt weiter
+ki-dev -f implement "$BEAD"
+ki-dev -f implement status RUN_ID
+ki-dev -f implement resume RUN_ID
 ```
+
+Ablauf `implement` mit dem Profil `default` aus Schritt 2; `status`
+zeigt, wo der Lauf steht, `resume` setzt ihn nach einem Halt fort.
+`RUN_ID` steht in der Ausgabe des ersten Befehls (`run_id`).
+<!-- /readme-script -->
 
 **Stand dieses Beispiels:** Ablauf, Profilformat und Befehle sind echt,
 die Adapter für Codex und Claude Code gebaut. Noch offen: ein abgenommener
@@ -448,13 +470,39 @@ stateDiagram-v2
     finished --> [*]
 ```
 
-Ohne Agenten von Hand durchspielen:
+<!-- readme-script: readme-scripts/6-map-step.sh -->
+> nicht ausgeführt · selbst prüfen: make readme-check
+
+Ohne Agenten von Hand durchspielen, im ki-dev-Klon begonnen: ein
+Wegwerf-Repo mit Beads-Projekt, darin die Leitlinien von ki-dev (die
+Übergaben von `map` tragen die Leitlinien des Ziel-Repos aus
+`docs/policies/`), ein Kartierungsauftrag mit Quelle (`source_refs`) und
+das Urteil des Reviews als Datei.
 
 ```bash
-ki-dev flow show map                                    # Ablauf als Mermaid
-ki-dev -f map step BEAD map                             # Übergabe an den Kartierungsagenten
-ki-dev -f map step BEAD map.review map.review=urteil.json  # Urteil zurück, nächste Übergabe
+export PATH="$PWD/.venv/bin:$PATH"
+POLICIES="$PWD/docs/policies"
+cd "$(mktemp -d)" && git init -q
+bd init --quiet --prefix calc --stealth --non-interactive
+mkdir docs && cp -r "$POLICIES" docs/
+BEAD="$(bd create "Map the notes on add()" \
+  --description "Source map of notes.md" \
+  --acceptance "1. Every section of notes.md is mapped" \
+  --metadata '{"handoff": {"source_refs": ["notes.md"]}}' \
+  --silent)"
+cat >verdict.json <<'EOF'
+{"event": "fix", "detail": "Section 2 is not mapped", "requirement_ref": "AC1"}
+EOF
+ki-dev flow show map
+ki-dev -f map step "$BEAD" map
+ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
+
+`flow show` gibt den Ablauf als Mermaid aus (oben), der erste `step` die
+Übergabe an den Kartierungsagenten. Der zweite nimmt das Urteil `fix`
+zurück und gibt die Übergabe an die Korrektur aus, hier ohne die Zeile
+mit der Bead-ID.
+<!-- /readme-script -->
 
 Nächster Ablauf dieser Art, schon als Beads geschnitten: Planungssitzungen
 und Designnotizen in die Gesamtplanung einarbeiten ([Roadmap](#roadmap)).
@@ -539,11 +587,19 @@ Gute Einstiege, je mit klarer Abnahme:
 
 Mehr dazu: [Was in der Architektur fehlt](docs/ausfuehrer-luecken.de.md).
 
+<!-- readme-script: readme-scripts/7-entwickeln.sh -->
+> nicht ausgeführt · selbst prüfen: make readme-check
+
 ```bash
-make test           # pytest und ruff
-make spec-test      # Anforderungstests; rote Ergebnisse sind zulässig
-make readme-check   # README-Einrichtung im Wegwerf-Container, braucht Docker
+make test
+make spec-test
+make readme-check
 ```
+
+`make test`: pytest und ruff. `make spec-test`: Anforderungstests, rote
+Ergebnisse sind zulässig. `make readme-check`: alle README-Befehle im
+Wegwerf-Container, setzt die Statuszeilen, braucht Docker.
+<!-- /readme-script -->
 
 <!-- readme-script: readme-scripts/2-runtime.sh -->
 > nicht ausgeführt · selbst prüfen: make readme-check
