@@ -164,7 +164,7 @@ Der Ablauf passt zu jedem Vorgang mit Abnahmekriterien, hier ein kleiner
 Bug: `add(a, b)` liefert `a - b`.
 
 <!-- readme-script: readme-scripts/4-auftrag.sh -->
-> nicht ausgeführt · selbst prüfen: make readme-check
+> ✅ bestanden · selbst prüfen: make readme-check
 
 Im ki-dev-Klon nach [Ausprobieren](#ausprobieren-ohne-agenten): `bd`
 liegt im Projekt-venv, der Auftrag entsteht in einem Wegwerf-Repo mit
@@ -199,7 +199,7 @@ Ablauf gleich; die Schutzgrenzen hat heute nur `implement`
 ([Ebenen](#ebenen)).
 
 <!-- readme-script: readme-scripts/5-starten.sh -->
-> nicht ausgeführt · selbst prüfen: make readme-check
+> ⏳ ungeprüft · braucht echte Agenten; Mock-Fassung in Ausprobieren ohne Agenten · selbst prüfen: make readme-check
 
 ```bash
 ki-dev -f implement "$BEAD"
@@ -325,7 +325,7 @@ stateDiagram-v2
 ## Ausprobieren ohne Agenten
 
 <!-- readme-script: readme-scripts/1-setup.sh -->
-> nicht ausgeführt · selbst prüfen: make readme-check
+> ✅ bestanden · selbst prüfen: make readme-check
 
 Die Demo legt ein Wegwerf-Repo mit Auftrag und Profil an; Mock-Umsetzer
 und Mock-Review (`fix`, dann `PASS`) spielen das Beispiel ohne
@@ -341,6 +341,20 @@ git clone https://github.com/blaumohn/ki-dev.git ki-dev
 cd ki-dev
 make setup
 make demo
+```
+
+```text
+{
+  "run_id": "demo",
+  "status": "passed",
+  "phase": "passed",
+  "round_id": 2,
+  "detail": "Fast-forward integriert",
+  "operation_id": null
+}
+
+Geprüfter Abschluss (Demo)
+start
 ```
 
 `round_id: 2`: eine Korrekturrunde. `passed`: das Mock-Review hat
@@ -471,7 +485,7 @@ stateDiagram-v2
 ```
 
 <!-- readme-script: readme-scripts/6-map-step.sh -->
-> nicht ausgeführt · selbst prüfen: make readme-check
+> ✅ bestanden · selbst prüfen: make readme-check
 
 Ohne Agenten von Hand durchspielen, im ki-dev-Klon begonnen: ein
 Wegwerf-Repo mit Beads-Projekt, darin die Leitlinien von ki-dev (die
@@ -496,6 +510,18 @@ EOF
 ki-dev flow show map
 ki-dev -f map step "$BEAD" map
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
+```
+
+```text
+Empfänger: Umsetzer (bisherige Sitzung)
+
+Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
+Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
+
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
+- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
 ```
 
 `flow show` gibt den Ablauf als Mermaid aus (oben), der erste `step` die
@@ -588,7 +614,7 @@ Gute Einstiege, je mit klarer Abnahme:
 Mehr dazu: [Was in der Architektur fehlt](docs/ausfuehrer-luecken.de.md).
 
 <!-- readme-script: readme-scripts/7-entwickeln.sh -->
-> nicht ausgeführt · selbst prüfen: make readme-check
+> ⏳ ungeprüft · Entwicklerbefehle; make readme-check ist dieser Lauf selbst · selbst prüfen: make readme-check
 
 ```bash
 make test
@@ -602,7 +628,7 @@ Wegwerf-Container, setzt die Statuszeilen, braucht Docker.
 <!-- /readme-script -->
 
 <!-- readme-script: readme-scripts/2-runtime.sh -->
-> nicht ausgeführt · selbst prüfen: make readme-check
+> ✅ bestanden · selbst prüfen: make readme-check
 
 Wer ki-dev mit ki-dev weiterentwickelt, installiert es getrennt vom
 Quellbaum: eigenes venv, Symlink in `~/.local/bin`. Vor einem Update

@@ -164,7 +164,7 @@ The flow fits any issue with acceptance criteria, here a small bug:
 `add(a, b)` returns `a - b`.
 
 <!-- readme-script: readme-scripts/en/4-auftrag.sh -->
-> not run · verify: make readme-check
+> ✅ passed · verify: make readme-check
 
 In the ki-dev clone after [Try it](#try-it-without-agents): `bd` lives
 in the project venv, the task goes into a throwaway repo with its own
@@ -199,7 +199,7 @@ for every flow; today only `implement` has the safety limits
 ([Layers](#layers)).
 
 <!-- readme-script: readme-scripts/en/5-starten.sh -->
-> not run · verify: make readme-check
+> ⏳ not checked · needs real agents; mock version in Try without agents · verify: make readme-check
 
 ```bash
 ki-dev -f implement "$BEAD"
@@ -326,7 +326,7 @@ stateDiagram-v2
 ## Try it without agents
 
 <!-- readme-script: readme-scripts/en/1-setup.sh -->
-> not run · verify: make readme-check
+> ✅ passed · verify: make readme-check
 
 The demo creates a throwaway repo with a task and a profile; a mock
 implementer and a mock review (`fix`, then `PASS`) play through the
@@ -343,6 +343,20 @@ git clone https://github.com/blaumohn/ki-dev.git ki-dev
 cd ki-dev
 make setup
 make demo
+```
+
+```text
+{
+  "run_id": "demo",
+  "status": "passed",
+  "phase": "passed",
+  "round_id": 2,
+  "detail": "Fast-forward integriert",
+  "operation_id": null
+}
+
+Geprüfter Abschluss (Demo)
+start
 ```
 
 `round_id: 2`: one correction round. `passed`: the mock review
@@ -472,7 +486,7 @@ stateDiagram-v2
 ```
 
 <!-- readme-script: readme-scripts/en/6-map-step.sh -->
-> not run · verify: make readme-check
+> ✅ passed · verify: make readme-check
 
 Play it through by hand, without agents, starting in the ki-dev clone:
 a throwaway repo with a Beads project, ki-dev's guidelines in it (the
@@ -497,6 +511,18 @@ EOF
 ki-dev flow show map
 ki-dev -f map step "$BEAD" map
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
+```
+
+```text
+Empfänger: Umsetzer (bisherige Sitzung)
+
+Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
+Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
+
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
+- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
 ```
 
 `flow show` prints the flow as Mermaid (above), the first `step` the
@@ -588,7 +614,7 @@ Good first tasks, each with a clear finish line:
 More: [what the architecture still lacks (German)](docs/ausfuehrer-luecken.de.md).
 
 <!-- readme-script: readme-scripts/en/7-entwickeln.sh -->
-> not run · verify: make readme-check
+> ⏳ not checked · developer commands; make readme-check is this run itself · verify: make readme-check
 
 ```bash
 make test
@@ -602,7 +628,7 @@ throwaway container, sets the status lines, needs Docker.
 <!-- /readme-script -->
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
-> not run · verify: make readme-check
+> ✅ passed · verify: make readme-check
 
 To develop ki-dev with ki-dev, install it apart from the source tree:
 own venv, symlink in `~/.local/bin`. Finish running jobs before an
