@@ -3,56 +3,52 @@
 # ki-dev
 
 **AI agents do the work; a [flow written in TOML](#1-flow-built-in) decides what happens next.**
-The flow models a way of working, such as implementation with a separate
-review, or [planning](#not-just-code). A profile
-[casts the roles](#3-cast-the-roles), the [task](#2-create-a-task) is any
-issue. No agent dispatches the next one, no human relays every answer by
-hand.
+Code picks the next step, not a model; models implement and review the
+substance. A flow models a procedure, such as implementation with a
+separate review, or [planning](#not-just-code); a profile
+[casts the roles](#3-cast-the-roles), the [task](#2-create-a-task) is an
+issue with acceptance criteria.
 
-Built for tight token budgets: code picks the next step, not a supervising
-model ([Why](#why)).
+🚧 **Development snapshot, not yet usable for real work.** Goal of the
+first release (V1): write your own flows and profiles and run them with
+real AI agents.
 
-🚧 **In development, not ready for production use.** Flow control, the
-correction loop and adapters for Claude Code and Codex work. Still missing:
-a test gate before integration and budget limits on every path
-([Roadmap](#roadmap)).
+**What works**
+
+- Played through with placeholder agents (mock): the review asks for a
+  correction, accepts the second version, the result lands on `main`
+  ([step 0](#0-set-up-try-it-without-agents)).
+- With a real profile a run starts and halts before the first agent
+  call, as long as no real session is filled in ([step 4](#4-run)).
+
+**What is still missing**
+
+- A complete run with real agents: the Codex and Claude Code adapters
+  are built but not yet tried end to end ([step 4](#4-run)).
+- Red tests do not stop anything: if the review says "pass", the result
+  is taken even when tests fail ([test](tests/test_review_gate_cli.py),
+  [contributing](#contributing)).
+- Cost limits not everywhere: safety halts at context, quota and budget
+  limits exist only in the flow `implement`, with Codex without context
+  measurement ([step 3](#3-cast-the-roles)).
+- Several flows in a row, such as planning first, then implementing,
+  are started by hand today ([Roadmap](#roadmap)).
 
 ## Contents
 
-1. [Why](#why)
-2. [Example: implementer and reviewer as a flow](#example-implementer-and-reviewer-as-a-flow)
+1. [Example: implementer and reviewer as a flow](#example-implementer-and-reviewer-as-a-flow)
    0. [Set up, try it without agents](#0-set-up-try-it-without-agents)
    1. [Flow (built in)](#1-flow-built-in)
    2. [Create a task](#2-create-a-task)
    3. [Cast the roles](#3-cast-the-roles)
    4. [Run](#4-run)
-3. [What happens in a run](#what-happens-in-a-run)
+2. [What happens in a run](#what-happens-in-a-run)
+3. [Why](#why)
 4. [Layers and locations](#layers-and-locations)
 5. [Not just code](#not-just-code)
 6. [Roadmap](#roadmap)
 7. [Contributing](#contributing)
 8. [License](#license)
-
-## Why
-
-Working with coding agents turns you into a messenger: hand over context,
-check the result, pass corrections back. On top of that, agents report
-"done" when they are not.
-
-**Who it is for:** anyone working with a limited token budget. A
-supervising model that reads every output costs extra; if you cannot pay
-for that, put the control into files. In ki-dev, edge selection, format
-checks and limit comparisons are code; models do the work and the
-substantive review. Later, AI may tune parameters and calibrate flows
-([Roadmap](#roadmap)), as an option, not a prerequisite. The savings are
-not measured yet.
-
-Background: workflows with checkpoints instead of free-steering agents
-([Anthropic](https://www.anthropic.com/engineering/building-effective-agents));
-premature completion and missing verification as typical failures of
-multi-agent systems ([MAST](https://arxiv.org/html/2503.13657v3)).
-
-<sub>[↑ Contents](#contents)</sub>
 
 ## Example: implementer and reviewer as a flow
 
@@ -374,6 +370,24 @@ stateDiagram-v2
 ```
 
 </details>
+
+<sub>[↑ Contents](#contents)</sub>
+
+## Why
+
+- **Problem:** agents report "done" when they are not; premature
+  completion and missing verification are typical failures of
+  multi-agent systems ([MAST](https://arxiv.org/html/2503.13657v3)). With
+  several agents you relay context, results and corrections by hand.
+- **Approach:** a workflow with checkpoints instead of free-steering
+  agents
+  ([Anthropic](https://www.anthropic.com/engineering/building-effective-agents)).
+  In ki-dev, edge selection, format checks and limit comparisons are code
+  ([step 1](#1-flow-built-in)); models implement and review the
+  substance.
+- **Who it is for:** people working with tight token budgets who do not
+  want to pay for a supervising model that reads every output. How much
+  this saves is not measured.
 
 <sub>[↑ Contents](#contents)</sub>
 

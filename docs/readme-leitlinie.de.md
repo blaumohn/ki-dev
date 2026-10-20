@@ -78,14 +78,15 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    (Name im Profil) ≠ Adapter (Transport-Code), Ablauf ≠ Ablaufkette,
    Lauf ≠ Bead-Graph-Durchgang.
 4. **Ein Modell vertiefen, nicht neu ansetzen.** Die Abschnitte folgen dem
-   Modell aus dem Beispiel: Idee → Beispiel → was im Lauf passiert → Ebenen
-   und Orte → weitere Abläufe → Roadmap → Mitmachen → Lizenz. Jeder
+   Modell aus dem Beispiel: Idee und Stand → Beispiel → was im Lauf
+   passiert → Warum → Ebenen und Orte → weitere Abläufe → Roadmap →
+   Mitmachen → Lizenz. Jeder
    verweist auf den Beispielschritt zurück, den er vertieft. Fehler: ein
    Abschnitt, für den der Leser ein neues Bild des Projekts bauen muss.
 5. **Fährte legen.** Überschrift und Linktext sagen, was dort steht:
-   „Ausprobieren ohne Agenten“, „Was im Lauf passiert“. Aktive Links ab dem
-   ersten Satz führen zu der Stelle, die den Begriff zeigt
-   („[Ablauf aus TOML](../README.md#1-ablauf-mitgeliefert)“). Stark
+   „Einrichten, ohne Agenten ausprobieren“, „Was im Lauf passiert“.
+   Aktive Links ab dem ersten Satz führen zu der Stelle, die den Begriff
+   zeigt („[Ablauf aus TOML](../README.md#1-ablauf-mitgeliefert)“). Stark
    verlinken: jeder Begriff beim ersten Auftreten im Abschnitt, jede
    genannte Datei, jedes Skizzenelement mit Fundstelle; die Schritte
    verlinken auf ihre Ebene, die Skizze zurück auf die Schritte. Fehler:
@@ -127,11 +128,21 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    zeichnen.
 10. **Stand ehrlich.** Läuft und fehlt getrennt; rote Spezifikationstests
     als solche; ein Ziel nie als Funktion; nichts Ungemessenes als
-    Ersparnis. Der Stand steht als Notiz (`**Stand:** …`, in etwa 10
-    Sekunden lesbar) in dem Abschnitt, den er betrifft, nicht in einem
-    eigenen Abschnitt; was keinem Abschnitt zugehört, entfällt.
+    Ersparnis. Im Kopf steht der Stand in Klartext für Leser außerhalb des
+    Projekts: Ziel der nächsten Ausgabe, „Was schon geht“, „Was noch
+    fehlt“, je Punkt ein Link auf den Beleg. Einzelheiten stehen als Notiz
+    (`**Stand:** …`, in etwa 10 Sekunden lesbar) in dem Abschnitt, den sie
+    betreffen, nicht in einem eigenen Abschnitt. Fehler (`b30e7fa`): Der
+    Kopf sagt „kein Mensch reicht jede Antwort von Hand weiter“ und
+    „Adapter … laufen“, Schritt 4 sagt „Noch offen: ein abgenommener Lauf
+    mit echten Agenten“. Fehler (Entwurf): „kein Zyklus ohne Mensch
+    (Test)“ als Stand im Kopf, verständlich nur für Projektkenner.
 11. **Für wen.** Zielgruppe ausdrücklich (knappe Token-Budgets, kein
-    Aufseher-Modell); Späteres als Option, nicht als Voraussetzung.
+    Aufseher-Modell); Späteres als Option, nicht als Voraussetzung. Die
+    ersten Zeilen sind die teuersten: Motivation ohne Beleg gehört hinter
+    das Beispiel („Warum“), nicht vor das Inhaltsverzeichnis. Fehler
+    (`b30e7fa`): „für alle, die mit begrenzten Tokens arbeiten“, „kostet
+    zusätzlich“ vor dem Beispiel, die Ersparnis ungemessen.
 12. **Knapp und genau.** Halbsätze statt Absätze; was Skizze oder Link
     tragen, wiederholt die Prosa nicht. Genauigkeit vor Kürze: keine
     künstliche Grenze, wenn ein Begriff sonst falsch wäre.

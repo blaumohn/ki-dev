@@ -3,56 +3,54 @@
 # ki-dev
 
 **KI-Agenten arbeiten, ein [Ablauf aus TOML](#1-ablauf-mitgeliefert) entscheidet, was danach passiert.**
-Der Ablauf modelliert ein Arbeitsverfahren, etwa Umsetzung mit getrenntem
-Review oder [Planung](#nicht-nur-code). Die [Rollen](#3-rollen-besetzen)
-besetzt ein Profil, der [Auftrag](#2-auftrag-anlegen) ist ein beliebiger
-Vorgang. Kein Agent beauftragt den nächsten, kein Mensch reicht jede Antwort
-von Hand weiter.
+Den nächsten Schritt wählt Code, kein Modell; Modelle setzen um und prüfen
+fachlich. Ein Ablauf modelliert ein Verfahren, etwa Umsetzung mit
+getrenntem Review oder [Planung](#nicht-nur-code); ein Profil besetzt die
+[Rollen](#3-rollen-besetzen), der [Auftrag](#2-auftrag-anlegen) ist ein
+Vorgang mit Abnahmekriterien.
 
-Gedacht für knappe Token-Budgets: Den nächsten Schritt wählt Code, kein
-Aufseher-Modell ([Warum](#warum)).
+🚧 **Entwicklungsstand, noch nicht für echte Arbeit nutzbar.** Ziel der
+ersten Ausgabe (V1): eigene Abläufe und Profile schreiben und mit echten
+KI-Agenten ausführen.
 
-🚧 **In Entwicklung, noch nicht betriebsbereit.** Ablaufsteuerung,
-Korrekturschleife und Adapter für Claude Code und Codex laufen. Es fehlen
-noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden
-([Roadmap](#roadmap)).
+**Was schon geht**
+
+- Mit Platzhalter-Agenten (Mock) durchgespielt: Das Review verlangt eine
+  Korrektur, nimmt die zweite Fassung an, das Ergebnis landet in `main`
+  ([Schritt 0](#0-einrichten-ohne-agenten-ausprobieren)).
+- Mit echtem Profil startet ein Lauf und hält vor dem ersten
+  Agentenaufruf an, solange keine echte Sitzung eingetragen ist
+  ([Schritt 4](#4-starten)).
+
+**Was noch fehlt**
+
+- Ein vollständiger Lauf mit echten Agenten: Die Anbindung an Codex und
+  Claude Code ist gebaut, aber noch nicht bis zum Ende erprobt
+  ([Schritt 4](#4-starten)).
+- Rote Tests halten nicht auf: Sagt das Review „passt“, wird übernommen,
+  auch wenn Tests fehlschlagen ([Test](tests/test_review_gate_cli.py),
+  [Mitmachen](#mitmachen)).
+- Kostengrenzen nicht überall: Schutzhalte an Kontext-, Kontingent- und
+  Budgetgrenzen gibt es nur im Ablauf `implement`, mit Codex ohne
+  Kontextmessung ([Schritt 3](#3-rollen-besetzen)).
+- Mehrere Abläufe nacheinander, etwa erst planen, dann umsetzen, startet
+  heute der Mensch von Hand ([Roadmap](#roadmap)).
 
 ## Inhalt
 
-1. [Warum](#warum)
-2. [Beispiel: Umsetzer und Reviewer als Ablauf](#beispiel-umsetzer-und-reviewer-als-ablauf)
+1. [Beispiel: Umsetzer und Reviewer als Ablauf](#beispiel-umsetzer-und-reviewer-als-ablauf)
    0. [Einrichten, ohne Agenten ausprobieren](#0-einrichten-ohne-agenten-ausprobieren)
    1. [Ablauf (mitgeliefert)](#1-ablauf-mitgeliefert)
    2. [Auftrag anlegen](#2-auftrag-anlegen)
    3. [Rollen besetzen](#3-rollen-besetzen)
    4. [Starten](#4-starten)
-3. [Was im Lauf passiert](#was-im-lauf-passiert)
+2. [Was im Lauf passiert](#was-im-lauf-passiert)
+3. [Warum](#warum)
 4. [Ebenen und Orte](#ebenen-und-orte)
 5. [Nicht nur Code](#nicht-nur-code)
 6. [Roadmap](#roadmap)
 7. [Mitmachen](#mitmachen)
 8. [Lizenz](#lizenz)
-
-## Warum
-
-Wer mit Coding-Agenten arbeitet, wird zum Boten: Kontext geben, Ergebnis
-prüfen, Nachbesserung zurückreichen. Dazu melden Agenten „fertig“, auch
-wenn es nicht stimmt.
-
-**Für wen:** für alle, die mit begrenzten Tokens arbeiten. Ein
-Aufseher-Modell, das jede Ausgabe liest, kostet zusätzlich; wer das nicht
-bezahlen kann, legt die Steuerung in Dateien. In ki-dev sind Kantenwahl,
-Formatprüfung und Grenzvergleich Code, Modelle machen die Arbeit und das
-fachliche Review. Später darf KI Parameter steuern und Abläufe kalibrieren
-([Roadmap](#roadmap)), als Option, nicht als Voraussetzung. Gemessen ist
-die Ersparnis noch nicht.
-
-Hintergrund: Workflows mit Prüfstellen statt frei steuernder Agenten
-([Anthropic](https://www.anthropic.com/engineering/building-effective-agents));
-vorzeitiger Abschluss und fehlende Verifikation als typische Fehler von
-Mehr-Agenten-Systemen ([MAST](https://arxiv.org/html/2503.13657v3)).
-
-<sub>[↑ Inhalt](#inhalt)</sub>
 
 ## Beispiel: Umsetzer und Reviewer als Ablauf
 
@@ -372,6 +370,24 @@ stateDiagram-v2
 ```
 
 </details>
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+## Warum
+
+- **Problem:** Agenten melden „fertig“, auch wenn es nicht stimmt;
+  vorzeitiger Abschluss und fehlende Verifikation sind typische Fehler von
+  Mehr-Agenten-Systemen ([MAST](https://arxiv.org/html/2503.13657v3)). Wer
+  mehrere Agenten einsetzt, reicht Kontext, Ergebnis und Nachbesserung von
+  Hand weiter.
+- **Ansatz:** ein Workflow mit Prüfstellen statt frei steuernder Agenten
+  ([Anthropic](https://www.anthropic.com/engineering/building-effective-agents)).
+  In ki-dev sind Kantenwahl, Formatprüfung und Grenzvergleich Code
+  ([Schritt 1](#1-ablauf-mitgeliefert)); Modelle setzen um und prüfen
+  fachlich.
+- **Für wen:** wer mit knappen Token-Budgets arbeitet und kein
+  Aufseher-Modell bezahlen will, das jede Ausgabe liest. Wie viel das
+  spart, ist nicht gemessen.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
