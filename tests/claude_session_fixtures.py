@@ -41,6 +41,17 @@ def task_notification(
     }
 
 
+def compact_summary(text="This session is being continued ..."):
+    """Verdichtungszusammenfassung, wie Claude sie schreibt."""
+    return {
+        "type": "user",
+        "userType": "external",
+        "isVisibleInTranscriptOnly": True,
+        "isCompactSummary": True,
+        "message": {"role": "user", "content": text},
+    }
+
+
 def local_command(text="<command-name>/model</command-name>"):
     """Slash-Befehlszeile, wie Claude sie schreibt: ohne Herkunft."""
     return {

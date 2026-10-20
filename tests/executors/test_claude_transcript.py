@@ -21,6 +21,7 @@ from ki_dev.adapter.executors.transcript import (
 from tests.claude_session_fixtures import (
     SESSION,
     chain,
+    compact_summary,
     dialog,
     human,
     jsonl,
@@ -115,6 +116,37 @@ def test_proven_task_notification_is_excluded_and_counted():
     transcript = extract(rows)
     assert len(transcript.messages) == 2
     assert transcript.diagnostics["task_notifications_excluded"] == 1
+
+
+def test_compact_summary_is_excluded_and_counted():
+    rows = chain(
+        [human(), reply(), compact_summary(SECRET), human(), reply()]
+    )
+    transcript = extract(rows)
+    assert [m.text for m in transcript.messages] == [
+        "Frage",
+        "Antwort",
+        "Frage",
+        "Antwort",
+    ]
+    assert transcript.diagnostics["compact_summaries_excluded"] == 1
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"isCompactSummary": False},
+        {"isVisibleInTranscriptOnly": False},
+        {"origin": {"kind": "human"}},
+        {"turnOrigin": "human"},
+        {"promptSource": "typed"},
+    ],
+)
+def test_compact_summary_needs_both_marks_and_no_origin(override):
+    entry = compact_summary(SECRET) | override
+    text = problems_of(chain([human(), reply(), entry, reply()]))
+    assert "Zeile 3" in text
+    assert SECRET not in text
 
 
 @pytest.mark.parametrize(

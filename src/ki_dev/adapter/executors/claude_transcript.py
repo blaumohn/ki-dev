@@ -125,6 +125,26 @@ _TASK_NOTIFICATION = Draft202012Validator(
     }
 )
 
+# Zusammenfassung nach einer Kontextverdichtung: Claude schreibt sie als
+# user-Zeile mit beiden Kennzeichen und ohne jede Herkunftsangabe. Ein
+# Kennzeichen allein oder ein Herkunftsfeld daneben belegt nichts.
+_COMPACT_SUMMARY = Draft202012Validator(
+    {
+        "required": ["isCompactSummary", "isVisibleInTranscriptOnly"],
+        "properties": {
+            "isCompactSummary": {"const": True},
+            "isVisibleInTranscriptOnly": {"const": True},
+            "message": {"properties": {"content": {"type": "string"}}},
+        },
+        "not": {
+            "anyOf": [
+                {"required": [key]}
+                for key in ("origin", "turnOrigin", "promptSource")
+            ]
+        },
+    }
+)
+
 # Slash-Befehle und ihre Ausgaben stehen als user-Zeilen im Transkript,
 # sind aber keine Eingabe an den Agenten.
 _LOCAL_COMMAND_TAGS = (
@@ -403,6 +423,9 @@ def _classify_user(
     content = entry["message"]["content"]
     if _TASK_NOTIFICATION.is_valid(entry):
         stats["task_notifications_excluded"] += 1
+        return None
+    if _COMPACT_SUMMARY.is_valid(entry):
+        stats["compact_summaries_excluded"] += 1
         return None
     if entry.get("origin", {}).get("kind") == "human":
         return "user", _human_text(entry, number), "input"

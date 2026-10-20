@@ -314,7 +314,9 @@ Projektwurzel, Dateisuche; geteilt mit `claude_context_tokens`) und
 - **Filter:** menschliche Eingaben (`origin.kind=human`,
   `promptSource` `typed`/`queued`) und `end_turn`-Text. Aufgabenmeldungen
   nur bei belegter technischer Herkunft ausgelassen und gezaehlt,
-  Slash-Befehlszeilen nur ohne jede Herkunftsangabe; menschliche Zitate
+  Slash-Befehlszeilen und Verdichtungszusammenfassungen (beide
+  Kennzeichen `isCompactSummary`/`isVisibleInTranscriptOnly`) nur ohne
+  jede Herkunftsangabe; menschliche Zitate
   (auch mit fuehrendem Tag) bleiben. Jede `sessionId` muss der
   angeforderten Sitzung entsprechen. Unbekannte Herkunft, ungueltiges
   JSON, Schema- und Kettenfehler sowie leere Transkripte sind Fehler.

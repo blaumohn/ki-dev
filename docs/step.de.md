@@ -516,8 +516,9 @@ eindeutiges, endliches `ordinal` und bei sauberem Wechsel passende
 `turn_id`-Paare. Claude übernimmt menschliche Eingaben und `end_turn`-Text;
 technische Aufgabenmeldungen werden nur bei belegter Herkunft (`origin.kind`,
 `turnOrigin`, `promptSource`) ausgelassen und gezählt, Slash-Befehlszeilen
-nur ohne jede Herkunftsangabe; menschliche Zitate bleiben, auch mit führendem
-Tag. Jede `sessionId` muss der angeforderten Sitzung entsprechen. Ungültiges JSON (auch eine abgeschnittene letzte Zeile), unbekannte
+nur ohne jede Herkunftsangabe, ebenso Verdichtungszusammenfassungen nur mit
+beiden Kennzeichen (`isCompactSummary`, `isVisibleInTranscriptOnly`) und ohne
+Herkunftsangabe; menschliche Zitate bleiben, auch mit führendem Tag. Jede `sessionId` muss der angeforderten Sitzung entsprechen. Ungültiges JSON (auch eine abgeschnittene letzte Zeile), unbekannte
 Phasen oder Herkunft, ungültige Zeitstempel, leere Texte oder ein Transkript
 ohne Beiträge brechen mit Exit 1 ab; es entsteht weder Datei noch Bead. Die Meldung nennt nur
 Prüfcode, Zeile und Feldpfad (höchstens 10 Fälle je Prüfung), nie
