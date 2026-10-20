@@ -6,10 +6,9 @@
 # Braucht Python ≥ 3.12, git ≥ 2.32, make, Go und einen C-Compiler:
 # `make setup` baut [Beads](https://github.com/steveyegge/beads) `bd` aus
 # dem Quellcode ins Projekt-venv (beim ersten Mal einige Minuten, mit Netz).
-# `$REPLACE_WITH_REPOSITORY_URL` = Klon-Adresse dieses Repos.
 #
 # ```bash
-git clone "$REPLACE_WITH_REPOSITORY_URL" ki-dev
+git clone https://github.com/blaumohn/ki-dev.git ki-dev
 cd ki-dev
 make setup
 make demo

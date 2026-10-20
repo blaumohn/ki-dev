@@ -31,6 +31,7 @@ noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden
 6. [Nicht nur Code](#nicht-nur-code)
 7. [Roadmap](#roadmap)
 8. [Mitmachen](#mitmachen)
+9. [Lizenz](#lizenz)
 
 ## Warum
 
@@ -334,10 +335,9 @@ Anbieterzugang durch. Statuszeile und Ausgabe stammen aus
 Braucht Python ≥ 3.12, git ≥ 2.32, make, Go und einen C-Compiler:
 `make setup` baut [Beads](https://github.com/steveyegge/beads) `bd` aus
 dem Quellcode ins Projekt-venv (beim ersten Mal einige Minuten, mit Netz).
-`$REPLACE_WITH_REPOSITORY_URL` = Klon-Adresse dieses Repos.
 
 ```bash
-git clone "$REPLACE_WITH_REPOSITORY_URL" ki-dev
+git clone https://github.com/blaumohn/ki-dev.git ki-dev
 cd ki-dev
 make setup
 make demo
@@ -623,6 +623,11 @@ Weiterlesen: [Ausführer und Profile](docs/ausfuehrer.de.md) ·
 
 Fragen, Ideen, Zusammenarbeit: ein Issue öffnen oder
 [@blaumohn](https://github.com/blaumohn) direkt ansprechen.
-Lizenz: [MIT](LICENSE).
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+## Lizenz
+
+ki-dev steht unter der [MIT-Lizenz](LICENSE).
 
 <sub>[↑ Inhalt](#inhalt)</sub>

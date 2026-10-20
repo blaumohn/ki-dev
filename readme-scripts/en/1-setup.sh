@@ -6,10 +6,10 @@
 # Needs Python ≥ 3.12, git ≥ 2.32, make, Go and a C compiler:
 # `make setup` builds [Beads](https://github.com/steveyegge/beads) `bd`
 # from source into the project venv (a few minutes the first time,
-# needs network). `$REPLACE_WITH_REPOSITORY_URL` = this repo's clone URL.
+# needs network).
 #
 # ```bash
-git clone "$REPLACE_WITH_REPOSITORY_URL" ki-dev
+git clone https://github.com/blaumohn/ki-dev.git ki-dev
 cd ki-dev
 make setup
 make demo

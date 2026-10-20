@@ -15,6 +15,7 @@ SOURCE_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK_BASE="${READMECHECK_WORK_BASE:-$(mktemp -d)}"
 GIT_DAEMON_PORT="${GIT_DAEMON_PORT:-9418}"
 git_daemon_pid=""
+git_server_url="git://127.0.0.1:${GIT_DAEMON_PORT}/ki-dev"
 staging_dir=""
 
 main() {
@@ -24,11 +25,11 @@ main() {
 
   step "Arbeitsstand in temporären Klon übernehmen"
   prepare_staging_repo "$SOURCE_REPO_DIR"
-  step "Git-Server starten"
-  start_git_server "$staging_dir"
-
   export README_SCRIPTS_DIR="$staging_dir/readme-scripts"
   export README_LOG_DIR="$WORK_BASE/logs"
+  step "Git-Server starten, Klon-Adresse aus 1-setup.sh dorthin umlenken"
+  start_git_server "$staging_dir"
+  redirect_clone_url "$git_server_url"
 
   step "README-Einrichtung aus leerem Verzeichnis"
   user_dir="$(mktemp -d "$WORK_BASE/visitor-XXXXXX")"
@@ -99,16 +100,30 @@ start_git_server() {
   git daemon --reuseaddr --listen=127.0.0.1 --port="$GIT_DAEMON_PORT" \
     --base-path="$(dirname "$repo_dir")" --export-all "$repo_dir" &
   git_daemon_pid="$!"
-  REPLACE_WITH_REPOSITORY_URL="git://127.0.0.1:${GIT_DAEMON_PORT}/ki-dev"
-  export REPLACE_WITH_REPOSITORY_URL
   for _ in $(seq 1 10); do
-    if git ls-remote "$REPLACE_WITH_REPOSITORY_URL" >/dev/null 2>&1; then
+    if git ls-remote "$git_server_url" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
   done
   echo "[readme-check] git daemon antwortet nicht rechtzeitig" >&2
   return 1
+}
+
+# Der Besucher klont von GitHub; hier lenkt git dieselbe Adresse auf den
+# lokalen Stand um (url.<lokal>.insteadOf), ohne das Skript zu ändern.
+# Die Adresse steht nur in readme-scripts/1-setup.sh.
+redirect_clone_url() {
+  local target="$1" clone_url index="${GIT_CONFIG_COUNT:-0}"
+  clone_url="$(sed -n 's|^git clone \([a-z+]*://[^ "]*\) ki-dev$|\1|p' \
+    "$README_SCRIPTS_DIR/1-setup.sh")"
+  if [[ -z "$clone_url" ]]; then
+    echo "[readme-check] 1-setup.sh: keine Zeile 'git clone URL ki-dev'" >&2
+    return 1
+  fi
+  export "GIT_CONFIG_KEY_$index=url.$target.insteadOf"
+  export "GIT_CONFIG_VALUE_$index=$clone_url"
+  export GIT_CONFIG_COUNT="$((index + 1))"
 }
 
 stop_git_server() {

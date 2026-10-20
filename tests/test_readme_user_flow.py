@@ -90,6 +90,54 @@ def test_failed_step_aborts_transfer(source, tmp_path, failing):
     assert "STAGING=" not in out
 
 
+def test_clone_url_from_setup_script_is_redirected(source, tmp_path):
+    """Die Adresse aus 1-setup.sh klont offline den lokalen Stand."""
+    _git(source, "add", "-A")
+    with local.env(**IDENTITY):
+        _git(source, "commit", "-q", "-m", "neu")
+    scripts = tmp_path / "readme-scripts"
+    scripts.mkdir()
+    url = "https://github.com/example/ki-dev.git"
+    (scripts / "1-setup.sh").write_text(f"git clone {url} ki-dev\n")
+    program = (
+        'source "$1"; README_SCRIPTS_DIR="$2"; '
+        'redirect_clone_url "file://$3"; '
+        'git clone -q "$4" "$5"; echo "COUNT=$GIT_CONFIG_COUNT"'
+    )
+    clone = tmp_path / "klon"
+    with local.env(
+        GIT_CONFIG_COUNT="1",
+        GIT_CONFIG_KEY_0="safe.directory",
+        GIT_CONFIG_VALUE_0="*",
+    ):
+        code, out, err = local["bash"].run(
+            args=["-c", program, "_", SCRIPT, scripts, source, url,
+                  clone],
+            retcode=None,
+            timeout=60,
+        )
+    assert code == 0, err
+    assert "COUNT=2" in out
+    assert (clone / "a.txt").read_text() == "neu\n"
+
+
+def test_setup_script_without_clone_line_fails(tmp_path):
+    scripts = tmp_path / "readme-scripts"
+    scripts.mkdir()
+    (scripts / "1-setup.sh").write_text('git clone "$URL" ki-dev\n')
+    program = (
+        'source "$1"; README_SCRIPTS_DIR="$2"; '
+        'redirect_clone_url "file:///x"'
+    )
+    code, _, err = local["bash"].run(
+        args=["-c", program, "_", SCRIPT, scripts],
+        retcode=None,
+        timeout=30,
+    )
+    assert code != 0
+    assert "keine Zeile 'git clone URL ki-dev'" in err
+
+
 def _prepare(source, tmp_path, **env):
     work = tmp_path / "work"
     work.mkdir()
@@ -109,3 +157,4 @@ def _git(repo, *args):
     return local["git"].run(
         args=["-C", repo, *args], retcode=0, timeout=10
     )[1]
+

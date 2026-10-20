@@ -31,6 +31,7 @@ a test gate before integration and budget limits on every path
 6. [Not just code](#not-just-code)
 7. [Roadmap](#roadmap)
 8. [Contributing](#contributing)
+9. [License](#license)
 
 ## Why
 
@@ -335,10 +336,10 @@ example without provider access. Status line and output come from
 Needs Python ≥ 3.12, git ≥ 2.32, make, Go and a C compiler:
 `make setup` builds [Beads](https://github.com/steveyegge/beads) `bd`
 from source into the project venv (a few minutes the first time,
-needs network). `$REPLACE_WITH_REPOSITORY_URL` = this repo's clone URL.
+needs network).
 
 ```bash
-git clone "$REPLACE_WITH_REPOSITORY_URL" ki-dev
+git clone https://github.com/blaumohn/ki-dev.git ki-dev
 cd ki-dev
 make setup
 make demo
@@ -622,6 +623,11 @@ Further reading (German): [executor and profiles](docs/ausfuehrer.de.md) ·
 
 Questions, ideas, collaboration: open an issue or contact
 [@blaumohn](https://github.com/blaumohn) directly.
-License: [MIT](LICENSE).
+
+<sub>[↑ Contents](#contents)</sub>
+
+## License
+
+ki-dev is released under the [MIT License](LICENSE).
 
 <sub>[↑ Contents](#contents)</sub>

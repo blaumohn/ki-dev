@@ -21,3 +21,5 @@ dist/
 # Workspace-Sperre, von bd neben .beads/ angelegt
 .beads.gate.lock
 .DS_Store
+# Editor-Swap-Dateien (vim), auch .swp ohne Dateinamen
+*.swp

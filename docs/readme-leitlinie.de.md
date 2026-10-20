@@ -76,7 +76,7 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    Lauf ≠ Bead-Graph-Durchgang.
 4. **Ein Modell vertiefen, nicht neu ansetzen.** Die Abschnitte folgen dem
    Modell aus dem Beispiel: Idee → Beispiel → was im Lauf passiert → Ebenen
-   → weitere Abläufe → Roadmap → Mitmachen. Jeder verweist auf den
+   → weitere Abläufe → Roadmap → Mitmachen → Lizenz. Jeder verweist auf den
    Beispielschritt zurück, den er vertieft. Fehler: ein Abschnitt, für den
    der Leser ein neues Bild des Projekts bauen muss.
 5. **Fährte legen.** Überschrift und Linktext sagen, was dort steht:
