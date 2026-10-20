@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Test für readme-scripts/5-starten.sh, nach 4-auftrag.sh in derselben
-# Shell wie bei einem Besucher: Profil und Arbeits-Worktree aus Schritt 3
-# passen zum Start, der Lauf kommt bis zum ersten Agentenaufruf. Den
+# Test für readme-scripts/5-starten.sh, nach 3-auftrag.sh und
+# 4-rollen.sh in derselben Shell wie bei einem Besucher: Arbeits-Worktree
+# und Profil passen zum Start, der Lauf kommt bis zum ersten
+# Agentenaufruf. Den
 # lehnt der Schutz mit den Platzhalter-Sitzungen ab; was danach kommt,
 # braucht echte Agenten und bleibt Stub.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 main() {
-  readme_run 4-auftrag.sh 5-starten.sh
+  readme_run 3-auftrag.sh 4-rollen.sh 5-starten.sh
   stops_at_first_agent_call "$README_LOG"
   readme_test_missing \
-    "läuft bis zum ersten Agentenaufruf, der braucht echte Sitzungen" \
-    "runs up to the first agent call, which needs real sessions"
+    "der erste Agentenaufruf braucht echte Sitzungen; bis dahin ausgeführt" \
+    "the first agent call needs real sessions; run up to there"
 }
 
 # `ki-dev -f implement` gibt den Endzustand als JSON-Objekt ab einer

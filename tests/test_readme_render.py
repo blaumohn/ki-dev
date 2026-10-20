@@ -181,7 +181,7 @@ def test_passed_line_and_output_follow_the_bash_block(repo, results):
         assert not block.splitlines()[1].startswith("> ")
         assert (
             f"make demo\n```\n\n{line}\n\n```text\n"
-            '"status": "passed"\n```\n\n`round_id: 2`'
+            '"status": "passed"\n```\n\n`make demo`'
         ) in block
         assert "2026-" not in block
 
@@ -283,8 +283,8 @@ def test_text_block_in_output_slot_fails(repo):
         path = repo / script
         path.write_text(
             path.read_text().replace(
-                "# ```\n#\n# `round_id",
-                "# ```\n#\n# ```text\n# x\n# ```\n#\n# `round_id",
+                "# ```\n#\n# `make demo`",
+                "# ```\n#\n# ```text\n# x\n# ```\n#\n# `make demo`",
             )
         )
     code, _, err = _render(repo, "--check")

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Test für readme-scripts/6-map-step.sh, gestartet im ki-dev-Klon nach
-# 1-setup.sh, ohne Agenten: flow show gibt Mermaid aus, step die Übergabe
+# 1-setup.sh (ki-dev und bd im PATH), ohne Agenten: flow show gibt Mermaid aus, step die Übergabe
 # an den Kartierungsagenten und nach dem Urteil fix die an die Korrektur.
 # Auszug: diese letzte Übergabe.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

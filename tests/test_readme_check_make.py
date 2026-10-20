@@ -23,14 +23,14 @@ COPY = (
     "scripts/readme_results.py",
 )
 # build: Exit aus FAKE_BUILD_EXIT; run: legt ein Ergebnis für
-# 4-auftrag.sh ab, wie der Container es in /tmp/readme-ergebnisse tut.
+# 3-auftrag.sh ab, wie der Container es in /tmp/readme-ergebnisse tut.
 FAKE_CHECK = """#!/bin/sh
 echo "$*" >>"$FAKE_CHECK_CALLS"
 case "$1" in
   build) exit "${FAKE_BUILD_EXIT:-0}" ;;
-  run) printf '%s' '[{"skript": "4-auftrag.sh", "parameter": {},
+  run) printf '%s' '[{"skript": "3-auftrag.sh", "parameter": {},
     "ergebnis": "passed", "datum": "2026-10-20T08:00:00Z"}]' \\
-    >"$READMECHECK_TMP_DIR/readme-ergebnisse/4-auftrag.json" ;;
+    >"$READMECHECK_TMP_DIR/readme-ergebnisse/3-auftrag.json" ;;
 esac
 """
 
@@ -68,7 +68,7 @@ def test_run_results_set_status_lines(repo, tmp_path):
         "run --rm check",
     ]
     lines = _status_lines(repo / "README.md")
-    assert lines["readme-scripts/4-auftrag.sh"].startswith(
+    assert lines["readme-scripts/3-auftrag.sh"].startswith(
         "> ✅ Im leeren Container ausgeführt"
     )
     not_run = [line for line in lines.values() if "nicht aus" in line]

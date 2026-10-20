@@ -2,10 +2,10 @@
 
 # ki-dev
 
-**AI agents do the work; a [flow written in TOML](#1-model-the-flow) decides what happens next.**
+**AI agents do the work; a [flow written in TOML](#1-flow-built-in) decides what happens next.**
 The flow models a way of working, such as implementation with a separate
 review, or [planning](#not-just-code). A profile
-[casts the roles](#2-cast-the-roles), the [task](#3-pick-a-task) is any
+[casts the roles](#3-cast-the-roles), the [task](#2-create-a-task) is any
 issue. No agent dispatches the next one, no human relays every answer by
 hand.
 
@@ -21,17 +21,17 @@ a test gate before integration and budget limits on every path
 
 1. [Why](#why)
 2. [Example: implementer and reviewer as a flow](#example-implementer-and-reviewer-as-a-flow)
-   1. [Model the flow](#1-model-the-flow)
-   2. [Cast the roles](#2-cast-the-roles)
-   3. [Pick a task](#3-pick-a-task)
+   0. [Set up, try it without agents](#0-set-up-try-it-without-agents)
+   1. [Flow (built in)](#1-flow-built-in)
+   2. [Create a task](#2-create-a-task)
+   3. [Cast the roles](#3-cast-the-roles)
    4. [Run](#4-run)
 3. [What happens in a run](#what-happens-in-a-run)
-4. [Try it without agents](#try-it-without-agents)
-5. [Layers and locations](#layers-and-locations)
-6. [Not just code](#not-just-code)
-7. [Roadmap](#roadmap)
-8. [Contributing](#contributing)
-9. [License](#license)
+4. [Layers and locations](#layers-and-locations)
+5. [Not just code](#not-just-code)
+6. [Roadmap](#roadmap)
+7. [Contributing](#contributing)
+8. [License](#license)
 
 ## Why
 
@@ -59,12 +59,41 @@ multi-agent systems ([MAST](https://arxiv.org/html/2503.13657v3)).
 What gets modeled is a procedure, not a single task: one agent implements,
 a second reviews in its own session, `fix` leads back, after three rounds a
 human decides. Each step names its
-[layer or input](#layers-and-locations).
+[layer or input](#layers-and-locations). The commands run in order in one
+terminal; you only create the task and the profile.
 
-### 1. Model the flow
+### 0. Set up, try it without agents
 
-**[Layer: flow](#layers-and-locations).** The bundled flow `implement`
-defines what happens after which verdict. The correction loop, from
+<!-- readme-script: readme-scripts/en/1-setup.sh -->
+Needs Python ≥ 3.12, git ≥ 2.32, make, Go and a C compiler:
+`make setup` builds [Beads](https://github.com/steveyegge/beads) `bd`
+from source into the project venv, a few minutes the first time, needs
+network.
+
+```bash
+git clone https://github.com/blaumohn/ki-dev.git ki-dev
+cd ki-dev
+make setup                          # venv with ki-dev and bd
+export PATH="$PWD/.venv/bin:$PATH"  # ki-dev and bd for the steps below
+make demo
+```
+
+> Not run in the last check · [test](tests/readme/test_1_setup.sh)
+
+`make demo` plays the example through with placeholder agents (mock):
+the review first asks for a correction (`fix`), then accepts (`PASS`).
+`round_id: 2`: one correction round; `passed`: the result is
+fast-forwarded onto `main`. The mocks only write a line of text; the
+demo shows the control flow, not an agent's work.
+<!-- /readme-script -->
+
+<sub>[↑ Contents](#contents)</sub>
+
+### 1. Flow (built in)
+
+**[Layer: flow](#layers-and-locations).** Nothing to create here: the
+flow `implement` ships with the package and defines what happens after
+which verdict. The correction loop, from
 [`implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
@@ -115,76 +144,31 @@ the scaffold (`KI_DEV_FLOW_PATH`,
 
 <sub>[↑ Contents](#contents)</sub>
 
-### 2. Cast the roles
-
-**[Input: profile](#layers-and-locations).** Who fills each role, and
-with which limits, is set in `.ki-dev/profiles/default.toml`; the flow
-stays the same:
-
-```toml
-workdir = "."                           # agents' worktree, ki-dev starts here
-access_profile = "write"
-
-[worker]                                # implements
-executor = "codex"                      # executor from the scaffold
-session_id = "019a…"                    # existing Codex session
-model = "gpt-5.6-terra"
-effort = "high"
-
-[review]                                # reviews, in its own session
-executor = "claude"
-session_id = "b3f1…"                    # existing Claude Code session
-model = "sonnet"
-effort = "high"
-
-[[tests]]                               # runs each round, result goes to review
-name = "test_add"
-argv = ["python3", "test_add.py"]
-
-[limits]
-changes_rounds = 3                      # then ki-dev asks a human
-
-[finalization]                          # where an accepted result goes
-target_workdir = "../calc"              # target worktree of the same repo
-target_ref = "refs/heads/main"
-commit_message = "Fix add()"
-data_mode = "file_proposal"
-```
-
-A human (`manual`), a mock or another model: only `executor` changes
-([executors, German](docs/ausfuehrer.de.md#executoren)). The file ships
-as [`docs/beispiele/default.toml`](docs/beispiele/default.toml); step 3
-puts it into the throwaway repo.
-
-**Status:** safety halt at context, quota and budget limits with
-`claude`; `codex` without context measurement.
-
-<sub>[↑ Contents](#contents)</sub>
-
-### 3. Pick a task
+### 2. Create a task
 
 **[Input: task](#layers-and-locations)**, an issue from the work graph
 ([Beads](https://github.com/steveyegge/beads)). The flow fits any issue
 with acceptance criteria, here a small bug: `add(a, b)` returns `a - b`.
 
-<!-- readme-script: readme-scripts/en/4-auftrag.sh -->
-In the ki-dev clone after [Try it](#try-it-without-agents): `bd` lives
-in the project venv. A throwaway repo `calc` with the bug, next to it
-the agents' worktree `calc-work` with its own Beads project and the
-profile from step 2. `.ki-dev/` (profile, runs) and the Beads lock file
-stay out of git: ki-dev requires clean worktrees.
+<!-- readme-script: readme-scripts/en/3-auftrag.sh -->
+Continue in the terminal from [step 0](#0-set-up-try-it-without-agents):
+a throwaway repo `calc` with the bug, next to it the agents' worktree
+`calc-work` with the task.
 
 ```bash
-export PATH="$PWD/.venv/bin:$PATH"
-PROFILE="$PWD/docs/beispiele/default.toml"
 cd "$(mktemp -d)" && git init -q -b main calc && cd calc
-git config user.name calc && git config user.email calc@example.invalid
-printf 'def add(a, b):\n    return a - b\n' >add.py
-printf 'from add import add\n\nassert add(2, 3) == 5\n' >test_add.py
-printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude
+cat >add.py <<'EOF'
+def add(a, b):
+    return a - b
+EOF
+cat >test_add.py <<'EOF'
+from add import add
+
+assert add(2, 3) == 5
+EOF
+printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude  # clean worktrees
 git add . && git commit -q -m "add()"
 git worktree add -q -b work ../calc-work && cd ../calc-work
-mkdir -p .ki-dev/profiles && cp "$PROFILE" .ki-dev/profiles/default.toml
 bd init --quiet --prefix calc --stealth --non-interactive
 BEAD="$(bd create "add() does not add" \
   --description "add(2, 3) returns -1" \
@@ -194,14 +178,66 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 ```
 
-> ✅ Run in an empty container · [test](tests/readme/test_4_auftrag.sh)
+> Not run in the last check · [test](tests/readme/test_3_auftrag.sh)
 
-`$BEAD` is the task ID, e.g. `calc-7k2`; step 4 uses it in the same
-terminal, in `calc-work`.
+`$BEAD` is the task ID, e.g. `calc-7k2`. `.ki-dev/` (profile, runs) and
+the Beads lock file stay out of git: ki-dev requires clean worktrees.
 <!-- /readme-script -->
 
 Which issue a run gets is a human's choice today; there is no walk
 through the bead graph yet ([Roadmap](#roadmap)).
+
+<sub>[↑ Contents](#contents)</sub>
+
+### 3. Cast the roles
+
+**[Input: profile](#layers-and-locations).** Who fills each role, and with
+which limits, is set in the profile; the flow stays the same. A human
+(`manual`), a mock or another model: only `executor` changes
+([executors, German](docs/ausfuehrer.de.md#executoren)).
+
+<!-- readme-script: readme-scripts/en/4-rollen.sh -->
+Continue in `calc-work`: the profile `default` lives where ki-dev
+starts.
+
+```bash
+mkdir -p .ki-dev/profiles
+cat >.ki-dev/profiles/default.toml <<'EOF'
+workdir = "."                   # agents' worktree, ki-dev starts here
+access_profile = "write"
+
+[worker]                        # implements
+executor = "codex"              # executor from the scaffold
+session_id = "019a…"            # put your Codex session here
+model = "gpt-5.6-terra"
+effort = "high"
+
+[review]                        # reviews, in its own session
+executor = "claude"
+session_id = "b3f1…"            # put your Claude Code session here
+model = "sonnet"
+effort = "high"
+
+[[tests]]                       # runs each round, result goes to review
+name = "test_add"
+argv = ["python3", "test_add.py"]
+
+[limits]
+changes_rounds = 3              # then ki-dev asks a human
+
+[finalization]                  # where an accepted result goes
+target_workdir = "../calc"      # repo from step 2
+target_ref = "refs/heads/main"
+commit_message = "Fix add()"
+data_mode = "file_proposal"
+EOF
+```
+
+> Not run in the last check · [test](tests/readme/test_4_rollen.sh)
+<!-- /readme-script -->
+
+**Status:** safety halt at context, quota and budget limits with
+`claude`; `codex` without context measurement.
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -215,19 +251,19 @@ for every flow; today only `implement` has the safety limits
 ([Roadmap](#roadmap)).
 
 <!-- readme-script: readme-scripts/en/5-starten.sh -->
+Continue in `calc-work`:
+
 ```bash
-ki-dev -f implement "$BEAD" --run-id add-fix
-ki-dev -f implement status add-fix
+ki-dev -f implement "$BEAD" --run-id add-fix  # flow implement, profile default
+ki-dev -f implement status add-fix            # where the run stands
 ```
 
-> ⏳ Not checked: runs up to the first agent call, which needs real sessions · [test](tests/readme/test_5_starten.sh)
+> Not run in the last check · [test](tests/readme/test_5_starten.sh)
 
-Flow `implement` with the profile `default` from step 2, run `add-fix`;
-`status` shows where it is. After a halt,
-`ki-dev -f implement resume add-fix` continues it, with `--answer` when
-the halt asks for one. With the placeholders `019a…` and `b3f1…` the
-run halts before the first agent call; for a real run put your own
-session IDs into the profile.
+With the placeholders `019a…` and `b3f1…` the run halts before the
+first agent call; for a real run put your own session IDs into the
+profile. After a halt, `ki-dev -f implement resume add-fix` continues
+the run, with `--answer` when the halt asks for one.
 <!-- /readme-script -->
 
 **Status of this example:** flow, profile format and commands are real,
@@ -238,11 +274,11 @@ with real agents, and red tests do not yet stop integration.
 
 ## What happens in a run
 
-The mock run from [Try it](#try-it-without-agents) (`make demo`: flow
+The mock run from [step 0](#0-set-up-try-it-without-agents) (`make demo`: flow
 `implement`, review says `fix`, then `PASS`) writes one line per transition
 to `events.jsonl`, 47 here
 ([whole file](docs/beispiele/demo-lauf.events.jsonl)). Line 16 is the back
-edge from [step 1](#1-model-the-flow), wrapped:
+edge from [step 1](#1-flow-built-in), wrapped:
 
 ```json
 {"line": 16, "region": "ablauf", "seq": 7,
@@ -258,7 +294,7 @@ edge from [step 1](#1-model-the-flow), wrapped:
 `operation` and `halt`: 31 edges of the runner from
 [`run.toml`](src/ki_dev/runner/run.toml), per op
 `hold → start → artifact_saved`. `adapter`: who answered, with
-the profile from [step 2](#2-cast-the-roles) `claude-cli`
+the profile from [step 3](#3-cast-the-roles) `claude-cli`
 ([format, German](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
 
 The 16 flow lines as a path, transcribed by hand, number = `seq`:
@@ -341,50 +377,6 @@ stateDiagram-v2
 
 <sub>[↑ Contents](#contents)</sub>
 
-## Try it without agents
-
-<!-- readme-script: readme-scripts/en/1-setup.sh -->
-The demo creates a throwaway repo with a task and a profile; a mock
-implementer and a mock review (`fix`, then `PASS`) play through the
-example without provider access. Status line and output come from
-`make readme-check`, the setup in an empty container.
-
-Needs Python ≥ 3.12, git ≥ 2.32, make, Go and a C compiler:
-`make setup` builds [Beads](https://github.com/steveyegge/beads) `bd`
-from source into the project venv (a few minutes the first time,
-needs network).
-
-```bash
-git clone https://github.com/blaumohn/ki-dev.git ki-dev
-cd ki-dev
-make setup
-make demo
-```
-
-> ✅ Run in an empty container · [test](tests/readme/test_1_setup.sh)
-
-```text
-{
-  "run_id": "demo",
-  "status": "passed",
-  "phase": "passed",
-  "round_id": 2,
-  "detail": "Fast-forward integriert",
-  "operation_id": null
-}
-
-Geprüfter Abschluss (Demo)
-start
-```
-
-`round_id: 2`: one correction round. `passed`: the mock review
-accepted, the result is fast-forwarded onto `main`. The mocks only
-write a line of text; the demo shows the control flow, not an agent's
-work.
-<!-- /readme-script -->
-
-<sub>[↑ Contents](#contents)</sub>
-
 ## Layers and locations
 
 The sketch has two dimensions:
@@ -402,7 +394,7 @@ The sketch has two dimensions:
  <a href="#roadmap">◇ flow chain</a>        joins flows; by hand today
 
 ┌─ <a href="docs/ablaufpakete.de.md">flow</a> ──────────────────────────────────────────────┐
-│ package   <a href="src/ki_dev/flow/implement.toml">states, edges</a>, roles, <a href="docs/ablaufpakete.de.md#eine-bindung">one op per state</a>    │  <a href="#1-model-the-flow">step 1</a>
+│ package   <a href="src/ki_dev/flow/implement.toml">states, edges</a>, roles, <a href="docs/ablaufpakete.de.md#eine-bindung">one op per state</a>    │  <a href="#1-flow-built-in">step 1</a>
 │           <a href="src/ki_dev/flow_ops/implement/machine/model.py">guards, actions</a>: Python, run data only    │
 │ scaffold  <a href="src/ki_dev/flow/patterns/review.toml">patterns</a>: review pattern and variants     │
 └─────────────────────────┬───────────────────────▲───┘
@@ -425,7 +417,7 @@ The sketch has two dimensions:
                           ▼                       │
                        agent or human ────────────┘
 
- inputs per run, not a layer: <a href="#2-cast-the-roles">profile (step 2)</a> · <a href="#3-pick-a-task">task (step 3)</a>
+ inputs per run, not a layer: <a href="#2-create-a-task">task (step 2)</a> · <a href="#3-cast-the-roles">profile (step 3)</a>
 </pre>
 
 ◇ does not exist yet ([Roadmap](#roadmap)). The sketch shows the
@@ -433,7 +425,7 @@ The sketch has two dimensions:
 where the code deviates is listed in the [Roadmap](#roadmap) under **V1**.
 
 - **Input ≠ layer:** executor per role, limit values and tests come from
-  the [profile](#2-cast-the-roles); in the review pattern the tests come
+  the [profile](#3-cast-the-roles); in the review pattern the tests come
   from the target repo's `pyproject.toml`. When they apply and what
   follows is up to the flow. The executor measures, a guard compares.
 - **Op ≠ action:** an op acts outside and ends in an event; an action
@@ -489,15 +481,13 @@ stateDiagram-v2
 ```
 
 <!-- readme-script: readme-scripts/en/6-map-step.sh -->
-Play it through by hand, without agents, starting in the ki-dev clone:
-a throwaway repo with a Beads project, ki-dev's guidelines in it (the
-handoffs of `map` carry the target repo's guidelines from
-`docs/policies/`), a mapping task with a source (`source_refs`) and the
-review's verdict as a file.
+Play it through by hand, without agents, in the folder `ki-dev` from
+[step 0](#0-set-up-try-it-without-agents): a throwaway repo with a Beads
+project, a mapping task with a source (`source_refs`) and the review's
+verdict as a file.
 
 ```bash
-export PATH="$PWD/.venv/bin:$PATH"
-POLICIES="$PWD/docs/policies"
+POLICIES="$PWD/docs/policies"  # ki-dev's guidelines, for the handoffs
 cd "$(mktemp -d)" && git init -q
 bd init --quiet --prefix calc --stealth --non-interactive
 mkdir docs && cp -r "$POLICIES" docs/
@@ -514,19 +504,7 @@ ki-dev -f map step "$BEAD" map
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> ✅ Run in an empty container · [test](tests/readme/test_6_map_step.sh)
-
-```text
-Empfänger: Umsetzer (bisherige Sitzung)
-
-Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
-Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
-
-Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
-
-Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
-- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
-```
+> Not run in the last check · [test](tests/readme/test_6_map_step.sh)
 
 `flow show` prints the flow as Mermaid (above), the first `step` the
 handoff to the mapping agent. The second returns the verdict `fix` and

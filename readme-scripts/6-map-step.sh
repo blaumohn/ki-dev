@@ -1,12 +1,10 @@
-# Ohne Agenten von Hand durchspielen, im ki-dev-Klon begonnen: ein
-# Wegwerf-Repo mit Beads-Projekt, darin die Leitlinien von ki-dev (die
-# Übergaben von `map` tragen die Leitlinien des Ziel-Repos aus
-# `docs/policies/`), ein Kartierungsauftrag mit Quelle (`source_refs`) und
+# Ohne Agenten von Hand durchspielen, im Ordner `ki-dev` aus
+# [Schritt 0](#0-einrichten-ohne-agenten-ausprobieren): ein Wegwerf-Repo
+# mit Beads-Projekt, ein Kartierungsauftrag mit Quelle (`source_refs`) und
 # das Urteil des Reviews als Datei.
 #
 # ```bash
-export PATH="$PWD/.venv/bin:$PATH"
-POLICIES="$PWD/docs/policies"
+POLICIES="$PWD/docs/policies"  # Leitlinien von ki-dev, für die Übergaben
 cd "$(mktemp -d)" && git init -q
 bd init --quiet --prefix calc --stealth --non-interactive
 mkdir docs && cp -r "$POLICIES" docs/

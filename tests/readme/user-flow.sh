@@ -36,25 +36,35 @@ main() {
   cd "$user_dir"
   run_readme_test "$staging_dir/tests/readme/test_1_setup.sh"
 
-  # Ab hier wie ein Besucher nach 1-setup.sh: im ki-dev-Klon.
+  # Ab hier wie ein Besucher nach 1-setup.sh im selben Terminal: im
+  # ki-dev-Klon, ki-dev und bd im PATH. Git-Identität wie auf einem
+  # Entwicklerrechner, in einer eigenen Datei statt ~/.gitconfig.
   cd "$user_dir/ki-dev"
+  export PATH="$PWD/.venv/bin:$PATH"
+  set_git_identity "$WORK_BASE/gitconfig"
   step "README-Abschnitte gegen readme-scripts prüfen"
   .venv/bin/python scripts/render-readme.py --check
   step "Übrige README-Skripte im Klon des Besuchers"
   run_readme_test "$staging_dir/tests/readme/test_2_runtime.sh"
-  run_readme_test "$staging_dir/tests/readme/test_4_auftrag.sh"
+  run_readme_test "$staging_dir/tests/readme/test_3_auftrag.sh"
+  run_readme_test "$staging_dir/tests/readme/test_4_rollen.sh"
   run_readme_test "$staging_dir/tests/readme/test_5_starten.sh"
   run_readme_test "$staging_dir/tests/readme/test_6_map_step.sh"
   run_readme_test "$staging_dir/tests/readme/test_7_entwickeln.sh"
   step "Tests und Lint im Klon des Besuchers"
-  # bd liegt im venv; Tests finden es wie bei aktiviertem venv im PATH.
-  PATH="$PWD/.venv/bin:$PATH" .venv/bin/pytest -q -m "not docker"
+  .venv/bin/pytest -q -m "not docker"
   .venv/bin/ruff check .
   step "README-Einrichtung bestanden"
 }
 
 step() {
   echo "[readme-check] $*" >&2
+}
+
+set_git_identity() {
+  export GIT_CONFIG_GLOBAL="$1"
+  git config --global user.name "README-Besucher"
+  git config --global user.email "besucher@example.invalid"
 }
 
 # Klon des Quell-Repos mit dessen Arbeitsstand, committet nur im Klon.

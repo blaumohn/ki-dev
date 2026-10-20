@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Test für readme-scripts/1-setup.sh, gestartet in einem leeren
-# Verzeichnis: Klon, make setup, make demo; der Demo-Lauf endet mit
-# status passed in Runde 2. Auszug: Ergebnis-JSON und Commit-Betreffs.
+# Verzeichnis: Klon, make setup, PATH, make demo; der Demo-Lauf endet
+# mit status passed in Runde 2. Auszug: Ergebnis-JSON und Commit-Betreffs.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 main() {

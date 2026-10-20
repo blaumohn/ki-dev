@@ -2,10 +2,10 @@
 
 # ki-dev
 
-**KI-Agenten arbeiten, ein [Ablauf aus TOML](#1-ablauf-modellieren) entscheidet, was danach passiert.**
+**KI-Agenten arbeiten, ein [Ablauf aus TOML](#1-ablauf-mitgeliefert) entscheidet, was danach passiert.**
 Der Ablauf modelliert ein Arbeitsverfahren, etwa Umsetzung mit getrenntem
-Review oder [Planung](#nicht-nur-code). Die [Rollen](#2-rollen-besetzen)
-besetzt ein Profil, der [Auftrag](#3-auftrag-wählen) ist ein beliebiger
+Review oder [Planung](#nicht-nur-code). Die [Rollen](#3-rollen-besetzen)
+besetzt ein Profil, der [Auftrag](#2-auftrag-anlegen) ist ein beliebiger
 Vorgang. Kein Agent beauftragt den nächsten, kein Mensch reicht jede Antwort
 von Hand weiter.
 
@@ -21,17 +21,17 @@ noch das Test-Tor vor der Integration und Budgetgrenzen auf allen Pfaden
 
 1. [Warum](#warum)
 2. [Beispiel: Umsetzer und Reviewer als Ablauf](#beispiel-umsetzer-und-reviewer-als-ablauf)
-   1. [Ablauf modellieren](#1-ablauf-modellieren)
-   2. [Rollen besetzen](#2-rollen-besetzen)
-   3. [Auftrag wählen](#3-auftrag-wählen)
+   0. [Einrichten, ohne Agenten ausprobieren](#0-einrichten-ohne-agenten-ausprobieren)
+   1. [Ablauf (mitgeliefert)](#1-ablauf-mitgeliefert)
+   2. [Auftrag anlegen](#2-auftrag-anlegen)
+   3. [Rollen besetzen](#3-rollen-besetzen)
    4. [Starten](#4-starten)
 3. [Was im Lauf passiert](#was-im-lauf-passiert)
-4. [Ausprobieren ohne Agenten](#ausprobieren-ohne-agenten)
-5. [Ebenen und Orte](#ebenen-und-orte)
-6. [Nicht nur Code](#nicht-nur-code)
-7. [Roadmap](#roadmap)
-8. [Mitmachen](#mitmachen)
-9. [Lizenz](#lizenz)
+4. [Ebenen und Orte](#ebenen-und-orte)
+5. [Nicht nur Code](#nicht-nur-code)
+6. [Roadmap](#roadmap)
+7. [Mitmachen](#mitmachen)
+8. [Lizenz](#lizenz)
 
 ## Warum
 
@@ -59,13 +59,40 @@ Mehr-Agenten-Systemen ([MAST](https://arxiv.org/html/2503.13657v3)).
 Modelliert wird ein Verfahren, keine einzelne Aufgabe: Ein Agent setzt um,
 ein zweiter prüft in eigener Sitzung, `fix` führt zurück, nach drei Runden
 entscheidet der Mensch. Jeder Schritt nennt seine
-[Ebene oder Eingabe](#ebenen-und-orte).
+[Ebene oder Eingabe](#ebenen-und-orte). Die Befehle laufen der Reihe nach
+in einem Terminal; angelegt werden nur Auftrag und Profil.
 
-### 1. Ablauf modellieren
+### 0. Einrichten, ohne Agenten ausprobieren
 
-**[Ebene Ablauf](#ebenen-und-orte).** Der mitgelieferte Ablauf
-`implement` legt fest, was nach welchem Urteil passiert. Die
-Korrekturschleife, aus
+<!-- readme-script: readme-scripts/1-setup.sh -->
+Braucht Python ≥ 3.12, git ≥ 2.32, make, Go und einen C-Compiler:
+`make setup` baut [Beads](https://github.com/steveyegge/beads) `bd` aus
+dem Quellcode ins Projekt-venv, beim ersten Mal einige Minuten, mit Netz.
+
+```bash
+git clone https://github.com/blaumohn/ki-dev.git ki-dev
+cd ki-dev
+make setup                          # venv mit ki-dev und bd
+export PATH="$PWD/.venv/bin:$PATH"  # ki-dev und bd für die Schritte unten
+make demo
+```
+
+> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_1_setup.sh)
+
+`make demo` spielt das Beispiel mit Platzhalter-Agenten (Mock) durch:
+Das Review verlangt erst eine Korrektur (`fix`), dann passt es (`PASS`).
+`round_id: 2`: eine Korrekturrunde; `passed`: Das Ergebnis liegt per
+Fast-Forward auf `main`. Die Mocks schreiben nur eine Textzeile; die
+Demo zeigt die Steuerung, nicht die Arbeit eines Agenten.
+<!-- /readme-script -->
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+### 1. Ablauf (mitgeliefert)
+
+**[Ebene Ablauf](#ebenen-und-orte).** Hier nichts anzulegen: Der Ablauf
+`implement` liegt im Paket und legt fest, was nach welchem Urteil
+passiert. Die Korrekturschleife, aus
 [`implement.toml`](src/ki_dev/flow/implement.toml):
 
 ```toml
@@ -115,78 +142,32 @@ des Gerüsts (`KI_DEV_FLOW_PATH`,
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
-### 2. Rollen besetzen
-
-**[Eingabe Profil](#ebenen-und-orte).** Wer die Rollen übernimmt und
-mit welchen Grenzen, steht in `.ki-dev/profiles/default.toml`; der
-Ablauf bleibt derselbe:
-
-```toml
-workdir = "."                           # Arbeits-Worktree, hier startet ki-dev
-access_profile = "write"
-
-[worker]                                # setzt um
-executor = "codex"                      # Executor aus dem Gerüst
-session_id = "019a…"                    # bestehende Codex-Sitzung
-model = "gpt-5.6-terra"
-effort = "high"
-
-[review]                                # prüft, in eigener Sitzung
-executor = "claude"
-session_id = "b3f1…"                    # bestehende Claude-Code-Sitzung
-model = "sonnet"
-effort = "high"
-
-[[tests]]                               # läuft je Runde, Ergebnis ans Review
-name = "test_add"
-argv = ["python3", "test_add.py"]
-
-[limits]
-changes_rounds = 3                      # danach fragt ki-dev den Menschen
-
-[finalization]                          # wohin ein akzeptiertes Ergebnis geht
-target_workdir = "../calc"              # Ziel-Worktree desselben Repos
-target_ref = "refs/heads/main"
-commit_message = "Fix add()"
-data_mode = "file_proposal"
-```
-
-Ein Mensch (`manual`), ein Mock oder ein anderes Modell: Es wechselt nur
-`executor` ([Executoren](docs/ausfuehrer.de.md#executoren)). Die Datei
-liegt als [`docs/beispiele/default.toml`](docs/beispiele/default.toml)
-bei; Schritt 3 legt sie ins Wegwerf-Repo.
-
-**Stand:** Schutzhalt an Kontext-, Kontingent- und Budgetgrenze mit
-`claude`; `codex` ohne Kontextmessung.
-
-<sub>[↑ Inhalt](#inhalt)</sub>
-
-### 3. Auftrag wählen
+### 2. Auftrag anlegen
 
 **[Eingabe Auftrag](#ebenen-und-orte)**, ein Vorgang aus dem Arbeitsgraph
 ([Beads](https://github.com/steveyegge/beads)). Der Ablauf passt zu
 jedem Vorgang mit Abnahmekriterien, hier ein kleiner Bug: `add(a, b)`
 liefert `a - b`.
 
-<!-- readme-script: readme-scripts/4-auftrag.sh -->
-Im ki-dev-Klon nach [Ausprobieren](#ausprobieren-ohne-agenten): `bd`
-liegt im Projekt-venv. Ein Wegwerf-Repo `calc` mit dem Bug, daneben der
-Arbeits-Worktree `calc-work` der Agenten mit eigenem Beads-Projekt und
-dem Profil aus Schritt 2. `.ki-dev/` (Profil, Läufe) und die
-Beads-Sperrdatei bleiben außerhalb von git: ki-dev verlangt saubere
-Worktrees.
+<!-- readme-script: readme-scripts/3-auftrag.sh -->
+Weiter im Terminal aus [Schritt 0](#0-einrichten-ohne-agenten-ausprobieren):
+ein Wegwerf-Repo `calc` mit dem Bug, daneben der Arbeits-Worktree
+`calc-work` der Agenten mit dem Auftrag.
 
 ```bash
-export PATH="$PWD/.venv/bin:$PATH"
-PROFILE="$PWD/docs/beispiele/default.toml"
 cd "$(mktemp -d)" && git init -q -b main calc && cd calc
-git config user.name calc && git config user.email calc@example.invalid
-printf 'def add(a, b):\n    return a - b\n' >add.py
-printf 'from add import add\n\nassert add(2, 3) == 5\n' >test_add.py
-printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude
+cat >add.py <<'EOF'
+def add(a, b):
+    return a - b
+EOF
+cat >test_add.py <<'EOF'
+from add import add
+
+assert add(2, 3) == 5
+EOF
+printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude  # saubere Worktrees
 git add . && git commit -q -m "add()"
 git worktree add -q -b work ../calc-work && cd ../calc-work
-mkdir -p .ki-dev/profiles && cp "$PROFILE" .ki-dev/profiles/default.toml
 bd init --quiet --prefix calc --stealth --non-interactive
 BEAD="$(bd create "add() does not add" \
   --description "add(2, 3) returns -1" \
@@ -196,14 +177,67 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 ```
 
-> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_4_auftrag.sh)
+> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_3_auftrag.sh)
 
-`$BEAD` ist die ID des Auftrags, etwa `calc-7k2`; Schritt 4 nutzt sie im
-selben Terminal, in `calc-work`.
+`$BEAD` ist die ID des Auftrags, etwa `calc-7k2`. `.ki-dev/` (Profil,
+Läufe) und die Sperrdatei von Beads bleiben außerhalb von git: ki-dev
+verlangt saubere Worktrees.
 <!-- /readme-script -->
 
 Welchen Vorgang ein Lauf bekommt, wählt heute der Mensch; einen Durchgang
 durch den Bead-Graphen gibt es noch nicht ([Roadmap](#roadmap)).
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
+### 3. Rollen besetzen
+
+**[Eingabe Profil](#ebenen-und-orte).** Wer die Rollen übernimmt und mit
+welchen Grenzen, steht im Profil; der Ablauf bleibt derselbe. Ein Mensch
+(`manual`), ein Mock oder ein anderes Modell: Es wechselt nur `executor`
+([Executoren](docs/ausfuehrer.de.md#executoren)).
+
+<!-- readme-script: readme-scripts/4-rollen.sh -->
+Weiter in `calc-work`: Das Profil `default` liegt dort, wo ki-dev
+startet.
+
+```bash
+mkdir -p .ki-dev/profiles
+cat >.ki-dev/profiles/default.toml <<'EOF'
+workdir = "."                   # Arbeits-Worktree, hier startet ki-dev
+access_profile = "write"
+
+[worker]                        # setzt um
+executor = "codex"              # Executor aus dem Gerüst
+session_id = "019a…"            # eigene Codex-Sitzung eintragen
+model = "gpt-5.6-terra"
+effort = "high"
+
+[review]                        # prüft, in eigener Sitzung
+executor = "claude"
+session_id = "b3f1…"            # eigene Claude-Code-Sitzung eintragen
+model = "sonnet"
+effort = "high"
+
+[[tests]]                       # läuft je Runde, Ergebnis ans Review
+name = "test_add"
+argv = ["python3", "test_add.py"]
+
+[limits]
+changes_rounds = 3              # danach fragt ki-dev den Menschen
+
+[finalization]                  # wohin ein akzeptiertes Ergebnis geht
+target_workdir = "../calc"      # Repo aus Schritt 2
+target_ref = "refs/heads/main"
+commit_message = "Fix add()"
+data_mode = "file_proposal"
+EOF
+```
+
+> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_4_rollen.sh)
+<!-- /readme-script -->
+
+**Stand:** Schutzhalt an Kontext-, Kontingent- und Budgetgrenze mit
+`claude`; `codex` ohne Kontextmessung.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -216,19 +250,19 @@ an Codex und Claude Code. Halt und Fortsetzen regelt
 Schutzgrenzen hat heute nur `implement` ([Roadmap](#roadmap)).
 
 <!-- readme-script: readme-scripts/5-starten.sh -->
+Weiter in `calc-work`:
+
 ```bash
-ki-dev -f implement "$BEAD" --run-id add-fix
-ki-dev -f implement status add-fix
+ki-dev -f implement "$BEAD" --run-id add-fix  # Ablauf implement, Profil default
+ki-dev -f implement status add-fix            # wo der Lauf steht
 ```
 
-> ⏳ Ungeprüft: läuft bis zum ersten Agentenaufruf, der braucht echte Sitzungen · [Test](tests/readme/test_5_starten.sh)
+> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_5_starten.sh)
 
-Ablauf `implement` mit dem Profil `default` aus Schritt 2, Lauf
-`add-fix`; `status` zeigt, wo er steht. Nach einem Halt setzt
-`ki-dev -f implement resume add-fix` ihn fort, mit `--answer`, wenn der
-Halt eine Antwort verlangt. Mit den Platzhaltern `019a…` und `b3f1…`
-hält der Lauf vor dem ersten Agentenaufruf an; für einen echten Lauf
-eigene Sitzungs-IDs ins Profil eintragen.
+Mit den Platzhaltern `019a…` und `b3f1…` hält der Lauf vor dem ersten
+Agentenaufruf an; für einen echten Lauf eigene Sitzungs-IDs ins Profil
+eintragen. Nach einem Halt setzt `ki-dev -f implement resume add-fix`
+den Lauf fort, mit `--answer`, wenn der Halt eine Antwort verlangt.
 <!-- /readme-script -->
 
 **Stand dieses Beispiels:** Ablauf, Profilformat und Befehle sind echt,
@@ -239,11 +273,11 @@ Lauf mit echten Agenten, und rote Tests halten die Integration noch nicht auf.
 
 ## Was im Lauf passiert
 
-Der Mock-Lauf aus [Ausprobieren](#ausprobieren-ohne-agenten) (`make demo`:
+Der Mock-Lauf aus [Schritt 0](#0-einrichten-ohne-agenten-ausprobieren) (`make demo`:
 Ablauf `implement`, Review erst `fix`, dann `PASS`) schreibt je Übergang
 eine Zeile nach `events.jsonl`, hier 47
 ([ganze Datei](docs/beispiele/demo-lauf.events.jsonl)). Zeile 16 ist die
-Rückkante aus [Schritt 1](#1-ablauf-modellieren), umbrochen:
+Rückkante aus [Schritt 1](#1-ablauf-mitgeliefert), umbrochen:
 
 ```json
 {"line": 16, "region": "ablauf", "seq": 7,
@@ -259,7 +293,7 @@ Rückkante aus [Schritt 1](#1-ablauf-modellieren), umbrochen:
 `operation` und `halt`: 31 Kanten des Runners aus
 [`run.toml`](src/ki_dev/runner/run.toml), je Op
 `hold → start → artifact_saved`. `adapter`: wer antwortete, mit
-dem Profil aus [Schritt 2](#2-rollen-besetzen) `claude-cli`
+dem Profil aus [Schritt 3](#3-rollen-besetzen) `claude-cli`
 ([Format](docs/ausfuehrer.de.md#ereignisprotokoll-je-übergang)).
 
 Die 16 Ablaufzeilen als Pfad, von Hand übertragen, Nummer = `seq`:
@@ -341,49 +375,6 @@ stateDiagram-v2
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
-## Ausprobieren ohne Agenten
-
-<!-- readme-script: readme-scripts/1-setup.sh -->
-Die Demo legt ein Wegwerf-Repo mit Auftrag und Profil an; Mock-Umsetzer
-und Mock-Review (`fix`, dann `PASS`) spielen das Beispiel ohne
-Anbieterzugang durch. Statuszeile und Ausgabe stammen aus
-`make readme-check`, der Einrichtung im leeren Container.
-
-Braucht Python ≥ 3.12, git ≥ 2.32, make, Go und einen C-Compiler:
-`make setup` baut [Beads](https://github.com/steveyegge/beads) `bd` aus
-dem Quellcode ins Projekt-venv (beim ersten Mal einige Minuten, mit Netz).
-
-```bash
-git clone https://github.com/blaumohn/ki-dev.git ki-dev
-cd ki-dev
-make setup
-make demo
-```
-
-> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_1_setup.sh)
-
-```text
-{
-  "run_id": "demo",
-  "status": "passed",
-  "phase": "passed",
-  "round_id": 2,
-  "detail": "Fast-forward integriert",
-  "operation_id": null
-}
-
-Geprüfter Abschluss (Demo)
-start
-```
-
-`round_id: 2`: eine Korrekturrunde. `passed`: das Mock-Review hat
-akzeptiert, das Ergebnis liegt per Fast-Forward auf `main`. Die Mocks
-schreiben nur eine Textzeile; die Demo zeigt die Steuerung, nicht die
-Arbeit eines Agenten.
-<!-- /readme-script -->
-
-<sub>[↑ Inhalt](#inhalt)</sub>
-
 ## Ebenen und Orte
 
 Die Skizze hat zwei Dimensionen:
@@ -402,7 +393,7 @@ Die Skizze hat zwei Dimensionen:
  <a href="#roadmap">◇ Ablaufkette</a>            verbindet Abläufe; heute von Hand
 
 ┌─ <a href="docs/ablaufpakete.de.md">Ablauf</a> ──────────────────────────────────────────┐
-│ Paket   <a href="src/ki_dev/flow/implement.toml">Zustände, Kanten</a>, Rollen, <a href="docs/ablaufpakete.de.md#eine-bindung">Op je Zustand</a>   │  <a href="#1-ablauf-modellieren">Schritt 1</a>
+│ Paket   <a href="src/ki_dev/flow/implement.toml">Zustände, Kanten</a>, Rollen, <a href="docs/ablaufpakete.de.md#eine-bindung">Op je Zustand</a>   │  <a href="#1-ablauf-mitgeliefert">Schritt 1</a>
 │         <a href="src/ki_dev/flow_ops/implement/machine/model.py">Wächter, Aktionen</a>: Python, nur Laufdaten  │
 │ Gerüst  <a href="src/ki_dev/flow/patterns/review.toml">Muster</a>: Review-Muster und Varianten       │
 └─────────────────────────┬─────────────────────▲───┘
@@ -425,7 +416,7 @@ Die Skizze hat zwei Dimensionen:
                           ▼                     │
                        Agent oder Mensch ───────┘
 
- Eingaben je Lauf, keine Ebene: <a href="#2-rollen-besetzen">Profil (Schritt 2)</a> · <a href="#3-auftrag-wählen">Auftrag (Schritt 3)</a>
+ Eingaben je Lauf, keine Ebene: <a href="#2-auftrag-anlegen">Auftrag (Schritt 2)</a> · <a href="#3-rollen-besetzen">Profil (Schritt 3)</a>
 </pre>
 
 ◇ gibt es noch nicht ([Roadmap](#roadmap)). Die Skizze zeigt die
@@ -433,7 +424,7 @@ Die Skizze hat zwei Dimensionen:
 wo der Code abweicht, steht in der [Roadmap](#roadmap) unter **V1**.
 
 - **Eingabe ≠ Ebene:** Executor je Rolle, Grenzwerte und Tests setzt das
-  [Profil](#2-rollen-besetzen); im Review-Muster kommen die Tests aus der
+  [Profil](#3-rollen-besetzen); im Review-Muster kommen die Tests aus der
   `pyproject.toml` des Ziel-Repos. Wann sie gelten und was folgt,
   entscheidet der Ablauf. Der Executor misst, ein Wächter vergleicht.
 - **Op ≠ Aktion:** eine Op wirkt nach außen und endet in einem Ereignis;
@@ -490,15 +481,13 @@ stateDiagram-v2
 ```
 
 <!-- readme-script: readme-scripts/6-map-step.sh -->
-Ohne Agenten von Hand durchspielen, im ki-dev-Klon begonnen: ein
-Wegwerf-Repo mit Beads-Projekt, darin die Leitlinien von ki-dev (die
-Übergaben von `map` tragen die Leitlinien des Ziel-Repos aus
-`docs/policies/`), ein Kartierungsauftrag mit Quelle (`source_refs`) und
+Ohne Agenten von Hand durchspielen, im Ordner `ki-dev` aus
+[Schritt 0](#0-einrichten-ohne-agenten-ausprobieren): ein Wegwerf-Repo
+mit Beads-Projekt, ein Kartierungsauftrag mit Quelle (`source_refs`) und
 das Urteil des Reviews als Datei.
 
 ```bash
-export PATH="$PWD/.venv/bin:$PATH"
-POLICIES="$PWD/docs/policies"
+POLICIES="$PWD/docs/policies"  # Leitlinien von ki-dev, für die Übergaben
 cd "$(mktemp -d)" && git init -q
 bd init --quiet --prefix calc --stealth --non-interactive
 mkdir docs && cp -r "$POLICIES" docs/
@@ -515,19 +504,7 @@ ki-dev -f map step "$BEAD" map
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_6_map_step.sh)
-
-```text
-Empfänger: Umsetzer (bisherige Sitzung)
-
-Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
-Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
-
-Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
-
-Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
-- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
-```
+> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_6_map_step.sh)
 
 `flow show` gibt den Ablauf als Mermaid aus (oben), der erste `step` die
 Übergabe an den Kartierungsagenten. Der zweite nimmt das Urteil `fix`

@@ -1,12 +1,10 @@
-# Play it through by hand, without agents, starting in the ki-dev clone:
-# a throwaway repo with a Beads project, ki-dev's guidelines in it (the
-# handoffs of `map` carry the target repo's guidelines from
-# `docs/policies/`), a mapping task with a source (`source_refs`) and the
-# review's verdict as a file.
+# Play it through by hand, without agents, in the folder `ki-dev` from
+# [step 0](#0-set-up-try-it-without-agents): a throwaway repo with a Beads
+# project, a mapping task with a source (`source_refs`) and the review's
+# verdict as a file.
 #
 # ```bash
-export PATH="$PWD/.venv/bin:$PATH"
-POLICIES="$PWD/docs/policies"
+POLICIES="$PWD/docs/policies"  # ki-dev's guidelines, for the handoffs
 cd "$(mktemp -d)" && git init -q
 bd init --quiet --prefix calc --stealth --non-interactive
 mkdir docs && cp -r "$POLICIES" docs/

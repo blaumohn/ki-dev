@@ -85,7 +85,7 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
 5. **Fährte legen.** Überschrift und Linktext sagen, was dort steht:
    „Ausprobieren ohne Agenten“, „Was im Lauf passiert“. Aktive Links ab dem
    ersten Satz führen zu der Stelle, die den Begriff zeigt
-   („[Ablauf aus TOML](../README.md#1-ablauf-modellieren)“). Stark
+   („[Ablauf aus TOML](../README.md#1-ablauf-mitgeliefert)“). Stark
    verlinken: jeder Begriff beim ersten Auftreten im Abschnitt, jede
    genannte Datei, jedes Skizzenelement mit Fundstelle; die Schritte
    verlinken auf ihre Ebene, die Skizze zurück auf die Schritte. Fehler:
@@ -135,6 +135,21 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
 12. **Knapp und genau.** Halbsätze statt Absätze; was Skizze oder Link
     tragen, wiederholt die Prosa nicht. Genauigkeit vor Kürze: keine
     künstliche Grenze, wenn ein Begriff sonst falsch wäre.
+13. **Befehle wie ein Terminal.** Lesereihenfolge = Ausführungsreihenfolge:
+    Kein Block setzt einen Schritt voraus, der später steht. Was der Leser
+    anlegt, steht als Befehl im Block (`cat >datei <<'EOF'`), nicht als
+    Prosa oder kopierte Drittdatei; Erklärungen als Zeilenend-Kommentar
+    (`  # …`). Mitgeliefertes heißt so („hier nichts anzulegen“). Wo ein
+    Block nicht an den vorigen anschließt, sagt ein Halbsatz davor, wo er
+    beginnt. Fehler (`e54fb0a`): Schritt 3 beginnt „Im ki-dev-Klon nach
+    Ausprobieren: `bd` liegt im Projekt-venv …“, und „Ausprobieren“ steht
+    zwei Abschnitte danach; Schritt 2 zeigt ein Profil, das niemand
+    schreibt, Schritt 3 kopiert es aus `docs/beispiele/default.toml`.
+14. **Die Statuszeile am Block.** Sie steht unter dem Block, den sie
+    betrifft, und sagt, was geprüft wurde, mit Link auf den Test. Fehler
+    (`2133c43`): „> ✅ bestanden · selbst prüfen: make readme-check“ über
+    der Prosa; unklar, was bestanden hat, und „selbst prüfen“ liest sich
+    als „nicht geprüft, prüf selbst“.
 
 ## Arbeitsweise
 
@@ -146,10 +161,10 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
   beheben.
 - DE und EN gleich aufgebaut. Erzeugte Blöcke nur über ihre Quellen:
   `readme-scripts/` mit `scripts/render-readme.py`, Ablaufdiagramme mit
-  `scripts/render-flow-diagrams.py`; das Profil in Schritt 2 ist
-  `docs/beispiele/default.toml`, das Schritt 3 ins Wegwerf-Repo legt.
-  Statuszeile und Ausgabe eines README-Skripts setzt nur
-  `make readme-check` (je Skript ein Test in `tests/readme/`, Stub mit
+  `scripts/render-flow-diagrams.py`; das Profil in Schritt 3 ist das
+  HERE-Doc in `readme-scripts/4-rollen.sh`. Statuszeile und Ausgabe eines
+  README-Skripts setzt nur `make readme-check`, direkt unter den
+  geprüften Block (je Skript ein Test in `tests/readme/`, Stub mit
   Halbsatz für den Teil, den der Container nicht prüfen kann); der
   pre-push-Hook hält sie beim Push nach `dev` aktuell.
 - Prüfen: `render-readme.py --check`, `render-flow-diagrams.py --check`,
