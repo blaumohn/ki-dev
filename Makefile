@@ -6,7 +6,7 @@
 #   make demo           Mock-Lauf ohne Anbieterzugang
 #   make test           Tests und Lint
 #   make spec-test      Anforderungstests mit Ergebnismatrix (dürfen rot sein)
-#   make readme-check   README-Einrichtung im Wegwerf-Container (braucht Docker)
+#   make readme-check   README-Befehle im Wegwerf-Container, setzt Statuszeilen (braucht Docker)
 #   make clean          Temporäre Dateien und venv entfernen
 
 .DEFAULT_GOAL := help
@@ -25,7 +25,7 @@ help:
 	@echo "  make demo           Starten Sie einen Mock-Lauf ohne Anbieterzugang"
 	@echo "  make test           Führen Sie Tests und Lint aus"
 	@echo "  make spec-test      Anforderungstests mit Ergebnismatrix (dürfen rot sein)"
-	@echo "  make readme-check   README-Einrichtung im Wegwerf-Container (braucht Docker)"
+	@echo "  make readme-check   README-Befehle im Wegwerf-Container, setzt Statuszeilen (braucht Docker)"
 	@echo "  make clean          Entfernen Sie venv und temporäre Dateien"
 	@echo ""
 	@echo "Beispiele:"
@@ -64,6 +64,10 @@ spec-test: setup
 
 # Baut das Prüfimage und startet einen neuen Wegwerf-Container (--rm).
 # Arbeitsdateien pro Lauf auf Platte; Download-/Build-Caches bleiben erhalten.
+# Danach setzt der Renderer (Host-venv) Statuszeile und Ausgabe jedes
+# README-Blocks aus den Ergebnissen genau dieses Laufs, auch bei rotem
+# Test. Exit: der des Containers, wenn ≠ 0, sonst der des Renderers.
+readme-check: .venv/bin/ki-dev
 readme-check: export READMECHECK_USER := $(shell id -u):$(shell id -g)
 readme-check: export READMECHECK_CACHE_DIR := $(CURDIR)/.local/cache/readme-check
 # Schlanke Variante des Python-Images aus tool-versions.json (eine Quelle).
@@ -77,8 +81,13 @@ readme-check:
 	READMECHECK_TMP_DIR=$$(mktemp -d "$(CURDIR)/.local/var/readme-check/run-XXXXXX"); \
 	export READMECHECK_TMP_DIR; \
 	trap 'rm -rf -- "$$READMECHECK_TMP_DIR"' EXIT; \
+	mkdir "$$READMECHECK_TMP_DIR/readme-ergebnisse"; \
 	$(CHECK) build check; \
-	$(CHECK) run --rm check
+	check=0; $(CHECK) run --rm check || check=$$?; \
+	render=0; $(BIN)/python scripts/render-readme.py \
+		--write "$$READMECHECK_TMP_DIR/readme-ergebnisse" || render=$$?; \
+	if [ "$$check" -ne 0 ]; then exit "$$check"; fi; \
+	exit "$$render"
 
 clean:
 	rm -rf .venv

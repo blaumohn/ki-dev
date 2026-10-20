@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import sys
@@ -12,10 +13,12 @@ from plumbum import local
 
 ROOT = Path(__file__).resolve().parents[1]
 RENDER = "scripts/render-readme.py"
+RESULTS_MODULE = "scripts/readme_results.py"
 DE = "readme-scripts/1-setup.sh"
 EN = "readme-scripts/en/1-setup.sh"
 READMES = ("README.md", "README.en.md")
-STATUS = "readme-scripts/status.toml"
+LATER = "2026-10-21T09:30:00Z"
+CHECK = "make readme-check"
 BLOCK_RE = re.compile(
     r"^<!-- readme-script: \S*1-setup\.sh -->\n"
     r".*?^<!-- /readme-script -->\n",
@@ -29,10 +32,17 @@ def repo(tmp_path):
         path.relative_to(ROOT)
         for path in (ROOT / "readme-scripts").rglob("*.sh")
     )
-    for name in (RENDER, STATUS, *scripts, *READMES):
+    for name in (RENDER, RESULTS_MODULE, *scripts, *READMES):
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / name, tmp_path / name)
     return tmp_path
+
+
+@pytest.fixture
+def results(tmp_path):
+    directory = tmp_path / "ergebnisse"
+    directory.mkdir()
+    return directory
 
 
 def test_readmes_match_scripts():
@@ -105,108 +115,164 @@ def test_staged_german_change_needs_english(repo):
     assert _render(repo, "--check", "--staged")[0] == 0
 
 
-def test_status_line_is_first_block_line_in_both_languages(repo):
-    (repo / STATUS).write_text(
-        '["1-setup.sh"]\nstatus = "unchecked"\ncommand = "make demo"\n'
-        '["2-runtime.sh"]\nstatus = "xfail"\n'
-        'date = "2026-01-02"\ncommand = "pytest spec"\n'
+def test_without_write_status_stays(repo, results):
+    _result(results, "1-setup", "passed", auszug=["{", "}"])
+    assert _render(repo, "--write", results)[0] == 0
+    written = {name: (repo / name).read_text() for name in READMES}
+    assert _render(repo, "--check")[0] == 0
+    assert _render(repo)[0] == 0
+    for name in READMES:
+        assert (repo / name).read_text() == written[name]
+
+
+def test_new_block_starts_not_run(repo):
+    readme = repo / "README.md"
+    readme.write_text(
+        BLOCK_RE.sub(
+            f"<!-- readme-script: {DE} -->\n<!-- /readme-script -->\n",
+            readme.read_text(),
+        )
     )
     assert _render(repo)[0] == 0
-    de = (repo / "README.md").read_text()
-    en = (repo / "README.en.md").read_text()
     assert (
         f"<!-- readme-script: {DE} -->\n"
-        "> nicht ausgeführt · selbst prüfen: make demo\n\n"
-    ) in de
-    assert (
-        f"<!-- readme-script: {EN} -->\n"
-        "> not run · verify: make demo\n\n"
-    ) in en
-    assert (
-        "> ❌ rot, erwartet (Spezifikation) · 2026-01-02 · "
-        "selbst prüfen: pytest spec\n\n"
-    ) in de
-    assert (
-        "> ❌ red, expected (spec) · 2026-01-02 · "
-        "verify: pytest spec\n\n"
-    ) in en
+        "> nicht ausgeführt · selbst prüfen: make readme-check\n\n"
+    ) in readme.read_text()
 
 
-def test_passed_status_shows_symbol_date_and_command(repo):
-    _set_status(repo, '["1-setup.sh"]', "passed", 'date = "2026-10-16"')
-    assert _render(repo)[0] == 0
-    de = (repo / "README.md").read_text()
-    line = (
-        "> ✅ bestanden · 2026-10-16 · "
-        "selbst prüfen: make readme-check\n"
+def test_missing_result_is_not_run(repo, results):
+    assert _render(repo, "--write", results)[0] == 0
+    assert (
+        "> nicht ausgeführt · selbst prüfen: make readme-check\n"
+        in (repo / "README.md").read_text()
     )
-    assert line in de
-    assert "> ✅ passed · 2026-10-16 · verify: make readme-check\n" in (
+    assert "> not run · verify: make readme-check\n" in (
         repo / "README.en.md"
     ).read_text()
 
 
-def test_script_without_status_entry_fails(repo):
-    status = repo / STATUS
-    status.write_text(status.read_text().split('["2-runtime.sh"]')[0])
-    code, _, err = _render(repo, "--check")
-    assert code == 1
-    assert "kein Eintrag für readme-scripts/2-runtime.sh" in err
+def test_passed_writes_output_after_bash(repo, results):
+    _result(results, "1-setup", "passed", auszug=['"status": "passed"'])
+    assert _render(repo, "--write", results)[0] == 0
+    for name, line in (
+        ("README.md", f"> ✅ bestanden · selbst prüfen: {CHECK}"),
+        ("README.en.md", f"> ✅ passed · verify: {CHECK}"),
+    ):
+        block = _block(repo / name)
+        assert block.splitlines()[1] == line
+        assert (
+            "make demo\n```\n\n```text\n"
+            '"status": "passed"\n```\n\n`round_id: 2`'
+        ) in block
+        assert "2026-" not in block
 
 
-def test_status_entry_without_script_fails(repo):
-    status = repo / STATUS
-    status.write_text(
-        status.read_text() + '\n["9-fehlt.sh"]\nstatus = "draft"\n'
+def test_failed_has_no_output_block(repo, results):
+    _result(results, "1-setup", "failed")
+    assert _render(repo, "--write", results)[0] == 0
+    de, en = (_block(repo / name) for name in READMES)
+    assert f"> ❌ fehlgeschlagen · selbst prüfen: {CHECK}" in de
+    assert "> ❌ failed · verify: make readme-check" in en
+    assert "```text" not in de
+
+
+def test_stub_shows_reason_per_language(repo, results):
+    reasons = {"grund_de": "braucht X", "grund_en": "needs X"}
+    _result(results, "1-setup", "stub", **reasons)
+    assert _render(repo, "--write", results)[0] == 0
+    assert (
+        "> ⏳ ungeprüft · braucht X · selbst prüfen: make readme-check"
+        in _block(repo / "README.md")
     )
-    code, _, err = _render(repo, "--check")
+    assert "> ⏳ not checked · needs X · verify: make readme-check" in (
+        _block(repo / "README.en.md")
+    )
+
+
+def test_parameters_share_one_line(repo, results):
+    entries = [
+        _entry("1-setup", "passed", parameter={"executor": "mock"}),
+        _entry("1-setup", "skipped", parameter={"executor": "claude"}),
+    ]
+    (results / "1-setup.json").write_text(json.dumps(entries))
+    assert _render(repo, "--write", results)[0] == 0
+    assert (
+        "> ✅ mock · ⏳ claude · selbst prüfen: make readme-check"
+        in _block(repo / "README.md")
+    )
+
+
+def test_two_writes_give_the_same_readme(repo, results):
+    _result(results, "1-setup", "passed", auszug=["x"])
+    assert _render(repo, "--write", results)[0] == 0
+    first = (repo / "README.md").read_text()
+    _result(results, "1-setup", "passed", auszug=["x"], datum=LATER)
+    assert _render(repo, "--write", results)[0] == 0
+    assert (repo / "README.md").read_text() == first
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        ({"ergebnis": "gruen"}, "1-setup.json: 0/ergebnis: enum"),
+        ({"ergebnis": "stub"}, "1-setup.json: 0: required"),
+        ({"ergebnis": "failed", "auszug": ["x"]}, "json: 0: not"),
+        ({"skript": "2-runtime.sh"}, "2-runtime.sh statt 1-setup"),
+    ],
+)
+def test_invalid_result_fails_without_writing(
+    repo, results, entry, message
+):
+    original = (repo / "README.md").read_text()
+    (results / "1-setup.json").write_text(
+        json.dumps([_entry("1-setup", "passed") | entry])
+    )
+    code, _, err = _render(repo, "--write", results)
     assert code == 1
-    assert "Eintrag 9-fehlt.sh ohne Skript" in err
+    assert message in err
+    assert (repo / "README.md").read_text() == original
 
 
-def test_unknown_status_fails(repo):
-    _set_status(repo, '["1-setup.sh"]', "gruen")
-    code, _, err = _render(repo, "--check")
+def test_result_without_script_fails(repo, results):
+    _result(results, "9-fehlt", "passed")
+    code, _, err = _render(repo, "--write", results)
     assert code == 1
-    assert "1-setup.sh: unbekannter status 'gruen'" in err
+    assert "9-fehlt.json: kein README-Skript 9-fehlt.sh" in err
 
 
-@pytest.mark.parametrize("status", ["passed", "xfail"])
-def test_dated_status_without_date_fails(repo, status):
-    _set_status(repo, '["1-setup.sh"]', status)
-    code, _, err = _render(repo, "--check")
-    assert code == 1
-    assert f"1-setup.sh: {status} ohne date" in err
-
-
-def test_draft_without_block_is_skipped_with_note(repo):
-    _set_status(repo, '["1-setup.sh"]', "draft")
-    for name in READMES:
-        readme = repo / name
-        readme.write_text(BLOCK_RE.sub("", readme.read_text()))
-    code, _, err = _render(repo, "--check")
-    assert code == 0
+def test_text_block_in_output_slot_fails(repo):
     for script in (DE, EN):
-        assert f"[i] {script}: Entwurf, übersprungen" in err
-
-
-def test_draft_with_block_fails(repo):
-    _set_status(repo, '["1-setup.sh"]', "draft")
+        path = repo / script
+        path.write_text(
+            path.read_text().replace(
+                "# ```\n#\n# `round_id",
+                "# ```\n#\n# ```text\n# x\n# ```\n#\n# `round_id",
+            )
+        )
     code, _, err = _render(repo, "--check")
     assert code == 1
-    assert f"README.md: Entwurf {DE} darf keinen Block haben" in err
+    assert f"{DE}: text-Block direkt nach dem letzten bash-Block" in err
 
 
-def _set_status(repo, header, status, *extra):
-    """Ersetzt status (und ergänzt Zeilen) im Eintrag unter header."""
-    status_file = repo / STATUS
-    head, _, rest = status_file.read_text().partition(header + "\n")
-    _, _, tail = rest.partition("command")
-    lines = "\n".join([f'status = "{status}"', *extra, "command"])
-    status_file.write_text(f"{head}{header}\n{lines}{tail}")
+def _result(results, stem, ergebnis, **fields):
+    entry = _entry(stem, ergebnis) | fields
+    (results / f"{stem}.json").write_text(json.dumps([entry]))
+
+
+def _entry(stem, ergebnis, **fields):
+    return {
+        "skript": f"{stem}.sh",
+        "parameter": {},
+        "ergebnis": ergebnis,
+        "datum": "2026-10-20T08:00:00Z",
+    } | fields
+
+
+def _block(readme):
+    return BLOCK_RE.search(readme.read_text()).group(0)
 
 
 def _render(root, *args):
     return local[sys.executable].run(
-        args=[root / RENDER, *args], retcode=None, timeout=20
+        args=[root / RENDER, *map(str, args)], retcode=None, timeout=20
     )

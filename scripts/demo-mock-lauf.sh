@@ -55,5 +55,5 @@ echo "[demo] Mock-Lauf starten: $BEAD" >&2
 (cd "$DEMO/arbeit" && "$KI_DEV" -f implement "$BEAD" \
   --profile "$DEMO/profil.toml" --run-id demo --runs-dir "$DEMO/runs")
 echo
-git -C "$DEMO/ziel" log --oneline
+git -C "$DEMO/ziel" log --format=%s
 echo "Laufverzeichnis: $DEMO/runs/demo"

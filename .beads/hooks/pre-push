@@ -1,4 +1,12 @@
 #!/usr/bin/env sh
+# README beim Push nach dev aktuell halten (ki-dev-ablauf-bel0); dieser
+# Teil und der am Ende sind nicht von Beads verwaltet. Die Push-Refs auf
+# stdin liest auch der Beads-Abschnitt, deshalb zuerst puffern.
+readme_refs=$(mktemp)
+trap 'rm -f "$readme_refs"' EXIT
+cat >"$readme_refs"
+exec <"$readme_refs"
+
 # --- BEGIN BEADS INTEGRATION v1.2.2 ---
 # This section is managed by beads. Do not remove these markers.
 if command -v bd >/dev/null 2>&1; then
@@ -31,3 +39,25 @@ if command -v bd >/dev/null 2>&1; then
   if [ $_bd_exit -ne 0 ]; then exit $_bd_exit; fi
 fi
 # --- END BEADS INTEGRATION v1.2.2 ---
+
+# Nur Pushes nach dev; andere kosten nichts. make readme-check prüft den
+# Arbeitsbaum samt ungetrackter Dateien, deshalb muss er sauber und der
+# gepushte Commit HEAD sein: dann ist der geprüfte Stand genau dieser.
+readme_sha=$(awk '$3 == "refs/heads/dev" && $2 !~ /^0+$/ { print $2 }' "$readme_refs")
+if [ -n "$readme_sha" ]; then
+  readme_reject() {
+    echo >&2 "README-Prüfung (Push nach dev): $*"
+    exit 1
+  }
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    readme_reject "Docker fehlt; make readme-check braucht Docker"
+  fi
+  [ -z "$(git status --porcelain)" ] ||
+    readme_reject "Arbeitsbaum nicht sauber; erst committen oder aufräumen"
+  [ "$readme_sha" = "$(git rev-parse HEAD)" ] ||
+    readme_reject "gepushter Commit ist nicht HEAD; erst auschecken"
+  make readme-check ||
+    readme_reject "make readme-check fehlgeschlagen"
+  [ -z "$(git status --porcelain -- README.md README.en.md)" ] ||
+    readme_reject "README aktualisiert: committen und erneut pushen"
+fi

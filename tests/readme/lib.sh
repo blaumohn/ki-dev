@@ -12,7 +12,9 @@
 # ergebnis: passed | failed | skipped | stub. grund_de und grund_en nur
 # bei stub; auszug nur mit Auszugsdatei, nie bei failed: höchstens 15
 # Zeilen, die für Besucher bedeutsam und von Lauf zu Lauf gleich sind
-# (keine temporären Pfade, Hashes, vergebenen IDs oder Zeiten).
+# (keine temporären Pfade, Hashes, vergebenen IDs oder Zeiten). Vertrag:
+# RESULT_SCHEMA in scripts/readme_results.py; daraus setzt
+# render-readme.py --write Statuszeile und Ausgabeblock der README.
 set -Eeuo pipefail
 shopt -s inherit_errexit
 trap 'echo "[readme-check] Fehler in ${0##*/} Zeile $LINENO: $BASH_COMMAND" >&2' ERR

@@ -9,63 +9,49 @@ README.md nimmt readme-scripts/*.sh, README.en.md
 readme-scripts/en/*.sh:
 
     <!-- readme-script: readme-scripts/1-setup.sh -->
-    …erzeugt…
+    > ✅ bestanden · selbst prüfen: make readme-check
+    …Prosa und bash-Block aus dem Skript…
+    ```text
+    …Ausgabeblock…
+    ```
+    …Prosa aus dem Skript…
     <!-- /readme-script -->
+
+Statuszeile und Ausgabeblock kommen aus einem Lauf von make readme-check
+(Format: scripts/readme_results.py). Nur --write DIR setzt sie aus DIR;
+ohne --write bleiben sie, wie sie in der README stehen, ein neuer Block
+beginnt mit „nicht ausgeführt“. Der Ausgabeblock folgt direkt dem
+letzten bash-Block; dort darf das Skript selbst keinen text-Block haben.
 
 Standard schreibt abweichende READMEs; --check meldet Abweichungen ohne
 zu schreiben. --staged prüft zusätzlich, dass eine gestagte deutsche
 Datei ihre englische Entsprechung mitbringt (pre-commit). Exit 1 bei
-Abweichung, fehlendem Skript, Skript ohne Block, fehlender Übersetzung
-oder abweichenden Befehlen zwischen Deutsch und Englisch.
-
-Jeder Block beginnt mit einer Statuszeile aus readme-scripts/status.toml
-(eine Quelle für DE und EN, Schlüssel = Skriptname):
-
-    ["1-setup.sh"]
-    status = "passed"   # passed | xfail | unchecked | draft
-    date = "2026-10-16" # Pflicht bei passed und xfail
-    command = "make demo"
-
-Die Zeile beschreibt nur den Funktionslauf, nicht die Synchronisierung.
-``draft`` braucht keinen Block (Hinweis ``[i]`` auf stderr, Exit 0);
-ein Entwurf mit Block, ein Skript ohne Eintrag, ein Eintrag ohne Skript,
-ein unbekannter status oder passed/xfail ohne date ergeben Exit 1.
+Abweichung, fehlendem Skript, Skript ohne Block, fehlender Übersetzung,
+abweichenden Befehlen zwischen Deutsch und Englisch oder ungültigen
+Ergebnissen.
 
     .venv/bin/python scripts/render-readme.py [--check] [--staged]
+        [--write DIR]
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 from plumbum import local
+from readme_results import excerpt, load_results, status_line
 
 ROOT = Path(__file__).resolve().parents[1]
 DE_DIR = Path("readme-scripts")
 EN_DIR = DE_DIR / "en"
 VARIANTS = (("README.md", DE_DIR), ("README.en.md", EN_DIR))
-STATUS_FILE = DE_DIR / "status.toml"
-STATUSES = ("passed", "xfail", "unchecked", "draft")
-DATED = ("passed", "xfail")
-STATUS_TEXT = {
-    "README.md": {
-        "verify": "selbst prüfen",
-        "passed": "✅ bestanden",
-        "xfail": "❌ rot, erwartet (Spezifikation)",
-        "unchecked": "nicht ausgeführt",
-    },
-    "README.en.md": {
-        "verify": "verify",
-        "passed": "✅ passed",
-        "xfail": "❌ red, expected (spec)",
-        "unchecked": "not run",
-    },
-}
 STRIP_PREFIX = re.compile(r"^# ?")
 FENCE_MARKER = "```"
+BASH_FENCE = "```bash"
+TEXT_FENCE = "```text"
 BLOCK = re.compile(
     r"^<!-- readme-script: (\S+) -->\n.*?^<!-- /readme-script -->$",
     re.MULTILINE | re.DOTALL,
@@ -73,16 +59,31 @@ BLOCK = re.compile(
 
 
 def main(argv: list[str]) -> int:
-    check = "--check" in argv[1:]
-    statuses, problems = load_statuses()
-    if problems:
-        return report(problems)
+    args = parse_args(argv[1:])
+    results = None
+    if args.write is not None:
+        results, problems = load_results(
+            Path(args.write), section_names(DE_DIR)
+        )
+        if problems:
+            return report(problems)
+    problems = []
     for readme, scripts_dir in VARIANTS:
-        problems += sync_readme(readme, scripts_dir, check, statuses)
+        problems += sync_readme(
+            readme, scripts_dir, args.check, results
+        )
     problems += filename_parity_problems() + command_parity_problems()
-    if "--staged" in argv[1:]:
+    if args.staged:
         problems += staged_change_symmetry_problems()
     return report(problems)
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="render-readme.py")
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--staged", action="store_true")
+    parser.add_argument("--write", metavar="DIR")
+    return parser.parse_args(argv)
 
 
 def report(problems: list[str]) -> int:
@@ -91,71 +92,25 @@ def report(problems: list[str]) -> int:
     return 1 if problems else 0
 
 
-def load_statuses() -> tuple[dict[str, dict], list[str]]:
-    path = ROOT / STATUS_FILE
-    if not path.is_file():
-        return {}, [f"{STATUS_FILE} fehlt"]
-    statuses = tomllib.loads(path.read_text())
-    names = section_names(DE_DIR)
-    problems = [
-        f"{STATUS_FILE}: kein Eintrag für {DE_DIR / name}"
-        for name in sorted(names - statuses.keys())
-    ]
-    problems += [
-        f"{STATUS_FILE}: Eintrag {name} ohne Skript in {DE_DIR}/"
-        for name in sorted(statuses.keys() - names)
-    ]
-    for name, entry in sorted(statuses.items()):
-        problems += entry_problems(name, entry)
-    return statuses, problems
-
-
-def entry_problems(name: str, entry: dict) -> list[str]:
-    status = entry.get("status")
-    if status not in STATUSES:
-        return [f"{STATUS_FILE}: {name}: unbekannter status {status!r}"]
-    problems = []
-    if status in DATED and not entry.get("date"):
-        problems.append(f"{STATUS_FILE}: {name}: {status} ohne date")
-    if status != "draft" and not entry.get("command"):
-        problems.append(f"{STATUS_FILE}: {name}: {status} ohne command")
-    return problems
-
-
-def is_draft(statuses: dict[str, dict], script: Path | str) -> bool:
-    entry = statuses.get(Path(script).name, {})
-    return entry.get("status") == "draft"
-
-
-def status_line(readme: str, entry: dict) -> str:
-    text = STATUS_TEXT[readme]
-    status = entry["status"]
-    parts = [text[status]]
-    if status in DATED:
-        parts.append(entry["date"])
-    parts.append(f"{text['verify']}: {entry['command']}")
-    return "> " + " · ".join(parts)
-
-
 def sync_readme(
     readme: str,
     scripts_dir: Path,
     check: bool,
-    statuses: dict[str, dict],
+    results: dict[str, list[dict]] | None,
 ) -> list[str]:
     text = (ROOT / readme).read_text()
-    problems = missing_blocks(readme, text, scripts_dir, statuses)
+    problems = missing_blocks(readme, text, scripts_dir)
     problems += missing_scripts(readme, text)
-    problems += draft_block_problems(readme, text, statuses)
+    problems += output_slot_problems(scripts_dir)
     if problems:
         return problems
 
     def render(match: re.Match[str]) -> str:
-        return render_block(match, readme, statuses)
+        return render_block(match, readme, results, problems)
 
     rendered = BLOCK.sub(render, text)
-    if rendered == text:
-        return []
+    if problems or rendered == text:
+        return problems
     if check:
         return [
             f"{readme}: weicht ab; "
@@ -166,31 +121,13 @@ def sync_readme(
 
 
 def missing_blocks(
-    readme: str,
-    text: str,
-    scripts_dir: Path,
-    statuses: dict[str, dict],
+    readme: str, text: str, scripts_dir: Path
 ) -> list[str]:
     used = set(BLOCK.findall(text))
-    problems = []
-    for script in sorted(map(str, section_paths(scripts_dir))):
-        if script in used:
-            continue
-        if is_draft(statuses, script):
-            note = f"[i] {script}: Entwurf, übersprungen"
-            print(note, file=sys.stderr)
-        else:
-            problems.append(f"{readme}: kein Block für {script}")
-    return problems
-
-
-def draft_block_problems(
-    readme: str, text: str, statuses: dict[str, dict]
-) -> list[str]:
     return [
-        f"{readme}: Entwurf {script} darf keinen Block haben"
-        for script in BLOCK.findall(text)
-        if is_draft(statuses, script)
+        f"{readme}: kein Block für {script}"
+        for script in sorted(map(str, section_paths(scripts_dir)))
+        if script not in used
     ]
 
 
@@ -202,16 +139,77 @@ def missing_scripts(readme: str, text: str) -> list[str]:
     ]
 
 
+def output_slot_problems(scripts_dir: Path) -> list[str]:
+    return [
+        f"{script}: text-Block direkt nach dem letzten bash-Block "
+        "ist der Ausgabe aus make readme-check vorbehalten"
+        for script in section_paths(scripts_dir)
+        if output_lines(render_body((ROOT / script).read_text()))
+        is not None
+    ]
+
+
 def render_block(
-    match: re.Match[str], readme: str, statuses: dict[str, dict]
+    match: re.Match[str],
+    readme: str,
+    results: dict[str, list[dict]] | None,
+    problems: list[str],
 ) -> str:
     script = match.group(1)
-    line = status_line(readme, statuses[Path(script).name])
+    if results is None:
+        line, output = kept_status(match.group(0), readme)
+    else:
+        entries = results.get(Path(script).name)
+        line, output = status_line(readme, entries), excerpt(entries)
     body = render_body((ROOT / script).read_text())
+    if output and bash_close_index(body.split("\n")) is None:
+        problems.append(f"{script}: Ausgabe ohne bash-Block")
+    body = with_output(body, output)
     return (
         f"<!-- readme-script: {script} -->\n{line}\n\n{body}"
         "<!-- /readme-script -->"
     )
+
+
+def kept_status(
+    block: str, readme: str
+) -> tuple[str, list[str] | None]:
+    """Statuszeile und Ausgabeblock, wie sie in der README stehen."""
+    lines = block.splitlines()
+    if len(lines) > 1 and lines[1].startswith("> "):
+        return lines[1], output_lines(block)
+    return status_line(readme, None), output_lines(block)
+
+
+def output_lines(text: str) -> list[str] | None:
+    """Zeilen des text-Blocks direkt nach dem letzten bash-Block."""
+    lines = text.splitlines()
+    close = bash_close_index(lines)
+    after = lines[close + 1 : close + 3] if close is not None else []
+    if after != ["", TEXT_FENCE]:
+        return None
+    start = close + 3
+    end = lines.index(FENCE_MARKER, start)
+    return lines[start:end]
+
+
+def with_output(body: str, output: list[str] | None) -> str:
+    if not output:
+        return body
+    lines = body.split("\n")
+    close = bash_close_index(lines)
+    if close is None:
+        return body  # gemeldet in render_block
+    block = ["", TEXT_FENCE, *output, FENCE_MARKER]
+    return "\n".join(lines[: close + 1] + block + lines[close + 1 :])
+
+
+def bash_close_index(lines: list[str]) -> int | None:
+    """Index des schließenden Zauns des letzten bash-Blocks."""
+    opening = [i for i, line in enumerate(lines) if line == BASH_FENCE]
+    if not opening:
+        return None
+    return lines.index(FENCE_MARKER, opening[-1] + 1)
 
 
 def render_body(text: str) -> str:

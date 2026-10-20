@@ -1,12 +1,14 @@
 """tests/readme/lib.sh: Ergebnisdatei je Skript, Stub, Fehlerpfad.
 
 Fake-Skripte und Fake-Tests gegen die echte lib.sh, ohne Docker
-(ki-dev-ablauf-i6jl).
+(ki-dev-ablauf-i6jl); jede Ergebnisdatei erfüllt RESULT_SCHEMA aus
+scripts/readme_results.py, den Vertrag des Renderers.
 """
 
 from __future__ import annotations
 
 import datetime
+import importlib.util
 import json
 from pathlib import Path
 
@@ -16,6 +18,11 @@ from plumbum import local
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "tests/readme/lib.sh"
 HEADER = f'source "{LIB}"\n'
+_SPEC = importlib.util.spec_from_file_location(
+    "readme_results", ROOT / "scripts/readme_results.py"
+)
+readme_results = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(readme_results)
 
 
 @pytest.fixture
@@ -75,7 +82,7 @@ def test_stub_writes_both_half_sentences(env, tmp_path):
     assert "auszug" not in entry
 
 
-def test_stub_without_english_half_sentence_fails(env, tmp_path):
+def test_stub_without_english_reason_fails(env, tmp_path):
     test = _test(
         tmp_path, "test_1_ok.sh", 'readme_test_missing "nur DE" ""\n'
     )
@@ -85,7 +92,7 @@ def test_stub_without_english_half_sentence_fails(env, tmp_path):
     assert _entries(env, "1-ok")[0]["ergebnis"] == "failed"
 
 
-def test_failing_command_is_failed_without_excerpt(env, tmp_path):
+def test_failing_command_is_failed(env, tmp_path):
     test = _test(
         tmp_path,
         "test_2_boom.sh",
@@ -165,5 +172,9 @@ def _run(env, test):
 
 
 def _entries(env, stem):
+    """Einträge, geprüft gegen den Vertrag des Renderers."""
     path = Path(env["README_RESULTS_DIR"]) / f"{stem}.json"
-    return json.loads(path.read_text())
+    entries = json.loads(path.read_text())
+    errors = readme_results.RESULT_SCHEMA.iter_errors(entries)
+    assert [error.message for error in errors] == []
+    return entries
