@@ -134,6 +134,47 @@ vor, `dateien.txt` nennt die Zuordnung. Danach `uebergabe.txt` als Nachricht ein
 Die Antworten an den README-Bearbeiter geben. Dieser erhält die Vorbilder;
 der Web-Agent erhält sie nie.
 
+## Basislinie `02c0078`
+
+Der README-Kopf aus `02c0078`, geprüft mit dem Verfahren oben
+(`ki-dev-ablauf-i0ro`): `./scripts/readme-walkthrough prepare --readme
+02c0078`, Verfahrensstand `5cbcccd`, Ordner
+`5cbcccd-readme-02c0078-261021T1351`. Je Persona las ein Claude-Code-
+Unteragent ohne Projektkenntnis nur die Dateien seines Ordners; die
+Berichte liegen lokal unter `.local/var/readme-walkthrough/` (nicht
+versioniert).
+
+| Persona | Abbruch | Beitrag nach dem ersten Bildschirm | Frage 8 (Auswahl) |
+| --- | --- | --- | --- |
+| Tech-Lead | Z. 449 | 8 Punkte, 6 als vermutet gekennzeichnet; belegt: Entwurfsentscheidung „Code steuert“ (Z. 5–7), offene Lücken (Z. 12–37); Gespräch: ja | „sind echt“ (Z. 266), „kein Aufseher-Modell“ (Z. 388), „ein Verfahren, keine einzelne Aufgabe“ (Z. 57) |
+| Entwickler | Z. 392 | nicht gefragt | „passt zu jedem Vorgang“ (Z. 146), „sind echt“ (Z. 266), „Wer mehrere Agenten einsetzt, reicht … von Hand weiter“ ohne Beleg (Z. 381), „kein Aufseher-Modell“, „ein Verfahren, keine einzelne Aufgabe“ |
+| Prüfer | Z. 598 | nicht gefragt | „passt zu jedem Vorgang“, „sind echt“, „Es wechselt nur `executor`“ (Z. 193), „kein Aufseher-Modell“, „setzen nur Parameter darauf“ (Z. 459) |
+
+Was sie zeigt:
+
+- Befunde aus `ki-dev-ablauf-qaa0`: Alle drei finden Problem, Zweck und
+  Zielgruppe erst unter „Warum“ (Z. 376–390), als Befund gegen den Kopf.
+  Stand-Punkte im Kopf brauchen Begriffe, die erst später kommen
+  („Was ist Kontingent?“, Entwickler). Der Beitrag der Person bleibt
+  überwiegend Vermutung (6 von 8 Punkten).
+- Befunde aus `ki-dev-ablauf-9wtu`: „sind echt“ (alle drei), „passt zu
+  jedem Vorgang“ (Entwickler, Prüfer).
+
+Was sie nicht zeigt:
+
+- Das Beitragskriterium scheitert an `02c0078` nicht: Zwei Punkte belegt
+  der Tech-Lead aus dem Kopf, er würde ein Gespräch anbieten.
+- „Nicht nur Code“ nennt keine Persona als Abgrenzung; der Entwickler
+  liest die Überschrift als „weitere Abläufe“.
+- „Gute Einstiege, je mit klarer Abnahme“ erreicht keine Persona; alle
+  brechen vor „Mitmachen“ ab.
+
+Neu aus dem Lauf: „kein Aufseher-Modell, das jede Ausgabe liest“ (alle
+drei: Die Alternative kam vorher nicht vor, das Beispiel setzt selbst ein
+prüfendes Modell ein) und „ein Verfahren, keine einzelne Aufgabe“
+(Tech-Lead, Entwickler: nach dem Kopf nicht erwartet, ausgeführt wird
+eine einzelne Aufgabe).
+
 ## Frühere Durchläufe
 
 Die folgenden Berichte beziehen sich auf die frühere Struktur und den alten
