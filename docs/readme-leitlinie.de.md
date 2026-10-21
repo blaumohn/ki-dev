@@ -209,8 +209,13 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
   Durchlauf-Agenten und prüfen die Regeln oben.
 - Ein Durchlauf zählt nur, wenn er scheitern kann: je Persona das Modell
   nach dem ersten Bildschirm in drei Sätzen, verglichen mit dem Auftrag
-  oben; jede Stelle mit zwei Lesarten samt beiden Lesarten; jede Fährte,
-  die nicht hielt, was sie versprach; der Abbruchpunkt. Liefert erst ein
-  späterer Abschnitt die Antwort, ist das ein Befund gegen den früheren.
+  oben; beim Tech-Lead im selben Halt, was die Person hinter ki-dev einem
+  Team beitragen kann, mit Zeilenbeleg aus dem ersten Bildschirm; jede
+  Stelle mit zwei Lesarten samt beiden Lesarten; jede Bewertung ohne Beleg
+  und jede Abgrenzung gegen eine nicht erwartete Alternative (Regel 15);
+  jede Fährte, die nicht hielt, was sie versprach; der Abbruchpunkt.
+  Liefert erst ein späterer Abschnitt die Antwort, ist das ein Befund
+  gegen den früheren. Was als Scheitern gilt:
+  [Wann ein Durchlauf scheitert](readme-walkthrough.de.md#wann-ein-durchlauf-scheitert).
 - Kleinere Grenze: Markdown-Darstellung (Zeilenumbruch mit zwei
   Leerzeichen, Mermaid-Layout) in der GitHub-Vorschau nachsehen.

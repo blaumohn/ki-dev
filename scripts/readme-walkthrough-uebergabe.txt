@@ -10,8 +10,10 @@ und Pfeilen sind Skizzen: lies sie als Bild, ihre Links als Verweise.
 
 Erster Bildschirm: Lies bis einschließlich Inhaltsverzeichnis und halte
 dann an. Schreibe in drei Sätzen, was ki-dev ist, woraus es besteht und wie
-weit es ist. Ändere diese Sätze danach nicht; notiere beim Weiterlesen, wo
-sie sich als falsch oder unvollständig erweisen (Zeile).
+weit es ist.@BILDSCHIRM@ Ändere diese Antworten danach nicht; notiere beim
+Weiterlesen, wo sie sich als falsch oder unvollständig erweisen (Zeile).
+Was du erst später findest, ergänzt sie nicht: Es ist ein Befund gegen den
+Kopf.
 
 Notiere nur an Stellen, an denen sich dein Verständnis oder deine Entscheidung ändert:
 | Zeile | was ich jetzt verstanden habe | was unklar bleibt | Aktion (weiter / Link X / schließen) |
@@ -41,6 +43,8 @@ je mit Zeilenbeleg; "weiß ich nicht" ist eine gültige Antwort:
    Was belegt das gezeigte Ergebnis, und was belegt es nicht?
 7. Welchen nächsten Schritt würdest du tatsächlich machen? Findest du die
    dafür nötige Erklärung oder Einrichtung vor dem Punkt, an dem du aufhörst?
+8. Zitiere jede Stelle, die ohne Beleg bewertet oder sich gegen eine
+   Alternative abgrenzt, die du nicht erwartet hattest (Zeile, Wortlaut).
 
 Bewerte den Weg zu deinem Verständnis, nicht die Anzahl vorhandener Links,
 Befehle oder Abschnitte. Eine gefundene Antwort ist noch keine verständliche

@@ -22,7 +22,7 @@ Menschen scheiterte (3,5 von 4, siehe unten).
 
 | Persona | Zeit | Ziel | Entscheidung |
 | --- | --- | --- | --- |
-| Tech-Lead sichtet eine Bewerbung | 60 s | Problemverständnis und technische Umsetzung erkennen | Gespräch sinnvoll oder nicht |
+| Tech-Lead sichtet eine Bewerbung | 60 s | Problemverständnis, technische Umsetzung und den Beitrag der Person hinter ki-dev für ein Team erkennen | Gespräch sinnvoll oder nicht, schon nach dem ersten Bildschirm |
 | Entwickler erkundet das Projekt | 5 min | Ansatz, Entwicklungsstand und nächsten Erkundungsschritt verstehen | erkunden, verfolgen oder verlassen; Betrieb gesondert beurteilen |
 | KI-Agent im Repo | ein Lesedurchgang | Beispiel, Ist/Ziel und zuständige Quellen verstehen | richtige Datei öffnen |
 | Prüfer verfolgt einen Nachweis | 10 min | Aussage → Test → Aussagegrenze nachvollziehen | Nachweis trägt die konkrete Behauptung oder nicht |
@@ -31,13 +31,19 @@ Menschen scheiterte (3,5 von 4, siehe unten).
 
 1. Erster Bildschirm (bis zum Inhaltsverzeichnis): Der Leser hält an und
    schreibt in drei Sätzen, was ki-dev ist, woraus es besteht und wie weit
-   es ist. Die Sätze bleiben stehen; wo das Weiterlesen sie widerlegt, ist
-   ein Befund gegen den Kopf.
+   es ist. Der Tech-Lead schreibt im selben Halt, was die Person hinter
+   ki-dev seinem Team beitragen könnte, je Punkt mit Zeile aus Kopf oder
+   Inhaltsverzeichnis, Vermutetes gekennzeichnet, und ob er nach diesem
+   Bildschirm ein Gespräch anbieten würde. Die Antworten bleiben stehen;
+   wo das Weiterlesen sie widerlegt oder erst ergänzt, ist ein Befund
+   gegen den Kopf.
 2. Erstes Beispiel: Zeigt es ein Verfahren oder eine einzelne Aufgabe? Kann
    er jedem Schritt seine Ebene zuordnen, ohne zu raten?
 3. Begriffe und Lesarten: Welcher Begriff steht für zwei Dinge? Welche
    Stelle, auch in einer Skizze, lässt zwei Lesarten zu (mit beiden
-   Lesarten)?
+   Lesarten)? Welche Stelle bewertet ohne Beleg oder grenzt sich gegen eine
+   Alternative ab, die der Leser nicht erwartet hatte (Zeile, Wortlaut;
+   [Leitlinie Regel 15](readme-leitlinie.de.md#regeln-mit-fehlbeispiel))?
 4. Fährte und Modell: Hielt jede Überschrift und jeder Link, was er
    versprach? Wo musste er springen oder fand die Antwort erst später? Baut
    jeder Abschnitt auf dem Modell aus dem Beispiel auf?
@@ -62,6 +68,36 @@ Ein Agentenbericht ist ein Hinweis, nie die Abnahme; abgenommen wird von
 einem Menschen. Wer Befunde umsetzt, prüft zuerst die Gliederung gegen die
 Leitlinie und flickt nicht einzeln.
 
+### Wann ein Durchlauf scheitert
+
+Geprüft wird die README-Vorstellung gegen die Grundanforderung: Ein
+Tech-Team, das eine Anstellung der Person hinter ki-dev erwägt, erkennt im
+ersten Bildschirm, was diese Person einbringen kann, ohne Marketing.
+
+- **Wer:** je Persona ein Agent mit der Übergabe aus
+  `scripts/readme-walkthrough prepare`, ohne Projektkenntnis; abgenommen
+  wird von einem Menschen.
+- **Beitrag (Tech-Lead):** Nach Kopf und Inhaltsverzeichnis, im selben
+  Halt wie die drei Sätze: Was könnte die Person hinter ki-dev deinem Team
+  beitragen, je Punkt mit Zeile aus diesem Bereich, Vermutetes
+  gekennzeichnet? Gescheitert ist die Vorstellung, wenn die Antwort leer
+  bleibt oder nur aus Vermutungen besteht. Was der Leser erst danach
+  findet, repariert den ersten Eindruck nicht; es ist ein Befund gegen den
+  Kopf.
+- **Bewertung und Abgrenzung (alle Personas, Frage 8):** Jede zitierte
+  Stelle im gelesenen Teil, die ohne Beleg bewertet oder sich gegen eine
+  Alternative abgrenzt, die der Leser nicht erwartet hatte, ist ein Befund.
+  Ein Kontrast, den die README selbst nahelegt und dessen Gegenstück sie
+  zeigt, ist keiner ([Regel 2](readme-leitlinie.de.md#regeln-mit-fehlbeispiel)).
+- **Wie bisher:** Modell nach dem ersten Bildschirm gegen den
+  [Auftrag](readme-leitlinie.de.md#auftrag), Stellen mit zwei Lesarten,
+  Fährten, die nicht hielten, Abbruchpunkt.
+
+Beantwortet der Agenten-Durchlauf die Beitragsfrage nicht trennscharf,
+prüft ein Mensch mit einem First-Impression-Test (5-Second-Test): nur Kopf
+und Inhaltsverzeichnis, dieselbe Beitragsfrage, dieselbe Trennung von
+README-Stand und Fragen.
+
 DE und EN auf dieselbe Leserführung, Beispielbedeutung und Ist-/Zieltrennung
 prüfen. Der Prüfer unterscheidet Link-Erreichbarkeit von inhaltlicher Beweiskraft.
 
@@ -82,6 +118,13 @@ im Repo. Ist die Datei vorhanden, aber ohne oder mit doppeltem Eintrag, bricht
 der Befehl mit Fehler ab, ohne auf den Standard zurückzufallen.
 
 Der Lauf landet unter `<ordner>/<head>-<zeit>/`; `~/` im Eintrag wird aufgelöst.
+
+Einen älteren README-Stand mit dem heutigen Verfahren prüfen:
+`./scripts/readme-walkthrough prepare --readme REV` nimmt README.md, die
+verlinkten Dateien und `root.txt` aus `REV` (`git show`, `git ls-tree`),
+Übergabe und Fragen aus dem Arbeitsbaum. Der Ordner nennt beide Stände:
+`<head>-readme-<rev>-<zeit>/`. So entsteht eine Basislinie, an der sich
+zeigt, ob das Verfahren scheitern kann.
 
 Je Persona einen neuen temporären Chat öffnen; Memory, eigene Anweisungen
 und Websuche ausschalten. Web-Chats laden nur Dateien, keine Ordner. Der

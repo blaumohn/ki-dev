@@ -2,20 +2,22 @@
 set -eu
 
 main() {
-    if [ "$#" -ne 1 ]; then
-        usage
-    fi
+    case "$#:${1:-}:${2:-}" in
+        1:config:) command=config ;;
+        1:prepare:) command=prepare readme_arg="" ;;
+        3:prepare:--readme) command=prepare readme_arg=$3 ;;
+        *) usage ;;
+    esac
     repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
     cd "$repo"
-    case "$1" in
+    case "$command" in
         config) show_config ;;
-        prepare) prepare_run ;;
-        *) usage ;;
+        prepare) prepare_run "$readme_arg" ;;
     esac
 }
 
 usage() {
-    echo "Aufruf: $0 prepare | config" >&2
+    echo "Aufruf: $0 prepare [--readme REV] | config" >&2
     exit 2
 }
 
@@ -104,13 +106,28 @@ show_config() {
     print_source "$file"
 }
 
+# Mit --readme REV kommen README.md, die verlinkten Dateien und root.txt
+# aus REV, Übergabe und Fragen aus dem Arbeitsbaum (Verfahrensstand). Der
+# Ordnername nennt dann beide: <head>-readme-<rev>-<zeit>.
 prepare_run() {
+    readme_rev=""
+    if [ -n "$1" ]; then
+        readme_rev=$(git rev-parse --verify --quiet --short "$1^{commit}") ||
+            die "README-Revision $1 nicht gefunden"
+    fi
     file=$(select_config)
     print_search "$file" >&2
     print_source "$file" >&2
     echo "Maßstab: docs/readme-leitlinie.de.md; ein Bericht ist ein Hinweis, keine Abnahme." >&2
+    if [ -n "$readme_rev" ]; then
+        echo "README-Stand: $readme_rev; Übergabe und Fragen: Arbeitsbaum" >&2
+    fi
     base=$(output_base "$file")
-    target="$base/$(git rev-parse --short HEAD)-$(date +%y%m%dT%H%M)"
+    name=$(git rev-parse --short HEAD)
+    if [ -n "$readme_rev" ]; then
+        name="$name-readme-$readme_rev"
+    fi
+    target="$base/$name-$(date +%y%m%dT%H%M)"
     mkdir -p "$target"
     target=$(CDPATH= cd -- "$target" && pwd)
     for persona in techlead entwickler pruefer; do
@@ -123,10 +140,12 @@ prepare_run() {
 prepare_persona() {
     directory="$1/$2"
     mkdir -p "$directory"
+    BILDSCHIRM=""
     case "$2" in
         techlead)
             PERSONA="ein Tech-Lead, der eine Bewerbung sichtet"
             BUDGET="60 Sekunden"
+            BILDSCHIRM=" Beantworte im selben Halt: Was könnte die Person hinter ki-dev deinem Team beitragen? Nur aus Kopf und Inhaltsverzeichnis, je Punkt die Zeile; kennzeichne, was du nur vermutest. Würdest du nach diesem Bildschirm ein Gespräch anbieten? ja/nein, mit Grund."
             ENTSCHEIDUNG="Lädst du die Person zum Gespräch ein? ja/nein, mit Grund"
             ZUSATZ=""
             ;;
@@ -143,13 +162,41 @@ prepare_persona() {
             ZUSATZ="Öffne den verlinkten Test. Prüft er die Behauptung wirklich oder nur etwas Ähnliches? Begründe mit Testcode. Die Dateien liegen flach; dateien.txt ordnet jedem Namen den Pfad zu, den README.md nennt."
             ;;
     esac
-    cp README.md "$directory/README.md"
-    git ls-files -co --exclude-standard | cut -d/ -f1 | sort -u > "$directory/root.txt"
+    readme_file README.md > "$directory/README.md"
+    root_names > "$directory/root.txt"
     sed -e "s|@PERSONA@|$PERSONA|g" \
         -e "s|@BUDGET@|$BUDGET|g" \
+        -e "s|@BILDSCHIRM@|$BILDSCHIRM|g" \
         -e "s|@ENTSCHEIDUNG@|$ENTSCHEIDUNG|g" \
         -e "s|@ZUSATZ@|$ZUSATZ|g" \
         scripts/readme-walkthrough-uebergabe.txt > "$directory/uebergabe.txt"
+}
+
+# Datei aus dem README-Stand: mit --readme aus der Revision, sonst aus dem
+# Arbeitsbaum.
+readme_file() {
+    if [ -n "$readme_rev" ]; then
+        git show "$readme_rev:$1"
+    else
+        cat "$1"
+    fi
+}
+
+readme_file_exists() {
+    if [ -n "$readme_rev" ]; then
+        [ "$(git cat-file -t "$readme_rev:$1" 2>/dev/null)" = blob ]
+    else
+        [ -f "$1" ]
+    fi
+}
+
+# Oberste Namen, wie GitHub sie über dem README zeigt.
+root_names() {
+    if [ -n "$readme_rev" ]; then
+        git ls-tree --name-only "$readme_rev"
+    else
+        git ls-files -co --exclude-standard
+    fi | cut -d/ -f1 | sort -u
 }
 
 # Kopiert die lokalen Links aus README.md flach in den Prüfer-Ordner: Ordner
@@ -170,13 +217,13 @@ link_pruefer_files() {
                 $0 = substr($0, RSTART + RLENGTH)
             }
         }
-    ' README.md | sed 's/#.*//' | sort -u | while IFS= read -r path; do
+    ' "$1/README.md" | sed 's/#.*//' | sort -u | while IFS= read -r path; do
         case "$path" in
             ""|http://*|https://*|/*|README.en.md) continue ;;
         esac
-        [ -f "$path" ] || continue
+        readme_file_exists "$path" || continue
         flat=$(printf '%s' "$path" | sed 's|/|__|g')
-        cp "$path" "$1/$flat"
+        readme_file "$path" > "$1/$flat"
         printf '%s  %s\n' "$flat" "$path" >> "$1/dateien.txt"
     done
 }

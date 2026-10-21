@@ -80,6 +80,10 @@ def test_prepare_repository_from_another_directory(tmp_path):
         assert "mit beiden\n   Lesarten" in handoff
         assert "Fährte verloren" in handoff
         assert "kein Gesamturteil" in handoff
+        assert "8. Zitiere jede Stelle, die ohne Beleg" in handoff
+        assert ("deinem Team beitragen" in handoff) == (
+            persona == "techlead"
+        )
     for relative in (
         "tests/machine/test_reachability.py",
         "docs/ausfuehrer.de.md",
@@ -98,6 +102,95 @@ def test_prepare_repository_from_another_directory(tmp_path):
         in (target / "pruefer/uebergabe.txt").read_text()
     )
     assert (REPO / "README.md").read_bytes() == readme
+
+
+IDENTITY = {
+    "GIT_AUTHOR_NAME": "test",
+    "GIT_AUTHOR_EMAIL": "test@example.invalid",
+    "GIT_COMMITTER_NAME": "test",
+    "GIT_COMMITTER_EMAIL": "test@example.invalid",
+}
+
+
+def _git(repo, *args):
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        env={**os.environ, **IDENTITY},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    ).stdout.strip()
+
+
+def test_prepare_readme_from_revision_with_current_handoff(tmp_path):
+    """README, verlinkte Dateien und root.txt aus der Revision, Übergabe
+    aus dem Arbeitsbaum; der Ordner nennt beide Revisionen."""
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    for name in (
+        "readme-walkthrough",
+        "readme-walkthrough-uebergabe.txt",
+    ):
+        shutil.copy2(REPO / "scripts" / name, repo / "scripts" / name)
+    (repo / "docs").mkdir()
+    (repo / "docs/proof.txt").write_text("alter Beleg\n")
+    (repo / "README.md").write_text("Alt: [Beleg](docs/proof.txt)\n")
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "alt")
+    old = _git(repo, "rev-parse", "--short", "HEAD")
+    (repo / "docs/proof.txt").write_text("neuer Beleg\n")
+    (repo / "docs/neu.txt").write_text("nur neu\n")
+    (repo / "neu.txt").write_text("nur neu\n")
+    (repo / "README.md").write_text(
+        "Neu: [Beleg](docs/proof.txt) [neu](docs/neu.txt)\n"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "neu")
+    head = _git(repo, "rev-parse", "--short", "HEAD")
+    handoff = repo / "scripts/readme-walkthrough-uebergabe.txt"
+    handoff.write_text(
+        handoff.read_text() + "Frage aus dem Arbeitsbaum\n"
+    )
+
+    result = _run(repo, tmp_path, ["prepare", "--readme", old])
+
+    target = Path(result.stdout.strip())
+    assert re.fullmatch(
+        rf"{head}-readme-{old}-\d{{6}}T\d{{4}}", target.name
+    )
+    assert f"README-Stand: {old}" in result.stderr
+    for persona in PERSONAS:
+        directory = target / persona
+        assert (directory / "README.md").read_text() == (
+            "Alt: [Beleg](docs/proof.txt)\n"
+        )
+        assert (directory / "root.txt").read_text().splitlines() == [
+            "README.md",
+            "docs",
+            "scripts",
+        ]
+        assert "Frage aus dem Arbeitsbaum" in (
+            directory / "uebergabe.txt"
+        ).read_text()
+    pruefer = target / "pruefer"
+    assert (pruefer / "docs__proof.txt").read_text() == "alter Beleg\n"
+    assert not (pruefer / "docs__neu.txt").exists()
+    assert (pruefer / "dateien.txt").read_text().splitlines()[1:] == [
+        "docs__proof.txt  docs/proof.txt"
+    ]
+
+
+def test_prepare_unknown_readme_revision_fails(tmp_path):
+    result = _run(
+        REPO, tmp_path, ["prepare", "--readme", "gibt-es-nicht"],
+        check=False,
+    )
+    assert result.returncode == 1
+    assert (
+        "README-Revision gibt-es-nicht nicht gefunden" in result.stderr
+    )
 
 
 @pytest.fixture
@@ -293,7 +386,15 @@ def test_config_command_without_file_shows_default(
 
 @pytest.mark.parametrize(
     "args",
-    [[], ["unknown"], ["prepare", "extra"], ["config", "extra"]],
+    [
+        [],
+        ["unknown"],
+        ["prepare", "extra"],
+        ["config", "extra"],
+        ["prepare", "--readme"],
+        ["prepare", "--andere", "abc"],
+        ["config", "--readme", "abc"],
+    ],
 )
 def test_rejects_unsupported_commands(tmp_path, args):
     result = subprocess.run(
