@@ -2,37 +2,30 @@
 
 # ki-dev
 
-**AI agents do the work; a [flow written in TOML](#1-flow-built-in) decides what happens next.**
-Code picks the next step, not a model; models implement and review the
-substance. A flow models a procedure, such as implementation with a
-separate review, or [planning](#the-same-procedure-for-planning); a profile
-[casts the roles](#3-cast-the-roles), the [task](#2-create-a-task) is an
-issue with acceptance criteria.
+**AI agents report "done" even when it is not true.** Premature
+termination and missing or incorrect verification form a class of their
+own in the [MAST](https://arxiv.org/html/2503.13657v3) failure taxonomy
+of multi-agent systems. Without control, a human carries results, review
+and rework from agent to agent.
 
-🚧 **Development snapshot, not yet usable for real work.** Goal of the
-first release (V1): write your own flows and profiles and run them with
-real AI agents.
+ki-dev puts this procedure into a file: a
+[flow written in TOML](#1-flow-built-in) decides what happens after each
+agent answer (review in a separate session, a correction round, a halt
+for a human); code picks the next step, not a model ([Why](#why)). Built
+so far: flows for implementation and
+[planning](#the-same-procedure-for-planning), running them up to the next
+halt, and connections to Codex and Claude Code
+([Layers and locations](#layers-and-locations)). Tests show that no
+correction loop of the implementation runs unbounded without a human
+([state space](tests/machine/test_reachability.py)) and that the core
+knows no flow names ([layers](tests/test_schichten.py)); ki-dev loads
+your own flows from a repo of their own
+([flow packages, German](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
-**What works**
-
-- Played through with placeholder agents (mock): the review asks for a
-  correction, accepts the second version, the result lands on `main`
-  ([step 0](#0-set-up-try-it-without-agents)).
-- With a real profile a run starts and halts before the first agent
-  call, as long as no real session is filled in ([step 4](#4-run)).
-
-**What is still missing**
-
-- A complete run with real agents: the Codex and Claude Code adapters
-  are built but not yet tried end to end ([step 4](#4-run)).
-- Red tests do not stop anything: if the review says "pass", the result
-  is taken even when tests fail ([test](tests/test_review_gate_cli.py),
-  [contributing](#contributing)).
-- Cost limits not everywhere: safety halts at context, quota and budget
-  limits exist only in the flow `implement`, with Codex without context
-  measurement ([step 3](#3-cast-the-roles)).
-- Several flows in a row, such as planning first, then implementing,
-  are started by hand today ([Roadmap](#roadmap)).
+🚧 **Development snapshot:** with placeholder agents the example runs
+through to the merge into `main`
+([`make demo`](#0-set-up-try-it-without-agents)); no run with real agents
+has been tried yet ([Status and known gaps](#status-and-known-gaps)).
 
 ## Contents
 
@@ -43,12 +36,13 @@ real AI agents.
    3. [Cast the roles](#3-cast-the-roles)
    4. [Run](#4-run)
 2. [What happens in a run](#what-happens-in-a-run)
-3. [Why](#why)
-4. [Layers and locations](#layers-and-locations)
-5. [The same procedure for planning](#the-same-procedure-for-planning)
-6. [Roadmap](#roadmap)
-7. [Contributing](#contributing)
-8. [License](#license)
+3. [Status and known gaps](#status-and-known-gaps)
+4. [Why](#why)
+5. [Layers and locations](#layers-and-locations)
+6. [The same procedure for planning](#the-same-procedure-for-planning)
+7. [Roadmap](#roadmap)
+8. [Contributing](#contributing)
+9. [License](#license)
 
 ## Example: implementer and reviewer as a flow
 
@@ -204,8 +198,9 @@ through the bead graph yet ([Roadmap](#roadmap)).
 ### 3. Cast the roles
 
 **[Input: profile](#layers-and-locations).** Who fills each role, and with
-which limits, is set in the profile; the flow stays the same. A human
-(`manual`), a mock or another model: only `executor` changes
+which limits, is set in the profile; the flow stays the same. Whether a
+human (`manual`), a mock or Codex or Claude Code fills a role is chosen
+by `executor` per role
 ([executors, German](docs/ausfuehrer.de.md#executoren)).
 
 <!-- readme-script: readme-scripts/en/4-rollen.sh -->
@@ -247,8 +242,9 @@ EOF
 > Not run in the last check · [test](tests/readme/test_4_rollen.sh)
 <!-- /readme-script -->
 
-**Status:** safety halt at context, quota and budget limits with
-`claude`; `codex` without context measurement.
+**More limits:** `[safety_limits]` and `budget` per role, defaults if
+not set ([consumption guard, German](docs/ausfuehrer.de.md#verbrauchsschutz));
+what they do not cover yet: [Status and known gaps](#status-and-known-gaps).
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -258,8 +254,8 @@ EOF
 drives the flow to the next halt; the executors pass the handoffs to Codex
 and Claude Code.
 [`run.toml`](src/ki_dev/runner/run.toml) handles halt and resume the same
-for every flow; today only `implement` has the safety limits
-([Roadmap](#roadmap)).
+for every flow. What a run with real agents still needs:
+[Status and known gaps](#status-and-known-gaps).
 
 <!-- readme-script: readme-scripts/en/5-starten.sh -->
 Continue in `calc-work`:
@@ -276,10 +272,6 @@ first agent call; for a real run put your own session IDs into the
 profile. After a halt, `ki-dev -f implement resume add-fix` continues
 the run, with `--answer` when the halt asks for one.
 <!-- /readme-script -->
-
-**Status of this example:** the Codex and Claude Code adapters are
-built. Still open: an accepted run with real agents, and red tests do not
-yet stop integration.
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -388,21 +380,60 @@ stateDiagram-v2
 
 <sub>[↑ Contents](#contents)</sub>
 
+## Status and known gaps
+
+Goal of the first release (V1): run your own flows and profiles with real
+AI agents to the end ([Roadmap](#roadmap)).
+
+**What works**
+
+- Without agents from start to end: placeholder agents play the example
+  through with one correction round up to the merge into `main`
+  ([test](tests/readme/test_1_setup.sh),
+  [event log](docs/beispiele/demo-lauf.events.jsonl)).
+- Start with a real profile: the run from the example starts and halts
+  before the first agent call as long as no real session is filled in
+  ([test](tests/readme/test_5_starten.sh)).
+- Planning by hand: the planning flows print the handoff to the agent for
+  each step and take its verdict as a file
+  ([`step`, German](docs/step.de.md), [test](tests/readme/test_6_map_step.sh)).
+
+**What is still missing**
+
+- A complete run with real agents: the Codex and Claude Code connections
+  are built ([CLI adapters](docs/cli-adapters.md)) but not yet tried end
+  to end; the test stops before the first agent call
+  ([test](tests/readme/test_5_starten.sh)).
+- Red tests do not stop anything: if the review says "pass", the result
+  is taken even when tests fail ([test](tests/test_review_gate_cli.py),
+  `ek1` in the [Roadmap](#roadmap)).
+- Costs only partly bounded: before each agent call of the implementation
+  flow ki-dev checks fixed limits (number of calls, tokens, remaining
+  usage quota at the provider) and halts when one is reached or cannot be
+  measured; with Codex, how full the context window is goes unmeasured.
+  During a call ki-dev does not measure or stop yet
+  ([consumption guard, German](docs/ausfuehrer.de.md#verbrauchsschutz),
+  `wu0.10` in the [Roadmap](#roadmap)).
+- Planning only by hand: only implementation runs automatically with
+  agents today; a human carries the planning flows step by step (one
+  runner for all flows, `ige.6.4` in the [Roadmap](#roadmap)).
+- Chaining flows and picking the next issue, such as planning first, then
+  implementing: a human does that today ([Roadmap](#roadmap)).
+
+<sub>[↑ Contents](#contents)</sub>
+
 ## Why
 
-- **Problem:** agents report "done" when they are not; premature
-  completion and missing verification are typical failures of
-  multi-agent systems ([MAST](https://arxiv.org/html/2503.13657v3)). With
-  several agents you relay context, results and corrections by hand.
 - **Approach:** a workflow with checkpoints instead of free-steering
   agents
   ([Anthropic](https://www.anthropic.com/engineering/building-effective-agents)).
   In ki-dev, edge selection, format checks and limit comparisons are code
   ([step 1](#1-flow-built-in)); models implement and review the
   substance.
-- **Who it is for:** people working with tight token budgets who do not
-  want to pay for a supervising model that reads every output. How much
-  this saves is not measured.
+- **Who it is for:** people working with tight token budgets: code picks
+  the next step, so no model reads every intermediate output for that;
+  the review checks the result of each round. How much this saves is not
+  measured.
 
 <sub>[↑ Contents](#contents)</sub>
 

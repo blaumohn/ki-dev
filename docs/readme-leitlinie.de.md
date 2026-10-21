@@ -32,8 +32,13 @@ Gliederung.
 
 Nach Kopf, Inhaltsverzeichnis und erstem Beispiel kann ein Besucher sagen:
 was ki-dev ist (Idee), woraus es besteht (Ebenen und Orte) und wie weit
-es ist (Stand). Er weiß, was er tun kann: ausprobieren, mitmachen, den
-Autor ansprechen, das Repo beobachten. Alles Weitere verlinkt die README.
+es ist (Stand). Wer für ein Team sichtet (Tech-Lead), kann schon nach Kopf
+und Inhaltsverzeichnis sagen, was die Person hinter ki-dev einem Team
+beitragen kann, je Punkt mit Beleg und ohne Marketing: ein Problem, das
+sein Team kennt, ein Urteil im Entwurf, Umfang des Gebauten, Sorgfalt als
+Arbeitsweise, Reife ohne rote Alarme, eine Grundlage zum Weiterbauen. Er
+weiß, was er tun kann: ausprobieren, mitmachen, den Autor ansprechen, das
+Repo beobachten. Alles Weitere verlinkt die README.
 Sie ist kein Handbuch, kein Bericht, keine Testmatrix und kein Prosabuch.
 
 ## Wie ein Mensch liest
@@ -45,8 +50,9 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
 - **Der Fährte folgen:** Überschriften, Linktexte und Inhaltsverzeichnis
   kündigen an, was dahinter steht. Er folgt der stärksten Fährte; findet er
   dort nicht, was sie versprach, verliert er Vertrauen. Wer für ein Team
-  sichtet (Tech-Lead, Kollegin), sucht nur Signale für seine Entscheidung:
-  Problem, Ansatz, Reife, Sorgfalt.
+  sichtet (Tech-Lead, Kollegin), sucht nur Signale für seine Entscheidung,
+  keine Bedienung: Problem, Urteil im Entwurf, Umfang, Sorgfalt, Beleg
+  einen Klick entfernt, Reife, Grundlage zum Weiterbauen.
 - **Ein Modell aus dem ersten Beispiel:** Alles Spätere ordnet er dort ein.
   Trägt das erste Beispiel die Kernbegriffe nicht, baut er ein falsches.
 - **Nähe ist Bedeutung:** Was nah beieinander steht, gehört zusammen; was
@@ -78,9 +84,9 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    (Name im Profil) ≠ Adapter (Transport-Code), Ablauf ≠ Ablaufkette,
    Lauf ≠ Bead-Graph-Durchgang.
 4. **Ein Modell vertiefen, nicht neu ansetzen.** Die Abschnitte folgen dem
-   Modell aus dem Beispiel: Idee und Stand → Beispiel → was im Lauf
-   passiert → Warum → Ebenen und Orte → weitere Abläufe → Roadmap →
-   Mitmachen → Lizenz. Jeder
+   Modell aus dem Beispiel: Kopf (Problem, Idee, Reife) → Beispiel → was
+   im Lauf passiert → Stand und bekannte Lücken → Warum → Ebenen und Orte
+   → weitere Abläufe → Roadmap → Mitmachen → Lizenz. Jeder
    verweist auf den Beispielschritt zurück, den er vertieft. Fehler: ein
    Abschnitt, für den der Leser ein neues Bild des Projekts bauen muss.
 5. **Fährte legen.** Überschrift und Linktext sagen, was dort steht:
@@ -129,21 +135,33 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    zeichnen.
 10. **Stand ehrlich.** Läuft und fehlt getrennt; rote Spezifikationstests
     als solche; ein Ziel nie als Funktion; nichts Ungemessenes als
-    Ersparnis. Im Kopf steht der Stand in Klartext für Leser außerhalb des
-    Projekts: Ziel der nächsten Ausgabe, „Was schon geht“, „Was noch
-    fehlt“, je Punkt ein Link auf den Beleg. Einzelheiten stehen als Notiz
-    (`**Stand:** …`, in etwa 10 Sekunden lesbar) in dem Abschnitt, den sie
-    betreffen, nicht in einem eigenen Abschnitt. Fehler (`b30e7fa`): Der
+    Ersparnis. Der Kopf nennt die Reife in einem Satz mit Link auf den
+    eigenen Abschnitt „Stand und bekannte Lücken“ hinter dem Beispiel.
+    Dort stehen Ziel der nächsten Ausgabe, „Was schon geht“ und „Was noch
+    fehlt“ in Klartext für Leser außerhalb des Projekts, je Punkt ein Link
+    auf den Beleg (Doku, Test, Roadmap), nicht auf eine Stelle mit
+    demselben Wortlaut. Ein Beispielschritt verweist darauf, statt die
+    Lücken zu wiederholen; seine Notiz sagt nur, was ihn betrifft, in
+    seinen Begriffen (Schritt 3: Profilfelder). Fehler (`02c0078`): sechs
+    Stand-Punkte im Kopf, vier davon in Begriffen, die erst das Beispiel
+    einführt (`implement`, Kontextmessung, Kontingentgrenze); Problem,
+    Umfang und Sorgfalt fehlten. Fehler (`b30e7fa`): Der
     Kopf sagt „kein Mensch reicht jede Antwort von Hand weiter“ und
     „Adapter … laufen“, Schritt 4 sagt „Noch offen: ein abgenommener Lauf
     mit echten Agenten“. Fehler (Entwurf): „kein Zyklus ohne Mensch
     (Test)“ als Stand im Kopf, verständlich nur für Projektkenner.
-11. **Für wen.** Zielgruppe ausdrücklich (knappe Token-Budgets, kein
-    Aufseher-Modell); Späteres als Option, nicht als Voraussetzung. Die
-    ersten Zeilen sind die teuersten: Motivation ohne Beleg gehört hinter
-    das Beispiel („Warum“), nicht vor das Inhaltsverzeichnis. Fehler
-    (`b30e7fa`): „für alle, die mit begrenzten Tokens arbeiten“, „kostet
-    zusätzlich“ vor dem Beispiel, die Ersparnis ungemessen.
+11. **Für wen.** Zielgruppe ausdrücklich (knappe Token-Budgets: Code wählt
+    den nächsten Schritt, kein Modell liest dafür jede Zwischenausgabe);
+    Späteres als Option, nicht als Voraussetzung. Die
+    ersten Zeilen sind die teuersten: Ein belegtes Problem gehört als
+    erster Absatz in den Kopf, „Warum“ wiederholt es nicht; nur Motivation
+    ohne Beleg gehört hinter das Beispiel. Fehler (`b30e7fa`): „für alle,
+    die mit begrenzten Tokens arbeiten“, „kostet zusätzlich“ vor dem
+    Beispiel, die Ersparnis ungemessen. Fehler (`02c0078`): das mit MAST
+    belegte Problem erst unter „Warum“, die Regel zu grob gelesen; „kein
+    Aufseher-Modell, das jede Ausgabe liest“, eine Alternative, die vorher
+    nicht vorkam und dem prüfenden Review-Modell zu widersprechen schien
+    (Basislinie, [README-Durchlauf](readme-walkthrough.de.md#basislinie-02c0078)).
 12. **Knapp und genau.** Halbsätze statt Absätze; was Skizze oder Link
     tragen, wiederholt die Prosa nicht. Genauigkeit vor Kürze: keine
     künstliche Grenze, wenn ein Begriff sonst falsch wäre.

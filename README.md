@@ -2,39 +2,31 @@
 
 # ki-dev
 
-**KI-Agenten arbeiten, ein [Ablauf aus TOML](#1-ablauf-mitgeliefert) entscheidet, was danach passiert.**
-Den nächsten Schritt wählt Code, kein Modell; Modelle setzen um und prüfen
-fachlich. Ein Ablauf modelliert ein Verfahren, etwa Umsetzung mit
-getrenntem Review oder [Planung](#dasselbe-verfahren-für-planung); ein Profil besetzt die
-[Rollen](#3-rollen-besetzen), der [Auftrag](#2-auftrag-anlegen) ist ein
-Vorgang mit Abnahmekriterien.
+**KI-Agenten melden „fertig“, auch wenn es nicht stimmt.** Vorzeitiger
+Abschluss und fehlende oder falsche Prüfung bilden in der Fehlertaxonomie
+[MAST](https://arxiv.org/html/2503.13657v3) eine eigene Klasse von
+Fehlern in Mehr-Agenten-Systemen. Ohne Steuerung trägt ein Mensch
+Ergebnis, Prüfung und Nachbesserung von Agent zu Agent.
 
-🚧 **Entwicklungsstand, noch nicht für echte Arbeit nutzbar.** Ziel der
-ersten Ausgabe (V1): eigene Abläufe und Profile schreiben und mit echten
-KI-Agenten ausführen.
+ki-dev legt dieses Verfahren in eine Datei: Ein
+[Ablauf aus TOML](#1-ablauf-mitgeliefert) bestimmt, was nach jeder
+Agentenantwort geschieht (Review in eigener Sitzung, Korrekturrunde, Halt
+für den Menschen); den nächsten Schritt wählt Code, kein Modell
+([Warum](#warum)). Gebaut sind Abläufe für Umsetzung und
+[Planung](#dasselbe-verfahren-für-planung), ihre Ausführung bis zum
+nächsten Halt und Anbindungen an Codex und Claude Code
+([Ebenen und Orte](#ebenen-und-orte)). Tests zeigen, dass in der
+Umsetzung keine Korrekturschleife ohne Mensch unbegrenzt läuft
+([Zustandsraum](tests/machine/test_reachability.py)) und der Kern keine
+Ablaufnamen kennt ([Schichten](tests/test_schichten.py)); eigene Abläufe
+lädt ki-dev aus einem eigenen Repo
+([Ablaufpakete](docs/ablaufpakete.de.md#paket-außerhalb-des-gerüsts)).
 
-**Was schon geht**
-
-- Mit Platzhalter-Agenten (Mock) durchgespielt: Das Review verlangt eine
-  Korrektur, nimmt die zweite Fassung an, das Ergebnis landet in `main`
-  ([Schritt 0](#0-einrichten-ohne-agenten-ausprobieren)).
-- Mit echtem Profil startet ein Lauf und hält vor dem ersten
-  Agentenaufruf an, solange keine echte Sitzung eingetragen ist
-  ([Schritt 4](#4-starten)).
-
-**Was noch fehlt**
-
-- Ein vollständiger Lauf mit echten Agenten: Die Anbindung an Codex und
-  Claude Code ist gebaut, aber noch nicht bis zum Ende erprobt
-  ([Schritt 4](#4-starten)).
-- Rote Tests halten nicht auf: Sagt das Review „passt“, wird übernommen,
-  auch wenn Tests fehlschlagen ([Test](tests/test_review_gate_cli.py),
-  [Mitmachen](#mitmachen)).
-- Kostengrenzen nicht überall: Schutzhalte an Kontext-, Kontingent- und
-  Budgetgrenzen gibt es nur im Ablauf `implement`, mit Codex ohne
-  Kontextmessung ([Schritt 3](#3-rollen-besetzen)).
-- Mehrere Abläufe nacheinander, etwa erst planen, dann umsetzen, startet
-  heute der Mensch von Hand ([Roadmap](#roadmap)).
+🚧 **Entwicklungsstand:** Mit Platzhalter-Agenten läuft das Beispiel bis
+zur Übernahme nach `main` durch
+([`make demo`](#0-einrichten-ohne-agenten-ausprobieren)); mit echten
+Agenten ist noch kein Lauf erprobt
+([Stand und bekannte Lücken](#stand-und-bekannte-lücken)).
 
 ## Inhalt
 
@@ -45,12 +37,13 @@ KI-Agenten ausführen.
    3. [Rollen besetzen](#3-rollen-besetzen)
    4. [Starten](#4-starten)
 2. [Was im Lauf passiert](#was-im-lauf-passiert)
-3. [Warum](#warum)
-4. [Ebenen und Orte](#ebenen-und-orte)
-5. [Dasselbe Verfahren für Planung](#dasselbe-verfahren-für-planung)
-6. [Roadmap](#roadmap)
-7. [Mitmachen](#mitmachen)
-8. [Lizenz](#lizenz)
+3. [Stand und bekannte Lücken](#stand-und-bekannte-lücken)
+4. [Warum](#warum)
+5. [Ebenen und Orte](#ebenen-und-orte)
+6. [Dasselbe Verfahren für Planung](#dasselbe-verfahren-für-planung)
+7. [Roadmap](#roadmap)
+8. [Mitmachen](#mitmachen)
+9. [Lizenz](#lizenz)
 
 ## Beispiel: Umsetzer und Reviewer als Ablauf
 
@@ -204,8 +197,9 @@ durch den Bead-Graphen gibt es noch nicht ([Roadmap](#roadmap)).
 ### 3. Rollen besetzen
 
 **[Eingabe Profil](#ebenen-und-orte).** Wer die Rollen übernimmt und mit
-welchen Grenzen, steht im Profil; der Ablauf bleibt derselbe. Ein Mensch
-(`manual`), ein Mock oder ein anderes Modell: Es wechselt nur `executor`
+welchen Grenzen, steht im Profil; der Ablauf bleibt derselbe. Ob ein
+Mensch (`manual`), ein Mock oder Codex bzw. Claude Code eine Rolle
+übernimmt, wählt `executor` je Rolle
 ([Executoren](docs/ausfuehrer.de.md#executoren)).
 
 <!-- readme-script: readme-scripts/4-rollen.sh -->
@@ -247,8 +241,10 @@ EOF
 > Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_4_rollen.sh)
 <!-- /readme-script -->
 
-**Stand:** Schutzhalt an Kontext-, Kontingent- und Budgetgrenze mit
-`claude`; `codex` ohne Kontextmessung.
+**Weitere Grenzen:** `[safety_limits]` und je Rolle `budget`, ohne
+Angabe Standardwerte
+([Verbrauchsschutz](docs/ausfuehrer.de.md#verbrauchsschutz)); was sie
+heute nicht abdecken: [Stand und bekannte Lücken](#stand-und-bekannte-lücken).
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -257,8 +253,9 @@ EOF
 **[Ebenen Runner und Executor](#ebenen-und-orte).** Der Runner fährt
 den Ablauf bis zum nächsten Halt, die Executoren reichen die Übergaben
 an Codex und Claude Code. Halt und Fortsetzen regelt
-[`run.toml`](src/ki_dev/runner/run.toml) für jeden Ablauf gleich; die
-Schutzgrenzen hat heute nur `implement` ([Roadmap](#roadmap)).
+[`run.toml`](src/ki_dev/runner/run.toml) für jeden Ablauf gleich. Was ein
+Lauf mit echten Agenten noch braucht:
+[Stand und bekannte Lücken](#stand-und-bekannte-lücken).
 
 <!-- readme-script: readme-scripts/5-starten.sh -->
 Weiter in `calc-work`:
@@ -275,10 +272,6 @@ Agentenaufruf an; für einen echten Lauf eigene Sitzungs-IDs ins Profil
 eintragen. Nach einem Halt setzt `ki-dev -f implement resume add-fix`
 den Lauf fort, mit `--answer`, wenn der Halt eine Antwort verlangt.
 <!-- /readme-script -->
-
-**Stand dieses Beispiels:** Die Adapter für Codex und Claude Code sind
-gebaut. Noch offen: ein abgenommener Lauf mit echten Agenten, und rote
-Tests halten die Integration noch nicht auf.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -386,21 +379,60 @@ stateDiagram-v2
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
+## Stand und bekannte Lücken
+
+Ziel der ersten Ausgabe (V1): eigene Abläufe und Profile mit echten
+KI-Agenten bis zum Ende ausführen ([Roadmap](#roadmap)).
+
+**Was schon geht**
+
+- Ohne Agenten von Anfang bis Ende: Platzhalter-Agenten spielen das
+  Beispiel mit einer Korrekturrunde bis zur Übernahme nach `main` durch
+  ([Test](tests/readme/test_1_setup.sh),
+  [Ereignisprotokoll](docs/beispiele/demo-lauf.events.jsonl)).
+- Start mit echtem Profil: Der Lauf aus dem Beispiel startet und hält vor
+  dem ersten Agentenaufruf, solange keine echte Sitzung eingetragen ist
+  ([Test](tests/readme/test_5_starten.sh)).
+- Planung von Hand: Die Planungsabläufe geben je Schritt die Übergabe an
+  den Agenten aus und nehmen sein Urteil als Datei an
+  ([`step`](docs/step.de.md), [Test](tests/readme/test_6_map_step.sh)).
+
+**Was noch fehlt**
+
+- Ein vollständiger Lauf mit echten Agenten: Die Anbindungen an Codex und
+  Claude Code sind gebaut ([CLI-Adapter](docs/cli-adapters.md)), aber
+  noch nicht bis zum Ende erprobt; der Test endet vor dem ersten
+  Agentenaufruf ([Test](tests/readme/test_5_starten.sh)).
+- Rote Tests halten nicht auf: Sagt das Review „passt“, wird übernommen,
+  auch wenn Tests fehlschlagen ([Test](tests/test_review_gate_cli.py),
+  `ek1` in der [Roadmap](#roadmap)).
+- Kosten nur teilweise begrenzt: Vor jedem Agentenaufruf der Umsetzung
+  prüft ki-dev feste Grenzen (Zahl der Aufrufe, Tokens, verbleibendes
+  Nutzungskontingent beim Anbieter) und hält an, wenn eine erreicht ist
+  oder sich nicht messen lässt; bei Codex fehlt die Messung, wie voll das
+  Kontextfenster ist. Während eines Aufrufs misst und stoppt ki-dev noch
+  nicht ([Verbrauchsschutz](docs/ausfuehrer.de.md#verbrauchsschutz),
+  `wu0.10` in der [Roadmap](#roadmap)).
+- Planung nur von Hand: Automatisch mit Agenten läuft heute nur die
+  Umsetzung; die Planungsabläufe trägt ein Mensch Schritt für Schritt
+  weiter (ein Runner für alle Abläufe, `ige.6.4` in der
+  [Roadmap](#roadmap)).
+- Abläufe verketten und den nächsten Vorgang wählen, etwa erst planen,
+  dann umsetzen: Das übernimmt heute der Mensch ([Roadmap](#roadmap)).
+
+<sub>[↑ Inhalt](#inhalt)</sub>
+
 ## Warum
 
-- **Problem:** Agenten melden „fertig“, auch wenn es nicht stimmt;
-  vorzeitiger Abschluss und fehlende Verifikation sind typische Fehler von
-  Mehr-Agenten-Systemen ([MAST](https://arxiv.org/html/2503.13657v3)). Wer
-  mehrere Agenten einsetzt, reicht Kontext, Ergebnis und Nachbesserung von
-  Hand weiter.
 - **Ansatz:** ein Workflow mit Prüfstellen statt frei steuernder Agenten
   ([Anthropic](https://www.anthropic.com/engineering/building-effective-agents)).
   In ki-dev sind Kantenwahl, Formatprüfung und Grenzvergleich Code
   ([Schritt 1](#1-ablauf-mitgeliefert)); Modelle setzen um und prüfen
   fachlich.
-- **Für wen:** wer mit knappen Token-Budgets arbeitet und kein
-  Aufseher-Modell bezahlen will, das jede Ausgabe liest. Wie viel das
-  spart, ist nicht gemessen.
+- **Für wen:** wer mit knappen Token-Budgets arbeitet: Den nächsten
+  Schritt wählt Code, also liest kein Modell dafür jede Zwischenausgabe;
+  das Review prüft das Ergebnis je Runde. Wie viel das spart, ist nicht
+  gemessen.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
