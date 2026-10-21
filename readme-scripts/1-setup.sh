@@ -11,7 +11,7 @@ make demo
 # ```
 #
 # `make demo` spielt das Beispiel mit Platzhalter-Agenten (Mock) durch:
-# Das Review verlangt erst eine Korrektur (`fix`), dann passt es (`PASS`).
-# `round_id: 2`: eine Korrekturrunde; `passed`: Das Ergebnis liegt per
-# Fast-Forward auf `main`. Die Mocks schreiben nur eine Textzeile; die
-# Demo zeigt die Steuerung, nicht die Arbeit eines Agenten.
+# Das Review verlangt erst eine Korrektur (`fix`) und nimmt Runde 2 an
+# (`PASS`); `passed`: Das Ergebnis liegt per Fast-Forward auf `main`,
+# darunter dessen Commits. Die Mocks zeigen nur die Steuerung, nicht die
+# Arbeit eines Agenten.

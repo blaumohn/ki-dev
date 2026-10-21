@@ -31,17 +31,16 @@ main() {
   start_git_server "$staging_dir"
   redirect_clone_url "$git_server_url"
 
-  step "README-Einrichtung aus leerem Verzeichnis"
+  step "README-Einrichtung aus leerem Verzeichnis, ohne Git-Identität"
+  isolate_git_config "$WORK_BASE/gitconfig"
   user_dir="$(mktemp -d "$WORK_BASE/visitor-XXXXXX")"
   cd "$user_dir"
   run_readme_test "$staging_dir/tests/readme/test_1_setup.sh"
 
   # Ab hier wie ein Besucher nach 1-setup.sh im selben Terminal: im
-  # ki-dev-Klon, ki-dev und bd im PATH. Git-Identität wie auf einem
-  # Entwicklerrechner, in einer eigenen Datei statt ~/.gitconfig.
+  # ki-dev-Klon, ki-dev und bd im PATH, sonst nichts.
   cd "$user_dir/ki-dev"
   export PATH="$PWD/.venv/bin:$PATH"
-  set_git_identity "$WORK_BASE/gitconfig"
   step "README-Abschnitte gegen readme-scripts prüfen"
   .venv/bin/python scripts/render-readme.py --check
   step "Übrige README-Skripte im Klon des Besuchers"
@@ -61,10 +60,14 @@ step() {
   echo "[readme-check] $*" >&2
 }
 
-set_git_identity() {
-  export GIT_CONFIG_GLOBAL="$1"
-  git config --global user.name "README-Besucher"
-  git config --global user.email "besucher@example.invalid"
+# Besucherteil mit leerer globaler und ohne System-Konfiguration, ohne
+# Identität aus der Umgebung: Eine Identität aus Image oder Host verdeckt
+# sonst, dass ein README-Skript eine braucht und nicht selbst setzt.
+isolate_git_config() {
+  : >"$1"
+  export GIT_CONFIG_GLOBAL="$1" GIT_CONFIG_NOSYSTEM=1
+  unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME \
+    GIT_COMMITTER_EMAIL EMAIL
 }
 
 # Klon des Quell-Repos mit dessen Arbeitsstand, committet nur im Klon.

@@ -12,7 +12,7 @@ make demo
 # ```
 #
 # `make demo` plays the example through with placeholder agents (mock):
-# the review first asks for a correction (`fix`), then accepts (`PASS`).
-# `round_id: 2`: one correction round; `passed`: the result is
-# fast-forwarded onto `main`. The mocks only write a line of text; the
-# demo shows the control flow, not an agent's work.
+# the review first asks for a correction (`fix`) and accepts round 2
+# (`PASS`); `passed`: the result is fast-forwarded onto `main`, its
+# commits listed below. The mocks only show the control flow, not an
+# agent's work.

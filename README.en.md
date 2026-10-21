@@ -91,10 +91,10 @@ start
 ```
 
 `make demo` plays the example through with placeholder agents (mock):
-the review first asks for a correction (`fix`), then accepts (`PASS`).
-`round_id: 2`: one correction round; `passed`: the result is
-fast-forwarded onto `main`. The mocks only write a line of text; the
-demo shows the control flow, not an agent's work.
+the review first asks for a correction (`fix`) and accepts round 2
+(`PASS`); `passed`: the result is fast-forwarded onto `main`, its
+commits listed below. The mocks only show the control flow, not an
+agent's work.
 <!-- /readme-script -->
 
 <sub>[↑ Contents](#contents)</sub>
@@ -162,11 +162,11 @@ with acceptance criteria, here a small bug: `add(a, b)` returns `a - b`.
 
 <!-- readme-script: readme-scripts/en/3-auftrag.sh -->
 Continue in the terminal from [step 0](#0-set-up-try-it-without-agents):
-a throwaway repo `calc` with the bug, next to it the agents' worktree
-`calc-work` with the task.
 
 ```bash
-cd "$(mktemp -d)" && git init -q -b main calc && cd calc
+cd "$(mktemp -d)" && git init -q -b main calc && cd calc  # throwaway repo
+git config user.name calc  # identity for this throwaway repo only
+git config user.email calc@example.invalid
 cat >add.py <<'EOF'
 def add(a, b):
     return a - b
@@ -176,9 +176,10 @@ from add import add
 
 assert add(2, 3) == 5
 EOF
-printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude  # clean worktrees
+printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude  # ki-dev requires clean worktrees
 git add . && git commit -q -m "add()"
-git worktree add -q -b work ../calc-work && cd ../calc-work
+git worktree add -q -b work ../calc-work  # the agents' worktree
+cd ../calc-work
 bd init --quiet --prefix calc --stealth --non-interactive
 BEAD="$(bd create "add() does not add" \
   --description "add(2, 3) returns -1" \
@@ -188,10 +189,9 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 ```
 
-> ✅ Run in an empty container · [test](tests/readme/test_3_auftrag.sh)
+> Not run in the last check · [test](tests/readme/test_3_auftrag.sh)
 
-`$BEAD` is the task ID, e.g. `calc-7k2`. `.ki-dev/` (profile, runs) and
-the Beads lock file stay out of git: ki-dev requires clean worktrees.
+`$BEAD` is the task ID, e.g. `calc-7k2`.
 <!-- /readme-script -->
 
 Which issue a run gets is a human's choice today; there is no walk
@@ -207,11 +207,10 @@ which limits, is set in the profile; the flow stays the same. A human
 ([executors, German](docs/ausfuehrer.de.md#executoren)).
 
 <!-- readme-script: readme-scripts/en/4-rollen.sh -->
-Continue in `calc-work`: the profile `default` lives where ki-dev
-starts.
+Continue in `calc-work`:
 
 ```bash
-mkdir -p .ki-dev/profiles
+mkdir -p .ki-dev/profiles       # ki-dev looks for profiles where it starts
 cat >.ki-dev/profiles/default.toml <<'EOF'
 workdir = "."                   # agents' worktree, ki-dev starts here
 access_profile = "write"
@@ -243,7 +242,7 @@ data_mode = "file_proposal"
 EOF
 ```
 
-> ✅ Run in an empty container · [test](tests/readme/test_4_rollen.sh)
+> Not run in the last check · [test](tests/readme/test_4_rollen.sh)
 <!-- /readme-script -->
 
 **Status:** safety halt at context, quota and budget limits with
@@ -268,7 +267,7 @@ ki-dev -f implement "$BEAD" --run-id add-fix  # flow implement, profile default
 ki-dev -f implement status add-fix            # where the run stands
 ```
 
-> ⏳ Not checked: the first agent call needs real sessions; run up to there · [test](tests/readme/test_5_starten.sh)
+> Not run in the last check · [test](tests/readme/test_5_starten.sh)
 
 With the placeholders `019a…` and `b3f1…` the run halts before the
 first agent call; for a real run put your own session IDs into the
@@ -509,26 +508,24 @@ stateDiagram-v2
 ```
 
 <!-- readme-script: readme-scripts/en/6-map-step.sh -->
-Play it through by hand, without agents, in the folder `ki-dev` from
-[step 0](#0-set-up-try-it-without-agents): a throwaway repo with a Beads
-project, a mapping task with a source (`source_refs`) and the review's
-verdict as a file.
+By hand, without agents, in the folder `ki-dev` from
+[step 0](#0-set-up-try-it-without-agents):
 
 ```bash
 POLICIES="$PWD/docs/policies"  # ki-dev's guidelines, for the handoffs
-cd "$(mktemp -d)" && git init -q
+cd "$(mktemp -d)" && git init -q  # throwaway repo with a Beads project
 bd init --quiet --prefix calc --stealth --non-interactive
 mkdir docs && cp -r "$POLICIES" docs/
 BEAD="$(bd create "Map the notes on add()" \
   --description "Source map of notes.md" \
   --acceptance "1. Every section of notes.md is mapped" \
   --metadata '{"handoff": {"source_refs": ["notes.md"]}}' \
-  --silent)"
-cat >verdict.json <<'EOF'
+  --silent)"  # mapping task with a source
+cat >verdict.json <<'EOF'  # the review's verdict as a file
 {"event": "fix", "detail": "Section 2 is not mapped", "requirement_ref": "AC1"}
 EOF
-ki-dev flow show map
-ki-dev -f map step "$BEAD" map
+ki-dev flow show map            # the flow as Mermaid, as above
+ki-dev -f map step "$BEAD" map  # handoff to the mapping agent
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
@@ -546,10 +543,9 @@ Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adap
 - fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
 ```
 
-`flow show` prints the flow as Mermaid (above), the first `step` the
-handoff to the mapping agent. The second returns the verdict `fix` and
-prints the handoff to the correction (German), here without the line
-with the bead ID.
+The second `step` reads the verdict `fix` from `verdict.json` and prints
+the handoff to the correction (German), above without the line with the
+bead ID.
 <!-- /readme-script -->
 
 The next flow of this kind is already cut into beads: folding planning
@@ -633,26 +629,24 @@ Good first tasks, each with a clear finish line:
 More: [what the architecture still lacks (German)](docs/ausfuehrer-luecken.de.md).
 
 <!-- readme-script: readme-scripts/en/7-entwickeln.sh -->
+In the folder `ki-dev` from [step 0](#0-set-up-try-it-without-agents):
+
 ```bash
-make test
-make spec-test
-make readme-check
+make test          # pytest and ruff
+make spec-test     # requirement tests, red results are allowed
+make readme-check  # README commands in Docker, sets the status lines
 ```
 
 > ⏳ Not checked: developer commands; make readme-check is this run itself · [test](tests/readme/test_7_entwickeln.sh)
-
-`make test`: pytest and ruff. `make spec-test`: requirement tests, red
-results are allowed. `make readme-check`: every README command in a
-throwaway container, sets the status lines, needs Docker.
 <!-- /readme-script -->
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
-To develop ki-dev with ki-dev, install it apart from the source tree:
-own venv, symlink in `~/.local/bin`. Finish running jobs before an
-update ([details, German](docs/self-development.de.md)).
+To develop ki-dev with ki-dev, install it apart from the source tree,
+also in the folder `ki-dev`; finish running jobs before an update
+([details, German](docs/self-development.de.md)).
 
 ```bash
-make setup-runtime
+make setup-runtime                    # own venv, symlink in ~/.local/bin
 export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```

@@ -1,8 +1,7 @@
-# Weiter in `calc-work`: Das Profil `default` liegt dort, wo ki-dev
-# startet.
+# Weiter in `calc-work`:
 #
 # ```bash
-mkdir -p .ki-dev/profiles
+mkdir -p .ki-dev/profiles       # ki-dev sucht Profile im Startordner
 cat >.ki-dev/profiles/default.toml <<'EOF'
 workdir = "."                   # Arbeits-Worktree, hier startet ki-dev
 access_profile = "write"

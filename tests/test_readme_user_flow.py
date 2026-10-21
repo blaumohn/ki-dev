@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -136,6 +137,54 @@ def test_setup_script_without_clone_line_fails(tmp_path):
     )
     assert code != 0
     assert "keine Zeile 'git clone URL ki-dev'" in err
+
+
+def test_visitor_part_sets_no_git_identity():
+    """Zwischen den Tests übernimmt user-flow.sh nur Verzeichnis und
+    PATH; eine Identität nennt nur der Commit im temporären Klon."""
+    text = SCRIPT.read_text()
+    staging = re.search(
+        r"^commit_working_state\(\) \{\n.*?^\}\n", text, re.M | re.S
+    )
+    assert staging
+    rest = text.replace(staging.group(0), "")
+    identity = (
+        r"user\.(name|email)|\b(GIT_(AUTHOR|COMMITTER)_\w+|EMAIL)="
+    )
+    assert not re.search(identity, rest)
+    main = re.search(r"^main\(\) \{\n.*?^\}\n", text, re.M | re.S)
+    assert main
+    body = main.group(0)
+    assert 0 <= body.find("isolate_git_config") < body.find(
+        "run_readme_test"
+    )
+
+
+def test_visitor_git_config_hides_host_identity(tmp_path):
+    host = tmp_path / "host.gitconfig"
+    host.write_text(
+        "[user]\n\tname = host\n\temail = host@example.invalid\n"
+    )
+    empty = tmp_path / "leer.gitconfig"
+    program = (
+        'source "$1"; isolate_git_config "$2"; '
+        "if git config user.name; then exit 3; fi; "
+        'env | grep -E "^(GIT_(AUTHOR|COMMITTER)_|EMAIL=)" && exit 4; '
+        'echo "GLOBAL=$GIT_CONFIG_GLOBAL NOSYSTEM=$GIT_CONFIG_NOSYSTEM"'
+    )
+    with local.cwd(tmp_path), local.env(
+        GIT_CONFIG_GLOBAL=str(host),
+        EMAIL="host@example.invalid",
+        **IDENTITY,
+    ):
+        code, out, err = local["bash"].run(
+            args=["-c", program, "_", SCRIPT, empty],
+            retcode=None,
+            timeout=30,
+        )
+    assert code == 0, (out, err)
+    assert f"GLOBAL={empty} NOSYSTEM=1" in out
+    assert empty.read_text() == ""
 
 
 def _prepare(source, tmp_path, **env):

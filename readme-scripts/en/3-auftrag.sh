@@ -1,9 +1,9 @@
 # Continue in the terminal from [step 0](#0-set-up-try-it-without-agents):
-# a throwaway repo `calc` with the bug, next to it the agents' worktree
-# `calc-work` with the task.
 #
 # ```bash
-cd "$(mktemp -d)" && git init -q -b main calc && cd calc
+cd "$(mktemp -d)" && git init -q -b main calc && cd calc  # throwaway repo
+git config user.name calc  # identity for this throwaway repo only
+git config user.email calc@example.invalid
 cat >add.py <<'EOF'
 def add(a, b):
     return a - b
@@ -13,9 +13,10 @@ from add import add
 
 assert add(2, 3) == 5
 EOF
-printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude  # clean worktrees
+printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude  # ki-dev requires clean worktrees
 git add . && git commit -q -m "add()"
-git worktree add -q -b work ../calc-work && cd ../calc-work
+git worktree add -q -b work ../calc-work  # the agents' worktree
+cd ../calc-work
 bd init --quiet --prefix calc --stealth --non-interactive
 BEAD="$(bd create "add() does not add" \
   --description "add(2, 3) returns -1" \
@@ -25,5 +26,4 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 # ```
 #
-# `$BEAD` is the task ID, e.g. `calc-7k2`. `.ki-dev/` (profile, runs) and
-# the Beads lock file stay out of git: ki-dev requires clean worktrees.
+# `$BEAD` is the task ID, e.g. `calc-7k2`.

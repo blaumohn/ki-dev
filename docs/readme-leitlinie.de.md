@@ -156,6 +156,10 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
     Ausprobieren: `bd` liegt im Projekt-venv …“, und „Ausprobieren“ steht
     zwei Abschnitte danach; Schritt 2 zeigt ein Profil, das niemand
     schreibt, Schritt 3 kopiert es aus `docs/beispiele/default.toml`.
+    Fehler (`b30e7fa`): Die Git-Identität setzt nur der Prüflauf
+    (`user-flow.sh`); ein Besucher ohne globale Identität scheitert in
+    Schritt 2 am Commit. Was ein Block braucht, setzt er selbst, so eng
+    wie möglich (`git config` im Wegwerf-Repo).
 14. **Die Statuszeile am Block.** Sie steht unter dem Block, den sie
     betrifft, und sagt, was geprüft wurde, mit Link auf den Test. Fehler
     (`2133c43`): „> ✅ bestanden · selbst prüfen: make readme-check“ über

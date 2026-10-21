@@ -1,8 +1,7 @@
-# Continue in `calc-work`: the profile `default` lives where ki-dev
-# starts.
+# Continue in `calc-work`:
 #
 # ```bash
-mkdir -p .ki-dev/profiles
+mkdir -p .ki-dev/profiles       # ki-dev looks for profiles where it starts
 cat >.ki-dev/profiles/default.toml <<'EOF'
 workdir = "."                   # agents' worktree, ki-dev starts here
 access_profile = "write"
