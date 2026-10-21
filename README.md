@@ -75,7 +75,21 @@ export PATH="$PWD/.venv/bin:$PATH"  # ki-dev und bd für die Schritte unten
 make demo
 ```
 
-> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_1_setup.sh)
+> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_1_setup.sh)
+
+```text
+{
+  "run_id": "demo",
+  "status": "passed",
+  "phase": "passed",
+  "round_id": 2,
+  "detail": "Fast-forward integriert",
+  "operation_id": null
+}
+
+Geprüfter Abschluss (Demo)
+start
+```
 
 `make demo` spielt das Beispiel mit Platzhalter-Agenten (Mock) durch:
 Das Review verlangt erst eine Korrektur (`fix`), dann passt es (`PASS`).
@@ -175,7 +189,7 @@ BEAD="$(bd create "add() does not add" \
 echo "$BEAD"
 ```
 
-> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_3_auftrag.sh)
+> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_3_auftrag.sh)
 
 `$BEAD` ist die ID des Auftrags, etwa `calc-7k2`. `.ki-dev/` (Profil,
 Läufe) und die Sperrdatei von Beads bleiben außerhalb von git: ki-dev
@@ -231,7 +245,7 @@ data_mode = "file_proposal"
 EOF
 ```
 
-> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_4_rollen.sh)
+> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_4_rollen.sh)
 <!-- /readme-script -->
 
 **Stand:** Schutzhalt an Kontext-, Kontingent- und Budgetgrenze mit
@@ -255,7 +269,7 @@ ki-dev -f implement "$BEAD" --run-id add-fix  # Ablauf implement, Profil default
 ki-dev -f implement status add-fix            # wo der Lauf steht
 ```
 
-> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_5_starten.sh)
+> ⏳ Ungeprüft: der erste Agentenaufruf braucht echte Sitzungen; bis dahin ausgeführt · [Test](tests/readme/test_5_starten.sh)
 
 Mit den Platzhaltern `019a…` und `b3f1…` hält der Lauf vor dem ersten
 Agentenaufruf an; für einen echten Lauf eigene Sitzungs-IDs ins Profil
@@ -520,7 +534,19 @@ ki-dev -f map step "$BEAD" map
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> Im letzten Prüflauf nicht ausgeführt · [Test](tests/readme/test_6_map_step.sh)
+> ✅ Im leeren Container ausgeführt · [Test](tests/readme/test_6_map_step.sh)
+
+```text
+Empfänger: Umsetzer (bisherige Sitzung)
+
+Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
+Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
+
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
+- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
+```
 
 `flow show` gibt den Ablauf als Mermaid aus (oben), der erste `step` die
 Übergabe an den Kartierungsagenten. Der zweite nimmt das Urteil `fix`
