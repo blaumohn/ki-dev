@@ -5,7 +5,7 @@
 **AI agents do the work; a [flow written in TOML](#1-flow-built-in) decides what happens next.**
 Code picks the next step, not a model; models implement and review the
 substance. A flow models a procedure, such as implementation with a
-separate review, or [planning](#not-just-code); a profile
+separate review, or [planning](#the-same-procedure-for-planning); a profile
 [casts the roles](#3-cast-the-roles), the [task](#2-create-a-task) is an
 issue with acceptance criteria.
 
@@ -45,7 +45,7 @@ real AI agents.
 2. [What happens in a run](#what-happens-in-a-run)
 3. [Why](#why)
 4. [Layers and locations](#layers-and-locations)
-5. [Not just code](#not-just-code)
+5. [The same procedure for planning](#the-same-procedure-for-planning)
 6. [Roadmap](#roadmap)
 7. [Contributing](#contributing)
 8. [License](#license)
@@ -157,8 +157,10 @@ the scaffold (`KI_DEV_FLOW_PATH`,
 ### 2. Create a task
 
 **[Input: task](#layers-and-locations)**, an issue from the work graph
-([Beads](https://github.com/steveyegge/beads)). The flow fits any issue
-with acceptance criteria, here a small bug: `add(a, b)` returns `a - b`.
+([Beads](https://github.com/steveyegge/beads)). The flow requires a
+design and acceptance criteria from the issue
+([check](src/ki_dev/flow_ops/implement/commands.py)), here a small bug:
+`add(a, b)` returns `a - b`.
 
 <!-- readme-script: readme-scripts/en/3-auftrag.sh -->
 Continue in the terminal from [step 0](#0-set-up-try-it-without-agents):
@@ -275,9 +277,9 @@ profile. After a halt, `ki-dev -f implement resume add-fix` continues
 the run, with `--answer` when the halt asks for one.
 <!-- /readme-script -->
 
-**Status of this example:** flow, profile format and commands are real,
-the Codex and Claude Code adapters are built. Still open: an accepted run
-with real agents, and red tests do not yet stop integration.
+**Status of this example:** the Codex and Claude Code adapters are
+built. Still open: an accepted run with real agents, and red tests do not
+yet stop integration.
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -462,14 +464,17 @@ where the code deviates is listed in the [Roadmap](#roadmap) under **V1**.
 
 <sub>[↑ Contents](#contents)</sub>
 
-## Not just code
+## The same procedure for planning
 
-Write, review separately, correct, decide: this procedure lives once as a
+Write, review separately, correct, decide: the procedure from the
+[example](#example-implementer-and-reviewer-as-a-flow) lives once as a
 pattern in the scaffold
 ([`patterns/review.toml`](src/ki_dev/flow/patterns/review.toml), ops in
-[`flow_ops/review/`](src/ki_dev/flow_ops/review/)). The planning flows
-`map`, `graph` and `materialize` only set parameters on it, for example
-mapping requirements ([`map.toml`](src/ki_dev/flow/map.toml), shortened):
+[`flow_ops/review/`](src/ki_dev/flow_ops/review/)); `implement` still
+rebuilds it as a statechart of its own ([Roadmap](#roadmap), `ige.6.4`).
+The planning flows `map`, `graph` and `materialize` only set parameters
+on the pattern (templates, context, roles), for example mapping
+requirements ([`map.toml`](src/ki_dev/flow/map.toml), shortened):
 
 ```toml
 pattern_catalog = ["ki_dev:review"]   # pattern and its ops from the scaffold
@@ -550,8 +555,8 @@ bead ID.
 
 The next flow of this kind is already cut into beads: folding planning
 sessions and design notes into the overall plan ([Roadmap](#roadmap)).
-`ki-dev flow show` generates both flow diagrams from source; a test
-compares them with this README.
+`ki-dev flow show` generates both flow diagrams from source; a
+[test](tests/test_flow_diagram.py) compares them with this README.
 
 <sub>[↑ Contents](#contents)</sub>
 
@@ -592,8 +597,9 @@ and inputs.
 
 **Runner and executor**
 
-- ◆ **V1** one runner for all flows (`ige.6.4`, 17 tasks): `implement`
-  without its own executor in the package (`ige.6.4.13`); safety halt,
+- ◆ **V1** one runner for all flows, `implement` on the review pattern
+  (`ige.6.4`, 17 tasks): `implement` without its own executor in the
+  package (`ige.6.4.13`); safety halt,
   metering, budget and retries as edges in `run.toml` instead of Python
   (`ige.6.4.2`–`ige.6.4.5`); git wrap-up in the scaffold catalog
   (`ige.6.4.10`)
@@ -618,13 +624,18 @@ and inputs.
 
 ## Contributing
 
-Good first tasks, each with a clear finish line:
+Three open tasks from the [Roadmap](#roadmap), each with its acceptance
+check:
 
-- **Build the test gate**: done when red tests stop integration
-  ([`tests/test_review_gate_cli.py`](tests/test_review_gate_cli.py) green).
-- **Round counter in the review pattern**: `map`, `graph`, `materialize`
-  do not count their correction rounds yet.
-- **One runner**: move `implement` onto the shared runner.
+- **Build the test gate** (`ek1`): done when red tests stop integration
+  ([`tests/test_review_gate_cli.py`](tests/test_review_gate_cli.py) green,
+  without `xfail`).
+- **Round limits in the review pattern** (`ige.6.4.7`): `map`, `graph`,
+  `materialize` do not count their correction rounds yet; done when the
+  `fix` after the last allowed round halts for a human.
+- **One runner** (`ige.6.4.13`): done when `ki-dev -f implement` runs to
+  the end with placeholder agents on the shared runner, without
+  `implement`'s own executor.
 
 More: [what the architecture still lacks (German)](docs/ausfuehrer-luecken.de.md).
 

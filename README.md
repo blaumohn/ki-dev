@@ -5,7 +5,7 @@
 **KI-Agenten arbeiten, ein [Ablauf aus TOML](#1-ablauf-mitgeliefert) entscheidet, was danach passiert.**
 Den nächsten Schritt wählt Code, kein Modell; Modelle setzen um und prüfen
 fachlich. Ein Ablauf modelliert ein Verfahren, etwa Umsetzung mit
-getrenntem Review oder [Planung](#nicht-nur-code); ein Profil besetzt die
+getrenntem Review oder [Planung](#dasselbe-verfahren-für-planung); ein Profil besetzt die
 [Rollen](#3-rollen-besetzen), der [Auftrag](#2-auftrag-anlegen) ist ein
 Vorgang mit Abnahmekriterien.
 
@@ -47,7 +47,7 @@ KI-Agenten ausführen.
 2. [Was im Lauf passiert](#was-im-lauf-passiert)
 3. [Warum](#warum)
 4. [Ebenen und Orte](#ebenen-und-orte)
-5. [Nicht nur Code](#nicht-nur-code)
+5. [Dasselbe Verfahren für Planung](#dasselbe-verfahren-für-planung)
 6. [Roadmap](#roadmap)
 7. [Mitmachen](#mitmachen)
 8. [Lizenz](#lizenz)
@@ -157,9 +157,10 @@ des Gerüsts (`KI_DEV_FLOW_PATH`,
 ### 2. Auftrag anlegen
 
 **[Eingabe Auftrag](#ebenen-und-orte)**, ein Vorgang aus dem Arbeitsgraph
-([Beads](https://github.com/steveyegge/beads)). Der Ablauf passt zu
-jedem Vorgang mit Abnahmekriterien, hier ein kleiner Bug: `add(a, b)`
-liefert `a - b`.
+([Beads](https://github.com/steveyegge/beads)). Der Ablauf verlangt vom
+Vorgang Entwurf und Abnahmekriterien
+([Prüfung](src/ki_dev/flow_ops/implement/commands.py)), hier ein kleiner
+Bug: `add(a, b)` liefert `a - b`.
 
 <!-- readme-script: readme-scripts/3-auftrag.sh -->
 Weiter im Terminal aus [Schritt 0](#0-einrichten-ohne-agenten-ausprobieren):
@@ -275,9 +276,9 @@ eintragen. Nach einem Halt setzt `ki-dev -f implement resume add-fix`
 den Lauf fort, mit `--answer`, wenn der Halt eine Antwort verlangt.
 <!-- /readme-script -->
 
-**Stand dieses Beispiels:** Ablauf, Profilformat und Befehle sind echt,
-die Adapter für Codex und Claude Code gebaut. Noch offen: ein abgenommener
-Lauf mit echten Agenten, und rote Tests halten die Integration noch nicht auf.
+**Stand dieses Beispiels:** Die Adapter für Codex und Claude Code sind
+gebaut. Noch offen: ein abgenommener Lauf mit echten Agenten, und rote
+Tests halten die Integration noch nicht auf.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -462,15 +463,17 @@ wo der Code abweicht, steht in der [Roadmap](#roadmap) unter **V1**.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
-## Nicht nur Code
+## Dasselbe Verfahren für Planung
 
-Schreiben, getrennt prüfen, korrigieren, entscheiden: Dieses Verfahren liegt
-einmal als Muster im Gerüst
+Schreiben, getrennt prüfen, korrigieren, entscheiden: Das Verfahren aus
+dem [Beispiel](#beispiel-umsetzer-und-reviewer-als-ablauf) liegt einmal
+als Muster im Gerüst
 ([`patterns/review.toml`](src/ki_dev/flow/patterns/review.toml), Ops in
-[`flow_ops/review/`](src/ki_dev/flow_ops/review/)). Die Planungsabläufe
-`map`, `graph` und `materialize` setzen nur Parameter darauf, etwa die
-Kartierung von Anforderungen ([`map.toml`](src/ki_dev/flow/map.toml),
-gekürzt):
+[`flow_ops/review/`](src/ki_dev/flow_ops/review/)); `implement` bildet es
+noch als eigene Statechart nach ([Roadmap](#roadmap), `ige.6.4`). Die
+Planungsabläufe `map`, `graph` und `materialize` setzen nur Parameter auf
+das Muster (Vorlagen, Kontext, Rollen), etwa die Kartierung von
+Anforderungen ([`map.toml`](src/ki_dev/flow/map.toml), gekürzt):
 
 ```toml
 pattern_catalog = ["ki_dev:review"]   # Muster und seine Ops aus dem Gerüst
@@ -550,8 +553,8 @@ Der zweite `step` liest das Urteil `fix` aus `verdict.json` und gibt die
 
 Nächster Ablauf dieser Art, schon als Beads geschnitten: Planungssitzungen
 und Designnotizen in die Gesamtplanung einarbeiten ([Roadmap](#roadmap)).
-Beide Ablaufdiagramme erzeugt `ki-dev flow show` aus der Quelle; ein Test
-vergleicht sie mit diesem README.
+Beide Ablaufdiagramme erzeugt `ki-dev flow show` aus der Quelle; ein
+[Test](tests/test_flow_diagram.py) vergleicht sie mit diesem README.
 
 <sub>[↑ Inhalt](#inhalt)</sub>
 
@@ -594,8 +597,9 @@ Eingaben.
 
 **Runner und Executor**
 
-- ◆ **V1** ein Runner für alle Abläufe (`ige.6.4`, 17 Aufträge): `implement`
-  ohne eigenen Ausführer im Paket (`ige.6.4.13`); Schutzhalt, Messung,
+- ◆ **V1** ein Runner für alle Abläufe, `implement` auf dem Review-Muster
+  (`ige.6.4`, 17 Aufträge): `implement` ohne eigenen Ausführer im Paket
+  (`ige.6.4.13`); Schutzhalt, Messung,
   Budget und Wiederholung als Kanten in `run.toml` statt in Python
   (`ige.6.4.2`–`ige.6.4.5`); Git-Abschluss im Gerüst-Katalog (`ige.6.4.10`)
 - ◆ **V1** Verbrauchsschutz: eigene Tokenmessung, Budgetreservierung,
@@ -619,13 +623,17 @@ Eingaben.
 
 ## Mitmachen
 
-Gute Einstiege, je mit klarer Abnahme:
+Drei offene Aufgaben aus der [Roadmap](#roadmap), je mit Abnahme:
 
-- **Test-Tor bauen**: fertig, wenn rote Tests die Integration aufhalten
-  ([`tests/test_review_gate_cli.py`](tests/test_review_gate_cli.py) grün).
-- **Rundenzähler im Review-Muster**: `map`, `graph`, `materialize` zählen
-  ihre Korrekturrunden noch nicht.
-- **Ein Runner**: `implement` auf den gemeinsamen Runner umstellen.
+- **Test-Tor bauen** (`ek1`): fertig, wenn rote Tests die Integration
+  aufhalten ([`tests/test_review_gate_cli.py`](tests/test_review_gate_cli.py)
+  grün, ohne `xfail`).
+- **Rundengrenzen im Review-Muster** (`ige.6.4.7`): `map`, `graph`,
+  `materialize` zählen ihre Korrekturrunden noch nicht; fertig, wenn das
+  `fix` nach der letzten erlaubten Runde beim Menschen hält.
+- **Ein Runner** (`ige.6.4.13`): fertig, wenn `ki-dev -f implement` mit
+  Platzhalter-Agenten über den gemeinsamen Runner bis zum Ende läuft,
+  ohne den eigenen Ausführer von `implement`.
 
 Mehr dazu: [Was in der Architektur fehlt](docs/ausfuehrer-luecken.de.md).
 

@@ -91,6 +91,7 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
    genannte Datei, jedes Skizzenelement mit Fundstelle; die Schritte
    verlinken auf ihre Ebene, die Skizze zurück auf die Schritte. Fehler:
    Kopf ohne Links, Motivation erst ab Zeile 462 (Durchlauf `5d3d4c6`).
+   Fehler: „Nicht nur Code“ als Überschrift (Regel 15).
 6. **Linear navigieren.** Inhaltsverzeichnis in Lesereihenfolge mit
    Unterlinks auf die Beispielschritte; `↑ Inhalt` am Ende jedes Abschnitts
    und Unterabschnitts.
@@ -165,6 +166,19 @@ Danach wird gestaltet; jede Regel unten folgt aus einer dieser Annahmen.
     (`2133c43`): „> ✅ bestanden · selbst prüfen: make readme-check“ über
     der Prosa; unklar, was bestanden hat, und „selbst prüfen“ liest sich
     als „nicht geprüft, prüf selbst“.
+15. **Gegenstand statt Meta.** Ein Satz benennt, was da ist und was es
+    tut. Zwei Fehler: eine Bewertung ohne Beleg („echt“, „gut“, „klar“)
+    und eine Abgrenzung gegen eine Alternative, die der Leser nicht
+    erwartet. Fehler (`02c0078`): Überschrift „Nicht nur Code“; wer sagte,
+    es sei nur Code? Besser nach dem Inhalt: „Dasselbe Verfahren für
+    Planung“. Fehler: „Ablauf, Profilformat und Befehle sind echt“; was
+    läuft, belegen Statuszeile und Test, die Bewertung fügt nichts hinzu.
+    Fehler: „Gute Einstiege, je mit klarer Abnahme“, und zwei von drei
+    nannten keine. Ein Kontrast bleibt, wo die README selbst die
+    Fehllesart nahelegt und das Gegenstück zeigt (Regel 2: nach dem
+    Bug-Beispiel „ein Verfahren, keine einzelne Aufgabe“). Reichweite
+    zeigen statt behaupten: ein zweiter Ablauf auf demselben Muster statt
+    „hilft allgemein“.
 
 ## Arbeitsweise
 
