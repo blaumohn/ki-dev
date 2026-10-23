@@ -27,6 +27,9 @@ _VERSION_KEYS = (
     "GO_VERSION",
     "GOLANGCI_LINT_VERSION",
 )
+# Guenstigstes Modell je Agenten-CLI zur gepinnten CLI-Version (Profil
+# des README-Beispiels, Effort ``low``); keine Build-Argumente.
+_MODEL_KEYS = ("CODEX_LOW_COST_MODEL", "CLAUDE_LOW_COST_MODEL")
 _PROPERTIES = {
     **dict.fromkeys(
         _VERSION_KEYS,
@@ -42,6 +45,10 @@ _PROPERTIES = {
     **dict.fromkeys(
         ("GO_SHA256_AMD64", "GO_SHA256_ARM64"),
         {"type": "string", "pattern": r"^[a-f0-9]{64}$"},
+    ),
+    **dict.fromkeys(
+        _MODEL_KEYS,
+        {"type": "string", "pattern": r"^[a-z0-9][a-z0-9.-]*$"},
     ),
 }
 _VALIDATOR = Draft202012Validator(
@@ -74,7 +81,16 @@ def validate_tool_versions(values: object) -> None:
         )
 
 
+def build_args() -> dict[str, str]:
+    """Pins des Image-Builds: alle Werte ausser den Modellpins."""
+    return {
+        key: value
+        for key, value in load_tool_versions().items()
+        if key not in _MODEL_KEYS
+    }
+
+
 if __name__ == "__main__":
-    for key, value in load_tool_versions().items():
+    for key, value in build_args().items():
         print("--build-arg")
         print(f"{key}={value}")

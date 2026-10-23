@@ -26,7 +26,7 @@ def test_build_arguments_cover_dockerfile_pins():
         )
     assert output[::2] == ["--build-arg"] * (len(output) // 2)
     arguments = dict(line.split("=", 1) for line in output[1::2])
-    assert arguments == tool_versions.load_tool_versions()
+    assert arguments == tool_versions.build_args()
     dockerfile = (root / "docker/agent/Dockerfile").read_text()
     for key in arguments:
         assert f"ARG {key}\n" in dockerfile
