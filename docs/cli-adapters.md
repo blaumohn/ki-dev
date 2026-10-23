@@ -114,6 +114,17 @@ oben) statt sie zu verdoppeln:
   `claude_result()`/`codex_result()`-Nachbearbeitung (die ist fuer ein
   tatsaechliches Prozessergebnis gebaut).
 
+Meldet die Probe eine andere Version als `cli_version_pin` (oder keine
+lesbare), startet ebenfalls kein Turn: das Ergebnis ist
+`TurnStatus.START_ERROR` mit „`codex 0.170.0 ist nicht geprüft, erwartet
+0.164.0`“. Der Verbrauch einer ungeprüften Version waere nur ein
+`PARTIAL`-Beleg, der jede weitere Reservierung des Laufs sperrt
+(Sicherheitsvertrag: ein unverifizierter Anbieterstand sperrt reale
+Ausfuehrung). Ein nicht gestarteter Aufruf hat nachweislich nichts
+verbraucht (`started: false` im Aufrufergebnis) und sperrt die Bilanz
+nicht: nach `make setup-agents` (geprueften Stand nach `.venv/bin`)
+setzt `resume --answer "…"` den Lauf fort.
+
 ## ClaudeCliAdapter
 
 Verwendete CLI: **Claude Code CLI** (`claude`), nachweisbar per

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -36,12 +37,19 @@ ProcessRunner = Callable[..., TurnResult]
 # Budget gilt" -- EIN gemeinsamer Prozesstimeout, keine Verdopplung).
 VERSION_PROBE_TIMEOUT_S = 10.0
 
+# Form einer Versionsangabe, die in einer Meldung erscheinen darf;
+# andere Probenausgaben bleiben ungenannt.
+_SHOWN_VERSION = re.compile(r"^\d+(\.\d+)+[0-9A-Za-z.+-]{0,24}$")
+
 
 class CliAdapter(ABC):
     """Uebersetzt den Turn-Vertrag in genau einen CLI-Aufruf."""
 
     name: str = "cli"
     capabilities: frozenset[Measure] = frozenset({Measure.BUDGET})
+    # Geprüfte Version (tool-versions.json); nur mit ihr startet ein
+    # budgetierter Turn.
+    cli_version_pin: str
 
     def __init__(
         self,
@@ -99,11 +107,43 @@ class CliAdapter(ABC):
         cli_version = self.probe_executed_version(
             request, min(VERSION_PROBE_TIMEOUT_S, total)
         )
+        if cli_version != self.cli_version_pin:
+            refused = self._unverified_version(cli_version)
+            return cli_version, refused, False
         remaining = total - (time.monotonic() - start)
         if remaining <= 0:
             result = self._deadline_exhausted_by_probe(total)
             return cli_version, result, False
         return cli_version, self._run_process(request, remaining), True
+
+    def _unverified_version(
+        self, cli_version: str | None
+    ) -> TurnResult:
+        """Ablehnung vor dem Turn: Verbrauch einer nicht geprüften
+        Version wäre nur ein ``PARTIAL``-Beleg, der jede weitere
+        Reservierung des Laufs sperrt (Sicherheitsvertrag: ein
+        unverifizierter Anbieterstand sperrt reale Ausführung). So
+        entsteht kein Verbrauch, und nach Installation der geprüften
+        Version setzt ``resume`` den Lauf fort."""
+        program = os.path.basename(self.executable)
+        shown = (
+            cli_version
+            if cli_version and _SHOWN_VERSION.match(cli_version)
+            else "unbekannt"
+        )
+        return TurnResult(
+            status=TurnStatus.START_ERROR,
+            exit_code=None,
+            stdout="",
+            stderr="",
+            argv=(),
+            duration_s=0.0,
+            error=(
+                f"{program} {shown} ist nicht geprüft, erwartet "
+                f"{self.cli_version_pin} (tool-versions.json); "
+                "Aufruf nicht gestartet"
+            ),
+        )
 
     def _deadline_exhausted_by_probe(self, total: float) -> TurnResult:
         return TurnResult(
@@ -159,10 +199,9 @@ class CliAdapter(ABC):
         (siehe ``send_metered_turn``), kein Rollen-Budget.
 
         Ein fehlgeschlagener oder nicht auswertbarer Probe-Aufruf
-        liefert ``None`` statt eines Rueckfalls auf den Pin -- eine
-        unbekannte Version bleibt ueber den Messvertrag
-        (``usage._measured_or_partial``) ein ``PARTIAL``-, kein
-        angeblich gemessener ``MEASURED``-Beleg.
+        liefert ``None`` statt eines Rueckfalls auf den Pin; wie jede
+        andere Version als der Pin startet dann kein Turn
+        (``send_metered_turn``).
         """
         probe = self._runner(
             [self.executable, "--version"],

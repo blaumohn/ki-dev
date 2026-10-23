@@ -21,6 +21,7 @@ from ki_dev.usage_accounting import (
     UsageReport,
     observation,
     reconcile_call,
+    started,
 )
 
 # Fortschritt fuer ``ki-dev -f implement --verbose``.
@@ -162,7 +163,7 @@ class CallLedger:
                 )
             result = self.store._load_json(result_path)
             usage = result.get("usage")
-            if start["metered"] and usage is None:
+            if start["metered"] and usage is None and started(result):
                 raise SafetyStop(
                     "Verbrauch eines Agentenaufrufs unbekannt; "
                     "kein weiterer Aufruf ohne Abgleich"
@@ -243,6 +244,12 @@ class CallLedger:
         with self.store.usage_lock():
             self._write(call_id, "result", {
                 "status": result.status.value if result else "local",
+                # Ohne Prozessstart (Startfehler, Ablehnung vor dem
+                # Turn) ist kein Verbrauch entstanden.
+                "started": (
+                    result is None
+                    or result.status is not TurnStatus.START_ERROR
+                ),
                 "duration_s": result.duration_s if result else None,
                 "usage": result.usage if result else None,
                 "error": error or (result.error if result else None),

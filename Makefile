@@ -2,6 +2,7 @@
 #
 # Verfügbare Ziele:
 #   make setup          venv, ki-dev und bd anlegen
+#   make setup-agents   geprüfte Codex- und Claude-CLI nach .venv/bin (braucht npm)
 #   make setup-runtime  eigenes Betriebs-venv und ~/.local/bin/ki-dev
 #   make demo           Mock-Lauf ohne Anbieterzugang
 #   make test           Tests und Lint
@@ -21,6 +22,7 @@ help:
 	@echo "ki-dev Makefile - Verfügbare Ziele:"
 	@echo ""
 	@echo "  make setup          Erstelle venv, ki-dev und bd"
+	@echo "  make setup-agents   Geprüfte Codex- und Claude-CLI nach .venv/bin (braucht npm)"
 	@echo "  make setup-runtime  Betriebs-venv und ~/.local/bin/ki-dev einrichten"
 	@echo "  make demo           Starten Sie einen Mock-Lauf ohne Anbieterzugang"
 	@echo "  make test           Führen Sie Tests und Lint aus"
@@ -33,7 +35,7 @@ help:
 	@echo "  make setup          # Initialisierung durchführen"
 	@echo "  make test           # Tests ausführen"
 
-.PHONY: setup setup-runtime demo test spec-test readme-check readme-live clean
+.PHONY: setup setup-agents setup-runtime demo test spec-test readme-check readme-live clean
 
 setup: .venv/bin/ki-dev setup-bd
 
@@ -49,6 +51,12 @@ setup-runtime:
 .PHONY: setup-bd
 setup-bd: .venv/bin/ki-dev
 	@"$(BIN)/python" scripts/setup_beads.py
+
+# Agenten-CLIs in den Versionen aus tool-versions.json; ki-dev ruft
+# keine anderen auf. Globale Installationen bleiben unverändert.
+setup-agents: .venv/bin/ki-dev
+	@bash scripts/setup-agents.sh \
+	  $(call version,CODEX_VERSION) $(call version,CLAUDE_VERSION)
 
 demo: setup
 	PATH="$(BIN):$$PATH" scripts/demo-mock-lauf.sh
@@ -98,10 +106,10 @@ readme-check:
 # umgebenden Claude-Code-Sitzung gehen nicht an das claude des Laufs.
 readme-live: export README_LIVE := 1
 readme-live: export README_RESULTS_DIR := $(CURDIR)/docs/beispiele/echtlauf
-readme-live: .venv/bin/ki-dev
+readme-live: .venv/bin/ki-dev setup-agents
 	@set -eu; \
 	unset KI_DEV_FLOW_PATH; \
-	for name in $$(env | sed -n 's/^\(CLAUDECODE\|CLAUDE_CODE_[A-Z_]*\|CLAUDE_EFFORT\|CLAUDE_PID\)=.*/\1/p'); do \
+	for name in $$(env | sed -nE 's/^(CLAUDECODE|CLAUDE_CODE_[A-Z_]*|CLAUDE_EFFORT|CLAUDE_PID)=.*/\1/p'); do \
 	  unset "$$name"; \
 	done; \
 	export PATH="$(BIN):$$PATH"; \

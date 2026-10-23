@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
+
 from ki_dev.adapter.executors import TurnResult, TurnStatus
+from ki_dev.adapter.executors.claude_cli import ClaudeCliAdapter
+from ki_dev.adapter.executors.codex_cli import CodexCliAdapter
+
+# ``--version``-Antwort der echten CLIs im geprüften Stand.
+_VERSION_OUTPUT = {
+    "claude": f"{ClaudeCliAdapter.cli_version_pin} (Claude Code)",
+    "codex": f"codex-cli {CodexCliAdapter.cli_version_pin}",
+}
 
 
 class FakeRunner:
-    """Zeichnet den CLI-Aufruf auf, ohne einen Prozess zu starten."""
+    """Zeichnet den CLI-Aufruf auf, ohne einen Prozess zu starten.
+
+    Die Versionsprobe beantwortet er wie die CLI im geprüften Stand;
+    jeder andere Aufruf erhält ``result``."""
 
     def __init__(self, result: TurnResult | None = None) -> None:
         self.result = result or TurnResult(
@@ -28,6 +42,15 @@ class FakeRunner:
     ) -> TurnResult:
         self.calls.append((tuple(argv), stdin, timeout_s))
         self.kwargs.append(kwargs)
+        program = Path(argv[0]).name
+        if argv[1:] == ["--version"] and program in _VERSION_OUTPUT:
+            return replace(
+                self.result,
+                status=TurnStatus.OK,
+                exit_code=0,
+                stdout=_VERSION_OUTPUT[program],
+                error=None,
+            )
         return self.result
 
     @property

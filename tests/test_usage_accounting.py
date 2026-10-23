@@ -650,3 +650,33 @@ def test_call_creating_a_session_with_two_ids_still_blocks(tmp_path):
 
     with pytest.raises(SafetyStop, match="session_mismatch"):
         ledger.reserve("call-2", "worker", True, "codex-cli")
+
+
+@pytest.mark.parametrize(
+    ("status", "blocks"),
+    [(TurnStatus.START_ERROR, False), (TurnStatus.NONZERO_EXIT, True)],
+    ids=["nicht-gestartet", "gestartet-ohne-beleg"],
+)
+def test_call_without_process_has_no_unknown_effect(
+    tmp_path, status, blocks
+):
+    """Ein Aufruf, dessen Prozess nie startete (Startfehler oder
+    Ablehnung einer ungeprüften CLI-Version vor dem Turn), hat
+    nachweislich nichts verbraucht und sperrt die nächste Reservierung
+    nicht. Ein gestarteter Aufruf ohne Verbrauchsbeleg sperrt weiter."""
+    ledger = _ledger(tmp_path)
+    ledger.reserve("call-1", "worker", True, "codex-cli")
+    ledger.finish(
+        "call-1",
+        TurnResult(status, None, "", "", (), 0.0, error="abgelehnt"),
+        "AgentTurnError: abgelehnt",
+    )
+    gaps = set(ledger.usage_report().calls[0].gaps)
+    if blocks:
+        assert "external_effect_unknown" in gaps
+        with pytest.raises(SafetyStop, match="unbekannt"):
+            ledger.reserve("call-2", "worker", True, "codex-cli")
+    else:
+        assert gaps <= {"attribution_missing"}
+        assert ledger.usage_report().total == 0
+        ledger.reserve("call-2", "worker", True, "codex-cli")

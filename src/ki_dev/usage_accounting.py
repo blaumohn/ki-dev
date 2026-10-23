@@ -177,6 +177,13 @@ def counters(record: dict) -> tuple[dict[str, int] | None, list[str]]:
     return value, gaps
 
 
+def started(result: dict | None) -> bool:
+    """Ob der Prozess eines Aufrufs gestartet wurde. Nur ein
+    ausdrückliches ``started: false`` belegt, dass kein Verbrauch
+    entstand; ältere Ergebnisse ohne das Feld gelten als gestartet."""
+    return result is None or result.get("started", True) is not False
+
+
 @dataclass(frozen=True)
 class CallUsage:
     run_id: str
@@ -258,7 +265,9 @@ def reconcile_call(
     attribution = _with_created_session(attribution, records)
     if attribution is None or not attribution.complete:
         gaps.append("attribution_missing")
-    if result is None or (metered and result.get("usage") is None):
+    if result is None or (
+        metered and result.get("usage") is None and started(result)
+    ):
         gaps.append("external_effect_unknown")
     requests = {}
     summaries = []
@@ -336,7 +345,7 @@ def reconcile_call(
         total = detail
         reconciliation = "requests_only"
         gaps.append("summary_missing")
-    elif metered:
+    elif metered and started(result):
         gaps.append("measurement_missing")
     return CallUsage(
         run_id,

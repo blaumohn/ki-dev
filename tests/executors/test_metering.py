@@ -1133,9 +1133,10 @@ def test_adapter_binds_usage_to_executed_cli_version(
     verified,
 ):
     """Der gepinnte Bezugsstand ist kein Nachweis fuer die tatsaechlich
-    ausgefuehrte CLI-Version (wu0.3/AC5). Bei unbekannter Version
-    sind eine erklaerte Ablehnung VOR dem Turn oder ein PARTIAL-
-    Beleg MIT erhaltenen Zaehlern erlaubt. Der bekannte Stand muss
+    ausgefuehrte CLI-Version (wu0.3/AC5). Eine unbekannte Version
+    wird VOR dem Turn erklaert abgelehnt: ein PARTIAL-Beleg wuerde
+    jede weitere Reservierung des Laufs sperren, auch nach einem
+    Wechsel auf den geprueften Stand. Der bekannte Stand muss
     weiterhin einen gemessenen Turn erlauben.
     """
     version = (
@@ -1151,9 +1152,13 @@ def test_adapter_binds_usage_to_executed_cli_version(
     result = adapter_type(executable=str(executable)).send_turn(request)
     calls = trace.read_text().splitlines() if trace.exists() else []
     assert "version" in calls
-    if not verified and "turn" not in calls:
-        assert not result.ok
-        assert result.error
+    if not verified:
+        assert "turn" not in calls
+        assert result.status is TurnStatus.START_ERROR
+        assert (
+            f"999.999.999 ist nicht geprüft, erwartet "
+            f"{adapter_type.cli_version_pin}"
+        ) in result.error
         assert result.usage is None
         assert result.usage_event is None
         return
@@ -1167,11 +1172,29 @@ def test_adapter_binds_usage_to_executed_cli_version(
     assert event.provider == provider
     assert event.session_id == request.session_id
     assert event.counter_scope is CounterScope.CALL_TOTAL
-    assert event.status is (
-        UsageStatus.MEASURED if verified else UsageStatus.PARTIAL
-    )
+    assert event.status is UsageStatus.MEASURED
     assert event.tokens == expected_tokens
     assert result.usage is not None
+
+
+@pytest.mark.parametrize(
+    "adapter_type", [ClaudeCliAdapter, CodexCliAdapter]
+)
+def test_unreadable_version_probe_names_no_raw_output(
+    tmp_path, adapter_type
+):
+    """Eine nicht als Version lesbare Probenausgabe startet ebenfalls
+    keinen Turn; die Meldung nennt sie nicht."""
+    provider = "claude" if adapter_type is ClaudeCliAdapter else "codex"
+    executable, trace = write_usage_cli(
+        tmp_path, provider, "Geheimnis-ohne-Versionsform", "{}"
+    )
+    request = replace(_request(), workdir=tmp_path)
+    result = adapter_type(executable=str(executable)).send_turn(request)
+    assert trace.read_text().splitlines() == ["version"]
+    assert result.status is TurnStatus.START_ERROR
+    assert "unbekannt ist nicht geprüft" in result.error
+    assert "Geheimnis" not in result.error
 
 
 def test_codex_failure_without_usage_does_not_invent_zero_counts():
