@@ -60,7 +60,9 @@ class MockReviewer:
                 "run_id": request.task.run_id,
                 "round_id": request.round_id,
                 "event": event,
-                "detail": "" if event == "PASS" else f"mock {event}",
+                "detail": (
+                    "" if event == "PASS" else "vorgegebene Antwort"
+                ),
                 "requirement_ref": refs[0] if changes else None,
             }
         )

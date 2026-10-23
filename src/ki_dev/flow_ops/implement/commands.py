@@ -4,6 +4,7 @@ Profil, der Ausführer fährt den Ablauf bis zum nächsten Halt.
     ki-dev -f implement BEAD [--profile NAME] [--adapter [ROLLE=]NAME]
     ki-dev -f implement resume RUN_ID [--answer TEXT] [--adapter …]
     ki-dev -f implement status RUN_ID
+    ki-dev -f implement history RUN_ID
 
 ``--adapter manual`` ersetzt die Agentensitzung durch den Menschen als
 Boten: die Eingabe geht auf stdout, die formale Antwort kommt von
@@ -37,6 +38,7 @@ from ki_dev.flow_ops.implement.cli import (
     start_run,
     status_document,
 )
+from ki_dev.flow_ops.implement.history import run_history
 from ki_dev.flow_ops.implement.machine import IMPLEMENT
 from ki_dev.flow_ops.implement.runtime import RunResult, RunResumeError
 from ki_dev.flow_ops.live import LiveExecutor
@@ -48,7 +50,7 @@ from ki_dev.ops.context.bead_input import (
     validate_bead_input,
 )
 from ki_dev.ops.context.beads_reader import BeadsReadError, read_issue
-from ki_dev.run_store import RunStoreError
+from ki_dev.run_store import RunStore, RunStoreError
 
 # Bead-Felder, die ein Umsetzungsauftrag braucht (wie ``require`` am
 # Schreibzustand von implement_review.toml; ein Ablauf ab ige.6).
@@ -93,6 +95,7 @@ def commands(flow: Flow, path: Path) -> typer.Typer:
     app.command("start")(start)
     app.command("resume")(resume)
     app.command("status")(status)
+    app.command("history")(history)
     return app
 
 
@@ -166,6 +169,20 @@ def status(
     """Status eines Laufs samt Profilnachweis zeigen, ohne ihn
     fortzusetzen."""
     _execute(lambda: status_document(run_id, runs_dir=runs_dir))
+
+
+def history(
+    run_id: Annotated[str, typer.Argument()],
+    runs_dir: RUNS_OPTION = RUNS_DIR,
+) -> None:
+    """Verlauf eines Laufs lesbar zeigen: je Runde Änderungen, Tests
+    und Review, danach der Abschluss."""
+    try:
+        lines = run_history(RunStore(runs_dir, run_id))
+    except _ERRORS as exc:
+        _abort(str(exc))
+    for line in lines:
+        print(line)
 
 
 def _bead_task(bead_id: str, cwd: Path) -> dict[str, object]:
