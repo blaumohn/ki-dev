@@ -227,7 +227,9 @@ def test_workdir_fails_when_the_session_broke_off(env, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "adapter", [CodexCliAdapter, ClaudeCliAdapter], ids=["codex", "claude"]
+    "adapter",
+    [CodexCliAdapter, ClaudeCliAdapter],
+    ids=["codex", "claude"],
 )
 def test_agent_stub_passes_version_probe_then_fails_turn(adapter):
     """Der Platzhalter aus readme_without_agents besteht die

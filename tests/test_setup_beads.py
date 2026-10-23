@@ -29,7 +29,11 @@ def repo(tmp_path):
     modules = ("__init__.py", "tool_versions.py", "config_sources.py")
     for name in modules:
         shutil.copy(ROOT / "src/ki_dev" / name, root / "src/ki_dev")
-    (root / ".venv/bin/python").symlink_to(sys.executable)
+    # Kein Symlink: Python sucht pyvenv.cfg neben dem aufgerufenen Pfad
+    # und fiele sonst auf das System-Python ohne plumbum zurück.
+    executable(
+        root / ".venv/bin/python", f'exec "{sys.executable}" "$@"\n'
+    )
     (root / ".venv/bin/ki-dev").touch()
     executable(
         root / "scripts/demo-mock-lauf.sh",

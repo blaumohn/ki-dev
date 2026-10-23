@@ -69,6 +69,7 @@ def _evidence(turn: ImplementTurn) -> str:
     return turn.evidence.text
 
 
+_ESCALATION = IMPLEMENT.events_with(Verdict.ESCALATE)[0]
 FIELDS: dict[str, Callable[[ImplementTurn], object]] = {
     "run_id": lambda turn: turn.task.run_id,
     "round_id": lambda turn: turn.round_id,
@@ -88,7 +89,7 @@ FIELDS: dict[str, Callable[[ImplementTurn], object]] = {
     "events": lambda turn: "|".join(_vocabulary(turn).events),
     "changes": lambda turn: _vocabulary(turn).changes,
     "unbound": lambda turn: _vocabulary(turn).unbound,
-    "escalation": lambda turn: IMPLEMENT.events_with(Verdict.ESCALATE)[0],
+    "escalation": lambda _turn: _ESCALATION,
 }
 PLUG: Plug[ImplementTurn] = Plug(FIELDS, {})
 bind_turns(IMPLEMENT, PLUG, (WORK, REVIEW))
