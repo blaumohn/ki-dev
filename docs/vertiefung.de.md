@@ -27,23 +27,10 @@ eine Korrektur und akzeptiert Runde 2.
 make demo
 ```
 
-> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_8_demo.sh)
-
-```text
-Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):
-Lauf demo: passed nach 2 Runden
-  Runde 1  Umsetzer  geändert: MOCK.md
-  Runde 1  Review    fix (AC1): vorgegebene Antwort
-  Runde 2  Umsetzer  geändert: MOCK.md
-  Runde 2  Review    PASS
-  Abschluss          Fast-forward integriert
-Datei auf main: ziel/MOCK.md
-  Runde 1
-  Runde 2
-```
+> Im letzten Prüflauf nicht ausgeführt · [Test](../tests/readme/test_8_demo.sh)
 
 Der Verlauf kommt von `ki-dev -f implement history`, wie in
-[Schritt 5](../README.md#5-ergebnis-ansehen) des Minimalbeispiels. Im
+[Schritt 6](../README.md#6-ergebnis-ansehen) des Minimalbeispiels. Im
 ausgegebenen Laufverzeichnis liegen Protokoll und Zwischenstände. Die
 Demo zeigt die Steuerung mit vorgegebenen Antworten; was ein Agent
 leistet, zeigt der Lauf im Minimalbeispiel.
@@ -66,7 +53,7 @@ events = ["PASS", "fix", "decision", "escalate"]  # erlaubte Antworten
 
 **Der Ablauf bestimmt die Reaktion auf eine Antwort.** Zum Beispiel führt
 `fix` zurück zur Umsetzung, solange noch eine Runde übrig ist.
-`changes_rounds = 3` im [Profil](../README.md#3-profil-speichern) erlaubt bis zu drei
+`changes_rounds = 2` im [Profil](../README.md#3-profil-speichern) erlaubt bis zu zwei
 Korrekturrunden nach der ersten Umsetzung.
 Ein [Test des Zustandsraums](../tests/machine/test_reachability.py) prüft,
 dass jede Schleife in `implement` bis zum nächsten Halt begrenzt ist.
@@ -241,7 +228,7 @@ beurteilt das Arbeitsergebnis; ki-dev prüft das Antwortformat und wendet
 die festgelegten Übergänge und Rundengrenzen an. Das zeigt die
 [`fix`-Schleife](#ablaufregeln) oben.
 
-Zwei fachliche Bezugspunkte:
+Drei fachliche Bezugspunkte:
 
 - [MAST](https://arxiv.org/html/2503.13657v3) beschreibt unter anderem
   vorzeitigen Abschluss und fehlende oder falsche Prüfung in
@@ -251,6 +238,13 @@ Zwei fachliche Bezugspunkte:
   ordnet feste Codepfade und Modellarbeit ähnlich zu. In ki-dev steht der
   Pfad in TOML. Für die Wahl des nächsten Schritts fällt so kein eigener
   Modellaufruf an; eine Token- oder Kostenersparnis ist bisher nicht gemessen.
+- [ImpossibleBench](https://arxiv.org/abs/2510.20270) (ICLR 2026) zeigt,
+  dass Coding-Agenten widersprüchliche Tests oft per Abkürzung grün
+  machen, seltener, wenn sie an einen Menschen abgeben dürfen, und dass
+  modellbasierte Prüfer solche Abkürzungen bei kleinen Aufgaben
+  verlässlicher finden als bei großen. In ki-dev entsprechen dem
+  Test-Tor, Halt mit `decision` und das Review in eigener Sitzung; ihre
+  Wirkung ist [noch nicht gemessen](wirksamkeitsmessung.de.md).
 
 [↑ Inhalt](#inhalt)
 
@@ -313,19 +307,7 @@ ki-dev -f map step "$BEAD" map  # Übergabe an den Kartierungsagenten
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_6_map_step.sh)
-
-```text
-Empfänger: Umsetzer (bisherige Sitzung)
-
-Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
-Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
-
-Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
-
-Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
-- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
-```
+> Im letzten Prüflauf nicht ausgeführt · [Test](../tests/readme/test_6_map_step.sh)
 
 Der zweite `step` liest das Urteil `fix` aus `verdict.json` und gibt die
 Übergabe an die Korrektur aus, oben ohne die Zeile mit der Bead-ID.
@@ -378,5 +360,5 @@ export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```
 
-> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_2_runtime.sh)
+> Im letzten Prüflauf nicht ausgeführt · [Test](../tests/readme/test_2_runtime.sh)
 <!-- /readme-script -->

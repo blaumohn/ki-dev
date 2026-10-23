@@ -126,6 +126,20 @@ def test_failing_effect_check_is_failed(env, tmp_path):
     assert "auszug" not in entry
 
 
+def test_failing_command_in_substitution_aborts(env, tmp_path):
+    test = _test(
+        tmp_path,
+        "test_1_ok.sh",
+        "readme_log_file() { false; echo verdeckt; }\n"
+        "readme_run 1-ok.sh\n"
+        "readme_result passed\n",
+    )
+    code, out, _ = _run(env, test)
+    assert code != 0
+    assert "eins" not in out
+    assert _entries(env, "1-ok")[0]["ergebnis"] == "failed"
+
+
 def test_test_without_result_is_failed(env, tmp_path):
     test = _test(tmp_path, "test_1_ok.sh", "readme_run 1-ok.sh\n")
     code, _, err = _run(env, test)
@@ -174,6 +188,39 @@ def test_scripts_share_one_shell(env, tmp_path):
     assert log.read_text() == out
     [entry] = _entries(env, "4-nach")
     assert entry["ergebnis"] == "passed"
+
+
+def test_workdir_is_where_the_session_ended(env, tmp_path):
+    """readme_workdir nennt das Verzeichnis am Ende der Sitzung, auch
+    wenn ein Skript in ein mktemp-Verzeichnis außerhalb von TMPDIR
+    wechselt (macOS ohne gesetztes TMPDIR)."""
+    target = tmp_path / "wo" / "versions-work"
+    target.mkdir(parents=True)
+    scripts = Path(env["README_SCRIPTS_DIR"])
+    (scripts / "3-wechsel.sh").write_text(f'cd "{target}"\n')
+    test = _test(
+        tmp_path,
+        "test_3_wechsel.sh",
+        "readme_run 3-wechsel.sh\n"
+        'echo "$(readme_workdir)" >&2\n'
+        "readme_result passed\n",
+    )
+    code, _, err = _run(env, test)
+    assert code == 0, err
+    assert f"{target}\n" in err
+
+
+def test_workdir_fails_when_the_session_broke_off(env, tmp_path):
+    test = _test(
+        tmp_path,
+        "test_2_boom.sh",
+        "readme_run 2-boom.sh || true\n"
+        "readme_workdir\n"
+        "readme_result passed\n",
+    )
+    code, _, err = _run(env, test)
+    assert code != 0
+    assert "Sitzung endete vor dem letzten Befehl" in err
 
 
 def _test(tmp_path, name, body):

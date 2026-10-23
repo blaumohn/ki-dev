@@ -1,0 +1,15 @@
+[
+  {
+    "skript": "9-entscheiden.sh",
+    "parameter": {},
+    "ergebnis": "passed",
+    "datum": "2026-10-23T20:40:58Z",
+    "auszug": [
+      "Lauf version-fix: paused_interactive nach 1 Runde",
+      "  Runde 1  Umsetzer  geändert: version.py",
+      "  Runde 1  Tests     test_version fehlgeschlagen",
+      "  Runde 1  Review    PASS: AC1 ist erfüllt: `is_newer` vergleicht die Version…",
+      "  Halt               checks_failed: Review PASS bei roter Prüfung: test_versi…"
+    ]
+  }
+]

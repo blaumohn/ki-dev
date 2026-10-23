@@ -3,16 +3,23 @@
     "skript": "9-ergebnis.sh",
     "parameter": {},
     "ergebnis": "passed",
-    "datum": "2026-10-22T21:11:07Z",
+    "datum": "2026-10-23T20:40:58Z",
     "auszug": [
-      "Lauf add-fix: passed nach 1 Runde",
-      "  Runde 1  Umsetzer  geändert: add.py",
-      "  Runde 1  Tests     test_add bestanden",
-      "  Runde 1  Review    PASS: AC1 per Lesen geprueft: add.py enthaelt jetzt `ret…",
+      "Lauf version-fix: passed nach 2 Runden",
+      "  Runde 1  Umsetzer  geändert: version.py",
+      "  Runde 1  Tests     test_version fehlgeschlagen",
+      "  Runde 1  Review    PASS: AC1 ist erfüllt: `is_newer` vergleicht die Version…",
+      "  Runde 1  Mensch    AC2 geändert",
+      "  Runde 1  Review    fix (AC2): Die Entscheidung nach Runde 1 verlangt, dass…",
+      "  Runde 2  Umsetzer  geändert: test_version.py",
+      "  Runde 2  Tests     test_version bestanden",
+      "  Runde 2  Review    PASS: Beide Kriterien sind durch den Quelltext belegt. A…",
       "  Abschluss          Fast-forward integriert",
-      "Fix add()",
-      "def add(a, b):",
-      "    return a + b"
+      "Fix is_newer()",
+      "",
+      " test_version.py | 2 +-",
+      " version.py      | 4 +++-",
+      "…"
     ]
   }
 ]

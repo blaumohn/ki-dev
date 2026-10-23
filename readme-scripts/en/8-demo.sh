@@ -8,7 +8,7 @@ make demo
 # ```
 #
 # The history comes from `ki-dev -f implement history`, as in
-# [step 5](README.en.md#5-check-the-result) of the minimal example. The
+# [step 6](README.en.md#6-check-the-result) of the minimal example. The
 # printed run directory contains the log and intermediate results. The
 # demo shows the control flow with scripted answers; what an agent
 # achieves is shown by the run in the minimal example.

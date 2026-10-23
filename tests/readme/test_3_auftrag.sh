@@ -5,5 +5,5 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 readme_run 3-auftrag.sh
-[[ "$(tail -n 1 "$README_LOG")" =~ ^calc-[0-9a-z]+$ ]]
+[[ "$(tail -n 1 "$README_LOG")" =~ ^versions-[0-9a-z]+$ ]]
 readme_result passed

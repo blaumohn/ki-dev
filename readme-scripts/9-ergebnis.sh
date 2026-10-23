@@ -1,13 +1,12 @@
-# Weiter in `calc-work`. `history` fasst den Lauf aus seinen
-# gespeicherten Zwischenständen zusammen; den Abschluss-Commit trägt das
-# Ziel-Repo `calc`.
+# Weiter in `versions-work`. `history` zeigt jetzt den ganzen Lauf mit
+# deiner Entscheidung; den Abschluss-Commit trägt das Ziel-Repo `versions`.
 #
 # ```bash
-ki-dev -f implement history add-fix  # Runden, Tests, Review, Abschluss
-git -C ../calc log -1 --format=%s    # Abschluss-Commit auf main
-git -C ../calc show main:add.py      # korrigierte Datei auf main
+ki-dev -f implement history version-fix            # Runden, Tests, Review, Abschluss
+git -C ../versions log -1 --stat --format=%s main  # Abschluss-Commit auf main
+git -C ../versions show main:version.py            # korrigierte Datei
 # ```
 #
-# Die `Tests`-Zeile ist das Ergebnis von `test_add.py`, das ki-dev vor dem
-# Review ausführt. Antwortet das Review `fix`, folgt eine weitere Runde
-# mit dem Befund.
+# Die `Tests`-Zeilen sind das Ergebnis von `test_version.py`, das ki-dev
+# nach jeder Umsetzung ausführt; `Mensch` ist deine Entscheidung aus
+# Schritt 5.

@@ -8,7 +8,7 @@ make demo
 # ```
 #
 # Der Verlauf kommt von `ki-dev -f implement history`, wie in
-# [Schritt 5](README.md#5-ergebnis-ansehen) des Minimalbeispiels. Im
+# [Schritt 6](README.md#6-ergebnis-ansehen) des Minimalbeispiels. Im
 # ausgegebenen Laufverzeichnis liegen Protokoll und Zwischenstände. Die
 # Demo zeigt die Steuerung mit vorgegebenen Antworten; was ein Agent
 # leistet, zeigt der Lauf im Minimalbeispiel.

@@ -26,23 +26,10 @@ accepts round 2.
 make demo
 ```
 
-> ✅ Run in an empty container · [test](../tests/readme/test_8_demo.sh)
-
-```text
-Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):
-Lauf demo: passed nach 2 Runden
-  Runde 1  Umsetzer  geändert: MOCK.md
-  Runde 1  Review    fix (AC1): vorgegebene Antwort
-  Runde 2  Umsetzer  geändert: MOCK.md
-  Runde 2  Review    PASS
-  Abschluss          Fast-forward integriert
-Datei auf main: ziel/MOCK.md
-  Runde 1
-  Runde 2
-```
+> Not run in the last check · [test](../tests/readme/test_8_demo.sh)
 
 The history comes from `ki-dev -f implement history`, as in
-[step 5](../README.en.md#5-check-the-result) of the minimal example. The
+[step 6](../README.en.md#6-check-the-result) of the minimal example. The
 printed run directory contains the log and intermediate results. The
 demo shows the control flow with scripted answers; what an agent
 achieves is shown by the run in the minimal example.
@@ -65,7 +52,7 @@ events = ["PASS", "fix", "decision", "escalate"]  # allowed answers
 
 **The flow determines the response to an answer.** For example, `fix`
 returns to implementation while another round is allowed.
-`changes_rounds = 3` in the [profile](../README.en.md#3-save-the-profile) allows up to three
+`changes_rounds = 2` in the [profile](../README.en.md#3-save-the-profile) allows up to two
 correction rounds after the initial implementation.
 A [state-space test](../tests/machine/test_reachability.py) checks that every
 loop in `implement` is bounded before requiring a human decision.
@@ -239,7 +226,7 @@ A model judges the work; ki-dev checks the answer format and applies the
 configured transitions and round limits. The
 [`fix` loop](#flow-rules) above shows this division.
 
-Two references behind this design:
+Three references behind this design:
 
 - [MAST](https://arxiv.org/html/2503.13657v3) describes premature termination
   and missing or incorrect verification among failures in multi-agent
@@ -249,6 +236,13 @@ Two references behind this design:
   makes a similar distinction between fixed code paths and model work.
   In ki-dev, the path is defined in TOML. Choosing the next step therefore
   needs no separate model call; token or cost savings have not been measured.
+- [ImpossibleBench](https://arxiv.org/abs/2510.20270) (ICLR 2026) shows
+  that coding agents often make contradictory tests pass through
+  shortcuts, less often when they can hand over to a human, and that
+  model-based monitors find such shortcuts in small tasks more reliably
+  than in large ones. ki-dev's counterparts are the test gate, the
+  `decision` halt and the review in its own session; their effect is
+  [not yet measured](wirksamkeitsmessung.de.md) (German).
 
 [↑ Contents](#contents)
 
@@ -312,19 +306,7 @@ ki-dev -f map step "$BEAD" map  # handoff to the mapping agent
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> ✅ Run in an empty container · [test](../tests/readme/test_6_map_step.sh)
-
-```text
-Empfänger: Umsetzer (bisherige Sitzung)
-
-Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
-Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
-
-Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
-
-Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
-- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
-```
+> Not run in the last check · [test](../tests/readme/test_6_map_step.sh)
 
 The second `step` reads the verdict `fix` from `verdict.json` and prints
 the handoff to the correction (German), above without the line with the
@@ -378,5 +360,5 @@ export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```
 
-> ✅ Run in an empty container · [test](../tests/readme/test_2_runtime.sh)
+> Not run in the last check · [test](../tests/readme/test_2_runtime.sh)
 <!-- /readme-script -->

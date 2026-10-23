@@ -1,7 +1,7 @@
 # The profile fills the roles: Codex implements, Claude Code reviews.
 # Both use the cheapest model of their CLI with effort `low`; ki-dev
 # creates a separate session for each role on its first call.
-# Continue in `calc-work`:
+# Continue in `versions-work`:
 #
 # ```bash
 mkdir -p .ki-dev/profiles       # profiles in the starting directory
@@ -19,17 +19,17 @@ executor = "claude"
 model = "haiku"
 effort = "low"
 
-[[tests]]                       # runs each round, result to review
-name = "test_add"
-argv = ["python3", "test_add.py"]
+[[tests]]                       # each round; red blocks the merge
+name = "test_version"
+argv = ["python3", "test_version.py"]
 
 [limits]
-changes_rounds = 3              # at most three correction rounds
+changes_rounds = 2              # at most two correction rounds
 
 [finalization]                  # where an accepted result goes
-target_workdir = "../calc"      # target repo with branch main
+target_workdir = "../versions"  # target repo with branch main
 target_ref = "refs/heads/main"
-commit_message = "Fix add()"
+commit_message = "Fix is_newer()"
 EOF
 # ```
 #

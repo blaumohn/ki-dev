@@ -16,10 +16,11 @@
 # RESULT_SCHEMA in scripts/readme_results.py; daraus setzt
 # render-readme.py --write Statuszeile und Ausgabeblock der README.
 set -Eeuo pipefail
-shopt -s inherit_errexit
+# Bash 3.2 löscht errexit in $(…). Bei mehreren Befehlen oder
+# Funktionsaufrufen darin setzen wir es deshalb ausdrücklich erneut.
 trap 'echo "[readme-check] Fehler in ${0##*/} Zeile $LINENO: $BASH_COMMAND" >&2' ERR
 
-README_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+README_REPO_DIR="$(set -e; cd "$(dirname "${BASH_SOURCE[0]}")/../.."; pwd)"
 README_SCRIPTS_DIR="${README_SCRIPTS_DIR:-$README_REPO_DIR/readme-scripts}"
 README_RESULTS_DIR="${README_RESULTS_DIR:-/tmp/readme-ergebnisse}"
 README_LOG_DIR="${README_LOG_DIR:-${TMPDIR:-/tmp}/readme-logs}"
@@ -27,16 +28,29 @@ README_LOG_DIR="${README_LOG_DIR:-${TMPDIR:-/tmp}/readme-logs}"
 # Führt readme-scripts/<skript> … wie ein Besucher im aktuellen
 # Verzeichnis aus, mehrere nacheinander in einer Shell wie im selben
 # Terminal (Variablen und Verzeichnis gehen weiter). Die Ausgabe steht
-# zusätzlich in $README_LOG, benannt nach dem letzten Skript.
+# zusätzlich in $README_LOG, benannt nach dem letzten Skript; das
+# Verzeichnis am Ende der Sitzung nennt readme_workdir.
 readme_run() {
   local script session
   mkdir -p "$README_LOG_DIR"
-  README_LOG="$(readme_log_file "${!#}")"
+  README_LOG="$(set -e; readme_log_file "${!#}")"
   session="$README_LOG.sh"
+  rm -f "$README_LOG.pwd"
   for script in "$@"; do
     cat "$README_SCRIPTS_DIR/$script"
   done >"$session"
+  printf 'pwd >%q\n' "$README_LOG.pwd" >>"$session"
   bash -eu -o pipefail "$session" 2>&1 | tee "$README_LOG"
+}
+
+# Arbeitsverzeichnis am Ende des letzten readme_run, etwa der Worktree,
+# in den 3-auftrag.sh wechselt. Unabhängig davon, wo mktemp -d anlegt.
+readme_workdir() {
+  if [[ ! -f "$README_LOG.pwd" ]]; then
+    echo "[readme-check] Sitzung endete vor dem letzten Befehl" >&2
+    return 1
+  fi
+  cat "$README_LOG.pwd"
 }
 
 # Ersetzt codex und claude im PATH durch Platzhalter, die mit Exit 127
@@ -60,7 +74,7 @@ readme_result() {
     echo "[readme-check] readme_result failed: kein Auszug erlaubt" >&2
     return 2
   fi
-  readme_write_entry "$(readme_script_for_test "$0")" "$result" \
+  readme_write_entry "$(set -e; readme_script_for_test "$0")" "$result" \
     "$excerpt" "" ""
   if [[ "$result" == failed ]]; then
     return 1
@@ -72,7 +86,7 @@ readme_result() {
 # README. Beendet den Test mit Exit 0.
 readme_test_missing() {
   local reason_de="$1" reason_en="$2" script
-  script="$(readme_script_for_test "$0")"
+  script="$(set -e; readme_script_for_test "$0")"
   readme_write_entry "$script" stub "" "$reason_de" "$reason_en"
   echo "[readme-check] $script: ungeprüft (Stub): $reason_de" >&2
   exit 0
@@ -83,10 +97,10 @@ readme_test_missing() {
 # geht nur auf stderr. Gibt den Exitcode des Tests weiter.
 run_readme_test() {
   local test="$1" script code=0
-  script="$(readme_script_for_test "$test")"
+  script="$(set -e; readme_script_for_test "$test")"
   echo "[readme-check] $script: ${test##*/}" >&2
   bash "$test" || code=$?
-  if [[ ! -f "$(readme_result_file "$script")" ]]; then
+  if [[ ! -f "$(set -e; readme_result_file "$script")" ]]; then
     if (( code == 0 )); then
       echo "[readme-check] $test: endete ohne Ergebnis" >&2
       code=1
@@ -101,7 +115,7 @@ run_readme_test() {
 
 readme_report_failure() {
   local test="$1" script="$2" code="$3" log
-  log="$(readme_log_file "$script")"
+  log="$(set -e; readme_log_file "$script")"
   echo "[readme-check] $test fehlgeschlagen (Exit $code); Log: $log" >&2
   if [[ -f "$log" ]]; then
     tail -n 15 "$log" >&2
@@ -128,7 +142,7 @@ readme_log_file() {
 readme_write_entry() {
   local script="$1" result="$2" excerpt="$3" reason_de="$4" reason_en="$5"
   mkdir -p "$README_RESULTS_DIR"
-  python3 - "$(readme_result_file "$script")" "$script" "$result" \
+  python3 - "$(set -e; readme_result_file "$script")" "$script" "$result" \
     "$excerpt" "$reason_de" "$reason_en" <<'PY'
 import datetime
 import json

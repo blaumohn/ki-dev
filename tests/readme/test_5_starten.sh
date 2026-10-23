@@ -32,7 +32,7 @@ if start is None:
 result, _ = json.JSONDecoder().raw_decode(text, start.start())
 state = (result.get("run_id"), result.get("status"), result.get("phase"))
 stub = "codex: in dieser Prüfung nicht verfügbar" in str(result.get("detail"))
-if state != ("add-fix", "paused_interactive", "worker_step") or not stub:
+if state != ("version-fix", "paused_interactive", "worker_step") or not stub:
     sys.exit(f"Start endet mit {result!r}, nicht am ersten Agentenaufruf")
 PY
 }

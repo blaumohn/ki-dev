@@ -1,12 +1,21 @@
-# Weiter in `calc-work`. ki-dev ruft jetzt die Agenten auf; je nach
+# Weiter in `versions-work`. ki-dev ruft jetzt die Agenten auf; je nach
 # Modell dauert das Sekunden bis Minuten. Mit `-v` zeigt ki-dev
 # Zustandswechsel und Agentenausgabe live.
 #
 # ```bash
-ki-dev -f implement "$BEAD" --run-id add-fix  # Profil default
+ki-dev -f implement "$BEAD" --run-id version-fix  # Profil default
 # ```
 #
-# Am Ende steht der Endzustand als JSON, nach Erfolg mit
-# `"status": "passed"`. Hält der Lauf an, nennt `detail` den Grund;
-# `ki-dev -f implement resume add-fix` setzt danach fort
-# ([Halt und Fortsetzen](docs/ausfuehrer.de.md)).
+# Die Review-Antwort bestimmt den nächsten Übergang:
+#
+# | Review-Antwort | Reaktion von ki-dev |
+# |---|---|
+# | `fix` | Befund an `worker`; nach den zwei Korrekturrunden aus dem Profil Halt für dich. |
+# | `PASS` | Bei grünen Tests Abschluss-Commit vorbereiten und per Fast-Forward nach `main` übernehmen; bei roten Tests anhalten. |
+# | `decision` | Für deine Entscheidung anhalten; weiter unter [Entscheiden](#5-entscheiden). |
+#
+# Am Ende steht der Endzustand als JSON. Erwartet ist ein Halt für dich:
+# `"status": "waiting_decision"`, wenn das Review eine Entscheidung
+# verlangt, oder `"paused_interactive"` mit `checks_failed` in `detail`,
+# wenn es trotz roter Tests `PASS` gemeldet hat. In beiden Fällen bleibt
+# `main` unverändert ([Halt und Fortsetzen](docs/ausfuehrer.de.md)).

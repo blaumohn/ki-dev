@@ -98,7 +98,7 @@ Verständnis des Projekts. Installation, Vorführungen und interne Details
 dürfen dafür keine Voraussetzung sein.
 
 - **Ein Beispiel trägt die Erklärung.** Ablauf und Beispielauftrag getrennt
-  benennen: `implement` führt Codeänderungen durch; `add` ist ein gewählter
+  benennen: `implement` führt Codeänderungen durch; `is_newer` ist ein gewählter
   Auftrag. Allgemeines Verfahren und konkrete Arbeit nicht im selben
   unklaren „soll … reparieren“-Satz zusammenziehen.
 - **Ein Hauptweg.** Erst das Zusammenspiel am Minimalbeispiel, dann die

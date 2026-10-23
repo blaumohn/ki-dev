@@ -371,7 +371,8 @@ def test_live_result_is_marked_and_wins_over_the_container_stub(
     live = repo / "docs/beispiele/echtlauf"
     live.mkdir(parents=True)
     _result(
-        live, "9-ergebnis", "passed", auszug=["Lauf add-fix: passed"]
+        live, "9-ergebnis", "passed",
+        auszug=["Lauf version-fix: passed"],
     )
     _result(
         results, "9-ergebnis", "stub", grund_de="braucht Agenten",
@@ -384,5 +385,5 @@ def test_live_result_is_marked_and_wins_over_the_container_stub(
     ):
         text = (repo / name).read_text()
         assert status in text
-        assert "Lauf add-fix: passed" in text
+        assert "Lauf version-fix: passed" in text
         assert "braucht Agenten" not in text
