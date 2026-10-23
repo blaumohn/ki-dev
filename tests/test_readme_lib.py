@@ -15,6 +15,9 @@ from pathlib import Path
 import pytest
 from plumbum import local
 
+from ki_dev.adapter.executors.claude_cli import ClaudeCliAdapter
+from ki_dev.adapter.executors.codex_cli import CodexCliAdapter
+
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "tests/readme/lib.sh"
 HEADER = f'source "{LIB}"\n'
@@ -221,6 +224,29 @@ def test_workdir_fails_when_the_session_broke_off(env, tmp_path):
     code, _, err = _run(env, test)
     assert code != 0
     assert "Sitzung endete vor dem letzten Befehl" in err
+
+
+@pytest.mark.parametrize(
+    "adapter", [CodexCliAdapter, ClaudeCliAdapter], ids=["codex", "claude"]
+)
+def test_agent_stub_passes_version_probe_then_fails_turn(adapter):
+    """Der Platzhalter aus readme_without_agents besteht die
+    Versionsprobe der Adapter mit dem Pin aus tool-versions.json; erst
+    der Turn selbst scheitert (test_5_starten.sh erwartet diesen
+    Fehler, nicht die Ablehnung einer ungeprüften Version)."""
+    cli = adapter()
+    program = 'source "$1"; readme_without_agents; "$2" --version'
+    version = local["bash"]("-c", program, "_", LIB, cli.executable)
+    assert cli.parse_version(version) == cli.cli_version_pin
+    program = 'source "$1"; readme_without_agents; "$2" exec'
+    code, _, err = local["bash"].run(
+        ["-c", program, "_", LIB, cli.executable], retcode=None
+    )
+    assert code == 127
+    # Danach meldet der ERR-Trap von lib.sh den Befehl.
+    assert err.splitlines()[0] == (
+        f"{cli.executable}: in dieser Prüfung nicht verfügbar"
+    )
 
 
 def _test(tmp_path, name, body):

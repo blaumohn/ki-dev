@@ -55,16 +55,32 @@ readme_workdir() {
 
 # Ersetzt codex und claude im PATH durch Platzhalter, die mit Exit 127
 # enden: ein Test erreicht den ersten Agentenaufruf, ohne Modelle
-# aufzurufen, auch auf einem Rechner mit angemeldeten CLIs.
+# aufzurufen, auch auf einem Rechner mit angemeldeten CLIs. Vor dem
+# Turn fragt ki-dev `--version` ab und startet nur die geprüfte Version
+# aus tool-versions.json; die meldet der Platzhalter im Format der CLI.
 readme_without_agents() {
-  local stubs agent
+  local stubs agent version
   stubs="$(mktemp -d)"
   for agent in codex claude; do
-    printf '#!/bin/sh\necho "%s: in dieser Prüfung nicht verfügbar" >&2\nexit 127\n' \
-      "$agent" >"$stubs/$agent"
+    version="$(set -e; readme_agent_version "$agent")"
+    printf '#!/bin/sh\nif [ "$1" = --version ]; then echo "%s"; exit 0; fi\necho "%s: in dieser Prüfung nicht verfügbar" >&2\nexit 127\n' \
+      "$version" "$agent" >"$stubs/$agent"
     chmod +x "$stubs/$agent"
   done
   export PATH="$stubs:$PATH"
+}
+
+# Ausgabe von `<agent> --version` für die geprüfte Version.
+readme_agent_version() {
+  local key format
+  case "$1" in
+    codex) key=CODEX_VERSION format='codex-cli %s' ;;
+    claude) key=CLAUDE_VERSION format='%s (Claude Code)' ;;
+  esac
+  # shellcheck disable=SC2059
+  printf "$format\n" "$(python3 -c 'import json, sys
+print(json.load(open(sys.argv[1]))[sys.argv[2]])' \
+    "$README_REPO_DIR/src/ki_dev/tool-versions.json" "$key")"
 }
 
 # Ergebnis des laufenden Tests; failed endet mit Exit 1.
