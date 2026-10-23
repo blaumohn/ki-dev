@@ -116,7 +116,7 @@ make setup                          # venv with ki-dev and bd
 export PATH="$PWD/.venv/bin:$PATH"  # ki-dev and bd for the steps below
 ```
 
-> ❌ Failed in an empty container · [test](tests/readme/test_1_setup.sh)
+> ✅ Run in an empty container · [test](tests/readme/test_1_setup.sh)
 <!-- /readme-script -->
 
 ### 2. Create the task
@@ -159,7 +159,7 @@ BEAD="$(bd create "is_newer() compares versions as text" \
 echo "$BEAD"
 ```
 
-> Not run in the last check · [test](tests/readme/test_3_auftrag.sh)
+> ✅ Run in an empty container · [test](tests/readme/test_3_auftrag.sh)
 
 `$BEAD` is the task ID, e.g. `versions-7k2`. The test contradicts
 criterion 1, and criterion 2 forbids changing it. Green tests are only
@@ -204,7 +204,7 @@ commit_message = "Fix is_newer()"
 EOF
 ```
 
-> Not run in the last check · [test](tests/readme/test_4_rollen.sh)
+> ✅ Run in an empty container · [test](tests/readme/test_4_rollen.sh)
 
 - `executor` can be swapped per role; available are `codex`,
   `claude`, `mock` and `manual`
@@ -224,7 +224,7 @@ changes and agent output live.
 ki-dev -f implement "$BEAD" --run-id version-fix  # profile default
 ```
 
-> Not run in the last check · [test](tests/readme/test_5_starten.sh)
+> ⏳ Not checked: the first agent call needs logged-in agent CLIs; run up to there · [test](tests/readme/test_5_starten.sh)
 
 The review's answer determines the next transition:
 
@@ -261,11 +261,11 @@ ki-dev -f implement resume version-fix  # reads the bead again
 > ✅ Run with real agents · [test](tests/readme/test_9_entscheiden.sh)
 
 ```text
-Lauf version-fix: paused_interactive nach 1 Runde
+Lauf version-fix: waiting_decision nach 1 Runde
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    PASS: AC1 ist erfüllt: `is_newer` vergleicht die Version…
-  Halt               checks_failed: Review PASS bei roter Prüfung: test_versi…
+  Runde 1  Review    decision: Der Fix in version.py ist korrekt: is_newer ve…
+  Halt               wartet auf Entscheidung (Bead ändern, resume)
 ```
 
 `resume` reads the bead again and gives the review and the implementer
@@ -295,12 +295,12 @@ git -C ../versions show main:version.py            # corrected file
 Lauf version-fix: passed nach 2 Runden
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    PASS: AC1 ist erfüllt: `is_newer` vergleicht die Version…
+  Runde 1  Review    decision: Der Fix in version.py ist korrekt: is_newer ve…
   Runde 1  Mensch    AC2 geändert
-  Runde 1  Review    fix (AC2): Die Entscheidung nach Runde 1 verlangt, dass…
+  Runde 1  Review    fix (AC2): Die Entscheidung des Menschen nach Runde 1 le…
   Runde 2  Umsetzer  geändert: test_version.py
   Runde 2  Tests     test_version bestanden
-  Runde 2  Review    PASS: Beide Kriterien sind durch den Quelltext belegt. A…
+  Runde 2  Review    PASS: Die Testdatei entspricht AC2 neu: Zeile 4 lautet a…
   Abschluss          Fast-forward integriert
 Fix is_newer()
 
@@ -390,7 +390,7 @@ make spec-test     # requirement tests, red results are allowed
 make readme-check  # Docker check; updates README and deep dive
 ```
 
-> Not run in the last check · [test](tests/readme/test_7_entwickeln.sh)
+> ⏳ Not checked: developer commands; make readme-check is this run itself · [test](tests/readme/test_7_entwickeln.sh)
 <!-- /readme-script -->
 
 **Edit documentation:** Commands and explanations live in

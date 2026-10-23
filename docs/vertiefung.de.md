@@ -27,7 +27,20 @@ eine Korrektur und akzeptiert Runde 2.
 make demo
 ```
 
-> Im letzten Prüflauf nicht ausgeführt · [Test](../tests/readme/test_8_demo.sh)
+> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_8_demo.sh)
+
+```text
+Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):
+Lauf demo: passed nach 2 Runden
+  Runde 1  Umsetzer  geändert: MOCK.md
+  Runde 1  Review    fix (AC1): vorgegebene Antwort
+  Runde 2  Umsetzer  geändert: MOCK.md
+  Runde 2  Review    PASS
+  Abschluss          Fast-forward integriert
+Datei auf main: ziel/MOCK.md
+  Runde 1
+  Runde 2
+```
 
 Der Verlauf kommt von `ki-dev -f implement history`, wie in
 [Schritt 6](../README.md#6-ergebnis-ansehen) des Minimalbeispiels. Im
@@ -307,7 +320,19 @@ ki-dev -f map step "$BEAD" map  # Übergabe an den Kartierungsagenten
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> Im letzten Prüflauf nicht ausgeführt · [Test](../tests/readme/test_6_map_step.sh)
+> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_6_map_step.sh)
+
+```text
+Empfänger: Umsetzer (bisherige Sitzung)
+
+Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
+Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
+
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
+- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
+```
 
 Der zweite `step` liest das Urteil `fix` aus `verdict.json` und gibt die
 Übergabe an die Korrektur aus, oben ohne die Zeile mit der Bead-ID.
@@ -360,5 +385,5 @@ export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```
 
-> Im letzten Prüflauf nicht ausgeführt · [Test](../tests/readme/test_2_runtime.sh)
+> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_2_runtime.sh)
 <!-- /readme-script -->

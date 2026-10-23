@@ -26,7 +26,20 @@ accepts round 2.
 make demo
 ```
 
-> Not run in the last check · [test](../tests/readme/test_8_demo.sh)
+> ✅ Run in an empty container · [test](../tests/readme/test_8_demo.sh)
+
+```text
+Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):
+Lauf demo: passed nach 2 Runden
+  Runde 1  Umsetzer  geändert: MOCK.md
+  Runde 1  Review    fix (AC1): vorgegebene Antwort
+  Runde 2  Umsetzer  geändert: MOCK.md
+  Runde 2  Review    PASS
+  Abschluss          Fast-forward integriert
+Datei auf main: ziel/MOCK.md
+  Runde 1
+  Runde 2
+```
 
 The history comes from `ki-dev -f implement history`, as in
 [step 6](../README.en.md#6-check-the-result) of the minimal example. The
@@ -306,7 +319,19 @@ ki-dev -f map step "$BEAD" map  # handoff to the mapping agent
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> Not run in the last check · [test](../tests/readme/test_6_map_step.sh)
+> ✅ Run in an empty container · [test](../tests/readme/test_6_map_step.sh)
+
+```text
+Empfänger: Umsetzer (bisherige Sitzung)
+
+Review-Befund (fix, CHANGES, AC1): Section 2 is not mapped
+Bitte beheben. Melde anschließend nur zurück, was aus Diff und Prüfergebnissen nicht hervorgeht, etwa offene Entscheidungen oder Hindernisse.
+
+Zum Schluss genau ein JSON-Objekt: {} oder {"feedback": "…"}. feedback nur, was aus Diff und Prüfergebnissen nicht hervorgeht (offene Entscheidungen, Hindernisse); sonst {}. Der Mensch gibt es als Antwort dieses Zustands an ki-dev weiter.
+
+Hinweis für den Menschen: Zustand map.review; Folgeschritte laut map.toml (Adapter manual, du trägst sie weiter):
+- fix → map.correction: Befunde an den Kartierungsagenten (bisherige Sitzung)
+```
 
 The second `step` reads the verdict `fix` from `verdict.json` and prints
 the handoff to the correction (German), above without the line with the
@@ -360,5 +385,5 @@ export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```
 
-> Not run in the last check · [test](../tests/readme/test_2_runtime.sh)
+> ✅ Run in an empty container · [test](../tests/readme/test_2_runtime.sh)
 <!-- /readme-script -->
