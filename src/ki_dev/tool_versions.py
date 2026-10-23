@@ -30,7 +30,13 @@ _VERSION_KEYS = (
 # Guenstigstes Modell je Agenten-CLI zur gepinnten CLI-Version (Profil
 # des README-Beispiels, Effort ``low``); keine Build-Argumente.
 _MODEL_KEYS = ("CODEX_LOW_COST_MODEL", "CLAUDE_LOW_COST_MODEL")
+_SETUP_KEYS = ("BD_COMMIT", "BD_REPOSITORY")
 _PROPERTIES = {
+    "BD_COMMIT": {"type": "string", "pattern": r"^[a-f0-9]{40}$"},
+    "BD_REPOSITORY": {
+        "type": "string",
+        "pattern": r"^https://github\.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$",
+    },
     **dict.fromkeys(
         _VERSION_KEYS,
         {"type": "string", "pattern": r"^[0-9]+\.[0-9]+\.[0-9]+$"},
@@ -82,11 +88,11 @@ def validate_tool_versions(values: object) -> None:
 
 
 def build_args() -> dict[str, str]:
-    """Pins des Image-Builds: alle Werte ausser den Modellpins."""
+    """Image-Build-Pins ohne Modell- und Host-Setup-Konfiguration."""
     return {
         key: value
         for key, value in load_tool_versions().items()
-        if key not in _MODEL_KEYS
+        if key not in (*_MODEL_KEYS, *_SETUP_KEYS)
     }
 
 

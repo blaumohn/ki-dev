@@ -56,6 +56,23 @@ def test_invalid_manifest_fails(mutation):
     assert "SECRET_EXTRA" not in str(error.value)
 
 
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("BD_COMMIT", "a22785e"),
+        ("BD_COMMIT", "g" * 40),
+        ("BD_REPOSITORY", ""),
+        ("BD_REPOSITORY", "https://user:secret@github.com/a/b"),
+    ],
+)
+def test_invalid_beads_source_pin_fails(key, value):
+    values = tool_versions.load_tool_versions()
+    values[key] = value
+    with pytest.raises(ValueError, match=key) as error:
+        tool_versions.validate_tool_versions(values)
+    assert "secret" not in str(error.value)
+
+
 @pytest.mark.parametrize("content", [None, "{", json.dumps([])])
 def test_missing_or_invalid_resource_fails(
     tmp_path, monkeypatch, content

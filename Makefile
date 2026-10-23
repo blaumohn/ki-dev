@@ -13,7 +13,6 @@
 .DEFAULT_GOAL := help
 
 version     = $(shell sed -n 's/.*"$(1)": "\(.*\)".*/\1/p' src/ki_dev/tool-versions.json)
-BD_VERSION := $(call version,BD_VERSION)
 BIN        := $(CURDIR)/.venv/bin
 CHECK      := docker compose -f compose.readme-check.yaml
 
@@ -36,7 +35,7 @@ help:
 
 .PHONY: setup setup-runtime demo test spec-test readme-check readme-live clean
 
-setup: .venv/bin/ki-dev .venv/bin/bd
+setup: .venv/bin/ki-dev setup-bd
 
 # Explizites Update nur ohne aktive oder pausierte ki-dev-Läufe.
 setup-runtime:
@@ -46,13 +45,13 @@ setup-runtime:
 	python3 -m venv .venv
 	$(BIN)/pip install -e '.[test]'
 
-# bd landet im venv, damit nichts im Home oder im PATH verändert wird.
-.venv/bin/bd: .venv/bin/ki-dev
-	GOBIN=$(BIN) CGO_ENABLED=1 go install -tags gms_pure_go \
-		github.com/steveyegge/beads/cmd/bd@v$(BD_VERSION)
+# Vorhandenen Stand bei jedem Aufruf prüfen, unabhängig von Dateizeitstempeln.
+.PHONY: setup-bd
+setup-bd: .venv/bin/ki-dev
+	@"$(BIN)/python" scripts/setup_beads.py
 
 demo: setup
-	PATH=$(BIN):$$PATH scripts/demo-mock-lauf.sh
+	PATH="$(BIN):$$PATH" scripts/demo-mock-lauf.sh
 
 test: setup
 	PATH=$(BIN):$$PATH $(BIN)/pytest -q

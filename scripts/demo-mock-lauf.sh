@@ -11,6 +11,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# CLI und Ablauf gehören zum Checkout, auch bei älterem installiertem Paket.
+export PYTHONPATH="$ROOT/src"
+FLOW="$ROOT/src/ki_dev/flow/implement.toml"
 KI_DEV="${KI_DEV:-$ROOT/.venv/bin/ki-dev}"
 DEMO="${1:-$(mktemp -d)/ki-dev-demo}"
 export GIT_AUTHOR_NAME=demo GIT_AUTHOR_EMAIL=demo@example.invalid
@@ -52,7 +55,7 @@ answers = ["fix", "PASS"]
 EOF
 
 echo "[demo] Mock-Lauf starten: $BEAD" >&2
-if (cd "$DEMO/arbeit" && "$KI_DEV" -f implement "$BEAD" \
+if (cd "$DEMO/arbeit" && "$KI_DEV" -f "$FLOW" "$BEAD" \
   --profile "$DEMO/profil.toml" --run-id demo --runs-dir "$DEMO/runs" \
   >"$DEMO/result.json"); then
   :
@@ -70,7 +73,7 @@ if result["status"] != "passed":
     sys.exit(str(result.get("detail", "Demo nicht abgeschlossen")))
 PY
 echo "Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):"
-(cd "$DEMO/arbeit" && "$KI_DEV" -f implement history demo \
+(cd "$DEMO/arbeit" && "$KI_DEV" -f "$FLOW" history demo \
   --runs-dir "$DEMO/runs")
 echo "Datei auf main: ziel/MOCK.md"
 sed 's/^/  /' "$DEMO/ziel/MOCK.md"
