@@ -15,7 +15,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from ki_dev.adapter.contract import ReviewVocabulary, RunTask
-from ki_dev.flow.model import FlowError, Turn
+from ki_dev.flow.model import FlowError, Turn, Verdict
 from ki_dev.flow_ops.implement.decisions import prompt_text
 from ki_dev.flow_ops.implement.machine import IMPLEMENT
 from ki_dev.review_context import ReviewProjection
@@ -88,6 +88,7 @@ FIELDS: dict[str, Callable[[ImplementTurn], object]] = {
     "events": lambda turn: "|".join(_vocabulary(turn).events),
     "changes": lambda turn: _vocabulary(turn).changes,
     "unbound": lambda turn: _vocabulary(turn).unbound,
+    "escalation": lambda turn: IMPLEMENT.events_with(Verdict.ESCALATE)[0],
 }
 PLUG: Plug[ImplementTurn] = Plug(FIELDS, {})
 bind_turns(IMPLEMENT, PLUG, (WORK, REVIEW))

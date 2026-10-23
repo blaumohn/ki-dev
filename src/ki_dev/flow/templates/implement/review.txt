@@ -25,6 +25,14 @@ ${evidence}
 ANTWORTEN (event): PASS ohne Befund, sonst eine Befundklasse
 ${classes}
 
+CHECKS in der Nachweisprojektion hat ki-dev im Worktree ausgefuehrt;
+sie sind der Testnachweis. Dass du selbst nichts ausfuehren kannst,
+ist kein Grund fuer ${escalation}. Widersprechen sich Auftrag, Kriterien
+und Tests, ohne dass Kriterien oder Entscheidungen des Menschen
+festlegen, was gilt, ist das eine fachliche Frage: antworte mit
+${unbound}, nicht mit PASS oder ${escalation}. Legen sie es fest, gilt der
+Absatz zu Entscheidungen unten.
+
 ${changes} braucht eine konkrete Bindung: welches der obigen Kriterien
 ist verletzt, welches Verhalten wurde beobachtet, welcher Nachweis
 belegt das. Ein Quelltext-Diff allein ist kein Ablehnungsgrund. Passt

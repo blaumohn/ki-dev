@@ -41,13 +41,15 @@ priority = ["escalate", "decision", "fix"]
 verdict = "CHANGES"
 text = "an ein Abnahmekriterium gebunden, korrigierbar"
 
+# decision und escalate trennen Inhalt und Ausführung: fehlt eine
+# fachliche Entscheidung, oder kommt der Lauf technisch nicht weiter?
 [finding_class.decision]
 verdict = "NEEDS_DECISION"
-text = "nur der Mensch kann entscheiden"
+text = "eine fachliche Entscheidung fehlt, etwa weil Auftrag, Kriterien oder Tests einander widersprechen; nur der Mensch kann entscheiden"
 
 [finding_class.escalate]
 verdict = "ESCALATE"
-text = "nicht zuverlässig automatisch fortsetzbar"
+text = "keine fachliche Frage: Werkzeuge, Umgebung oder Agentenzustand lassen den Lauf nicht zuverlässig automatisch fortsetzen"
 
 [vocabulary]
 # machine: ki-dev erzeugt das Ereignis selbst; agent: ein Adapter
