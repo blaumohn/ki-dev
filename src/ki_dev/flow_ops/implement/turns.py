@@ -11,11 +11,12 @@ weder Ablauf noch Vorlagen.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from ki_dev.adapter.contract import ReviewVocabulary, RunTask
 from ki_dev.flow.model import FlowError, Turn
+from ki_dev.flow_ops.implement.decisions import prompt_text
 from ki_dev.flow_ops.implement.machine import IMPLEMENT
 from ki_dev.review_context import ReviewProjection
 from ki_dev.runner.turns import Plug, bind_turns, render_turn
@@ -34,6 +35,7 @@ class ImplementTurn:
     report: str = ""
     evidence: ReviewProjection | None = None
     vocabulary: ReviewVocabulary | None = None
+    decisions: tuple[dict[str, object], ...] = ()
 
 
 def _vocabulary(turn: ImplementTurn) -> ReviewVocabulary:
@@ -79,6 +81,7 @@ FIELDS: dict[str, Callable[[ImplementTurn], object]] = {
     ),
     "task": lambda turn: turn.task.task,
     "objection": lambda turn: turn.objection or "keine",
+    "decisions": lambda turn: prompt_text(list(turn.decisions)),
     "report": lambda turn: turn.report,
     "evidence": _evidence,
     "classes": _classes,
@@ -100,9 +103,14 @@ def _declared(operation: str) -> Turn:
 
 
 def work_prompt(
-    task: RunTask, round_id: int, objection: str | None
+    task: RunTask,
+    round_id: int,
+    objection: str | None,
+    decisions: Sequence[dict[str, object]] = (),
 ) -> str:
-    subject = ImplementTurn(task, round_id, objection)
+    subject = ImplementTurn(
+        task, round_id, objection, decisions=tuple(decisions)
+    )
     turn = _declared(WORK)
     return render_turn(IMPLEMENT, turn, subject, PLUG).text()
 
@@ -113,9 +121,16 @@ def review_prompt(
     report: str,
     evidence: ReviewProjection,
     vocabulary: ReviewVocabulary,
+    decisions: Sequence[dict[str, object]] = (),
 ) -> str:
     subject = ImplementTurn(
-        task, round_id, None, report, evidence, vocabulary
+        task,
+        round_id,
+        None,
+        report,
+        evidence,
+        vocabulary,
+        tuple(decisions),
     )
     turn = _declared(REVIEW)
     return render_turn(IMPLEMENT, turn, subject, PLUG).text()

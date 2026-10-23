@@ -48,7 +48,7 @@ class ImplementationOperations:
         return {
             "agent.work": OperationSpec(
                 self.work,
-                {"type": "array", "minItems": 4, "maxItems": 4},
+                {"type": "array", "minItems": 5, "maxItems": 5},
                 {"type": "object"},
             ),
             "evidence.collect": OperationSpec(
@@ -89,13 +89,13 @@ class ImplementationOperations:
         }
 
     def work(
-        self, task, round_id, open_objection, operation_id
+        self, task, round_id, open_objection, decisions, operation_id
     ) -> object:
         report = self.worker.work(
             WorkRequest(
                 task,
                 round_id,
-                work_prompt(task, round_id, open_objection),
+                work_prompt(task, round_id, open_objection, decisions),
                 operation_id,
             )
         )
@@ -132,14 +132,11 @@ class ImplementationOperations:
         round_id,
         evidence,
         work_report,
-        decision_answer,
+        decisions,
         attempt_id,
     ) -> object:
         evidence = cast(dict[str, object], evidence)
         summary = cast(str, work_report)
-        answer = decision_answer
-        if answer:
-            summary += f"\n\nGebundene Entscheidung: {answer}"
         from ki_dev.review_context import Omission, ReviewProjection
 
         omissions = cast(list[dict[str, str]], evidence["omissions"])
@@ -158,6 +155,7 @@ class ImplementationOperations:
                     summary,
                     projection,
                     REVIEW_VOCABULARY,
+                    decisions,
                 ),
                 REVIEW_VOCABULARY,
                 attempt_id,
@@ -170,6 +168,7 @@ class ImplementationOperations:
         return {
             "raw": raw,
             "decision": _decision_document(decision),
+            "decisions": decisions,
         }
 
     def freeze(self, task, run_base, reviewed_refs) -> object:
@@ -250,10 +249,30 @@ def decode_operation_event(name: str, payload: dict):
 
 
 def _evidence_output(artifact: dict) -> dict:
+    """``failed_checks`` reist mit der Projektion in ``evidence``: das
+    Review liest die Prüfungen als Text, das Test-Tor des Ablaufs
+    entscheidet über ihre Namen (:func:`failed_checks`)."""
+    context = artifact["context"]
     return {
         **artifact,
-        "reviewed_refs": _result_refs(artifact["context"]),
+        "projection": {
+            **artifact["projection"],
+            "failed_checks": [
+                check["name"]
+                for check in context["checks"]
+                if not check["passed"]
+            ],
+        },
+        "reviewed_refs": _result_refs(context),
     }
+
+
+def failed_checks(evidence: object) -> tuple[str, ...]:
+    """Rote Prüfungen der Runde aus ``evidence`` der Laufdaten; ein
+    Lauf aus der Zeit vor dem Test-Tor nennt keine."""
+    if not isinstance(evidence, dict):
+        return ()
+    return tuple(cast(list[str], evidence.get("failed_checks", [])))
 
 
 def _review_output(artifact: dict) -> dict:

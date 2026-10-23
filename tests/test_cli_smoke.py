@@ -183,7 +183,14 @@ def test_resume_passes_bound_answer(capsys, monkeypatch, tmp_path):
     seen = {}
 
     def fake_resume(
-        run_id, *, runs_dir, answer, reconcile_result, wrap, overrides
+        run_id,
+        *,
+        runs_dir,
+        answer,
+        reconcile_result,
+        wrap,
+        overrides,
+        refresh,
     ):
         seen.update(run_id=run_id, answer=answer, overrides=overrides)
         return RunResult(

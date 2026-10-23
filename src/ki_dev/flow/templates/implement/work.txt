@@ -10,6 +10,10 @@ ${task}
 Abnahmekriterien:
 ${criteria}
 
+Entscheidungen des Menschen (verbindlich; die Abnahmekriterien oben
+sind ihr geltender Stand):
+${decisions}
+
 Massgebliche Quellen:
 ${sources}
 

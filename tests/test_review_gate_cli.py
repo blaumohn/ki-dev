@@ -1,27 +1,25 @@
-"""Stufe 2 über die öffentliche CLI: ein Review-PASS darf rote Tests
-nicht überstimmen (ki-dev-ablauf-4l9).
+"""Test-Tor über die öffentliche CLI: ein Review-PASS überstimmt keine
+roten Tests (ki-dev-ablauf-ek1).
 
 Eigene kleine Fixture: Ziel-Repo ``main`` mit ``add.py`` und
 ``test_add.py``, Arbeits-Worktree ``arbeit`` mit Beads-Projekt, Profil
-mit ``[[tests]]``. Worker und Review sind ``mock``; die Sandbox ersetzt
-die Anbieter durch Attrappen, ein Start lässt den Test scheitern.
+mit ``[[tests]]``. Worker und Review sind ``mock``, das Review spricht
+immer PASS; die Sandbox ersetzt die Anbieter durch Attrappen.
 Beobachtet wird nur, was ``ki-dev -f implement`` ausgibt und ins
 Laufverzeichnis schreibt, und der Ziel-Ref.
+
+``bd`` ist Voraussetzung: fehlt es, scheitert der Test, statt still
+übersprungen zu werden.
 """
 
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
 
-import pytest
-from plumbum import CommandNotFound, local
-
 from tests.spec.sandbox import Sandbox
 
-PRODUCT_BEAD = "ki-dev-ablauf-ek1"
 ORACLE = (
     sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
     "test_add.py",
@@ -57,37 +55,16 @@ answers = ["PASS"]
 """
 
 
-def _bd_available() -> bool:
-    try:
-        local["bd"]
-    except CommandNotFound:
-        return False
-    return True
-
-
-pytestmark = pytest.mark.skipif(
-    not _bd_available(), reason="bd lokal nicht installiert"
-)
-
-
-class IntegratedDespiteRedTests(AssertionError):
-    """Der Lauf hat trotz roter Tests auf den Ziel-Ref integriert."""
-
-
-def _example(sandbox: Sandbox, operator: str) -> None:
-    """Ziel-Repo mit ``add`` als ``a <operator> b`` und festen Tests."""
+def _implement(sandbox: Sandbox, operator: str) -> dict:
+    """Lauf mit Review-PASS über die öffentliche CLI, ``add`` als
+    ``a <operator> b``; Ergebnis samt Ziel-Ref vorher/nachher,
+    Ereignissen und Prüfnachweisen."""
     sandbox.write(".gitignore", ".beads.gate.lock\n__pycache__/\n")
     sandbox.write(
         "add.py", f"def add(a, b):\n    return a {operator} b\n"
     )
     sandbox.write("test_add.py", TEST_ADD)
     sandbox.commit("start")
-
-
-def _implement(sandbox: Sandbox, operator: str) -> dict:
-    """Lauf mit Review-PASS über die öffentliche CLI; Ergebnis samt
-    Ziel-Ref vorher/nachher, Ereignissen und Prüfnachweisen."""
-    _example(sandbox, operator)
     work = sandbox.base / "arbeit"
     runs = sandbox.base / "runs"
     sandbox.prepare(
@@ -143,18 +120,6 @@ def _checks(evidence: Path) -> list[dict]:
     return json.loads(evidence.read_text())["context"]["checks"]
 
 
-def _failed_by_assertion(check: dict) -> bool:
-    """Der Prüfnachweis belegt einen echten Testfehlschlag, keine frühe
-    Blockade wie Collection-Fehler, Timeout oder Startfehler."""
-    detail = check["detail"]
-    return (
-        not check["passed"]
-        and re.search(r"^FAILED test_add\.py::test_add\b", detail, re.M)
-        is not None
-        and re.search(r"^1 failed in ", detail, re.M) is not None
-    )
-
-
 def _target_ref(sandbox: Sandbox) -> str:
     return sandbox.prepare(
         ["git", "-C", sandbox.repo, "rev-parse", "refs/heads/main"]
@@ -177,31 +142,8 @@ def _assert_review_pass_after_mock_roles(events: list[dict]) -> None:
     assert worker[0]["actor"] != review[0]["actor"]
 
 
-@pytest.mark.parametrize(("operator", "expected"), [("-", 1), ("+", 0)])
-def test_oracle_tells_red_from_green(sandbox, operator, expected):
-    """Kontrolle des Orakels: a-b ist rot (pytest-Exitcode 1, also ein
-    Fehlschlag statt Collection- oder Aufruffehler), a+b grün."""
-    _example(sandbox, operator)
-    outcome = sandbox.run(ORACLE)
-    assert outcome.code == expected, outcome.stdout
-
-
-def test_collection_error_is_no_assertion_failure(sandbox):
-    """Kontrolle des Testprüfers: ein Collection-Fehler ist frühe
-    Blockade (Exitcode 2) und kein roter Test, darf also nicht als
-    erwartetes xfail des Kernfalls durchgehen."""
-    _example(sandbox, "-")
-    broken = "import fehlt_absichtlich\n" + TEST_ADD
-    sandbox.write("test_add.py", broken)
-    outcome = sandbox.run(ORACLE)
-    assert outcome.code == 2, outcome.stdout
-    detail = (outcome.stdout + outcome.stderr).strip()
-    assert not _failed_by_assertion({"passed": False, "detail": detail})
-
-
 def test_green_tests_and_review_pass_integrate(sandbox):
-    """Kontrolle des Testprüfers: Integration ist beobachtbar, ein
-    ausbleibender Commit im roten Fall also kein Zufall der Fixture."""
+    """Tests grün + Review PASS -> Commit auf dem Ziel-Ref."""
     run = _implement(sandbox, "+")
     _assert_review_pass_after_mock_roles(run["events"])
     assert [c["passed"] for c in run["checks"]] == [True]
@@ -209,21 +151,15 @@ def test_green_tests_and_review_pass_integrate(sandbox):
     assert run["after"] != run["before"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=IntegratedDespiteRedTests,
-    reason=f"{PRODUCT_BEAD}: Review-PASS integriert trotz roter Tests",
-)
 def test_red_tests_and_review_pass_do_not_integrate(sandbox):
-    """Tests rot + Review PASS -> kein Commit auf dem Ziel-Ref."""
+    """Tests rot + Review PASS -> Halt für den Menschen, kein Commit
+    auf dem Ziel-Ref; die Meldung nennt Ursache und rote Prüfung."""
     run = _implement(sandbox, "-")
     _assert_review_pass_after_mock_roles(run["events"])
-    assert run["checks"], "keine Prüfung im Nachweis"
-    checks = run["checks"]
-    assert all(_failed_by_assertion(c) for c in checks), checks
-    integrated = run["result"]["status"] == "passed"
-    if integrated or run["after"] != run["before"]:
-        raise IntegratedDespiteRedTests(
-            f"{run['before'][:7]} -> {run['after'][:7]}: "
-            f"{run['result']['detail']}"
-        )
+    assert [c["passed"] for c in run["checks"]] == [False]
+    assert "1 failed" in run["checks"][0]["detail"]
+    assert run["result"]["status"] != "passed", run["result"]
+    assert run["after"] == run["before"]
+    detail = run["result"]["detail"]
+    assert detail.startswith("checks_failed: "), detail
+    assert "pytest" in detail

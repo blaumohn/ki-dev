@@ -17,10 +17,13 @@ from ki_dev.deltas import (
     CheckOutcome,
     ControllerContext,
     MediaRefs,
+    RefBoundary,
     RoundStatus,
     VcsRef,
+    build_beads_delta,
     build_run_delta,
     build_step_delta,
+    capture_beads_ref,
     capture_media_refs,
     checkpoint_step_result,
 )
@@ -52,6 +55,30 @@ class RepositoryEvidenceCollector:
         del round_id
         _require_clean_worktree(task.workdir)
         return _encode_refs(capture_media_refs(task.workdir))
+
+    def adopt_issue_change(
+        self, task: RunTask, refs: object, issues: frozenset[str]
+    ) -> object:
+        """Grenze ``refs`` auf den heutigen Beads-Stand setzen, wenn
+        sich seitdem nur ``issues`` geändert haben (Entscheidung des
+        Menschen im Bead); jede andere Beads-Änderung bleibt
+        sichtbar."""
+        before = _decode_refs(refs).beads
+        now = capture_beads_ref(task.workdir)
+        if now.value == before.value:
+            return refs
+        boundary = RefBoundary(before, now)
+        delta = build_beads_delta(task.workdir, boundary)
+        foreign = sorted({c.issue_id for c in delta.issues} - issues)
+        if foreign:
+            raise RuntimeError(
+                "Beads außerhalb des Auftrags geändert: "
+                + ", ".join(foreign)
+            )
+        return {
+            **cast(dict[str, object], refs),
+            "beads": {"medium": now.medium.value, "value": now.value},
+        }
 
     def collect(
         self,

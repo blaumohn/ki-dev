@@ -76,6 +76,9 @@ TASK_FIELDS = frozenset({"task", "acceptance_criteria", "sources"})
 # Hülle um den Executor einer Rolle (z. B. Live-Ansicht); der Aufrufer
 # steckt sie ein, der Ausführer kennt keine Anzeige.
 ExecutorWrap = Callable[[Executor, str], Executor]
+# Liest die Felder des Auftrags (``TASK_FIELDS``) für die gespeicherte
+# Konfiguration neu; der Aufrufer kennt die Quelle (Bead).
+TaskRefresh = Callable[[dict[str, object]], dict[str, object]]
 
 
 def _unwrapped(executor: Executor, role: str) -> Executor:
@@ -184,9 +187,12 @@ def resume_run(
     reconcile_result: Path | None = None,
     wrap: ExecutorWrap = _unwrapped,
     overrides: dict[str, dict[str, object]] | None = None,
+    refresh: TaskRefresh | None = None,
 ) -> RunResult:
     """Lauf fortsetzen; ``overrides`` ersetzt Rollen nur für diesen
-    Aufruf, das write-once-Manifest bleibt unverändert."""
+    Aufruf, das write-once-Manifest bleibt unverändert. ``refresh``
+    liest die Felder des Auftrags neu (Bead): ein geänderter Auftrag
+    ist eine Entscheidung des Menschen."""
     store = RunStore(runs_dir, run_id)
     manifest = store.load_manifest()
     config = {
@@ -208,7 +214,10 @@ def resume_run(
                     "Lauf hat keine abzugleichende Operation"
                 )
             return runtime.reconcile(current.operation_id, artifact)
-        return runtime.resume(answer)
+        task = None
+        if refresh is not None:
+            task = _task({**config, **refresh(config)}, run_id)
+        return runtime.resume(answer, task)
 
 
 def status_run(run_id: str, *, runs_dir: Path) -> RunResult:

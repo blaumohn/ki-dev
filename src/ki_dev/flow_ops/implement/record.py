@@ -18,7 +18,7 @@ from ki_dev.flow_ops.implement.machine import decode_run_state
 from ki_dev.flow_ops.implement.run_machine import Operation, RunMachine
 from ki_dev.fsm import RECORD_SCHEMA
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class RunData(TypedDict):
@@ -37,7 +37,9 @@ class RunData(TypedDict):
     frozen_result: dict[str, object] | None
     final_result: dict[str, object] | None
     decision: dict[str, object] | None
-    decision_answer: str | None
+    decisions: list[dict[str, object]]
+    """Entscheidungen des Menschen (:mod:`.decisions`) in
+    Reihenfolge."""
     last_error: str | None
     logged: int
     """Zeilen des Ereignisprotokolls, die dieser Stand abdeckt."""
@@ -55,6 +57,28 @@ def _nullable(schema: dict) -> dict:
     return {"anyOf": [{"type": "null"}, schema]}
 
 
+_CRITERION_CHANGE = {
+    "type": "object",
+    "required": ["ref", "old", "new"],
+    "additionalProperties": False,
+    "properties": {
+        "ref": _TEXT,
+        "old": _nullable({"type": "string"}),
+        "new": _nullable({"type": "string"}),
+    },
+}
+_DECISION = {
+    "type": "object",
+    "required": ["round_id", "answer", "criteria", "task", "sources"],
+    "additionalProperties": False,
+    "properties": {
+        "round_id": {"type": "integer", "minimum": 1},
+        "answer": _nullable(_TEXT),
+        "criteria": {"type": "array", "items": _CRITERION_CHANGE},
+        "task": {"type": "boolean"},
+        "sources": {"type": "boolean"},
+    },
+}
 _PENDING = {
     "type": "object",
     "required": ["id", "kind", "repeatable", "call_id"],
@@ -80,7 +104,7 @@ _DATA_PROPERTIES = {
     "frozen_result": _nullable(_OBJECT),
     "final_result": _nullable(_OBJECT),
     "decision": _nullable(_OBJECT),
-    "decision_answer": _nullable({"type": "string"}),
+    "decisions": {"type": "array", "items": _DECISION},
     "last_error": _nullable({"type": "string"}),
     "logged": {"type": "integer", "minimum": 0},
 }

@@ -758,7 +758,9 @@ def test_answer_after_process_end_continues_in_a_new_runtime(tmp_path):
     with _runtime(
         tmp_path, "run-answer", FakeWorker(), reviewer, [_context(1)]
     ) as resumed:
-        with pytest.raises(RunResumeError, match="möglich: answer"):
+        with pytest.raises(
+            RunResumeError, match="wartet auf eine Entscheidung"
+        ):
             resumed.resume()
         result = resumed.resume("Ablage A")
 

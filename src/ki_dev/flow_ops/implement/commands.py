@@ -146,8 +146,11 @@ def resume(
     runs_dir: RUNS_OPTION = RUNS_DIR,
     verbose: VERBOSE_OPTION = False,
 ) -> None:
-    """Pausierten Lauf fortsetzen."""
+    """Pausierten Lauf fortsetzen. Ein Lauf aus einem Bead liest ihn
+    neu: wer entscheidet, ändert den Auftrag im Bead; ``--answer``
+    erklärt, was nicht in den Bead gehört."""
     _progress(verbose)
+    cwd = Path.cwd()
     _execute(
         lambda: result_document(
             resume_run(
@@ -157,6 +160,7 @@ def resume(
                 reconcile_result=reconcile_result,
                 wrap=_live(verbose),
                 overrides=adapter_overrides(adapters or []),
+                refresh=lambda config: _rebead(config, cwd),
             )
         )
     )
@@ -201,6 +205,18 @@ def _bead_task(bead_id: str, cwd: Path) -> dict[str, object]:
         ],
         "sources": [f"bd:{bead_id}", *refs],
     }
+
+
+def _rebead(config: dict[str, object], cwd: Path) -> dict[str, object]:
+    """Auftrag des Laufs neu aus seinem Bead (Quelle ``bd:ID``); ein
+    Lauf ohne Bead behält seinen Auftrag."""
+    sources = cast(list[str], config.get("sources", []))
+    beads = [
+        source[3:] for source in sources if source.startswith("bd:")
+    ]
+    if not beads:
+        return {}
+    return _bead_task(beads[0], cwd)
 
 
 def _task_text(issue: BeadInput) -> str:

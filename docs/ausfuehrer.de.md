@@ -157,9 +157,21 @@ für den Boten nichts.
 
 Eine Entscheidung (`waiting_decision`, Zustand des Ablaufs) und eine Pause
 (`paused_interactive`, Halt des Laufs nach einer Eskalation) setzt dagegen
-`ki-dev -f implement resume RUN_ID --answer "…"` fort: bei der Entscheidung
-über die Kante `resume_requested` zum Controller, bei der Pause im
-Ablaufzustand, in dem eskaliert wurde (der Ablauf hat sich nicht bewegt).
+erst eine Entscheidung des Menschen fort: bei der Entscheidung über die
+Kante `resume_requested` zum Controller, bei der Pause im Ablaufzustand,
+in dem eskaliert wurde (der Ablauf hat sich nicht bewegt).
+
+Was den Auftrag betrifft, entscheidet der Mensch im Bead (`bd update
+BEAD --acceptance …`); `ki-dev -f implement resume RUN_ID` liest ihn
+neu, der geänderte Auftrag ersetzt die Kopie im Lauf. Was nicht in den
+Bead gehört (Umgebung, Vorgehen), gibt `--answer "…"` mit; beides geht
+zusammen. Jede Entscheidung bleibt in den Laufdaten (`decisions`) und
+steht bis zum Ende des Laufs im Prompt von Review und Umsetzer, mit
+alter und neuer Fassung geänderter Kriterien. Die Änderung am Bead ist
+kein Ergebnis des Laufs: Die Beads-Grenzen rücken auf den neuen Stand,
+wenn sich seit dem letzten erfassten Stand nur der Bead des Auftrags
+geändert hat; sonst wird die Entscheidung abgewiesen. Ohne Änderung
+und ohne Antwort weist `resume` ab, denn dieselbe Frage stünde erneut an.
 
 Vollständig offline vorführen: `scripts/demo-mock-lauf.sh`.
 
@@ -198,7 +210,8 @@ bleibt auch nach einem Neustart byte-, zeilen- und gesamtbegrenzt.
 Bei `NEEDS_DECISION` und `ESCALATE` hält der Prozess dauerhaft an:
 
 ```bash
-ki-dev -f implement resume run-42 --answer "Die gebundene Entscheidung"
+bd update BEAD --acceptance "…"   # Entscheidung am Auftrag
+ki-dev -f implement resume run-42 # oder mit --answer "…"
 ```
 
 Eine Eskalation führt nach Resume wieder zum Reviewer und niemals direkt zu

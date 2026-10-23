@@ -47,6 +47,10 @@ from ki_dev.flow.model import (
     Verdict,
 )
 from ki_dev.flow.model import Operation as FlowOperation
+from ki_dev.flow_ops.implement.decisions import (
+    changes_task,
+    decision_document,
+)
 from ki_dev.flow_ops.implement.machine import (
     EVENT_TYPES,
     IMPLEMENT,
@@ -80,6 +84,7 @@ from ki_dev.flow_ops.implement.machine import (
 from ki_dev.flow_ops.implement.ops import (
     ImplementationOperations,
     decode_operation_event,
+    failed_checks,
 )
 from ki_dev.flow_ops.implement.record import (
     RunData,
@@ -167,6 +172,10 @@ class EvidenceCollector(Protocol):
         run_base: object,
         report: WorkReport,
     ) -> ControllerContext: ...
+
+    def adopt_issue_change(
+        self, task: RunTask, refs: object, issues: frozenset[str]
+    ) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -278,29 +287,61 @@ class RunRuntime:
             "frozen_result": None,
             "final_result": None,
             "decision": None,
-            "decision_answer": None,
+            "decisions": [],
             "last_error": None,
             "logged": 0,
         }
         self._drive()
         return self.result()
 
-    def resume(self, answer: str | None = None) -> RunResult:
-        """Lauf fortsetzen: ohne Antwort (``resume``: nach Prozessende,
-        nach abgelegter Antwort des Boten) oder mit Antwort des Menschen
-        (``answer``: wartende Entscheidung, Pause). Was zum Status
-        nicht passt, weist die Lauf-Maschine ab."""
+    def resume(
+        self, answer: str | None = None, task: RunTask | None = None
+    ) -> RunResult:
+        """Lauf fortsetzen: ohne Entscheidung (``resume``: nach
+        Prozessende, nach abgelegter Antwort des Boten) oder mit
+        Entscheidung des Menschen (wartende Entscheidung, Pause). Eine
+        Entscheidung ist eine Antwort, ein geänderter Auftrag ``task``
+        (Bead neu gelesen) oder beides. Was zum Status nicht passt,
+        weist die Lauf-Maschine ab."""
         self._load()
-        if answer is None:
+        if answer is not None and not answer.strip():
+            raise RunResumeError("Antwort darf nicht leer sein")
+        document = decision_document(
+            _task(self._data),
+            task or _task(self._data),
+            answer,
+            self._data["round_id"],
+        )
+        decided = answer is not None or changes_task(document)
+        if not decided:
+            self._refuse_without_decision()
             self._send_resume("resume", "Fortsetzen ohne Antwort")
             self._data["last_error"] = None
+        elif answer is None and "answer" not in self._lauf.allowed:
+            # Bead geändert, der Lauf wartet aber nicht auf den
+            # Menschen (etwa nach Prozessende): fortsetzen, die
+            # Änderung gilt ab dem nächsten Turn.
+            self._send_resume("resume", "Fortsetzen")
+            self._data["last_error"] = None
         else:
-            if not answer.strip():
-                raise RunResumeError("Antwort darf nicht leer sein")
             self._send_resume("answer", "Eine Antwort")
-            self._answer(answer)
+            self._answer()
+        if decided:
+            self._decide(document, task)
         self._drive()
         return self.result()
+
+    def _refuse_without_decision(self) -> None:
+        """Ein Halt für den Menschen geht nur mit Entscheidung weiter;
+        ohne sie stünde dieselbe Frage erneut an."""
+        if "resume" not in self._lauf.allowed and (
+            "answer" in self._lauf.allowed
+        ):
+            raise RunResumeError(
+                "Der Lauf wartet auf eine Entscheidung: Auftrag im "
+                "Bead ändern und/oder eine Antwort geben "
+                "(resume --answer)"
+            )
 
     def _send_resume(self, event: str, what: str) -> None:
         try:
@@ -312,10 +353,10 @@ class RunRuntime:
                 f"{', '.join(self._lauf.allowed) or '-'})"
             ) from None
 
-    def _answer(self, text: str) -> None:
-        """Antwort des Menschen: nach einer Pause geht es im
+    def _answer(self) -> None:
+        """Entscheidung des Menschen: nach einer Pause geht es im
         Quellzustand weiter, der Ablauf bewegt sich nicht; eine
-        Entscheidung setzt der Ablauf fort (zum Controller)."""
+        wartende Entscheidung setzt der Ablauf fort (zum Controller)."""
         run = decode_run_state(self._data["run_state"])
         if run.escalation is not None:
             update = {
@@ -330,14 +371,55 @@ class RunRuntime:
                 raise RunResumeError(
                     f"Antwort passt nicht zu {run.state.phase.value}"
                 ) from exc
-        self._apply(
-            {
-                **update,
-                "decision_answer": text,
-                "decision": None,
-                "last_error": None,
-            }
+        self._apply({**update, "decision": None, "last_error": None})
+
+    def _decide(
+        self, document: dict[str, object], task: RunTask | None
+    ) -> None:
+        """Entscheidung festhalten; ein geänderter Auftrag ersetzt die
+        Kopie im Lauf, damit Prompts und Bindung von ``fix`` ihm
+        folgen."""
+        update: dict[str, object] = {
+            "decisions": [*self._data["decisions"], document]
+        }
+        if task is not None and changes_task(document):
+            update["task"] = _encode_task(task)
+            update |= self._adopt_bead_change(task)
+        self._apply(update)
+
+    def _adopt_bead_change(self, task: RunTask) -> dict[str, object]:
+        """Die Änderung des Menschen am Bead gehört nicht zum Ergebnis
+        des Laufs: die Beads-Grenzen, die auf dem letzten erfassten
+        Stand stehen, rücken auf den heutigen. Hat sich daneben ein
+        anderer Bead geändert, bleibt der Lauf, wie er war."""
+        state = self._data
+        names = ("run_base", "round_base", "reviewed_refs")
+        last = _last_checkpoint(state)
+        if last is None:
+            return {}
+        issues = frozenset(
+            source[3:]
+            for source in task.sources
+            if source.startswith("bd:")
         )
+        try:
+            moved = self.evidence_collector.adopt_issue_change(
+                task, last, issues
+            )
+        except Exception as exc:
+            raise RunResumeError(
+                f"Entscheidung nicht übernommen: {exc}"
+            ) from exc
+        before = cast(dict[str, object], last).get("beads")
+        beads = cast(dict[str, object], moved).get("beads")
+        if beads == before:
+            return {}
+        update: dict[str, object] = {}
+        for name in names:
+            refs = cast("dict[str, object] | None", state[name])
+            if refs is not None and refs["beads"] == before:
+                update[name] = {**refs, "beads": beads}
+        return update
 
     def reconcile(
         self, operation_id: str, artifact: object
@@ -1005,10 +1087,9 @@ class RunRuntime:
                 "round_base": None,
                 "work_report": None,
                 "evidence": None,
-                "decision_answer": None,
             }
         if verdict is Verdict.PASS:
-            return self._transition(run, ControllerPass())
+            return self._pass(state, run)
         if verdict is Verdict.NEEDS_DECISION:
             return self._write_handoff_if_stopped(
                 state,
@@ -1021,6 +1102,25 @@ class RunRuntime:
             state,
             self._transition(run, ControllerEscalate(decision.detail)),
             decision.detail,
+        )
+
+    def _pass(self, state: RunData, run: RunState) -> dict[str, object]:
+        """PASS mit dem Fakt ``checks_failed`` für das Test-Tor von
+        ``implement.toml``: rote Prüfungen der Runde halten den Lauf
+        für den Menschen an, statt zu integrieren."""
+        failed = failed_checks(state["evidence"])
+        if not failed:
+            return self._transition(run, ControllerPass())
+        update = self._transition(
+            run, ControllerPass(), facts=frozenset({"checks_failed"})
+        )
+        detail = (
+            f"Review PASS bei roter Prüfung: {', '.join(failed)}. "
+            "Ein Mensch entscheidet: Bead ändern und/oder "
+            "resume --answer."
+        )
+        return self._write_handoff_if_stopped(
+            state, {**update, "last_error": detail}, detail
         )
 
     def _changes_facts(
@@ -1232,6 +1332,17 @@ def _quota_reserve_reason(
     )
 
 
+def _last_checkpoint(state: RunData) -> object | None:
+    """Zuletzt erfasste Grenze: Ergebnis der Runde, sonst ihre Basis,
+    sonst das Ergebnis der vorigen Runde oder die Basis des Laufs."""
+    if state["evidence"] is not None:
+        return state["reviewed_refs"]
+    for name in ("round_base", "reviewed_refs", "run_base"):
+        if state[name] is not None:
+            return state[name]
+    return None
+
+
 def _encode_task(task: RunTask) -> dict[str, object]:
     return {
         "run_id": task.run_id,
@@ -1277,6 +1388,12 @@ class StaticEvidenceCollector:
 
     def prepare(self, task: RunTask, round_id: int) -> object:
         return {"run_id": task.run_id, "round_id": round_id}
+
+    def adopt_issue_change(
+        self, task: RunTask, refs: object, issues: frozenset[str]
+    ) -> object:
+        del task, issues
+        return refs
 
     def collect(
         self,

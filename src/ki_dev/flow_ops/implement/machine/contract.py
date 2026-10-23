@@ -95,6 +95,7 @@ class MachineEscalationCause(StrEnum):
     FINAL_VERIFICATION_FAILED = "final_verification_failed"
     INTEGRATION_FAILED = "integration_failed"
     EXECUTION_GUARD = "execution_guard"
+    CHECKS_FAILED = "checks_failed"
 
 
 @dataclass(frozen=True)

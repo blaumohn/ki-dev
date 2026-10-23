@@ -1,14 +1,20 @@
 """Verlauf eines ``implement``-Laufs für Menschen.
 
 ``status`` nennt den Endzustand als JSON; ``history`` erklärt, wie er
-entstand: je Runde geänderte Dateien, Prüfergebnisse und die Antwort
-des Reviews, danach der Abschluss. Gelesen werden nur die Artefakte
-des Laufs (je Runde der letzte Versuch einer Operation).
+entstand: je Runde geänderte Dateien, Prüfergebnisse, jede Antwort des
+Reviews und davor eine Entscheidung des Menschen, danach Abschluss oder
+Halt. Gelesen werden nur die Artefakte des Laufs (für Umsetzer und
+Tests der letzte Versuch der Runde).
 
-    Lauf add-fix: passed nach 1 Runde
-      Runde 1  Umsetzer  geändert: add.py
-      Runde 1  Tests     test_add bestanden
-      Runde 1  Review    PASS: add() addiert, beide Kriterien erfüllt
+    Lauf version-fix: passed nach 2 Runden
+      Runde 1  Umsetzer  geändert: version.py
+      Runde 1  Tests     test_version fehlgeschlagen
+      Runde 1  Review    decision: Test widerspricht dem Kriterium
+      Runde 1  Mensch    AC2 geändert; Test ist veraltet
+      Runde 1  Review    fix (AC2): test_version.py anpassen
+      Runde 2  Umsetzer  geändert: test_version.py
+      Runde 2  Tests     test_version bestanden
+      Runde 2  Review    PASS
       Abschluss          Fast-forward integriert
 """
 
@@ -17,6 +23,7 @@ from __future__ import annotations
 import re
 from typing import cast
 
+from ki_dev.flow_ops.implement.decisions import summary
 from ki_dev.flow_ops.implement.runtime import read_run_status
 from ki_dev.run_store import RunStore
 
@@ -35,36 +42,46 @@ def run_history(store: RunStore) -> list[str]:
         f"Lauf {result.run_id}: {result.status} nach {count} "
         f"{'Runde' if count == 1 else 'Runden'}"
     ]
+    seen = 0
     for round_id, parts in sorted(rounds.items()):
-        lines += _round_lines(round_id, parts)
+        round_lines, seen = _round_lines(round_id, parts, seen)
+        lines += round_lines
     if integration is not None:
         lines.append(_line("Abschluss", "", integration["detail"]))
+    elif result.status != "passed":
+        lines.append(_line("Halt", "", _halt(result.detail)))
     return lines
 
 
 def _artifacts(
     store: RunStore,
-) -> tuple[dict[int, dict[str, dict]], dict | None]:
-    """Je Runde die Artefakte nach Art; dazu das der Integration. Bei
-    mehreren Versuchen gilt der letzte (sortierte Operations-IDs)."""
-    rounds: dict[int, dict[str, dict]] = {}
+) -> tuple[dict[int, dict[str, list[dict]]], dict | None]:
+    """Je Runde die Artefakte nach Art in Reihenfolge der (sortierten)
+    Operations-IDs; dazu das der Integration."""
+    rounds: dict[int, dict[str, list[dict]]] = {}
     integration = None
     for operation_id in store.artifact_ids():
         artifact = cast(dict, store.load_artifact(operation_id))
         match = _ROUND_OPERATION.match(operation_id)
         if match:
-            rounds.setdefault(int(match[1]), {})[match[2]] = artifact
+            parts = rounds.setdefault(int(match[1]), {})
+            parts.setdefault(match[2], []).append(artifact)
         elif _INTEGRATION.match(operation_id):
             integration = artifact
     return rounds, integration
 
 
-def _round_lines(round_id: int, parts: dict[str, dict]) -> list[str]:
+def _round_lines(
+    round_id: int, parts: dict[str, list[dict]], seen: int
+) -> tuple[list[str], int]:
+    """Umsetzer und Tests aus dem letzten Nachweisversuch der Runde,
+    danach jedes Review-Urteil; eine Entscheidung des Menschen steht
+    vor dem ersten Urteil, das sie erhalten hat (``seen``: so viele
+    Entscheidungen kannten frühere Reviews schon)."""
     label = f"Runde {round_id}"
     lines = []
-    evidence = parts.get("evidence")
-    if evidence is not None:
-        context = evidence["context"]
+    if parts.get("evidence"):
+        context = parts["evidence"][-1]["context"]
         files = [
             change["path"]
             for change in context["step_delta"]["git"]["files"]
@@ -74,11 +91,22 @@ def _round_lines(round_id: int, parts: dict[str, dict]) -> list[str]:
             _line(label, "Tests", _check(check))
             for check in context["checks"]
         ]
-    review = parts.get("review")
-    if review is not None:
+    for review in parts.get("review", []):
+        known = review.get("decisions", [])
+        lines += [
+            _line(label, "Mensch", summary(document))
+            for document in known[seen:]
+        ]
+        seen = max(seen, len(known))
         answer = _answer(review["decision"])
         lines.append(_line(label, "Review", answer))
-    return lines
+    return lines, seen
+
+
+def _halt(detail: str | None) -> str:
+    """Grund des Halts; eine Entscheidung des Reviews nennt ihren
+    Grund schon in der Review-Zeile."""
+    return detail or "wartet auf Entscheidung (Bead ändern, resume)"
 
 
 def _answer(decision: dict) -> str:

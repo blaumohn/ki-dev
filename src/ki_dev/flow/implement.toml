@@ -220,6 +220,13 @@ target = "waiting_decision"
 event = "escalate"
 on = [{ raise = { event = "escalation.agent" } }]
 
+# Test-Tor: Fakt des Ausführers (eine Prüfung der Runde ist rot). Ein
+# PASS des Reviews überstimmt ihn nicht; der Mensch entscheidet.
+[[statechart.states.active.states.controller_step.transitions]]
+event = "PASS"
+cond = ["checked_result", "checks_failed"]
+on = [{ raise = { event = "escalation.checks_failed" } }]
+
 [[statechart.states.active.states.controller_step.transitions]]
 event = "PASS"
 cond = "checked_result"
@@ -398,7 +405,7 @@ final = true
 [op.work]
 role = "worker"
 do = "agent.work"
-input = ["task", "round_id", "open_objection", "operation_id"]
+input = ["task", "round_id", "open_objection", "decisions", "operation_id"]
 output = { work_report = ["summary"] }
 success = "worker_completed"
 
@@ -412,7 +419,7 @@ success = "step_result_captured"
 [op.review]
 role = "review"
 do = "review.decide"
-input = ["task", "round_id", "evidence", "work_report", "decision_answer", "attempt_id"]
+input = ["task", "round_id", "evidence", "work_report", "decisions", "attempt_id"]
 output = { decision = ["decision"] }
 events = ["PASS", "fix", "decision", "escalate"]
 
