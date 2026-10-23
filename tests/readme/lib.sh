@@ -39,6 +39,20 @@ readme_run() {
   bash -eu -o pipefail "$session" 2>&1 | tee "$README_LOG"
 }
 
+# Ersetzt codex und claude im PATH durch Platzhalter, die mit Exit 127
+# enden: ein Test erreicht den ersten Agentenaufruf, ohne Modelle
+# aufzurufen, auch auf einem Rechner mit angemeldeten CLIs.
+readme_without_agents() {
+  local stubs agent
+  stubs="$(mktemp -d)"
+  for agent in codex claude; do
+    printf '#!/bin/sh\necho "%s: in dieser Prüfung nicht verfügbar" >&2\nexit 127\n' \
+      "$agent" >"$stubs/$agent"
+    chmod +x "$stubs/$agent"
+  done
+  export PATH="$stubs:$PATH"
+}
+
 # Ergebnis des laufenden Tests; failed endet mit Exit 1.
 readme_result() {
   local result="$1" excerpt="${2:-}"

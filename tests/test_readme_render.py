@@ -17,6 +17,7 @@ RESULTS_MODULE = "scripts/readme_results.py"
 DE = "readme-scripts/1-setup.sh"
 EN = "readme-scripts/en/1-setup.sh"
 READMES = ("README.md", "README.en.md")
+GUIDES = ("docs/vertiefung.de.md", "docs/vertiefung.en.md")
 LATER = "2026-10-21T09:30:00Z"
 TEST = "tests/readme/test_1_setup.sh"
 DE_LINK = f"[Test]({TEST})"
@@ -38,7 +39,9 @@ def repo(tmp_path):
         path.relative_to(ROOT)
         for path in (ROOT / "tests/readme").glob("test_*")
     )
-    for name in (RENDER, RESULTS_MODULE, *scripts, *tests, *READMES):
+    for name in (
+        RENDER, RESULTS_MODULE, *scripts, *tests, *READMES, *GUIDES
+    ):
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / name, tmp_path / name)
     return tmp_path
@@ -61,7 +64,7 @@ def test_changed_block_fails_check_and_is_rewritten(repo, name):
     readme = repo / name
     original = readme.read_text()
     # Codezeile im Block, nicht die Erwähnung im Kopf
-    changed = original.replace("\nmake demo\n", "\nmake dem0\n", 1)
+    changed = original.replace("\nmake setup", "\nmake setop", 1)
     readme.write_text(changed)
     code, _, err = _render(repo, "--check")
     assert code == 1
@@ -106,7 +109,7 @@ def test_line_comments_may_differ_between_languages(repo):
         path = repo / script
         path.write_text(
             path.read_text().replace(
-                "\nmake demo\n", f"\nmake demo  # {comment}\n"
+                "\nmake setup", f"\nmake setup  # {comment}"
             )
         )
     code, _, err = _render(repo, "--check")
@@ -115,7 +118,7 @@ def test_line_comments_may_differ_between_languages(repo):
 
 def test_commands_differ_between_languages(repo):
     en = repo / EN
-    en.write_text(en.read_text().replace("make demo", "make test"))
+    en.write_text(en.read_text().replace("make setup", "make test"))
     code, _, err = _render(repo, "--check")
     assert code == 1
     assert f"{DE} und {EN}: Befehle weichen voneinander ab" in err
@@ -153,8 +156,8 @@ def test_new_block_starts_not_run(repo):
     )
     assert _render(repo)[0] == 0
     assert (
-        "make demo\n```\n\n"
-        f"> Im letzten Prüflauf nicht ausgeführt · [Test]({TEST})\n\n"
+        "\n```\n\n"
+        f"> Im letzten Prüflauf nicht ausgeführt · [Test]({TEST})\n"
     ) in readme.read_text()
 
 
@@ -180,8 +183,8 @@ def test_passed_line_and_output_follow_the_bash_block(repo, results):
         block = _block(repo / name)
         assert not block.splitlines()[1].startswith("> ")
         assert (
-            f"make demo\n```\n\n{line}\n\n```text\n"
-            '"status": "passed"\n```\n\n`make demo`'
+            f"\n```\n\n{line}\n\n```text\n"
+            '"status": "passed"\n```\n'
         ) in block
         assert "2026-" not in block
 
@@ -283,13 +286,56 @@ def test_text_block_in_output_slot_fails(repo):
         path = repo / script
         path.write_text(
             path.read_text().replace(
-                "# ```\n#\n# `make demo`",
-                "# ```\n#\n# ```text\n# x\n# ```\n#\n# `make demo`",
+                "# ```\n",
+                "# ```\n#\n# ```text\n# x\n# ```\n#\n",
             )
         )
     code, _, err = _render(repo, "--check")
     assert code == 1
     assert f"{DE}: text-Block direkt nach dem letzten bash-Block" in err
+
+
+def test_separate_commands_need_separate_checked_sections(repo):
+    """Jeder Befehlsblock braucht einen eigenen Prüfstatus."""
+    for script in (DE, EN):
+        path = repo / script
+        path.write_text(
+            path.read_text() + "#\n# ```bash\necho extra\n# ```\n"
+        )
+    code, _, err = _render(repo, "--check")
+    assert code == 1
+    assert "mehrere bash-Blöcke" in err
+
+
+def test_duplicate_source_across_documents_fails(repo):
+    guide = repo / GUIDES[0]
+    guide.write_text(guide.read_text() + _block(repo / READMES[0]))
+    code, _, err = _render(repo, "--check")
+    assert code == 1
+    assert f"{DE}: mehrfach eingebunden" in err
+
+
+def test_results_and_links_follow_a_section_into_the_guide(
+    repo, results
+):
+    _result(results, "8-demo", "passed")
+    assert _render(repo, "--write", results)[0] == 0
+    for name, status, setup in (
+        (
+            GUIDES[0],
+            "✅ Im leeren Container ausgeführt",
+            "1-einrichten",
+        ),
+        (GUIDES[1], "✅ Run in an empty container", "1-set-up"),
+    ):
+        text = (repo / name).read_text()
+        assert status in text
+        assert "(../tests/readme/test_8_demo.sh)" in text
+        readme = (
+            "README.en.md" if name.endswith(".en.md") else "README.md"
+        )
+        assert f"(../{readme}#{setup})" in text
+    assert _render(repo, "--check")[0] == 0
 
 
 def _result(results, stem, ergebnis, **fields):
@@ -314,3 +360,29 @@ def _render(root, *args):
     return local[sys.executable].run(
         args=[root / RENDER, *map(str, args)], retcode=None, timeout=20
     )
+
+
+def test_live_result_is_marked_and_wins_over_the_container_stub(
+    repo, results
+):
+    """Ein eingecheckter Lauf mit echten Agenten (make readme-live)
+    setzt Status und Ausgabe seines Blocks; der Container kann dort nur
+    einen Stub liefern und überschreibt ihn nicht."""
+    live = repo / "docs/beispiele/echtlauf"
+    live.mkdir(parents=True)
+    _result(
+        live, "9-ergebnis", "passed", auszug=["Lauf add-fix: passed"]
+    )
+    _result(
+        results, "9-ergebnis", "stub", grund_de="braucht Agenten",
+        grund_en="needs agents",
+    )
+    assert _render(repo, "--write", results)[0] == 0
+    for name, status in (
+        ("README.md", "> ✅ Mit echten Agenten ausgeführt · [Test]"),
+        ("README.en.md", "> ✅ Run with real agents · [test]"),
+    ):
+        text = (repo / name).read_text()
+        assert status in text
+        assert "Lauf add-fix: passed" in text
+        assert "braucht Agenten" not in text

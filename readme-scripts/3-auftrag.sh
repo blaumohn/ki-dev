@@ -1,7 +1,12 @@
-# Weiter im Terminal aus [Schritt 0](#0-einrichten-ohne-agenten-ausprobieren):
+# Im selben Terminal wie die Einrichtung. Die Befehle legen ein
+# Wegwerf-Repo mit dem Fehler an: `calc` trägt den Zielbranch `main`,
+# im Worktree `calc-work` arbeiten die Agenten. `bd create` speichert
+# Problem, Entwurf und Abnahmekriterien als Auftrag; `implement` liest
+# diese Felder.
 #
 # ```bash
-cd "$(mktemp -d)" && git init -q -b main calc && cd calc  # Wegwerf-Repo
+cd "$(mktemp -d)"
+git init -q -b main calc && cd calc  # Wegwerf-Repo
 git config user.name calc  # Identität nur für dieses Wegwerf-Repo
 git config user.email calc@example.invalid
 cat >add.py <<'EOF'
@@ -13,7 +18,8 @@ from add import add
 
 assert add(2, 3) == 5
 EOF
-printf '.ki-dev/\n.beads.gate.lock\n' >>.git/info/exclude  # ki-dev verlangt saubere Worktrees
+printf '%s\n' .ki-dev/ .beads.gate.lock __pycache__/ \
+  >>.git/info/exclude  # Laufdaten, Python-Cache
 git add . && git commit -q -m "add()"
 git worktree add -q -b work ../calc-work  # Arbeits-Worktree der Agenten
 cd ../calc-work

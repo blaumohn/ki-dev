@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parent.parent
 FILES = (
     "README.md",
     "README.en.md",
+    "docs/vertiefung.de.md",
+    "docs/vertiefung.en.md",
     "docs/ausfuehrer.de.md",
     "docs/step.de.md",
 )

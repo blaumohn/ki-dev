@@ -3,7 +3,7 @@
 # ([details, German](docs/self-development.de.md)).
 #
 # ```bash
-make setup-runtime                    # own venv, symlink in ~/.local/bin
+make setup-runtime                    # venv + ~/.local/bin/ki-dev
 export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 # ```

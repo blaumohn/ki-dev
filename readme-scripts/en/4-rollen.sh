@@ -1,34 +1,40 @@
+# The profile fills the roles: Codex implements, Claude Code reviews.
+# Both use the cheapest model of their CLI with effort `low`; ki-dev
+# creates a separate session for each role on its first call.
 # Continue in `calc-work`:
 #
 # ```bash
-mkdir -p .ki-dev/profiles       # ki-dev looks for profiles where it starts
+mkdir -p .ki-dev/profiles       # profiles in the starting directory
 cat >.ki-dev/profiles/default.toml <<'EOF'
 workdir = "."                   # agents' worktree, ki-dev starts here
-access_profile = "write"
+access_profile = "write"        # the worker may write here
 
 [worker]                        # implements
-executor = "codex"              # executor from the scaffold
-session_id = "019a…"            # put your Codex session here
-model = "gpt-5.6-terra"
-effort = "high"
+executor = "codex"
+model = "gpt-6-luna"
+effort = "low"
 
-[review]                        # reviews, in its own session
+[review]                        # reviews, read-only
 executor = "claude"
-session_id = "b3f1…"            # put your Claude Code session here
-model = "sonnet"
-effort = "high"
+model = "haiku"
+effort = "low"
 
-[[tests]]                       # runs each round, result goes to review
+[[tests]]                       # runs each round, result to review
 name = "test_add"
 argv = ["python3", "test_add.py"]
 
 [limits]
-changes_rounds = 3              # then ki-dev asks a human
+changes_rounds = 3              # at most three correction rounds
 
 [finalization]                  # where an accepted result goes
-target_workdir = "../calc"      # repo from step 2
+target_workdir = "../calc"      # target repo with branch main
 target_ref = "refs/heads/main"
 commit_message = "Fix add()"
-data_mode = "file_proposal"
 EOF
 # ```
+#
+# - `executor` can be swapped per role; available are `codex`,
+#   `claude`, `mock` and `manual`
+#   ([executors](docs/ausfuehrer.de.md#executoren), German).
+# - Per-call limits (time, cost, quota) have
+#   [defaults](docs/ausfuehrer.de.md#verbrauchsschutz) (German).

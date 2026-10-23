@@ -23,7 +23,7 @@ git -C "$DEMO/ziel" add .gitignore
 git -C "$DEMO/ziel" commit -q -m start
 git -C "$DEMO/ziel" worktree add -q -b arbeit "$DEMO/arbeit"
 echo "[demo] Beads initialisieren: $DEMO/arbeit" >&2
-(cd "$DEMO/arbeit" && bd init --prefix demo --skip-agents --skip-hooks \
+(cd "$DEMO/arbeit" && bd init --quiet --prefix demo --skip-agents --skip-hooks \
   --stealth --non-interactive)
 
 echo "[demo] Bead erstellen" >&2
@@ -52,8 +52,26 @@ answers = ["fix", "PASS"]
 EOF
 
 echo "[demo] Mock-Lauf starten: $BEAD" >&2
-(cd "$DEMO/arbeit" && "$KI_DEV" -f implement "$BEAD" \
-  --profile "$DEMO/profil.toml" --run-id demo --runs-dir "$DEMO/runs")
-echo
-git -C "$DEMO/ziel" log --format=%s
+if (cd "$DEMO/arbeit" && "$KI_DEV" -f implement "$BEAD" \
+  --profile "$DEMO/profil.toml" --run-id demo --runs-dir "$DEMO/runs" \
+  >"$DEMO/result.json"); then
+  :
+else
+  demo_status=$?
+  cat "$DEMO/result.json" >&2
+  exit "$demo_status"
+fi
+"$ROOT/.venv/bin/python" - "$DEMO/result.json" <<'PY'
+import json
+import sys
+
+result = json.loads(open(sys.argv[1], encoding="utf-8").read())
+if result["status"] != "passed":
+    sys.exit(str(result.get("detail", "Demo nicht abgeschlossen")))
+PY
+echo "Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):"
+(cd "$DEMO/arbeit" && "$KI_DEV" -f implement history demo \
+  --runs-dir "$DEMO/runs")
+echo "Datei auf main: ziel/MOCK.md"
+sed 's/^/  /' "$DEMO/ziel/MOCK.md"
 echo "Laufverzeichnis: $DEMO/runs/demo"

@@ -1,7 +1,7 @@
-# Im Ordner `ki-dev` aus [Schritt 0](#0-einrichten-ohne-agenten-ausprobieren):
+# Im Ordner `ki-dev` aus der [Einrichtung](#1-einrichten):
 #
 # ```bash
 make test          # pytest und ruff
 make spec-test     # Anforderungstests, rote Ergebnisse sind zulässig
-make readme-check  # README-Befehle in Docker, setzt die Statuszeilen
+make readme-check  # Docker-Prüfung; aktualisiert README und Vertiefung
 # ```

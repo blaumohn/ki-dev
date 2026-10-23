@@ -65,10 +65,11 @@ def test_output_is_deterministic():
     )
 
 
-def test_readme_diagrams_equal_generated_output():
-    text = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert diagram_markers(text) == ["implement", "map"]
-    assert sync_diagrams(text, load_flow) == text
+def test_guide_diagrams_equal_generated_output():
+    for name in ("vertiefung.de.md", "vertiefung.en.md"):
+        text = (ROOT / "docs" / name).read_text(encoding="utf-8")
+        assert diagram_markers(text) == ["implement", "map"]
+        assert sync_diagrams(text, load_flow) == text
 
 
 def test_cli_prints_the_diagram():

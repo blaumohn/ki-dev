@@ -18,6 +18,8 @@ COPY = (
     "Makefile",
     "README.md",
     "README.en.md",
+    "docs/vertiefung.de.md",
+    "docs/vertiefung.en.md",
     "src/ki_dev/tool-versions.json",
     "scripts/render-readme.py",
     "scripts/readme_results.py",
@@ -54,6 +56,11 @@ def test_failed_build_sets_all_not_run(repo, tmp_path):
     for name, not_run in (
         ("README.md", "> Im letzten Prüflauf nicht ausgeführt"),
         ("README.en.md", "> Not run in the last check"),
+        (
+            "docs/vertiefung.de.md",
+            "> Im letzten Prüflauf nicht ausgeführt",
+        ),
+        ("docs/vertiefung.en.md", "> Not run in the last check"),
     ):
         lines = _status_lines(repo / name).values()
         assert lines
@@ -67,7 +74,10 @@ def test_run_results_set_status_lines(repo, tmp_path):
         "build check",
         "run --rm check",
     ]
-    lines = _status_lines(repo / "README.md")
+    lines = {
+        **_status_lines(repo / "README.md"),
+        **_status_lines(repo / "docs/vertiefung.de.md"),
+    }
     assert lines["readme-scripts/3-auftrag.sh"].startswith(
         "> ✅ Im leeren Container ausgeführt"
     )

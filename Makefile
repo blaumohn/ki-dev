@@ -7,6 +7,7 @@
 #   make test           Tests und Lint
 #   make spec-test      Anforderungstests mit Ergebnismatrix (dürfen rot sein)
 #   make readme-check   README-Befehle im Wegwerf-Container, setzt Statuszeilen (braucht Docker)
+#   make readme-live    README-Beispiel mit echten Agenten (verbraucht Tokens; codex und claude angemeldet)
 #   make clean          Temporäre Dateien und venv entfernen
 
 .DEFAULT_GOAL := help
@@ -26,13 +27,14 @@ help:
 	@echo "  make test           Führen Sie Tests und Lint aus"
 	@echo "  make spec-test      Anforderungstests mit Ergebnismatrix (dürfen rot sein)"
 	@echo "  make readme-check   README-Befehle im Wegwerf-Container, setzt Statuszeilen (braucht Docker)"
+	@echo "  make readme-live    README-Beispiel mit echten Agenten (verbraucht Tokens; codex und claude angemeldet)"
 	@echo "  make clean          Entfernen Sie venv und temporäre Dateien"
 	@echo ""
 	@echo "Beispiele:"
 	@echo "  make setup          # Initialisierung durchführen"
 	@echo "  make test           # Tests ausführen"
 
-.PHONY: setup setup-runtime demo test spec-test readme-check clean
+.PHONY: setup setup-runtime demo test spec-test readme-check readme-live clean
 
 setup: .venv/bin/ki-dev .venv/bin/bd
 
@@ -89,6 +91,24 @@ readme-check:
 		--write "$$READMECHECK_TMP_DIR/readme-ergebnisse" || render=$$?; \
 	if [ "$$check" -ne 0 ]; then exit "$$check"; fi; \
 	exit "$$render"
+
+# Das README-Beispiel einmal mit echten Agenten, auf diesem Rechner:
+# ruft Modelle auf und verbraucht Tokens. Ergebnis und Ereignisprotokoll
+# landen eingecheckt in docs/beispiele/echtlauf/; render-readme.py setzt
+# daraus die Statuszeile „Mit echten Agenten ausgeführt“. Variablen einer
+# umgebenden Claude-Code-Sitzung gehen nicht an das claude des Laufs.
+readme-live: export README_LIVE := 1
+readme-live: export README_RESULTS_DIR := $(CURDIR)/docs/beispiele/echtlauf
+readme-live: .venv/bin/ki-dev
+	@set -eu; \
+	unset KI_DEV_FLOW_PATH; \
+	for name in $$(env | sed -n 's/^\(CLAUDECODE\|CLAUDE_CODE_[A-Z_]*\|CLAUDE_EFFORT\|CLAUDE_PID\)=.*/\1/p'); do \
+	  unset "$$name"; \
+	done; \
+	export PATH="$(BIN):$$PATH"; \
+	bash -c 'source tests/readme/lib.sh; \
+	  run_readme_test tests/readme/test_9_ergebnis.sh'; \
+	$(BIN)/python scripts/render-readme.py
 
 clean:
 	rm -rf .venv

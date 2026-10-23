@@ -1,4 +1,4 @@
-"""README-Abschnitte aus readme-scripts/*.sh erzeugen (Vorbild:
+"""README und Anleitung aus readme-scripts/*.sh erzeugen (Vorbild:
 lebenslauf-web-vorlage: scripts/gen-readme.py,
 scripts/check-readme-en-sync.py).
 
@@ -6,8 +6,9 @@ Ein Skript ist ausführbar und zugleich Markdown: Zeilen, die mit ``#``
 beginnen, werden Prosa (auch in einem HERE-Doc), die übrigen Zeilen
 Code zwischen ``# ```bash`` und ``# ````. Codezeilen dürfen einen
 Halbsatz als Zeilenend-Kommentar tragen (``  # …``); der
-Befehlsvergleich DE/EN lässt ihn weg. README.md nimmt
-readme-scripts/*.sh, README.en.md readme-scripts/en/*.sh:
+Befehlsvergleich DE/EN lässt ihn weg. README.md und die deutsche
+Anleitung nehmen readme-scripts/*.sh; ihre englischen Fassungen nehmen
+readme-scripts/en/*.sh. Jedes Skript steht genau einmal je Sprache:
 
     <!-- readme-script: readme-scripts/1-setup.sh -->
     …Prosa und bash-Block aus dem Skript…
@@ -20,15 +21,18 @@ readme-scripts/*.sh, README.en.md readme-scripts/en/*.sh:
     …Prosa aus dem Skript…
     <!-- /readme-script -->
 
-Statuszeile und Ausgabeblock folgen direkt dem letzten bash-Block und
-kommen aus einem Lauf von make readme-check (Format:
-scripts/readme_results.py); die Statuszeile verlinkt den Test des
+Ein Skript enthält genau einen bash-Block. Statuszeile und Ausgabe
+folgen direkt diesem Block und kommen aus make readme-check (Format:
+scripts/readme_results.py), für Skripte mit eingechecktem Ergebnis
+eines echten Laufs (make readme-live, docs/beispiele/echtlauf/) aus
+diesem; die Statuszeile verlinkt den Test des
 Skripts (tests/readme/test_<Name>.sh oder .py). Nur --write DIR setzt
-sie aus DIR; ohne --write bleiben sie, wie sie in der README stehen, ein
-neuer Block beginnt mit „nicht ausgeführt“. Direkt nach dem letzten
-bash-Block darf das Skript selbst keinen text-Block haben.
+sie aus DIR; ohne --write bleiben sie, wie sie im Dokument stehen, ein
+neuer Block beginnt mit „nicht ausgeführt“. Direkt nach dem bash-Block
+darf das Skript selbst keinen text-Block haben. Prosa-Links im Skript
+gelten ab Repo-Wurzel; der Renderer passt sie an den Dokumentort an.
 
-Standard schreibt abweichende READMEs; --check meldet Abweichungen ohne
+Standard schreibt abweichende Dokumente; --check meldet sie ohne
 zu schreiben. --staged prüft zusätzlich, dass eine gestagte deutsche
 Datei ihre englische Entsprechung mitbringt (pre-commit). Exit 1 bei
 Abweichung, fehlendem Skript, Skript ohne Block, fehlender Übersetzung,
@@ -42,17 +46,23 @@ Ergebnissen.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
 
 from plumbum import local
-from readme_results import excerpt, load_results, status_line
+from readme_results import LIVE_DIR, excerpt, load_results, status_line
 
 ROOT = Path(__file__).resolve().parents[1]
 DE_DIR = Path("readme-scripts")
 EN_DIR = DE_DIR / "en"
-VARIANTS = (("README.md", DE_DIR), ("README.en.md", EN_DIR))
+VARIANTS = (
+    ("README.md", DE_DIR),
+    ("README.en.md", EN_DIR),
+    ("docs/vertiefung.de.md", DE_DIR),
+    ("docs/vertiefung.en.md", EN_DIR),
+)
 STRIP_PREFIX = re.compile(r"^# ?")
 FENCE_MARKER = "```"
 BASH_FENCE = "```bash"
@@ -65,6 +75,7 @@ BLOCK = re.compile(
     r"^<!-- readme-script: (\S+) -->\n.*?^<!-- /readme-script -->$",
     re.MULTILINE | re.DOTALL,
 )
+LINK_TARGET = re.compile(r"(?<=\]\()([^\s)]+)(?=\))")
 
 
 def main(argv: list[str]) -> int:
@@ -76,15 +87,25 @@ def main(argv: list[str]) -> int:
         )
         if problems:
             return report(problems)
-    problems = []
-    for readme, scripts_dir in VARIANTS:
-        problems += sync_readme(
-            readme, scripts_dir, args.check, results
-        )
+    live, problems = live_results()
+    problems += coverage_problems()
+    for scripts_dir in (DE_DIR, EN_DIR):
+        problems += output_slot_problems(scripts_dir)
+    if problems:
+        return report(problems)
+    for readme, _ in VARIANTS:
+        problems += sync_readme(readme, args.check, results, live)
     problems += filename_parity_problems() + command_parity_problems()
     if args.staged:
         problems += staged_change_symmetry_problems()
     return report(problems)
+
+
+def live_results() -> tuple[dict[str, list[dict]], list[str]]:
+    """Eingecheckte Ergebnisse eines Laufs mit echten Agenten."""
+    if not (ROOT / LIVE_DIR).is_dir():
+        return {}, []
+    return load_results(ROOT / LIVE_DIR, section_names(DE_DIR))
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -103,19 +124,17 @@ def report(problems: list[str]) -> int:
 
 def sync_readme(
     readme: str,
-    scripts_dir: Path,
     check: bool,
     results: dict[str, list[dict]] | None,
+    live: dict[str, list[dict]],
 ) -> list[str]:
     text = (ROOT / readme).read_text()
-    problems = missing_blocks(readme, text, scripts_dir)
-    problems += missing_scripts(readme, text)
-    problems += output_slot_problems(scripts_dir)
+    problems = missing_scripts(readme, text)
     if problems:
         return problems
 
     def render(match: re.Match[str]) -> str:
-        return render_block(match, readme, results, problems)
+        return render_block(match, readme, results, live, problems)
 
     rendered = BLOCK.sub(render, text)
     if problems or rendered == text:
@@ -129,15 +148,29 @@ def sync_readme(
     return []
 
 
-def missing_blocks(
-    readme: str, text: str, scripts_dir: Path
-) -> list[str]:
-    used = set(BLOCK.findall(text))
-    return [
-        f"{readme}: kein Block für {script}"
-        for script in sorted(map(str, section_paths(scripts_dir)))
-        if script not in used
-    ]
+def coverage_problems() -> list[str]:
+    """Jedes Skript genau einmal je Sprache, auch über Seiten hinweg."""
+    problems = []
+    for scripts_dir in (DE_DIR, EN_DIR):
+        documents = [
+            name for name, directory in VARIANTS
+            if directory == scripts_dir
+        ]
+        used = []
+        for name in documents:
+            path = ROOT / name
+            if not path.is_file():
+                problems.append(f"{name}: Dokument fehlt")
+                continue
+            used += BLOCK.findall(path.read_text())
+        for script in map(str, section_paths(scripts_dir)):
+            if used.count(script) == 0:
+                problems.append(
+                    f"{documents[0]}: kein Block für {script}"
+                )
+            elif used.count(script) > 1:
+                problems.append(f"{script}: mehrfach eingebunden")
+    return problems
 
 
 def missing_scripts(readme: str, text: str) -> list[str]:
@@ -149,32 +182,49 @@ def missing_scripts(readme: str, text: str) -> list[str]:
 
 
 def output_slot_problems(scripts_dir: Path) -> list[str]:
-    return [
-        f"{script}: text-Block direkt nach dem letzten bash-Block "
-        "ist der Ausgabe aus make readme-check vorbehalten"
-        for script in section_paths(scripts_dir)
-        if text_block_after_bash(
-            render_body((ROOT / script).read_text())
-        )
-        is not None
-    ]
+    problems = []
+    for script in section_paths(scripts_dir):
+        body = render_body((ROOT / script).read_text())
+        if body.splitlines().count(BASH_FENCE) > 1:
+            problems.append(
+                f"{script}: mehrere bash-Blöcke; "
+                "je Prüfabschnitt ein eigenes Skript verwenden"
+            )
+        if text_block_after_bash(body) is not None:
+            problems.append(
+                f"{script}: text-Block direkt nach dem letzten "
+                "bash-Block ist der Ausgabe aus make readme-check "
+                "vorbehalten"
+            )
+    return problems
 
 
 def render_block(
     match: re.Match[str],
     readme: str,
     results: dict[str, list[dict]] | None,
+    live: dict[str, list[dict]],
     problems: list[str],
 ) -> str:
     script = match.group(1)
     test = test_path(script)
-    if results is None:
-        line, output = kept_status(match.group(0), readme, test)
+    language = (
+        "README.en.md" if readme.endswith(".en.md") else "README.md"
+    )
+    if Path(script).name in live:
+        entries = live[Path(script).name]
+        line = status_line(language, entries, test, live=True)
+        output = excerpt(entries)
+    elif results is None:
+        line, output = kept_status(match.group(0), language, test)
     else:
         entries = results.get(Path(script).name)
-        line = status_line(readme, entries, test)
+        line = status_line(language, entries, test)
         output = excerpt(entries)
-    body = render_body((ROOT / script).read_text())
+    body = relative_links(
+        render_body((ROOT / script).read_text()), readme
+    )
+    line = relative_links(line, readme)
     if bash_close_index(body.split("\n")) is None:
         problems.append(f"{script}: kein bash-Block")
         return match.group(0)
@@ -183,6 +233,29 @@ def render_block(
         f"<!-- readme-script: {script} -->\n{body}"
         "<!-- /readme-script -->"
     )
+
+
+def relative_links(text: str, document: str) -> str:
+    """Skript-Prosa verlinkt ab Repo-Wurzel, Code bleibt unverändert."""
+    def rebase(match: re.Match[str]) -> str:
+        target = match.group(0)
+        if re.match(r"(?:[a-z]+:|#|/)", target):
+            return target
+        path, separator, anchor = target.partition("#")
+        relative = os.path.relpath(
+            ROOT / path, (ROOT / document).parent
+        )
+        return relative + separator + anchor
+
+    lines = []
+    fenced = False
+    for line in text.splitlines(keepends=True):
+        if line.startswith(FENCE_MARKER):
+            fenced = not fenced
+        elif not fenced:
+            line = LINK_TARGET.sub(rebase, line)
+        lines.append(line)
+    return "".join(lines)
 
 
 def test_path(script: str) -> str | None:

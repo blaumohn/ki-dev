@@ -7,6 +7,11 @@ Die Statuszeile sagt, was geprüft wurde, und verlinkt den Test des
 Skripts. Kein Datum in der README: zwei Läufe ergäben sonst ohne Grund
 einen Diff; die Frische sichert der pre-push-Hook
 (.beads/hooks/pre-push).
+
+Ergebnisse eines Laufs mit echten Agenten (make readme-live) liegen
+eingecheckt in LIVE_DIR und haben eine eigene Statuszeile („Mit echten
+Agenten ausgeführt“); sie gehen dem Containerergebnis desselben Skripts
+vor, das dort nur ein Stub sein kann.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+LIVE_DIR = Path("docs/beispiele/echtlauf")
 TEXT = {
     "README.md": {
         "passed": "Im leeren Container ausgeführt",
@@ -23,6 +29,8 @@ TEXT = {
         "skipped": "Im leeren Container übersprungen",
         "stub": "Ungeprüft",
         "not_run": "Im letzten Prüflauf nicht ausgeführt",
+        "live_passed": "Mit echten Agenten ausgeführt",
+        "live_failed": "Mit echten Agenten fehlgeschlagen",
         "container": "Im leeren Container",
         "test": "Test",
         "reason": "grund_de",
@@ -33,6 +41,8 @@ TEXT = {
         "skipped": "Skipped in an empty container",
         "stub": "Not checked",
         "not_run": "Not run in the last check",
+        "live_passed": "Run with real agents",
+        "live_failed": "Failed with real agents",
         "container": "In an empty container",
         "test": "test",
         "reason": "grund_en",
@@ -149,11 +159,19 @@ def entry_problems(
 
 
 def status_line(
-    readme: str, entries: list[dict] | None, test: str | None = None
+    readme: str,
+    entries: list[dict] | None,
+    test: str | None = None,
+    *,
+    live: bool = False,
 ) -> str:
-    """``> ✅ Im leeren Container ausgeführt · [Test](tests/…)``."""
+    """``> ✅ Im leeren Container ausgeführt · [Test](tests/…)``;
+    ``live``: ``> ✅ Mit echten Agenten ausgeführt · …``."""
     text = TEXT[readme]
-    if entries is None:
+    result = entries[0]["ergebnis"] if entries else None
+    if live and result in ("passed", "failed"):
+        status = f"{SYMBOL[result]} {text['live_' + result]}"
+    elif entries is None:
         status = text["not_run"]
     elif len(entries) == 1 and not entries[0]["parameter"]:
         status = single_status(text, entries[0])

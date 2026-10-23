@@ -45,6 +45,11 @@ je mit Zeilenbeleg; "weiß ich nicht" ist eine gültige Antwort:
    dafür nötige Erklärung oder Einrichtung vor dem Punkt, an dem du aufhörst?
 8. Zitiere jede Stelle, die ohne Beleg bewertet oder sich gegen eine
    Alternative abgrenzt, die du nicht erwartet hattest (Zeile, Wortlaut).
+9. Minimalbeispiel ausführen, nur mit README.md: Was brauchst du dafür,
+   welche Befehle gibst du in welcher Reihenfolge ein, und woran erkennst
+   du am Ende, dass es geklappt hat? Nenne jede Voraussetzung, die erst
+   nach dem ersten Befehl oder nur hinter einem Link steht, jede Ausgabe
+   ohne Erklärung und was du ohne Modellzugang tun könntest (Zeile).
 
 Bewerte den Weg zu deinem Verständnis, nicht die Anzahl vorhandener Links,
 Befehle oder Abschnitte. Eine gefundene Antwort ist noch keine verständliche
