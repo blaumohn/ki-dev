@@ -81,13 +81,14 @@ def test_prepare_repository_from_another_directory(tmp_path):
         assert "Fährte verloren" in handoff
         assert "kein Gesamturteil" in handoff
         assert "8. Zitiere jede Stelle, die ohne Beleg" in handoff
+        assert "9. Minimalbeispiel ausführen, nur mit" in handoff
         assert ("deinem Team beitragen" in handoff) == (
             persona == "techlead"
         )
     for relative in (
-        "tests/machine/test_reachability.py",
+        "docs/vertiefung.de.md",
         "docs/ausfuehrer.de.md",
-        "src/ki_dev/flow/implement.toml",
+        "tests/test_review_gate_cli.py",
     ):
         flat = relative.replace("/", "__")
         assert (target / "pruefer" / flat).read_bytes() == (

@@ -51,8 +51,13 @@ Menschen scheiterte (3,5 von 4, siehe unten).
    Kann er danach zwischen beobachtetem Verhalten, Lücke und Ziel unterscheiden?
 6. Nächste Handlung: Sind Voraussetzungen und Einrichtung erreichbar, wenn
    er selbst erkunden möchte? Hilft `step`, Agenteneingaben und Übergänge zu verstehen?
-7. Abbruch: Wo endet das Interesse oder das Verständnis, und warum?
-8. Prüfer zusätzlich: Eine Ist-Aussage zum Beispiel und eine zum Entwicklungsstand
+7. Lesepfad des Minimalbeispiels: Kann er nur mit der README sagen, was er
+   zum Ausführen braucht, welche Befehle er in welcher Reihenfolge eingibt
+   und woran er am Ende erkennt, dass es geklappt hat? Weiß er, bevor er
+   eine Voraussetzung vermisst, welche Alternative es gibt (Demo ohne
+   Modellzugang)?
+8. Abbruch: Wo endet das Interesse oder das Verständnis, und warum?
+9. Prüfer zusätzlich: Eine Ist-Aussage zum Beispiel und eine zum Entwicklungsstand
    bis zum Testcode verfolgen. Prüft der Test genau das Behauptete?
 
 ## Auswertung
@@ -87,8 +92,13 @@ ersten Bildschirm, was diese Person einbringen kann, ohne Marketing.
 - **Bewertung und Abgrenzung (alle Personas, Frage 8):** Jede zitierte
   Stelle im gelesenen Teil, die ohne Beleg bewertet oder sich gegen eine
   Alternative abgrenzt, die der Leser nicht erwartet hatte, ist ein Befund.
-  Ein Kontrast, den die README selbst nahelegt und dessen Gegenstück sie
-  zeigt, ist keiner ([Regel 2](readme-leitlinie.de.md#regeln-mit-fehlbeispiel)).
+  Auch ein früher als zulässig behandelter Kontrast wird erneut auf seine
+  Verständlichkeit geprüft; „keine einzelne Aufgabe“ erklärt das Verfahren
+  nicht ([Leitlinie](readme-leitlinie.de.md#regeln-mit-fehlbeispiel)).
+- **Lesepfad des Minimalbeispiels (alle Personas, Frage 9):** Gescheitert,
+  wenn eine Voraussetzung erst nach dem ersten Befehl oder nur hinter einem
+  Link steht, ein Schritt eine zweite Datei braucht, eine Ausgabe (auch ein
+  Halt) unerklärt bleibt oder das Ergebnis nicht ohne Raten erkennbar ist.
 - **Wie bisher:** Modell nach dem ersten Bildschirm gegen den
   [Auftrag](readme-leitlinie.de.md#auftrag), Stellen mit zwei Lesarten,
   Fährten, die nicht hielten, Abbruchpunkt.
