@@ -1,4 +1,4 @@
-"""Claude-CLI-Adapter fuer vorbereitete Sitzungen.
+"""Claude-CLI-Adapter: neue oder bestehende Sitzung, ein Turn je Aufruf.
 
 Die unterstuetzte CLI-Syntax ist in ``docs/cli-adapters.md``
 dokumentiert. Der Adapter nutzt ausschliesslich die lokal
@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import uuid
 from dataclasses import replace
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from ki_dev.tool_versions import load_tool_versions
 
 from .base import CliAdapter
 from .contract import (
+    Access,
     ContextMeasurement,
     ContextStatus,
     Measure,
@@ -29,6 +31,7 @@ from .metering import (
     claude_context_tokens,
     claude_result,
     claude_stream,
+    missing_result,
 )
 
 # Gemeinsamer Versionsstand fuer Build und Laufzeit.
@@ -40,10 +43,19 @@ _VERSION_OUTPUT = re.compile(r"^(\S+)\s+\(Claude Code\)")
 
 # Letzter 5h-Messwert je Sitzung, geschrieben nach jedem Turn.
 DEFAULT_QUOTA_DIR = Path.home() / ".cache/ki-dev/claude-quota"
+# Dateizugriff als Claude-Rechte: Lesen nur mit Lesewerkzeugen (keine
+# Rueckfrage, die ``--print`` als verweigerte Berechtigung meldet),
+# Schreiben mit automatisch angenommenen Dateiaenderungen.
+_ACCESS_ARGS = {
+    Access.READ: ["--tools", "Read,Grep,Glob"],
+    Access.WRITE: ["--permission-mode", "acceptEdits"],
+}
 
 
 class ClaudeCliAdapter(CliAdapter):
-    """Setzt eine vorbereitete Claude-Code-Sitzung einen Turn fort.
+    """Ein Turn in einer Claude-Code-Sitzung: ohne ``session_id``
+    legt ``--session-id`` eine neue mit selbst gewaehlter UUID an, sonst
+    setzt ``--resume`` die genannte fort.
 
     Die Kontextvorpruefung selbst ist keine Aufgabe dieses Adapters
     mehr: ``measure_context`` liefert nur den Messwert, Freigabe/Halt
@@ -77,37 +89,25 @@ class ClaudeCliAdapter(CliAdapter):
         super().__init__(**kwargs)
         self.quota_dir = quota_dir or DEFAULT_QUOTA_DIR
 
-    def measure_quota(self, session_id: str) -> QuotaMeasurement:
+    def measure_quota(self, session_id: str | None) -> QuotaMeasurement:
         """Letzter 5h-Wert aus der Antwort des vorigen Turns.
 
         Claude liefert den Wert verbrauchsfrei nur mit einer Antwort
         (``rate_limit_event`` in ``stream-json``), nie vorab. Darum
-        ``PENDING`` vor dem ersten Turn und nach einem Fensterwechsel;
-        ein Turn ohne Messwert laesst den letzten Wert stehen.
+        ``PENDING`` vor dem ersten Turn (auch einer neuen Sitzung) und
+        nach einem Fensterwechsel; ein Turn ohne Messwert laesst den
+        letzten Wert stehen.
         """
-        try:
-            value = json.loads(
-                self._quota_path(session_id).read_text(encoding="utf-8")
-            )
-        except FileNotFoundError:
+        if session_id is None:
             return QuotaMeasurement(
                 QuotaStatus.PENDING,
-                detail="noch kein Turn; Messung nach dem ersten",
+                detail="neue Sitzung; Messung nach dem ersten Turn",
             )
-        except (OSError, ValueError) as exc:
-            return QuotaMeasurement(
-                QuotaStatus.UNAVAILABLE, detail=str(exc)
-            )
-        try:
-            return _stored_quota(value)
-        except (AttributeError, KeyError, TypeError, ValueError) as exc:
-            return QuotaMeasurement(
-                QuotaStatus.UNAVAILABLE,
-                detail=f"Messwertdatei ungueltig: {exc!r}",
-            )
+        return _read_quota(self._quota_path(session_id))
 
     def _quota_path(self, session_id: str) -> Path:
         return self.quota_dir / f"{session_id}.json"
+
 
     def _store_quota(
         self, session_id: str, quota: tuple[float, int] | None
@@ -126,16 +126,33 @@ class ClaudeCliAdapter(CliAdapter):
 
     def send_turn(self, request: TurnRequest) -> TurnResult:
         if not request.budget:
+            if request.session_id is None:
+                # Die ID einer neuen Sitzung nennt nur ``stream-json``.
+                raise ValueError(
+                    "neue Claude-Sitzung nur mit TurnBudget "
+                    "(stream-json)"
+                )
             return super().send_turn(request)
         cli_version, result, turn_ran = self.send_metered_turn(request)
         if not turn_ran:
             return result
         result_line, quota = claude_stream(result.stdout)
-        self._store_quota(request.session_id, quota)
-        return claude_result(
-            replace(result, stdout=result_line),
-            session_id=request.session_id,
-            cli_version=cli_version,
+        session_id = request.session_id or _reported_session(
+            result_line
+        )
+        if session_id is None and result.ok:
+            return missing_result(
+                result, "Claude-Sitzungs-ID fehlt im result-Ereignis"
+            )
+        if session_id is not None:
+            self._store_quota(session_id, quota)
+        return replace(
+            claude_result(
+                replace(result, stdout=result_line),
+                session_id=session_id,
+                cli_version=cli_version,
+            ),
+            session_id=session_id,
         )
 
     def build_argv(self, request: TurnRequest) -> list[str]:
@@ -149,11 +166,12 @@ class ClaudeCliAdapter(CliAdapter):
             "stream-json" if request.budget else "text",
             "--model",
             request.model,
-            "--resume",
-            request.session_id,
+            *_session_args(request.session_id),
             "--effort",
             request.effort.value,
         ]
+        if request.access is not None:
+            argv += _ACCESS_ARGS[request.access]
         if request.budget:
             argv += [
                 "--verbose",
@@ -163,6 +181,49 @@ class ClaudeCliAdapter(CliAdapter):
                 str(request.budget.max_budget_usd),
             ]
         return argv
+
+
+def _session_args(session_id: str | None) -> list[str]:
+    if session_id is None:
+        return ["--session-id", str(uuid.uuid4())]
+    return ["--resume", session_id]
+
+
+def _reported_session(result_line: str) -> str | None:
+    """Sitzungs-ID, die Claude im ``result``-Ereignis nennt; ``None``
+    ohne auswertbares Ereignis (``claude_result`` meldet den Fehler)."""
+    try:
+        event = json.loads(result_line)
+    except ValueError:
+        return None
+    if not isinstance(event, dict):
+        return None
+    session_id = event.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    return session_id
+
+
+def _read_quota(path: Path) -> QuotaMeasurement:
+    """Abgelegter 5h-Wert einer Sitzung; ``PENDING`` ohne Ablage."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return QuotaMeasurement(
+            QuotaStatus.PENDING,
+            detail="noch kein Turn; Messung nach dem ersten",
+        )
+    except (OSError, ValueError) as exc:
+        return QuotaMeasurement(
+            QuotaStatus.UNAVAILABLE, detail=str(exc)
+        )
+    try:
+        return _stored_quota(value)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        return QuotaMeasurement(
+            QuotaStatus.UNAVAILABLE,
+            detail=f"Messwertdatei ungueltig: {exc!r}",
+        )
 
 
 def _stored_quota(value: dict) -> QuotaMeasurement:

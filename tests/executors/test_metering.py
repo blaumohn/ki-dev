@@ -13,6 +13,10 @@ from ki_dev.adapter.executors import (
     CodexCliAdapter,
     Effort,
 )
+from ki_dev.adapter.executors.codex_quota import (
+    QuotaPending,
+    codex_quota,
+)
 from ki_dev.adapter.executors.contract import (
     ContextStatus,
     QuotaStatus,
@@ -24,7 +28,6 @@ from ki_dev.adapter.executors.contract import (
 from ki_dev.adapter.executors.metering import (
     claude_context_tokens,
     claude_result,
-    codex_quota,
     codex_result,
 )
 from ki_dev.usage import CounterScope, TokenCounts, UsageStatus
@@ -353,12 +356,15 @@ def test_codex_quota_reads_last_five_hour_snapshot(tmp_path):
     )
 
 
-def test_codex_quota_rejects_expired_snapshot_instead_of_zero(tmp_path):
+def test_codex_quota_expired_window_is_pending_instead_of_zero(
+    tmp_path,
+):
     """Ein Messwert aus einem bereits zurueckgesetzten Fenster ist kein
     Nachweis fuer den aktuellen Verbrauch (Claude-Changelog 2.1.x kennt
-    denselben Fehlerfall fuer Statuszeilen)."""
+    denselben Fehlerfall fuer Statuszeilen); wie bei Claude misst der
+    naechste Aufruf neu."""
     _rollout(tmp_path, "thread-1", used_percent=13.0, resets_at=100)
-    with pytest.raises(ValueError, match="abgelaufen"):
+    with pytest.raises(QuotaPending, match="abgelaufen"):
         codex_quota("thread-1", tmp_path, now=200)
 
 
@@ -372,8 +378,58 @@ def test_codex_quota_requires_the_five_hour_window_not_position(
         resets_at=9_999_999_999,
         window_minutes=10_080,
     )
-    with pytest.raises(ValueError, match="5h-Fenster"):
+    with pytest.raises(ValueError, match="keine 5h"):
         codex_quota("thread-1", tmp_path, now=0)
+
+
+def test_codex_quota_ignores_other_limit_buckets(tmp_path):
+    """Nur der Konto-Topf ``codex`` misst das 5h-Kontingent; ein
+    juengerer modellgebundener Topf oder ``premium`` ohne Fenster
+    aendern den Messwert nicht und brechen ihn nicht ab."""
+    now = 2_000_000_000.0
+    account = _token_count_line(
+        used_percent=40.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 120),
+    )
+    other = json.loads(json.dumps(account))
+    other["timestamp"] = _iso(now - 60)
+    other["payload"]["rate_limits"]["limit_id"] = "codex_bengalfox"
+    other["payload"]["rate_limits"]["primary"]["used_percent"] = 90.0
+    premium = json.loads(json.dumps(account))
+    premium["timestamp"] = _iso(now - 30)
+    premium["payload"]["rate_limits"] = {
+        "limit_id": "premium",
+        "primary": None,
+        "secondary": None,
+    }
+    _rollout_lines(tmp_path, "thread-1", [account, other, premium])
+    assert codex_quota("thread-1", tmp_path, now=now) == (
+        40.0,
+        int(now) + 10_000,
+    )
+
+
+def test_codex_quota_skips_week_only_lines_of_the_account(tmp_path):
+    """Eine aeltere Zeile nur mit Wochenfenster ist kein Messwert und
+    kein Lesefehler; gemessen wird die juengste mit 5h-Fenster."""
+    now = 2_000_000_000.0
+    measured = _token_count_line(
+        used_percent=12.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 60),
+    )
+    week_only = _token_count_line(
+        used_percent=3.0,
+        resets_at=int(now) + 90_000,
+        window_minutes=10_080,
+        timestamp=_iso(now - 3_600),
+    )
+    _rollout_lines(tmp_path, "thread-1", [week_only, measured])
+    assert codex_quota("thread-1", tmp_path, now=now) == (
+        12.0,
+        int(now) + 10_000,
+    )
 
 
 def test_codex_quota_missing_rollout_is_a_stop(tmp_path):
@@ -608,13 +664,14 @@ def test_codex_quota_accepts_a_recent_event(tmp_path):
     )
 
 
-def test_codex_quota_rejects_stale_event_despite_unexpired_window(
+def test_codex_quota_stale_event_is_pending_despite_unexpired_window(
     tmp_path,
 ):
     """Ein Fenster, das laut resets_at noch nicht abgelaufen ist,
     beweist keine Aktualitaet: ein mehrere Stunden alter Messwert wird
     nicht mehr als Naeherung des aktuellen Kontostands akzeptiert
-    (ki-dev-ablauf-dqv-Nachreview, lokal reproduziert)."""
+    (ki-dev-ablauf-dqv-Nachreview, lokal reproduziert); der naechste
+    Aufruf misst neu."""
     now = 2_000_000_000.0
     _rollout(
         tmp_path,
@@ -623,7 +680,61 @@ def test_codex_quota_rejects_stale_event_despite_unexpired_window(
         resets_at=int(now) + 10_000,
         timestamp=_iso(now - 7200),
     )
-    with pytest.raises(ValueError, match="zu alt"):
+    with pytest.raises(QuotaPending, match="zu alt"):
+        codex_quota("thread-1", tmp_path, now=now)
+
+
+def test_codex_quota_new_session_without_any_value_is_pending(tmp_path):
+    """Erlaubter Anlass: eine Sitzung, die erst der naechste Aufruf
+    anlegt, auf einem Rechner ohne Codex-Messwert."""
+    with pytest.raises(QuotaPending, match="neue Sitzung"):
+        codex_quota(None, tmp_path / "sessions", now=0)
+
+
+def test_codex_quota_named_session_without_any_value_is_a_stop(
+    tmp_path,
+):
+    """Aehnlich, aber unzulaessig: eine bestehende Sitzung ohne jeden
+    Messwert -- Codex liefert fuer dieses Konto keinen."""
+    _rollout_without_quota(tmp_path, "thread-1")
+    with pytest.raises(ValueError, match="keine 5h"):
+        codex_quota("thread-1", tmp_path, now=0)
+
+
+def test_codex_quota_new_session_reads_a_fresh_account_value(tmp_path):
+    now = 2_000_000_000.0
+    _rollout(
+        tmp_path,
+        "other",
+        used_percent=21.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 60),
+    )
+    assert codex_quota(None, tmp_path, now=now) == (
+        21.0,
+        int(now) + 10_000,
+    )
+
+
+def test_codex_quota_stale_after_own_unmeasured_answer_is_a_stop(
+    tmp_path,
+):
+    """Hat die Sitzung nach dem letzten Messwert schon geantwortet,
+    ohne einen zu schreiben, misst auch der naechste Aufruf nicht:
+    kein zweiter ungemessener Aufruf."""
+    now = 2_000_000_000.0
+    measured = _token_count_line(
+        used_percent=50.0,
+        resets_at=int(now) + 10_000,
+        timestamp=_iso(now - 7200),
+    )
+    unmeasured = {
+        **measured,
+        "timestamp": _iso(now - 600),
+        "payload": {**measured["payload"], "rate_limits": None},
+    }
+    _rollout_lines(tmp_path, "thread-1", [measured, unmeasured])
+    with pytest.raises(ValueError, match="ohne 5h-Messwert"):
         codex_quota("thread-1", tmp_path, now=now)
 
 
@@ -636,6 +747,18 @@ def test_codex_measure_quota_reports_real_value(monkeypatch):
     assert measurement.status is QuotaStatus.MEASURED
     assert measurement.used_percent == 42.0
     assert measurement.resets_at == 9_999_999_999
+
+
+def test_codex_measure_quota_reports_pending_explicitly(monkeypatch):
+    def _raise(*_args):
+        raise QuotaPending("neue Sitzung ohne Codex-5h-Messwert")
+
+    monkeypatch.setattr(
+        "ki_dev.adapter.executors.codex_cli.codex_quota", _raise
+    )
+    measurement = CodexCliAdapter().measure_quota(None)
+    assert measurement.status is QuotaStatus.PENDING
+    assert "neue Sitzung" in measurement.detail
 
 
 def test_codex_measure_quota_reports_unavailable_explicitly(

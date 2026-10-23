@@ -13,7 +13,7 @@ Deckt die drei im Review konkret reproduzierten Fehler ab:
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import pytest
 
@@ -595,3 +595,58 @@ def test_shared_effort_evidence_cannot_be_charged_to_child_call(
     assert ledger.usage_report(
         family_id="ki-dev-ablauf-wu0.3"
     ).total == 10
+
+
+def _new_session_attribution():
+    return replace(
+        _purpose_attribution(UsagePurpose.IMPLEMENTATION),
+        session_id=None,
+    )
+
+
+def _record_new_session_call(ledger, call_id, sessions):
+    ledger.reserve(
+        call_id,
+        "worker",
+        True,
+        "codex-cli",
+        attribution=_new_session_attribution(),
+    )
+    for number, session in enumerate(sessions):
+        event = normalize_codex_turn_usage(
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 0,
+                "output_tokens": 15,
+            },
+            cli_version=CODEX_CLI_VERSION,
+            session_id=session,
+        )
+        ledger.record_usage(
+            call_id, event, f"evidence-{call_id}-{number}", summary=True
+        )
+    _finish_metered(ledger, call_id)
+
+
+def test_call_that_creates_its_session_takes_the_id_from_its_usage(
+    tmp_path,
+):
+    """Ohne Sitzung reserviert, mit einer Sitzung belegt: kein
+    ``session_mismatch``, die Zurechnung nennt die neue Sitzung."""
+    ledger = _ledger(tmp_path)
+    _record_new_session_call(ledger, "call-1", ["thread-1"])
+
+    ledger.reserve("call-2", "worker", True, "codex-cli")
+    (call,) = [
+        c for c in ledger.usage_report().calls if c.call_id == "call-1"
+    ]
+    assert "session_mismatch" not in call.gaps
+    assert call.attribution.session_id == "thread-1"
+
+
+def test_call_creating_a_session_with_two_ids_still_blocks(tmp_path):
+    ledger = _ledger(tmp_path)
+    _record_new_session_call(ledger, "call-1", ["thread-1", "thread-2"])
+
+    with pytest.raises(SafetyStop, match="session_mismatch"):
+        ledger.reserve("call-2", "worker", True, "codex-cli")

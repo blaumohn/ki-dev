@@ -9,7 +9,8 @@ Funktionen in ``runner.cli``.
 
 Die Felder einer Rolle hängen am Transport ihres Executors:
 
-    [worker] executor = "claude"   → session_id, model, effort, …
+    [worker] executor = "claude"   → model, effort, optional
+                                     session_id (ohne: neue Sitzung), …
     [review] executor = "mock"     → optional answers, file
     [review] executor = "manual"   → keine weiteren Felder
 
@@ -27,6 +28,7 @@ from jsonschema import Draft202012Validator, ValidationError
 
 from ki_dev.adapter import manual, mock
 from ki_dev.adapter.executors import (
+    Access,
     Effort,
     ExecutorSpec,
     cli_transports,
@@ -100,7 +102,7 @@ def run_config_schema(
             "acceptance_criteria": {**_TEXTS, "minItems": 1},
             "sources": _TEXTS,
             "workdir": _TEXT,
-            "access_profile": _TEXT,
+            "access_profile": {"enum": [item.value for item in Access]},
             "env": {
                 "type": "object",
                 "additionalProperties": {"type": "string"},
@@ -142,7 +144,7 @@ def _role_fields(spec: ExecutorSpec) -> dict[str, object]:
     if spec.transport in cli_transports():
         return {
             "additionalProperties": False,
-            "required": ["session_id", "model", "effort"],
+            "required": ["model", "effort"],
             "properties": {
                 **executor,
                 "session_id": _TEXT,
@@ -209,7 +211,6 @@ _FINALIZATION = {
         "target_workdir",
         "target_ref",
         "commit_message",
-        "data_mode",
     ],
     "properties": {
         "target_workdir": _TEXT,

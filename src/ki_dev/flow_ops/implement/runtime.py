@@ -661,6 +661,9 @@ class RunRuntime:
         Ein fehlender Messwert darf das deshalb nicht stillschweigend
         uebertoenen; die Pruefung steht vor jeder Fallunterscheidung
         nach Kontextstatus.
+
+        Eine Sitzung, die erst dieser Aufruf anlegt (``session_id``
+        ``None``), hat noch keinen Kontext; zu messen gibt es nichts.
         """
         if Measure.CONTEXT not in actor.spec.measures:
             return None
@@ -671,6 +674,8 @@ class RunRuntime:
                 f"session={agent.session_id}): TurnBudget fehlt; "
                 "Timeout und Verbrauchserfassung waeren ungueltig"
             )
+        if agent.session_id is None:
+            return None
         measurement = agent.executor.measure_context(agent.session_id)
         origin = _origin(role, actor)
         if measurement.status is not ContextStatus.MEASURED:
@@ -1143,7 +1148,7 @@ def _measured(actor: Worker | Reviewer) -> AgentWorker | AgentReviewer:
 
 
 def _origin(role: str, actor: Worker | Reviewer) -> str:
-    session = getattr(actor, "session_id", None)
+    session = getattr(actor, "session_id", None) or "neu"
     return f"{role} (executor={actor.spec.name}, session={session})"
 
 

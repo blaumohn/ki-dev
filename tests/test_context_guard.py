@@ -54,9 +54,10 @@ class ControlledExecutor:
         )
         self.calls = 0
         self.context_calls = 0
+        # Sitzung, die ein Aufruf ohne ``session_id`` anlegt.
+        self.created_session: str | None = None
 
     def send_turn(self, request):
-        del request
         self.calls += 1
         return TurnResult(
             TurnStatus.OK,
@@ -65,6 +66,7 @@ class ControlledExecutor:
             "",
             (),
             0.01,
+            session_id=request.session_id or self.created_session,
             usage={
                 "input_tokens": 0,
                 "output_tokens": 0,
@@ -172,6 +174,34 @@ def test_context_at_limit_blocks_call_and_writes_structured_handoff(
     handoff = json.loads(handoffs[0].read_text())
     assert "80000" in handoff["needed_decision"]
     assert "build-session" in handoff["needed_decision"]
+
+
+def test_new_sessions_start_without_a_prior_measurement(tmp_path):
+    """Eine Sitzung, die erst der Aufruf anlegt, hat noch keinen
+    Kontext und keinen Kontingentwert: kein Messversuch, kein Halt."""
+    build_executor = ControlledExecutor("claude-cli", "Bau erledigt")
+    review_executor = ControlledExecutor(
+        "claude-cli", _review_json("run-new", 1, "PASS")
+    )
+    for executor, session in (
+        (build_executor, "neu-bau"),
+        (review_executor, "neu-review"),
+    ):
+        executor.measurement = ContextMeasurement(
+            ContextStatus.UNAVAILABLE, detail="Sitzung fehlt"
+        )
+        executor.quota = QuotaMeasurement(QuotaStatus.PENDING)
+        executor.created_session = session
+    build, review = _agents(build_executor, review_executor)
+    build.session_id = review.session_id = None
+
+    with _runtime(tmp_path, "run-new", build, review) as runtime:
+        result = runtime.start(_task("run-new"), Limits())
+
+    assert result.status == "passed"
+    assert build_executor.context_calls == 0
+    assert build.session_id == "neu-bau"
+    assert review.session_id == "neu-review"
 
 
 def test_small_context_without_other_blocker_continues_same_session(

@@ -14,10 +14,11 @@ Typen und keinerlei Claude-/Codex-spezifische Argumente.
 
 | Typ | Zweck |
 | --- | --- |
-| `TurnRequest` | Eingabe: `session_id`, `message`, `model`, `effort`, optional `budget` |
+| `TurnRequest` | Eingabe: `session_id` (`None`: neue Sitzung anlegen), `message`, `model`, `effort`, optional `budget` und `access` |
+| `Access` | `READ` / `WRITE`: Dateizugriff des Turns im Arbeitsverzeichnis, je Adapter in CLI-Rechte uebersetzt; `None` laesst die CLI-Einstellung |
 | `TurnBudget` | Interne Claude-Turn-/Kosten-/Kontextgrenzen, gemeinsamer Timeout und `max_usage_delta_percentage_points` (Aufgaben-Delta-Budget des 5h-Kontingents, siehe unten) |
 | `Effort` | `LOW` / `MEDIUM` / `HIGH` |
-| `TurnResult` | Ausgabe: `status`, `exit_code`, `stdout`, `stderr`, `argv`, `duration_s`, `error`, optional `usage` |
+| `TurnResult` | Ausgabe: `status`, `exit_code`, `stdout`, `stderr`, `argv`, `duration_s`, `error`, optional `usage` und `session_id` (bei neuer Sitzung die von der CLI genannte ID) |
 | `TurnStatus` | `OK` / `NONZERO_EXIT` / `TIMEOUT` / `START_ERROR` |
 | `ContextMeasurement` | Sitzungsbezogener Kontextmesswert: `status` (`ContextStatus`), optional `tokens`, `detail` |
 | `ContextStatus` | `MEASURED` / `UNSUPPORTED` / `UNAVAILABLE` |
@@ -126,14 +127,25 @@ Gebildeter Aufruf:
 ```
 claude --print --output-format text \
        --model <model> \
-       --resume <session_id> \
-       --effort <low|medium|high>
+       --resume <session_id> | --session-id <neue UUID> \
+       --effort <low|medium|high> \
+       [--tools Read,Grep,Glob | --permission-mode acceptEdits]
 # message -> stdin
 ```
 
 * `--print` – nicht-interaktiver Einzeldurchlauf, Antwort nach
   stdout.
-* `--resume <session_id>` – setzt die vorbereitete Sitzung fort.
+* `--resume <session_id>` – setzt eine bestehende Sitzung fort.
+* `--session-id <UUID>` – ohne `session_id` legt der Turn eine neue
+  Sitzung an; die UUID waehlt der Adapter. Die ID im Ergebnis
+  (`TurnResult.session_id`) stammt aus dem `result`-Ereignis von
+  `stream-json`; fehlt sie nach einem erfolgreichen Turn, ist das ein
+  Fehler. Eine neue Sitzung braucht deshalb ein `TurnBudget`.
+* `access` `READ` → `--tools Read,Grep,Glob`: nur Lesewerkzeuge, also
+  keine Rueckfrage, die `--print` als verweigerte Berechtigung meldet.
+  `WRITE` → `--permission-mode acceptEdits`: Dateiaenderungen ohne
+  Rueckfrage; Shell-Befehle brauchen weiterhin eine Freigabe in den
+  Claude-Einstellungen.
 * `--model <model>` – Modellwahl unveraendert aus dem Vertrag.
 * `--effort <stufe>` – nativer Effort-Schalter der Claude-CLI
   (gueltige Werte in 2.1.272: `low`, `medium`, `high`, `xhigh`,
@@ -187,15 +199,21 @@ Verwendete CLI: **OpenAI Codex CLI** (`codex`), nachweisbar per
 Gebildeter Aufruf:
 
 ```
-codex exec resume <session_id> \
+codex exec [resume <session_id>] \
       --model <model> \
       -c model_reasoning_effort=<low|medium|high> \
+      [-c sandbox_mode="read-only|workspace-write"] \
       -
 # message -> stdin
 ```
 
-* `exec resume <session_id>` – nicht-interaktive Fortsetzung der
-  vorbereiteten Sitzung.
+* `exec resume <session_id>` – nicht-interaktive Fortsetzung einer
+  bestehenden Sitzung. Ohne `session_id` legt `codex exec` eine neue an;
+  ihre ID kommt aus dem Ereignis `thread.started` der `--json`-Ausgabe
+  (eine neue Sitzung braucht deshalb ein `TurnBudget`).
+* `-c sandbox_mode=…` – `access` `READ` → `read-only`, `WRITE` →
+  `workspace-write`; ohne `access` gilt die Codex-Einstellung (fuer
+  `codex exec` standardmaessig lesend).
 * `--model <model>` – Modellwahl unveraendert aus dem Vertrag.
 * `-c model_reasoning_effort=<stufe>` – direkte Uebersetzung von
   `effort` in den Codex-Konfigurationsschluessel.
@@ -218,19 +236,23 @@ deklariert es nicht, und der Kontextwaechter gilt fuer ihn nicht
 
 `measure_quota` liest dagegen verbrauchsfrei die lokale Rollout-Ablage
 unter `~/.codex/sessions/JJJJ/MM/TT/rollout-*-<session_id>.jsonl`
-(`metering.codex_quota`) -- nachgewiesen fuer `codex exec`
+(`codex_quota.codex_quota`) -- nachgewiesen fuer `codex exec`
 (Sitzungsherkunft `codex_exec` im `session_meta`-Ereignis) ebenso wie
 fuer interaktive Sitzungen. Codex schreibt dort periodisch ein
 `token_count`-Ereignis mit einer `rate_limits`-Momentaufnahme
 (`primary`/`secondary`, je `used_percent`/`window_minutes`/
 `resets_at`); das 5h-Fenster ist das mit `window_minutes == 300`, nicht
-positional `primary`. Das Kontingent ist kontoweit, nicht
+positional `primary`. Gezaehlt wird nur der Kontingent-Topf des Kontos
+(`rate_limits.limit_id` `codex`, aeltere Versionen ohne `limit_id`);
+andere Toepfe wie `premium` (ohne Fenster) oder modellgebundene mit
+eigenem 5h-Fenster werden uebergangen, ebenso Zeilen nur mit
+Wochenfenster. Das Kontingent ist kontoweit, nicht
 sitzungsgebunden: gemessen wird das zeitlich juengste
 `token_count`-Ereignis ueber alle lokalen Rollouts, nicht nur die der
 uebergebenen `session_id` -- deren eigene Rollout-Datei dient nur als
 Gueltigkeitspruefung (genau eine bekannte Sitzung), nicht als
 Messquelle, da eine laenger inaktive eigene Sitzung sonst einen zu
-niedrigen, veralteten Wert liefern wuerde. Die Suche (`metering.
+niedrigen, veralteten Wert liefern wuerde. Die Suche (`codex_quota.
 _freshest_account_window`) liest jede Rollout-Datei vollstaendig, ohne
 Fruehabbruch nach Datei-Aenderungszeit: eine Beziehung zwischen der
 Aenderungszeit einer Datei und dem in ihrem Inhalt stehenden
@@ -242,19 +264,24 @@ Strings (unterschiedliche Nachkommastellen-Laenge sortiert als Text
 falsch) und nicht ueber die physische Zeilenreihenfolge (eine
 chronologisch sortierte Zeilenfolge ist technisch nicht garantiert).
 
-Drei weitere Bedingungen, bevor ein Messwert als Nachweis gilt: ein
-`resets_at` in der Vergangenheit ergibt `UNAVAILABLE` statt eines
-veralteten Werts als `0`; ein Ereignis-Zeitstempel merklich in der
-Zukunft (jenseits `CLOCK_SKEW_TOLERANCE_S`) gilt als unplausibel,
-nicht als "besonders frisch"; und der Messwert muss juenger als
-`MAX_MEASUREMENT_AGE_S` (Standard 1800 s) sein -- ein noch nicht
-abgelaufenes Fenster allein beweist keine Aktualitaet. Die
+Ein Messwert gilt nur als aktuell, wenn sein Fenster nicht abgelaufen
+und er juenger als `MAX_MEASUREMENT_AGE_S` (Standard 1800 s) ist -- ein
+noch nicht abgelaufenes Fenster allein beweist keine Aktualitaet. Fehlt
+ein aktueller Wert, misst wie bei claude-cli erst die Antwort: `PENDING`
+fuer eine neue Sitzung (auch ohne jeden Messwert) und nach einem
+abgelaufenen oder zu alten Wert; der Aufruf laeuft ungemessen, danach
+steht der Wert in seiner eigenen Rollout-Datei. Hat die genannte Sitzung
+seit dem letzten Messwert schon ohne Messwert geantwortet oder gibt es
+fuer eine genannte Sitzung keinen, liefert Codex fuer dieses Konto keinen
+Nachweis: `UNAVAILABLE` statt einer Folge ungemessener Aufrufe. Ein
+Ereignis-Zeitstempel merklich in der Zukunft (jenseits
+`CLOCK_SKEW_TOLERANCE_S`) gilt als unplausibel (`UNAVAILABLE`). Die
 Kontozuordnung der durchsuchten Ablage (`CODEX_HOME` bildet
 durchgehend ein Konto ab) ist eine dokumentierte, technisch nicht
 pruefbare Betriebsvoraussetzung; weder `session_meta` noch
 `rate_limits` tragen ein Kontomerkmal, die Altersschwelle mindert das
 Risiko zusaetzlich. Anders als bei `measure_context` blockiert ein
-fehlender, veralteter oder zu alter Nachweis hier den naechsten Aufruf
+fehlender Nachweis (`UNAVAILABLE`) hier den naechsten Aufruf
 (siehe
 [ausfuehrer.de.md](ausfuehrer.de.md#fuenfstundenkontingent-vorpruefung)).
 
@@ -276,8 +303,7 @@ Dispatch-Tabelle. Unterstuetzt sind `codex` und `claude`.
 Alle Codex-Einzelheiten liegen in `codex_sessions.py` (ID-Regeln,
 Verzeichnis, Dateisuche) und `codex_transcript.py` (Filter, Pruefungen,
 Hash). Die Suche `find_session_rollout` teilt sich `codex_quota`; die
-kontoweite Quota-Semantik (`_freshest_account_window`) bleibt
-unveraendert.
+kontoweite Quota-Semantik (`_freshest_account_window`) liegt dort.
 
 - **Verzeichnis:** `KI_DEV_CODEX_SESSIONS_DIR` (ausdruecklicher
   Sitzungsordner), sonst `CODEX_HOME/sessions`, sonst

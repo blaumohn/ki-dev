@@ -1,8 +1,8 @@
 """Lauf-Konfiguration und Befehle des Ausführers für ``implement``.
 
 Ein Profil (TOML) beschreibt Grenzen, Prüfungen, Finalisierung und je
-Rolle den Adapter: ``claude`` oder ``codex`` (vorbereitete
-Agentensitzung), ``manual`` (Mensch als Bote) oder ``mock``
+Rolle den Adapter: ``claude`` oder ``codex`` (Agentensitzung, ohne
+``session_id`` neu angelegt), ``manual`` (Mensch als Bote) oder ``mock``
 (vorgegebene Antworten, ohne Anbieterzugang). Den Auftrag (``task``,
 ``acceptance_criteria``, ``sources``) setzt der Aufrufer aus dem Bead
 ein; das Profil darf ihn nicht enthalten.
@@ -17,6 +17,7 @@ import tomllib
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -343,7 +344,8 @@ def _spec(value: dict[str, object]) -> ExecutorSpec:
 
 
 def _has_session(spec: ExecutorSpec) -> bool:
-    """CLI-Transporte setzen eine vorbereitete Sitzung fort."""
+    """CLI-Transporte arbeiten in einer Agentensitzung (aus dem Profil
+    oder beim ersten Aufruf angelegt)."""
     return spec.transport in cli_transports()
 
 
@@ -398,6 +400,13 @@ def _adapter(
         return _mock(value, role, spec)
     agent = _role(value, spec)
     agent["executor"] = wrap(cast(Executor, agent["executor"]), role)
+    if agent["session_id"] is None:
+        # Ohne Sitzung im Profil legt der erste Aufruf sie an; der Lauf
+        # hält sie fest, damit ``resume`` sie fortsetzt.
+        agent["session_id"] = store.load_session(role, spec.name)
+        agent["on_session"] = partial(
+            store.save_session, role, spec.name
+        )
     if role == "worker":
         return AgentWorker(**agent, spec=spec)
     return AgentReviewer(**agent, spec=spec)
@@ -448,7 +457,11 @@ def _role(
         raise RunConfigError(str(exc)) from exc
     return {
         "executor": executor,
-        "session_id": _text(value, "session_id"),
+        "session_id": (
+            _text(value, "session_id")
+            if "session_id" in value
+            else None
+        ),
         "model": _text(value, "model"),
         "effort": effort,
         "budget": _turn_budget(value.get("budget", {})),
@@ -482,6 +495,13 @@ def _check(value: object) -> CheckCommand:
 
 
 def _finalizer(value: dict[str, object]) -> RepositoryFinalizer:
+    # ``data_mode`` darf fehlen: der Finalisierer kennt seinen einzigen
+    # unterstützten Wert selbst.
+    mode = (
+        {"data_mode": _text(value, "data_mode")}
+        if "data_mode" in value
+        else {}
+    )
     try:
         return RepositoryFinalizer(
             target_workdir=Path(
@@ -489,7 +509,7 @@ def _finalizer(value: dict[str, object]) -> RepositoryFinalizer:
             ).resolve(),
             target_ref=_text(value, "target_ref"),
             commit_message=_text(value, "commit_message"),
-            data_mode=_text(value, "data_mode"),
+            **mode,
         )
     except ValueError as exc:
         raise RunConfigError(str(exc)) from exc

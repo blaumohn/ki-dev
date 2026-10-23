@@ -1,4 +1,4 @@
-"""Codex-CLI-Adapter fuer vorbereitete Sitzungen.
+"""Codex-CLI-Adapter: neue oder bestehende Sitzung, ein Turn je Aufruf.
 
 Die unterstuetzte CLI-Syntax ist in ``docs/cli-adapters.md``
 dokumentiert. Der Adapter nutzt ausschliesslich die lokal
@@ -7,20 +7,25 @@ installierte, bereits angemeldete ``codex``-CLI.
 
 from __future__ import annotations
 
+import json
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from ki_dev.tool_versions import load_tool_versions
 
 from .base import CliAdapter
+from .codex_quota import QuotaPending, codex_quota
+from .codex_sessions import validate_codex_session_id
 from .contract import (
+    Access,
     Measure,
     QuotaMeasurement,
     QuotaStatus,
     TurnRequest,
     TurnResult,
 )
-from .metering import codex_quota, codex_result
+from .metering import codex_result, missing_result
 
 # Gemeinsamer Versionsstand fuer Build und Laufzeit.
 CLI_VERSION = load_tool_versions()["CODEX_VERSION"]
@@ -28,10 +33,14 @@ CLI_VERSION = load_tool_versions()["CODEX_VERSION"]
 # Beobachtetes Format von ``codex --version``, z. B.
 # "codex-cli 0.154.0".
 _VERSION_OUTPUT = re.compile(r"^codex-cli\s+(\S+)")
+# Dateizugriff als Codex-Sandbox; gilt fuer ``exec`` und ``resume``.
+_SANDBOX = {Access.READ: "read-only", Access.WRITE: "workspace-write"}
 
 
 class CodexCliAdapter(CliAdapter):
-    """Setzt eine vorbereitete Codex-CLI-Sitzung einen Turn fort.
+    """Ein Turn in einer Codex-CLI-Sitzung: ohne ``session_id`` legt
+    ``codex exec`` eine neue an (ID aus ``thread.started``), sonst
+    setzt ``codex exec resume`` die genannte fort.
 
     Ohne native Turn-/Kosten-/Kontextgrenzen (siehe
     ``docs/cli-adapters.md``) bietet Codex keine lokale, vergleichbare
@@ -41,7 +50,7 @@ class CodexCliAdapter(CliAdapter):
 
     ``measure_quota`` dagegen liest den zuletzt bekannten
     5h-Kontingentverbrauch aus der lokalen Rollout-Ablage
-    (``metering.codex_quota``, verbrauchsfrei) -- Codex fuehrt diesen
+    (``codex_quota``, verbrauchsfrei) -- Codex fuehrt diesen
     Nachweis anders als den Kontext, siehe ``docs/cli-adapters.md``.
     """
 
@@ -53,10 +62,14 @@ class CodexCliAdapter(CliAdapter):
     def default_executable(self) -> str:
         return "codex"
 
-    def measure_quota(self, session_id: str) -> QuotaMeasurement:
+    def measure_quota(self, session_id: str | None) -> QuotaMeasurement:
         try:
             used_percent, resets_at = codex_quota(
                 session_id, Path.home() / ".codex/sessions"
+            )
+        except QuotaPending as exc:
+            return QuotaMeasurement(
+                QuotaStatus.PENDING, detail=str(exc)
             )
         except (OSError, ValueError) as exc:
             return QuotaMeasurement(
@@ -74,30 +87,67 @@ class CodexCliAdapter(CliAdapter):
 
     def send_turn(self, request: TurnRequest) -> TurnResult:
         if not request.budget:
+            if request.session_id is None:
+                # Die ID einer neuen Sitzung nennt nur ``--json``.
+                raise ValueError(
+                    "neue Codex-Sitzung nur mit TurnBudget (--json)"
+                )
             return super().send_turn(request)
         cli_version, result, turn_ran = self.send_metered_turn(request)
         if not turn_ran:
             return result
-        return codex_result(
-            result,
-            session_id=request.session_id,
-            cli_version=cli_version,
+        session_id = request.session_id
+        if session_id is None and result.ok:
+            try:
+                session_id = _started_thread(result.stdout)
+            except ValueError as exc:
+                return missing_result(result, str(exc))
+        return replace(
+            codex_result(
+                result,
+                session_id=session_id,
+                cli_version=cli_version,
+            ),
+            session_id=session_id,
         )
 
     def build_argv(self, request: TurnRequest) -> list[str]:
         # ``-`` weist ``codex exec`` an, den Prompt von stdin zu
-        # lesen. Effort geht direkt als Codex-Konfigurationsschluessel
-        # ``model_reasoning_effort`` mit.
-        argv = [
-            "exec",
-            "resume",
-            request.session_id,
+        # lesen. Effort und Sandbox gehen als Codex-
+        # Konfigurationsschluessel mit (``-c``, auch bei ``resume``).
+        argv = ["exec"]
+        if request.session_id is not None:
+            argv += ["resume", request.session_id]
+        argv += [
             "--model",
             request.model,
             "-c",
             f"model_reasoning_effort={request.effort.value}",
-            "-",
         ]
+        if request.access is not None:
+            argv += ["-c", f'sandbox_mode="{_SANDBOX[request.access]}"']
         if request.budget:
-            argv.insert(-1, "--json")
+            argv.append("--json")
+        argv.append("-")
         return argv
+
+
+def _started_thread(stdout: str) -> str:
+    """ID einer neuen Sitzung aus dem ``thread.started``-Ereignis von
+    ``codex exec --json``."""
+    events = [json.loads(line) for line in stdout.splitlines()]
+    started = [
+        event
+        for event in events
+        if isinstance(event, dict)
+        and event.get("type") == "thread.started"
+    ]
+    if not started:
+        raise ValueError(
+            "Codex-Sitzungs-ID fehlt (kein thread.started)"
+        )
+    thread_id = started[0].get("thread_id")
+    if not isinstance(thread_id, str):
+        raise ValueError("Codex-thread_id ist kein Text")
+    validate_codex_session_id(thread_id)
+    return thread_id

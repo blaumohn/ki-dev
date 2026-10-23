@@ -8,7 +8,7 @@ of adding to it.
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 
 from ki_dev.usage import CounterScope, UsageEvent, UsageStatus
@@ -220,6 +220,22 @@ class UsageReport:
         return result
 
 
+def _with_created_session(
+    attribution: UsageAttribution | None, records: list[dict]
+) -> UsageAttribution | None:
+    """Ein Aufruf, der seine Sitzung erst anlegt, reserviert ohne
+    ``session_id``; ihre ID nennt dann sein Verbrauchsbeleg. Nennen
+    die Belege mehr als eine Sitzung, bleibt sie offen
+    (``session_mismatch``).
+    """
+    sessions = {record["event"]["session_id"] for record in records}
+    if attribution is None or attribution.session_id is not None:
+        return attribution
+    if len(sessions) != 1:
+        return attribution
+    return replace(attribution, session_id=sessions.pop())
+
+
 def reconcile_call(
     run_id: str,
     call_id: str,
@@ -239,6 +255,7 @@ def reconcile_call(
     else:
         metered = start["metered"]
         start_provider = _provider_family(start.get("provider"))
+    attribution = _with_created_session(attribution, records)
     if attribution is None or not attribution.complete:
         gaps.append("attribution_missing")
     if result is None or (metered and result.get("usage") is None):

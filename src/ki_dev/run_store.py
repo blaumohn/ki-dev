@@ -12,7 +12,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, cast
 
+from jsonschema import Draft202012Validator
+
 RECORD_FILE = "record.json"
+# Von ki-dev angelegte Sitzung einer Rolle (sessions/<rolle>.json).
+_SESSION = Draft202012Validator(
+    {
+        "type": "object",
+        "required": ["executor", "session_id"],
+        "additionalProperties": False,
+        "properties": {
+            "executor": {"type": "string", "pattern": r"\S"},
+            "session_id": {"type": "string", "pattern": r"\S"},
+        },
+    }
+)
 
 
 class RunStoreError(RuntimeError):
@@ -78,6 +92,13 @@ class RunStore:
         if not path.exists():
             return None
         return self._load_json(path)
+
+    def artifact_ids(self) -> list[str]:
+        """Operations-IDs aller Artefakte, sortiert."""
+        return sorted(
+            path.stem
+            for path in (self.run_dir / "artifacts").glob("*.json")
+        )
 
     def write_message(self, message_id: str, value: object) -> None:
         path = self.run_dir / "messages" / f"{message_id}.json"
@@ -159,6 +180,38 @@ class RunStore:
         with (self.root / ".usage.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             yield
+
+    def save_session(
+        self, role: str, executor: str, session_id: str
+    ) -> None:
+        """Die von ki-dev angelegte Sitzung einer Rolle; einmal je Lauf,
+        damit ``resume`` dieselbe Sitzung fortsetzt."""
+        self._write_once(
+            self._session_path(role),
+            {"executor": executor, "session_id": session_id},
+        )
+
+    def load_session(self, role: str, executor: str) -> str | None:
+        """Angelegte Sitzung der Rolle; ``None`` vor ihrem ersten
+        erfolgreichen Aufruf."""
+        path = self._session_path(role)
+        if not path.exists():
+            return None
+        value = self._load_json(path)
+        if (
+            not _SESSION.is_valid(value)
+            or value["executor"] != executor
+        ):
+            raise RunStoreError(
+                f"Sitzungsnachweis passt nicht zu {role} "
+                f"(executor={executor}): {path}"
+            )
+        return value["session_id"]
+
+    def _session_path(self, role: str) -> Path:
+        if not role or Path(role).name != role or role in {".", ".."}:
+            raise RunStoreError("ungueltiger Rollenname")
+        return self.run_dir / "sessions" / f"{role}.json"
 
     def write_usage(self, call_id: str, value: dict) -> None:
         if (

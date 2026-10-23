@@ -24,6 +24,18 @@ class Effort(StrEnum):
     HIGH = "high"
 
 
+class Access(StrEnum):
+    """Dateizugriff eines Turns im Arbeitsverzeichnis.
+
+    Der Adapter uebersetzt ihn in die Rechte seiner CLI (Codex:
+    Sandbox, Claude: Werkzeuge und Berechtigungsmodus). ``None`` im
+    ``TurnRequest`` laesst die Einstellung der CLI unveraendert.
+    """
+
+    READ = "read"
+    WRITE = "write"
+
+
 class Measure(StrEnum):
     """Messung, die ein Transport umsetzt und ein Executor deklariert.
 
@@ -117,18 +129,22 @@ class TurnRequest:
     ``workdir``, und ``env`` ueberschreibt gezielt geerbte
     Umgebungsvariablen (z. B. eine fremde ``PYTHONPATH``), die sonst
     stillschweigend auf einen anderen Quellstand zeigen koennten.
+
+    ``session_id`` ``None`` heisst: der Turn legt eine neue Sitzung
+    an; ihre ID steht danach in ``TurnResult.session_id``.
     """
 
-    session_id: str
+    session_id: str | None
     message: str
     model: str
     effort: Effort
     workdir: Path
     env: dict[str, str] = field(default_factory=dict)
     budget: TurnBudget | None = None
+    access: Access | None = None
 
     def __post_init__(self) -> None:
-        if not self.session_id:
+        if self.session_id is not None and not self.session_id:
             raise ValueError("session_id darf nicht leer sein")
         if not self.message:
             raise ValueError("message darf nicht leer sein")
@@ -149,6 +165,10 @@ class TurnRequest:
             self.budget, TurnBudget
         ):
             raise TypeError("budget muss ein TurnBudget sein")
+        if self.access is not None and not isinstance(
+            self.access, Access
+        ):
+            raise TypeError("access muss ein Access-Wert sein")
 
 
 class ContextStatus(StrEnum):
@@ -213,10 +233,11 @@ class QuotaStatus(StrEnum):
     (ki-dev-ablauf-hju).
 
     Einzige Ausnahme ist ``PENDING``: Der Adapter misst erst mit der
-    Antwort eines Aufrufs (claude-cli: ``rate_limit_event``) und hat
-    fuer diese Sitzung noch keinen Wert. Der erste Aufruf laeuft
-    ungemessen; ab dem zweiten gilt wieder ``MEASURED``. Ein Adapter
-    ohne diese Faehigkeit liefert ``PENDING`` nie.
+    Antwort eines Aufrufs und hat noch keinen aktuellen Wert
+    (claude-cli: kein ``rate_limit_event`` dieser Sitzung im Fenster;
+    codex-cli: neue Sitzung oder veralteter Kontowert). Dieser Aufruf
+    laeuft ungemessen; ab dem naechsten gilt wieder ``MEASURED``. Ein
+    Adapter ohne diese Faehigkeit liefert ``PENDING`` nie.
     """
 
     MEASURED = "measured"
@@ -237,7 +258,8 @@ class QuotaMeasurement:
     ``runner.safety.QuotaBaseline``). Nur ``MEASURED`` traegt beide
     Felder; ein veralteter Messwert (``resets_at`` in der
     Vergangenheit) zaehlt nicht als ``MEASURED`` mit ``0``, sondern als
-    ``UNAVAILABLE`` (siehe Adapterimplementierung).
+    ``PENDING``: gemessen wird wieder mit der naechsten Antwort (siehe
+    Adapterimplementierung).
     """
 
     status: QuotaStatus
@@ -303,6 +325,9 @@ class TurnResult:
     # hiesige Ad-hoc-Feldschema. Beide beschreiben denselben Turn und
     # duerfen sich nie widersprechen.
     usage_event: UsageEvent | None = None
+    # Sitzung dieses Turns; bei einer neu angelegten Sitzung deren ID,
+    # sobald die CLI sie genannt hat (sonst ``None``).
+    session_id: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -323,4 +348,6 @@ class Executor(Protocol):
         self, session_id: str
     ) -> ContextMeasurement: ...
 
-    def measure_quota(self, session_id: str) -> QuotaMeasurement: ...
+    def measure_quota(
+        self, session_id: str | None
+    ) -> QuotaMeasurement: ...

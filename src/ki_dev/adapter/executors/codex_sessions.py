@@ -1,8 +1,8 @@
 """Codex-Sitzungsablage: Verzeichniskonfiguration und Dateisuche.
 
-Gemeinsam genutzt von ``metering.codex_quota`` (kontoweite Quota-Suche)
-und dem Transkriptadapter. Dieses Modul importiert nichts aus
-``metering``.
+Gemeinsam genutzt von ``codex_quota`` (kontoweite Quota-Suche),
+``codex_cli`` (ID einer neuen Sitzung) und dem Transkriptadapter.
+Dieses Modul importiert keines von ihnen.
 """
 
 from __future__ import annotations

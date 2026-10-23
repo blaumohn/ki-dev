@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.flow_ops.implement.cli import load_profile
+from ki_dev.flow_ops.implement.cli import _finalizer, load_profile
 from ki_dev.flow_ops.implement.config import (
     RunConfigError,
     check_run_config,
@@ -46,6 +46,27 @@ def test_valid_profile_passes():
     check_run_config(_profile(), "Profil")
 
 
+def test_finalization_without_data_mode_uses_the_supported_one():
+    """``data_mode`` hat genau einen unterstützten Wert und darf
+    fehlen; ein anderer Wert bleibt ein Fehler."""
+    finalization = {
+        key: value
+        for key, value in _profile()["finalization"].items()
+        if key != "data_mode"
+    }
+    check_run_config(_profile(finalization=finalization), "Profil")
+    assert _finalizer(finalization).data_mode == "file_proposal"
+    with pytest.raises(RunConfigError, match="file_proposal"):
+        _finalizer({**finalization, "data_mode": "beads_direct"})
+
+
+def test_profile_without_session_id_passes():
+    """Ohne ``session_id`` legt der erste Aufruf der Rolle eine neue
+    Sitzung an."""
+    worker = {"executor": "codex", "model": "m", "effort": "low"}
+    check_run_config(_profile(worker=worker), "Profil")
+
+
 @pytest.mark.parametrize(
     ("changes", "message"),
     [
@@ -61,9 +82,9 @@ def test_valid_profile_passes():
         ),
         (
             {"worker": {"executor": "claude"}},
-            r"worker: fehlende Felder "
-            r"\['session_id', 'model', 'effort'\]",
+            r"worker: fehlende Felder \['model', 'effort'\]",
         ),
+        ({"access_profile": "admin"}, r"access_profile: enum"),
         (
             {"limits": {"changes_rounds": 1.5}},
             r"limits\.changes_rounds",

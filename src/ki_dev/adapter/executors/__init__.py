@@ -6,6 +6,7 @@ from .base import CliAdapter, ProcessRunner
 from .claude_cli import ClaudeCliAdapter
 from .codex_cli import CodexCliAdapter
 from .contract import (
+    Access,
     Effort,
     Executor,
     ExecutorSpec,
@@ -19,6 +20,7 @@ from .process import DEFAULT_TIMEOUT_S, run_cli_turn
 
 __all__ = [
     "DEFAULT_TIMEOUT_S",
+    "Access",
     "CliAdapter",
     "ClaudeCliAdapter",
     "CodexCliAdapter",

@@ -29,7 +29,7 @@ ki-dev -f implement proj-42 --adapter review=manual   # Review von Hand
 `KI_DEV_FLOW_PATH`, dann das mitgelieferte Paket (`ki_dev/flow/`); die
 gefundene Datei steht auf stderr. Die Ablaufdatei nennt in `ops` das
 Modul, das ihre Befehle umsetzt (`ki_dev.flow_ops.implement`: `start`,
-`resume`, `status`). Der Ausführer bindet bisher nur das mitgelieferte
+`resume`, `status`, `history`). Der Ausführer bindet bisher nur das mitgelieferte
 `implement.toml`; eine abweichende Datei wird abgewiesen.
 
 Aus dem Bead (Pflichtfelder wie bei `ki-dev -f implement_review step BEAD implement`):
@@ -84,16 +84,24 @@ max_file_lines = 200
 max_total_bytes = 65536
 ```
 
-`worker` und `review` müssen verschiedene vorbereitete Sitzungen benutzen.
-Optionale Felder dürfen entfallen; für Grenzen gelten dann die eingebauten
-Werte. Geprüft wird das Profil per JSON Schema
+`session_id` ist optional. Ohne sie legt ki-dev für die Rolle beim ersten
+Aufruf eine neue Sitzung an und setzt sie in den weiteren Runden fort,
+auch nach `resume` (abgelegt unter `<run>/sessions/<rolle>.json`). Eine
+genannte `session_id` setzt eine bestehende Sitzung fort; `worker` und
+`review` brauchen dann verschiedene. Optionale Felder dürfen entfallen; für
+Grenzen gelten dann die eingebauten Werte, `data_mode` hat nur den Wert
+`file_proposal`. Geprüft wird das Profil per JSON Schema
 ([`flow_ops/implement/config.py`](../src/ki_dev/flow_ops/implement/config.py)); die
 Felder einer Rolle folgen aus dem Transport ihres Executors (siehe
 [Executoren](#executoren)). Fehler nennen den Feldpfad, nie den Wert:
 
 ```
-Profil .ki-dev/profiles/default.toml: worker: fehlende Felder ['session_id']
+Profil .ki-dev/profiles/default.toml: worker: fehlende Felder ['model']
 ```
+
+Der Umsetzer schreibt mit dem Dateizugriff aus `access_profile` (`write`
+oder `read`), das Review nur lesend; die Adapter übersetzen das in die
+Rechte ihrer CLI ([cli-adapters.md](cli-adapters.md)).
 
 Das Manifest eines Laufs hält Pfad und SHA-256 der Profildatei fest;
 `ki-dev -f implement status RUN_ID` zeigt sie unter `profile`.
@@ -249,6 +257,15 @@ Kommando das eindeutig (mit Feldpfad) statt eines erfundenen
 Platzhalterstatus. Läufe aus der Zeit mit LangGraph-Checkpoint sind nicht
 fortsetzbar; das Kommando sagt das ausdrücklich.
 
+```bash
+ki-dev -f implement history run-42 --runs-dir .ki-dev/runs
+```
+
+Erzählt denselben Lauf für Menschen aus seinen Artefakten: je Runde die
+geänderten Dateien, die Prüfergebnisse und die Antwort des Reviews,
+danach den Abschluss. Gelesen wird nur; je Runde zählt der letzte Versuch
+einer Operation.
+
 ## Ereignisprotokoll je Übergang
 
 Jeder genommene Übergang steht als eine Zeile in
@@ -382,7 +399,10 @@ Der Messwert traegt eine von drei Herkunftsarten (`ContextStatus`):
 | --- | --- | --- |
 | `measured` | echter Messwert vorhanden | `>= max_context_tokens` haelt vor dem Aufruf an |
 | `unsupported` | der Transport bietet keine Messung, obwohl der Executor `context` deklariert | haelt vor dem Aufruf an |
-| `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (fehlende/mehrdeutige lokale Ablage, aktuell moeglich bei Claude fuer eine Sitzung ohne vorherigen realen Turn) | haelt vor dem Aufruf an -- ein unbelegter Kontext gilt nicht als klein |
+| `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (fehlende/mehrdeutige lokale Ablage einer genannten Sitzung) | haelt vor dem Aufruf an -- ein unbelegter Kontext gilt nicht als klein |
+
+Eine Sitzung, die erst der Aufruf anlegt (ohne `session_id`), hat noch
+keinen Kontext; fuer sie misst der Waechter nichts.
 
 Eine erreichte oder unbelegte Grenze fuehrt vor dem naechsten externen
 Aufruf zur Pause; die Meldung nennt Rolle, Executor, Sitzung, Messwert
@@ -442,13 +462,14 @@ Kontokontingent gibt es keine sichere Annahme "kein Nachweis = ok":
 | Herkunft (`QuotaStatus`) | Bedeutung | Wirkung |
 | --- | --- | --- |
 | `measured` | echter, vom Executor gemeldeter Prozentwert | Delta- und Reserve-Pruefung wie oben |
-| `pending` | der Adapter misst erst mit der Antwort und hat fuer diese Sitzung noch keinen Wert (`claude-cli` vor dem ersten Turn oder nach Fensterwechsel, siehe [cli-adapters.md](cli-adapters.md)) | laesst den Aufruf zu; Reserve und Delta greifen ab dem naechsten |
+| `pending` | der Adapter misst erst mit der Antwort und hat noch keinen aktuellen Wert (neue Sitzung, `claude-cli` vor dem ersten Turn oder nach Fensterwechsel, `codex-cli` ohne aktuellen Kontowert; siehe [cli-adapters.md](cli-adapters.md)) | laesst den Aufruf zu; Reserve und Delta greifen ab dem naechsten |
 | `unsupported` | dieser Adapter liefert keinen verbrauchsfreien, nicht-interaktiven Nachweis | haelt an, als eigene Ursache "Messwert fehlt" gemeldet |
-| `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (z. B. Codex-Rollout fehlt/mehrdeutig oder Messwert abgelaufen) | haelt an, ebenfalls als "Messwert fehlt" gemeldet, nie vermischt mit "Budget/Reserve erreicht" |
+| `unavailable` | Messung vorgesehen, aber gerade nicht lesbar (z. B. Codex-Rollout fehlt/mehrdeutig, oder die Sitzung hat seit dem letzten Messwert ohne Messwert geantwortet) | haelt an, ebenfalls als "Messwert fehlt" gemeldet, nie vermischt mit "Budget/Reserve erreicht" |
 
 `codex-cli` liest dazu verbrauchsfrei die lokale Rollout-Ablage unter
 `~/.codex/sessions/JJJJ/MM/TT/rollout-*-<session_id>.jsonl` und nimmt
-das `token_count`-Ereignis mit dem 5h-Fenster (`window_minutes == 300`).
+das `token_count`-Ereignis mit dem 5h-Fenster (`window_minutes == 300`)
+im Kontingent-Topf des Kontos (`limit_id` `codex`).
 Das Kontingent ist **kontoweit, nicht sitzungsgebunden**: die eigene
 Sitzung einer Rolle kann laenger nicht mit der API gesprochen haben,
 waehrend eine andere Sitzung desselben Kontos es zwischenzeitlich
@@ -456,7 +477,7 @@ weiter verbraucht hat -- ein noch nicht abgelaufenes Fenster beweist
 keinen aktuellen Kontostand. Gemessen wird deshalb das zeitlich
 juengste `token_count`-Ereignis ueber ALLE lokalen Rollouts, nicht nur
 die der eigenen Sitzung; `session_id` bleibt eine Gueltigkeitspruefung,
-nicht die Messquelle (`metering.codex_quota`). Die Suche liest jede
+nicht die Messquelle (`codex_quota.codex_quota`). Die Suche liest jede
 Rollout-Datei vollstaendig, ohne Fruehabbruch nach Datei-
 Aenderungszeit: eine Beziehung zwischen der Aenderungszeit einer Datei
 und dem in ihrem Inhalt stehenden Ereignis-Zeitstempel ist technisch
@@ -524,10 +545,10 @@ als voruebergehend. Fachliche Review-Nachrichten bleiben davon getrennt.
 
 ## Kompakte Sitzungsuebergabe statt unbegrenztem Resume
 
-Sitzungen sind aufrufergebunden vorbereitet (getrennte `session_id` je
-Rolle, siehe uar.1); ki-dev provisioniert oder rotiert sie nicht selbst
--- das waere ein eigenstaendiger Mechanismus, den dieses Design nicht
-vorsieht. Jede Pause (`paused_interactive`) und jeder Halt in
+Je Rolle gibt es eine Sitzung: genannt im Profil oder beim ersten Aufruf
+von ki-dev angelegt (siehe Profil oben). ki-dev rotiert sie nicht
+selbst -- das waere ein eigenstaendiger Mechanismus, den dieses Design
+nicht vorsieht. Jede Pause (`paused_interactive`) und jeder Halt in
 `waiting_decision` -- Verbrauchsgrenze, Kontextvorpruefung, Stillstand,
 Agentenfehler, erschoepfte Protokoll-/Prozessversuche, Reviewer-Urteil
 `ESCALATE`/`NEEDS_DECISION` -- schreibt stattdessen unter

@@ -1,10 +1,14 @@
 """Adapter ``claude`` und ``codex``: Bau und Review über eine
-vorbereitete Agentensitzung eines CLI-Executors."""
+Agentensitzung eines CLI-Executors.
+
+Ohne ``session_id`` legt der erste Aufruf die Sitzung an; nach seinem
+Erfolg gilt ihre ID für alle weiteren Aufrufe der Rolle und geht an
+``on_session`` (der Ausführer legt sie im Lauf ab)."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from ki_dev.adapter.contract import (
@@ -15,6 +19,7 @@ from ki_dev.adapter.contract import (
     WorkRequest,
 )
 from ki_dev.adapter.executors import (
+    Access,
     Effort,
     Executor,
     ExecutorSpec,
@@ -26,33 +31,45 @@ from ki_dev.adapter.executors.contract import TurnBudget, TurnResult
 @dataclass
 class AgentWorker:
     executor: Executor
-    session_id: str
+    session_id: str | None
     model: str
     effort: Effort
     budget: TurnBudget = TurnBudget()
     last_result: TurnResult | None = None
     spec: ExecutorSpec = field(kw_only=True)
+    on_session: Callable[[str], None] | None = field(
+        default=None, kw_only=True
+    )
 
     def work(self, request: WorkRequest) -> WorkReport:
         task = request.task
+        access = Access(task.access_profile)
         return WorkReport(
-            _send(self, request.prompt, task.workdir, task.env)
+            _send(self, request.prompt, task.workdir, task.env, access)
         )
 
 
 @dataclass
 class AgentReviewer:
     executor: Executor
-    session_id: str
+    session_id: str | None
     model: str
     effort: Effort
     budget: TurnBudget = TurnBudget()
     last_result: TurnResult | None = None
     spec: ExecutorSpec = field(kw_only=True)
+    on_session: Callable[[str], None] | None = field(
+        default=None, kw_only=True
+    )
 
     def review(self, request: ReviewRequest) -> str:
+        """Das Review prüft und ändert nichts: nur Lesezugriff."""
         return _send(
-            self, request.prompt, request.task.workdir, request.task.env
+            self,
+            request.prompt,
+            request.task.workdir,
+            request.task.env,
+            Access.READ,
         )
 
 
@@ -61,15 +78,20 @@ class AgentSession:
     """Übergaben jeder Rolle an eine vorbereitete Agentensitzung."""
 
     executor: Executor
-    session_id: str
+    session_id: str | None
     model: str
     effort: Effort
     budget: TurnBudget = TurnBudget()
     last_result: TurnResult | None = None
     spec: ExecutorSpec = field(kw_only=True)
+    on_session: Callable[[str], None] | None = field(
+        default=None, kw_only=True
+    )
 
     def ask(self, request: TurnPrompt) -> str:
-        return _send(self, request.prompt, request.workdir, request.env)
+        return _send(
+            self, request.prompt, request.workdir, request.env, None
+        )
 
 
 def _send(
@@ -77,6 +99,7 @@ def _send(
     message: str,
     workdir: Path,
     env: Mapping[str, str],
+    access: Access | None,
 ) -> str:
     """Ein Aufruf der Sitzung; das Ergebnis bleibt für Messung und
     Verbrauch am Adapter (``last_result``)."""
@@ -90,9 +113,30 @@ def _send(
             workdir=workdir,
             env=dict(env),
             budget=agent.budget,
+            access=access,
         )
     )
     agent.last_result = result
     if not result.ok:
         raise AgentTurnError(result)
+    if agent.session_id is None:
+        _adopt_session(agent, result)
     return result.stdout
+
+
+def _adopt_session(
+    agent: AgentWorker | AgentReviewer | AgentSession,
+    result: TurnResult,
+) -> None:
+    """Die neu angelegte Sitzung gilt nach dem ersten erfolgreichen
+    Aufruf; ohne genannte ID wäre die Rolle nicht fortsetzbar."""
+    if not result.session_id:
+        raise AgentTurnError(
+            replace(
+                result,
+                error="neue Sitzung angelegt, aber ohne Sitzungs-ID",
+            )
+        )
+    agent.session_id = result.session_id
+    if agent.on_session is not None:
+        agent.on_session(result.session_id)
