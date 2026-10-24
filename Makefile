@@ -104,6 +104,10 @@ readme-check:
 # landen eingecheckt in docs/beispiele/echtlauf/; render-readme.py setzt
 # daraus die Statuszeile „Mit echten Agenten ausgeführt“. Variablen einer
 # umgebenden Claude-Code-Sitzung gehen nicht an das claude des Laufs.
+# .venv/bin (geprüfte CLIs aus setup-agents) kommt nur nach vorn, wenn
+# es noch nicht im PATH steht: Im Agent-Container steht es hinter den
+# Launchern in /opt/agent-bin, die die Container-Richtlinie setzen
+# (Codex ohne eigene Sandbox; bwrap braucht User-Namespaces).
 readme-live: export README_LIVE := 1
 readme-live: export README_RESULTS_DIR := $(CURDIR)/docs/beispiele/echtlauf
 readme-live: .venv/bin/ki-dev setup-agents
@@ -112,7 +116,10 @@ readme-live: .venv/bin/ki-dev setup-agents
 	for name in $$(env | sed -nE 's/^(CLAUDECODE|CLAUDE_CODE_[A-Z_]*|CLAUDE_EFFORT|CLAUDE_PID)=.*/\1/p'); do \
 	  unset "$$name"; \
 	done; \
-	export PATH="$(BIN):$$PATH"; \
+	case ":$$PATH:" in \
+	  *":$(BIN):"*) ;; \
+	  *) export PATH="$(BIN):$$PATH" ;; \
+	esac; \
 	bash -c 'source tests/readme/lib.sh; \
 	  run_readme_test tests/readme/test_9_ergebnis.sh'; \
 	$(BIN)/python scripts/render-readme.py

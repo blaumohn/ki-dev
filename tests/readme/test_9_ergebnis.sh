@@ -20,20 +20,24 @@ main() {
   readme_run 3-auftrag.sh 4-rollen.sh 5-starten.sh 9-entscheiden.sh \
     9-ergebnis.sh
   work="$(set -e; readme_workdir)"
-  # Beleg neben dem Ergebnis: Ereignisprotokoll dieses Laufs.
-  mkdir -p "$README_RESULTS_DIR"
-  cp "$work/.ki-dev/runs/version-fix/events.jsonl" \
-    "$README_RESULTS_DIR/9-ergebnis.events.jsonl"
   halt="$README_LOG.halt"
   excerpt="$README_LOG.auszug"
   live_excerpts "$README_LOG" "$(cd "$work/.." && pwd)/versions" \
     "$halt" "$excerpt"
+  # Beleg neben dem Ergebnis: Ereignisprotokoll dieses Laufs, erst nach
+  # bestandener Prüfung; ein gescheiterter Lauf ersetzt sonst den Beleg
+  # des eingecheckten Ergebnisses.
+  mkdir -p "$README_RESULTS_DIR"
+  cp "$work/.ki-dev/runs/version-fix/events.jsonl" \
+    "$README_RESULTS_DIR/9-ergebnis.events.jsonl"
   readme_write_entry 9-entscheiden.sh passed "$halt" "" ""
   readme_result passed "$excerpt"
 }
 
 # Der erste Endzustand (5-starten.sh) muss ein Halt für die Entscheidung
-# sein, kein technischer Halt. Zwei Verläufe von history: der erste
+# sein, kein technischer Halt: decision des Reviews, Test-Tor nach PASS
+# oder aufgebrauchte Korrekturrunden nach fix (5-starten.sh). Protokoll-,
+# Prozess- und Aufrufgrenzen zählen nicht. Zwei Verläufe von history: der erste
 # (9-entscheiden.sh) endet mit dem Halt, der zweite (9-ergebnis.sh) mit
 # dem Abschluss. Erfolg wird an Lauf und Ziel-Repo geprüft, nicht nur an
 # der Ausgabe.
@@ -47,11 +51,19 @@ log, versions, halt_file, result_file = sys.argv[1:]
 lines = open(log, encoding="utf-8").read().splitlines()
 first = lines.index("{")
 state = json.loads("\n".join(lines[first:lines.index("}", first) + 1]))
+detail = state["detail"] or ""
+decision_halts = (
+    "checks_failed",
+    "empty_result_unresolved",
+    "changes_rounds_exhausted",
+    "execution_guard: Korrekturen wiederholt abgelehnt",
+    "execution_guard: Stillstand",
+)
 if not (
     state["status"] == "waiting_decision"
     or (
         state["status"] == "paused_interactive"
-        and "checks_failed" in (state["detail"] or "")
+        and detail.startswith(decision_halts)
     )
 ):
     sys.exit(
