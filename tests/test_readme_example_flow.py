@@ -50,6 +50,7 @@ source "$SCRIPTS/4-rollen.sh"
 # Bash 3.2 kann source nicht aus einer Prozesssubstitution lesen.
 inbox "$SCRIPTS/5-starten.sh" >"$TMPDIR/5-starten-inbox.sh"
 source "$TMPDIR/5-starten-inbox.sh" >/dev/null
+for _ in $(seq "$EMPTY"); do answer '{}'; step; done  # ohne Änderung
 printf 'def is_newer(a, b):\n    return %s > %s\n' \
   'tuple(map(int, a.split(".")))' 'tuple(map(int, b.split(".")))' \
   >version.py
@@ -67,18 +68,25 @@ source "$SCRIPTS/9-ergebnis.sh"
 """
 
 
+_DECISION_HALT = "Halt wartet auf Entscheidung (Bead ändern, resume)"
+_TEST_GATE_HALT = "Halt checks_failed: Review PASS bei roter Prüfung:"
+
+
+# empty: Versuche des Umsetzers ohne Änderung vor dem ersten Ergebnis;
+# jeder verbraucht eine Korrekturrunde (Profil: zwei). Die Entscheidung
+# des Menschen öffnet neue Runden, sonst hielte der Lauf beim fix
+# (echter Lauf mit Codex, 2026-10-24).
 @pytest.mark.parametrize(
-    ("review", "halt"),
+    ("review", "halt", "empty"),
     [
-        (
-            "decision",
-            "Halt wartet auf Entscheidung (Bead ändern, resume)",
-        ),
-        ("PASS", "Halt checks_failed: Review PASS bei roter Prüfung:"),
+        ("decision", _DECISION_HALT, 0),
+        ("PASS", _TEST_GATE_HALT, 0),
+        ("decision", _DECISION_HALT, 2),
+        ("PASS", _TEST_GATE_HALT, 2),
     ],
 )
 def test_readme_example_halts_then_merges_after_answer(
-    tmp_path, review, halt
+    tmp_path, review, halt, empty
 ):
     env = {
         key: value
@@ -90,6 +98,7 @@ def test_readme_example_halts_then_merges_after_answer(
         "TMPDIR": str(tmp_path),
         "SCRIPTS": str(SCRIPTS),
         "REVIEW": review,
+        "EMPTY": str(empty),
     }
     completed = subprocess.run(
         ["bash", "-c", DRIVER],

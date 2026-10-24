@@ -20,7 +20,11 @@ from ki_dev.flow.model import (
     parse_flow,
     read_raw,
 )
-from ki_dev.flow_ops.implement.machine import ImplementModel, Phase
+from ki_dev.flow_ops.implement.machine import (
+    DecisionTaken,
+    ImplementModel,
+    Phase,
+)
 from ki_dev.fsm import FsmError, bind
 
 IMPLEMENT = load_flow("implement")
@@ -30,6 +34,8 @@ COUNTING = {
     "retry_protocol",
     "retry_process",
 }
+# Ereignisse des Menschen; sie folgen erst auf einen Halt.
+HUMAN = {DecisionTaken.flow_event}
 
 
 def test_phase_names_exactly_the_states_of_the_flow():
@@ -37,14 +43,15 @@ def test_phase_names_exactly_the_states_of_the_flow():
 
 
 def test_every_cycle_without_a_human_consumes_a_counter():
-    """Kanten ohne zählende Aktion, Halt und Eskalation bilden keinen
-    Zyklus (eine Eskalation hält den Lauf an)."""
+    """Kanten ohne zählende Aktion, Halt, Eskalation und Ereignis des
+    Menschen bilden keinen Zyklus (eine Eskalation hält den Lauf an)."""
     free = {
         (t.source, t.target)
         for t in IMPLEMENT.transitions
         if not COUNTING & set(t.actions)
         and IMPLEMENT.state(t.source).kind != WAIT_KIND
         and t.escalation is None
+        and t.event not in HUMAN
     }
     assert not _has_cycle(free)
 

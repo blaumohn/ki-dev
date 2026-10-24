@@ -221,6 +221,11 @@ class Counters:
             changes_round=self.changes_round + 1,
         )
 
+    def decided(self) -> Counters:
+        """Der Mensch hat entschieden: frisches Korrekturrundenbudget
+        für denselben TASK; laufweite Zähler bleiben."""
+        return replace(self, changes_round=0)
+
     def retried_process(self) -> Counters:
         """Erneuter Versuch nach einem technischen Prozessfehler."""
         return replace(self, process_retry=self.process_retry + 1)
@@ -539,6 +544,13 @@ class ExecutionStopped(Event):
 class ResumeRequested(Event):
     """Der Mensch hat entschieden; wohin es weitergeht, sagt der
     Ablauf (aus ``waiting_decision``)."""
+
+
+@dataclass(frozen=True)
+class DecisionTaken(Event):
+    """Fortsetzen mit Entscheidung des Menschen (Antwort oder
+    geänderter Auftrag), nach jedem Halt; der Ablauf bleibt im
+    Zustand, in dem er fortsetzt."""
 
 
 @dataclass(frozen=True)

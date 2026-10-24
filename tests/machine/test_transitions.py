@@ -15,6 +15,7 @@ from ki_dev.flow_ops.implement.machine import (
     ControllerPass,
     ControllerTask,
     Counters,
+    DecisionTaken,
     Event,
     ExecutionStopped,
     FinalizationError,
@@ -287,6 +288,12 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
         for phase in Phase
         if phase not in STOPPED_PHASES
     ),
+    # Entscheidung des Menschen beim Fortsetzen: der Ablauf bleibt.
+    *(
+        (_at(phase), DecisionTaken(), phase, None)
+        for phase in Phase
+        if phase not in STOPPED_PHASES
+    ),
 ]
 
 
@@ -312,6 +319,29 @@ def test_escalation_keeps_the_flow_across_a_process_boundary():
 def test_resume_is_only_an_answer_to_a_decision():
     with pytest.raises(InvalidTransition):
         advance(_at(Phase.WORKER_STEP), ResumeRequested())
+
+
+def test_decision_opens_fresh_correction_rounds():
+    """Nach leeren Versuchen und Korrekturen vor dem Halt beginnt das
+    Rundenbudget neu; die laufweiten Zähler bleiben."""
+    before = _reviewed(
+        worker_attempt=3, changes_round=2, protocol_attempt=1
+    )
+    result = advance(before, DecisionTaken())
+
+    assert result.state == MachineState(
+        phase=Phase.CONTROLLER_STEP,
+        counters=Counters(worker_attempt=3, protocol_attempt=1),
+        checkpointed_result=True,
+    )
+    assert result.escalation is None
+
+
+def test_decision_waits_for_the_resumed_flow():
+    """Aus ``waiting_decision`` geht es erst mit ``resume_requested``
+    weiter; die Entscheidung gilt danach im Zielzustand."""
+    with pytest.raises(InvalidTransition):
+        advance(_at(Phase.WAITING_DECISION), DecisionTaken())
 
 
 def test_executor_facts_stop_changes_before_round_budget():

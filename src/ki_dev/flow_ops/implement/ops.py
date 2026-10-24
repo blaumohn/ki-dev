@@ -48,7 +48,7 @@ class ImplementationOperations:
         return {
             "agent.work": OperationSpec(
                 self.work,
-                {"type": "array", "minItems": 5, "maxItems": 5},
+                {"type": "array", "minItems": 6, "maxItems": 6},
                 {"type": "object"},
             ),
             "evidence.collect": OperationSpec(
@@ -62,7 +62,7 @@ class ImplementationOperations:
             ),
             "review.decide": OperationSpec(
                 self.review,
-                {"type": "array", "minItems": 6, "maxItems": 6},
+                {"type": "array", "minItems": 7, "maxItems": 7},
                 {"type": "object", "required": ["decision", "raw"]},
                 _review_output,
             ),
@@ -89,13 +89,25 @@ class ImplementationOperations:
         }
 
     def work(
-        self, task, round_id, open_objection, decisions, operation_id
+        self,
+        task,
+        round_id,
+        open_objection,
+        decisions,
+        protocol_error,
+        operation_id,
     ) -> object:
         report = self.worker.work(
             WorkRequest(
                 task,
                 round_id,
-                work_prompt(task, round_id, open_objection, decisions),
+                work_prompt(
+                    task,
+                    round_id,
+                    open_objection,
+                    decisions,
+                    protocol_error,
+                ),
                 operation_id,
             )
         )
@@ -133,6 +145,7 @@ class ImplementationOperations:
         evidence,
         work_report,
         decisions,
+        protocol_error,
         attempt_id,
     ) -> object:
         evidence = cast(dict[str, object], evidence)
@@ -156,6 +169,7 @@ class ImplementationOperations:
                     projection,
                     REVIEW_VOCABULARY,
                     decisions,
+                    protocol_error,
                 ),
                 REVIEW_VOCABULARY,
                 attempt_id,

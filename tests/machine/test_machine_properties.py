@@ -39,9 +39,13 @@ _BY_TYPE: dict[type[Event], list[Event]] = {}
 for _event in EVENT_POOL:
     _BY_TYPE.setdefault(type(_event), []).append(_event)
 
+# Ereignisse des Menschen (HUMAN_EVENTS) folgen erst auf einen Halt;
+# ein Lauf hier endet dort.
 _PLAUSIBLE: dict[Phase, list[Event]] = {
     phase: [
-        event for event_type in row for event in _BY_TYPE[event_type]
+        event
+        for event_type in row
+        for event in _BY_TYPE.get(event_type, ())
     ]
     for phase, row in TRANSITIONS.items()
 }

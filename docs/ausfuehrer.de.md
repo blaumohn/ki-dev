@@ -84,6 +84,10 @@ max_file_lines = 200
 max_total_bytes = 65536
 ```
 
+Weist ki-dev eine Antwort als Vertragsfehler ab, wiederholt der Ablauf
+die Operation (`protocol_attempts`, laufweit); die Wiederholung nennt der
+Rolle den Fehler in der Zeile „Vertragsfehler deiner vorigen Antwort“.
+
 `session_id` ist optional. Ohne sie legt ki-dev für die Rolle beim ersten
 Aufruf eine neue Sitzung an und setzt sie in den weiteren Runden fort,
 auch nach `resume` (abgelegt unter `<run>/sessions/<rolle>.json`). Eine
@@ -159,7 +163,11 @@ Eine Entscheidung (`waiting_decision`, Zustand des Ablaufs) und eine Pause
 (`paused_interactive`, Halt des Laufs nach einer Eskalation) setzt dagegen
 erst eine Entscheidung des Menschen fort: bei der Entscheidung über die
 Kante `resume_requested` zum Controller, bei der Pause im Ablaufzustand,
-in dem eskaliert wurde (der Ablauf hat sich nicht bewegt).
+in dem eskaliert wurde (der Ablauf hat sich nicht bewegt). Danach nimmt
+der Ablauf `decision_taken` (`reset_corrections`): Die Korrekturrunden
+(`changes_rounds`, `safety_limits.max_failed_corrections`) beginnen neu,
+auch wenn leere Versuche des Umsetzers sie vor dem Halt verbraucht
+haben. Laufweite Grenzen (Versuche, Aufrufe, Tokens) zählen weiter.
 
 Was den Auftrag betrifft, entscheidet der Mensch im Bead (`bd update
 BEAD --acceptance …`); `ki-dev -f implement resume RUN_ID` liest ihn
@@ -321,7 +329,7 @@ konfigurierbare Standardgrenzen:
 | `safety_limits.max_agent_calls` | 6 | Bau und Review zusammen, inkl. fehlgeschlagener Aufrufe |
 | `safety_limits.max_total_tokens` | 1.000.000 | Input, Cache-Schreiben, Cache-Lesen und Output; Pruefung vor dem naechsten Aufruf |
 | `safety_limits.max_claude_cost_usd` | 3 | Summe der von Claude gemeldeten API-Kostenwerte |
-| `safety_limits.max_failed_corrections` | 2 | Nach zwei abgelehnten Korrekturen kein weiterer automatischer Bau |
+| `safety_limits.max_failed_corrections` | 2 | Nach zwei abgelehnten Korrekturen seit Start oder letzter Entscheidung des Menschen kein weiterer automatischer Bau |
 | `safety_limits.max_stagnant_changes` | 3 | Bei so vielen CHANGES in Folge an derselben `requirement_ref` (die aktuelle Runde eingeschlossen) kein weiterer automatischer Bau |
 | `safety_limits.min_remaining_percent` | 10 | Zentrale, rollenunabhaengige Schutzreserve des Fuenfstundenkontingents (siehe unten); betrifft nicht `max_claude_cost_usd` (bezahlte Zusatznutzung) |
 | `budget.max_usage_delta_percentage_points` je Rolle | 20 | Aufgaben-Delta-Budget des Fuenfstundenkontingents (siehe unten) |

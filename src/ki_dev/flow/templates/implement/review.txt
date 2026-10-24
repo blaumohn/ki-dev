@@ -46,5 +46,6 @@ an. Fehlt noch eine Aenderung, die sie verlangt, antworte mit
 ${changes} und binde sie an das betroffene Kriterium.
 
 requirement_ref ist nur bei ${changes} gesetzt (sonst null).
+Vertragsfehler deiner vorigen Antwort: ${protocol_error}
 Antworte ausschliesslich als JSON-Objekt mit exakt diesen Feldern:
 {"run_id":"${run_id}","round_id":${round_id},"event":"${events}","detail":"...","requirement_ref":"AC<n>|null"}

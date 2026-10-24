@@ -2,6 +2,7 @@
 
 ``EVENT_POOL`` enthaelt genau eine repraesentative Auspraegung jedes
 Ereignistyps sowie beide Auspraegungen der Ereignisse mit Ergebnisfeld.
+Entscheidungen des Menschen stehen getrennt in ``HUMAN_EVENTS``.
 ``TIGHT_LIMITS`` haelt den erreichbaren Zustandsraum klein genug, um ihn
 vollstaendig aufzuzaehlen. ``TRANSITIONS`` ist die Sicht des Ablaufs:
 welche Ereignistypen je Zustand ueberhaupt eine Kante haben.
@@ -19,6 +20,7 @@ from ki_dev.flow_ops.implement.machine import (
     ControllerNeedsDecision,
     ControllerPass,
     ControllerTask,
+    DecisionTaken,
     Event,
     ExecutionStopped,
     FinalizationError,
@@ -74,6 +76,10 @@ EVENT_POOL: tuple[Event, ...] = (
     ExecutionStopped("Kontextgrenze erreicht"),
     ResumeRequested(),
 )
+
+HUMAN_EVENTS: tuple[Event, ...] = (DecisionTaken(),)
+"""Entscheidungen des Menschen: nur nach einem Halt des Laufs, daher
+nicht im Vorrat der automatisch gezogenen Ereignisse."""
 
 TRANSITIONS: dict[Phase, dict[type[Event], tuple[str, ...]]] = {}
 for _t in IMPLEMENT.transitions:

@@ -18,7 +18,7 @@ from ki_dev.flow_ops.implement.machine import decode_run_state
 from ki_dev.flow_ops.implement.run_machine import Operation, RunMachine
 from ki_dev.fsm import RECORD_SCHEMA
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class RunData(TypedDict):
@@ -40,6 +40,10 @@ class RunData(TypedDict):
     decisions: list[dict[str, object]]
     """Entscheidungen des Menschen (:mod:`.decisions`) in
     Reihenfolge."""
+    protocol_error: str | None
+    """Vertragsfehler der zuletzt abgelehnten Agentenantwort; die
+    Wiederholung derselben Operation erhält ihn, ein angenommenes
+    Ergebnis löscht ihn."""
     last_error: str | None
     logged: int
     """Zeilen des Ereignisprotokolls, die dieser Stand abdeckt."""
@@ -105,6 +109,7 @@ _DATA_PROPERTIES = {
     "final_result": _nullable(_OBJECT),
     "decision": _nullable(_OBJECT),
     "decisions": {"type": "array", "items": _DECISION},
+    "protocol_error": _nullable(_TEXT),
     "last_error": _nullable({"type": "string"}),
     "logged": {"type": "integer", "minimum": 0},
 }

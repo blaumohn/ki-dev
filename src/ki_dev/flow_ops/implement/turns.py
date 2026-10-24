@@ -36,6 +36,7 @@ class ImplementTurn:
     evidence: ReviewProjection | None = None
     vocabulary: ReviewVocabulary | None = None
     decisions: tuple[dict[str, object], ...] = ()
+    protocol_error: str | None = None
 
 
 def _vocabulary(turn: ImplementTurn) -> ReviewVocabulary:
@@ -83,6 +84,7 @@ FIELDS: dict[str, Callable[[ImplementTurn], object]] = {
     "task": lambda turn: turn.task.task,
     "objection": lambda turn: turn.objection or "keine",
     "decisions": lambda turn: prompt_text(list(turn.decisions)),
+    "protocol_error": lambda turn: turn.protocol_error or "keiner",
     "report": lambda turn: turn.report,
     "evidence": _evidence,
     "classes": _classes,
@@ -109,9 +111,14 @@ def work_prompt(
     round_id: int,
     objection: str | None,
     decisions: Sequence[dict[str, object]] = (),
+    protocol_error: str | None = None,
 ) -> str:
     subject = ImplementTurn(
-        task, round_id, objection, decisions=tuple(decisions)
+        task,
+        round_id,
+        objection,
+        decisions=tuple(decisions),
+        protocol_error=protocol_error,
     )
     turn = _declared(WORK)
     return render_turn(IMPLEMENT, turn, subject, PLUG).text()
@@ -124,6 +131,7 @@ def review_prompt(
     evidence: ReviewProjection,
     vocabulary: ReviewVocabulary,
     decisions: Sequence[dict[str, object]] = (),
+    protocol_error: str | None = None,
 ) -> str:
     subject = ImplementTurn(
         task,
@@ -133,6 +141,7 @@ def review_prompt(
         evidence,
         vocabulary,
         tuple(decisions),
+        protocol_error,
     )
     turn = _declared(REVIEW)
     return render_turn(IMPLEMENT, turn, subject, PLUG).text()

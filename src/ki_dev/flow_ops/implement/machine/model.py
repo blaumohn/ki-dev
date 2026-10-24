@@ -131,6 +131,10 @@ class ImplementModel:
         """worker_attempt + 1, changes_round + 1."""
         self.counters = self.counters.started_correction()
 
+    def reset_corrections(self) -> None:
+        """changes_round = 0 nach einer Entscheidung des Menschen."""
+        self.counters = self.counters.decided()
+
     def retry_protocol(self) -> None:
         self.counters = self.counters.retried_protocol()
 

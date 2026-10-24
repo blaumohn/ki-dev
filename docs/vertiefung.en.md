@@ -157,6 +157,16 @@ stateDiagram-v2
     fast_forward_integrate --> passed: integration_completed [result_ok]
     fast_forward_integrate --> error: finalization_error
     waiting_decision --> controller_step: resume_requested
+    start --> start: decision_taken / reset_corrections
+    controller_step --> controller_step: decision_taken / reset_corrections
+    worker_step_prepare --> worker_step_prepare: decision_taken / reset_corrections
+    worker_step --> worker_step: decision_taken / reset_corrections
+    capture_step_result --> capture_step_result: decision_taken / reset_corrections
+    checkpoint --> checkpoint: decision_taken / reset_corrections
+    freeze_reviewed_result --> freeze_reviewed_result: decision_taken / reset_corrections
+    finalize_history --> finalize_history: decision_taken / reset_corrections
+    verify_final_result --> verify_final_result: decision_taken / reset_corrections
+    fast_forward_integrate --> fast_forward_integrate: decision_taken / reset_corrections
     passed --> [*]
     error --> [*]
 ```

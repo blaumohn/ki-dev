@@ -160,6 +160,14 @@ on = [{ raise = { event = "escalation.execution_guard" } }]
 event = "escalation"
 on = "record_escalation"
 
+# Entscheidung des Menschen beim Fortsetzen nach einem Halt: Ursache
+# und Ansatz sind geklärt, die Korrekturrunden beginnen neu. Der Ablauf
+# bleibt, wo er hielt; laufweite Grenzen (Versuche, Aufrufe) zählen
+# weiter.
+[[statechart.states.active.transitions]]
+event = "decision_taken"
+on = "reset_corrections"
+
 [statechart.states.active.states.start]
 initial = true
 
@@ -407,7 +415,10 @@ final = true
 [op.work]
 role = "worker"
 do = "agent.work"
-input = ["task", "round_id", "open_objection", "decisions", "operation_id"]
+input = [
+  "task", "round_id", "open_objection", "decisions", "protocol_error",
+  "operation_id",
+]
 output = { work_report = ["summary"] }
 success = "worker_completed"
 
@@ -421,7 +432,10 @@ success = "step_result_captured"
 [op.review]
 role = "review"
 do = "review.decide"
-input = ["task", "round_id", "evidence", "work_report", "decisions", "attempt_id"]
+input = [
+  "task", "round_id", "evidence", "work_report", "decisions",
+  "protocol_error", "attempt_id",
+]
 output = { decision = ["decision"] }
 events = ["PASS", "fix", "decision", "escalate"]
 

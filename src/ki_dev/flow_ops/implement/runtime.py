@@ -62,6 +62,7 @@ from ki_dev.flow_ops.implement.machine import (
     ControllerNeedsDecision,
     ControllerPass,
     ControllerTask,
+    DecisionTaken,
     Event,
     ExecutionStopped,
     InvalidTransition,
@@ -108,7 +109,12 @@ from ki_dev.review_context import (
 )
 from ki_dev.run_store import RunStore, RunStoreError
 from ki_dev.runner.bound import BoundOperations
-from ki_dev.runner.events import ABLAUF, event_record, run_event_record
+from ki_dev.runner.events import (
+    ABLAUF,
+    MACHINE,
+    event_record,
+    run_event_record,
+)
 from ki_dev.runner.review_output import (
     AgentProtocolError,
 )
@@ -288,6 +294,7 @@ class RunRuntime:
             "final_result": None,
             "decision": None,
             "decisions": [],
+            "protocol_error": None,
             "last_error": None,
             "logged": 0,
         }
@@ -385,6 +392,13 @@ class RunRuntime:
         if task is not None and changes_task(document):
             update["task"] = _encode_task(task)
             update |= self._adopt_bead_change(task)
+        # Der Mensch hat die Ursache geklärt: Korrekturrunden des
+        # Ablaufs beginnen neu, auch nach leeren Versuchen vor dem
+        # Halt.
+        run = decode_run_state(self._data["run_state"])
+        update |= self._transition(
+            run, DecisionTaken(), adapter=MACHINE
+        )
         self._apply(update)
 
     def _adopt_bead_change(self, task: RunTask) -> dict[str, object]:
@@ -1045,7 +1059,12 @@ class RunRuntime:
             detail = artifact.get("detail")
             return self._write_handoff_if_stopped(
                 state,
-                {**moved, **update, "last_error": detail},
+                {
+                    **moved,
+                    **update,
+                    "protocol_error": None,
+                    "last_error": detail,
+                },
                 detail or "Operation abgeschlossen",
             )
         run = decode_run_state(state["run_state"])
@@ -1057,6 +1076,7 @@ class RunRuntime:
             **update,
             "decision": decision_doc,
             "review_sequence": state["review_sequence"] + 1,
+            "protocol_error": None,
         }
 
     def _apply_decision(
@@ -1159,7 +1179,9 @@ class RunRuntime:
         run = decode_run_state(state["run_state"])
         update = self._transition(run, ProtocolError(detail))
         return self._write_handoff_if_stopped(
-            state, {**update, "last_error": detail}, detail
+            state,
+            {**update, "protocol_error": detail, "last_error": detail},
+            detail,
         )
 
     def _process_failure(
@@ -1198,12 +1220,17 @@ class RunRuntime:
         event: Event,
         *,
         facts: frozenset[str] = frozenset(),
+        adapter: str | None = None,
     ) -> dict[str, object]:
         """Ablauf fortschreiben, über die eine Maschine des Laufs: was
         das im Lauf auslöst (Pause bei Eskalation, Warten, Ende), nimmt
-        die Bibliothek mit."""
+        die Bibliothek mit. Ohne ``adapter`` liefert der Adapter der
+        Agentenoperation des Quellzustands das Ereignis."""
         result = self._lauf.advance(
-            run, event, facts=facts, adapter=self._adapter_of(run)
+            run,
+            event,
+            facts=facts,
+            adapter=adapter or self._adapter_of(run),
         )
         return self._replace_run(run, result.state, result.escalation)
 

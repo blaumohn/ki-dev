@@ -838,3 +838,35 @@ def test_manual_review_waits_for_a_new_answer_after_protocol_error(
     asks = sorted(inbox.glob("*.input.md"))
     assert len(asks) == 2
     assert first in asks
+
+
+def test_retry_after_protocol_error_names_the_violation(tmp_path):
+    """Die Wiederholung erhält den Vertragsfehler der abgewiesenen
+    Antwort; derselbe Prompt ergäbe dieselbe Antwort (echter Lauf:
+    viermal ``requirement_ref`` bei ``decision``)."""
+    inbox = tmp_path / "inbox"
+    line = "Vertragsfehler deiner vorigen Antwort: "
+    with _runtime(
+        tmp_path,
+        "run-relay-retry",
+        FakeWorker(),
+        ManualRelay(Inbox(inbox), "review", SPECS["inbox"]),
+        [_context(1)],
+    ) as runtime:
+        runtime.start(_task("run-relay-retry"), Limits())
+        (first,) = inbox.glob("*.input.md")
+        first.with_name(
+            first.name.replace(".input.md", ".answer.md")
+        ).write_text(
+            '{"run_id": "run-relay-retry", "round_id": 1, '
+            '"event": "decision", "detail": "Test widerspricht", '
+            '"requirement_ref": "AC1"}'
+        )
+        runtime.resume()
+
+    (second,) = set(inbox.glob("*.input.md")) - {first}
+    assert f"{line}keiner\n" in first.read_text()
+    violation = (
+        "requirement_ref: ist außer bei CHANGES-Ereignissen null"
+    )
+    assert f"{line}{violation}\n" in second.read_text()

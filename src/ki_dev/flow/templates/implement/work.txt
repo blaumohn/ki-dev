@@ -18,6 +18,7 @@ Massgebliche Quellen:
 ${sources}
 
 Offene Beanstandung: ${objection}
+Vertragsfehler deiner vorigen Antwort: ${protocol_error}
 Bearbeite den Auftrag und pruefe seine Wirkung.
 Arbeite innerhalb der Aufrufgrenzen. Bei fehlendem Zugriff oder
 anderem Blocker beende die Arbeit mit einer konkreten Begruendung;
