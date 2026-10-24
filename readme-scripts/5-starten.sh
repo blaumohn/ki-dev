@@ -16,6 +16,8 @@ ki-dev -f implement "$BEAD" --run-id version-fix  # Profil default
 #
 # Am Ende steht der Endzustand als JSON. Erwartet ist ein Halt für dich:
 # `"status": "waiting_decision"`, wenn das Review eine Entscheidung
-# verlangt, oder `"paused_interactive"` mit `checks_failed` in `detail`,
-# wenn es trotz roter Tests `PASS` gemeldet hat. In beiden Fällen bleibt
-# `main` unverändert ([Halt und Fortsetzen](docs/ausfuehrer.de.md)).
+# verlangt, sonst `"paused_interactive"`, und `detail` nennt den Grund:
+# `checks_failed`, wenn das Review trotz roter Tests `PASS` gemeldet hat,
+# oder die aufgebrauchten Korrekturrunden, wenn es `fix` gemeldet hat.
+# In jedem Fall bleibt `main` unverändert
+# ([Halt und Fortsetzen](docs/ausfuehrer.de.md)).

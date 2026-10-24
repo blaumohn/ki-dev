@@ -3,22 +3,22 @@
     "skript": "9-ergebnis.sh",
     "parameter": {},
     "ergebnis": "passed",
-    "datum": "2026-10-23T21:31:00Z",
+    "datum": "2026-10-24T10:44:35Z",
     "auszug": [
       "Lauf version-fix: passed nach 2 Runden",
       "  Runde 1  Umsetzer  geändert: version.py",
       "  Runde 1  Tests     test_version fehlgeschlagen",
-      "  Runde 1  Review    decision: Der Fix in version.py ist korrekt: is_newer ve…",
-      "  Runde 1  Mensch    AC2 geändert",
-      "  Runde 1  Review    fix (AC2): Die Entscheidung des Menschen nach Runde 1 le…",
+      "  Runde 1  Review    fix (AC1): Die CHECKS-Nachweisprojektion zeigt einen Feh…",
       "  Runde 2  Umsetzer  geändert: test_version.py",
       "  Runde 2  Tests     test_version bestanden",
-      "  Runde 2  Review    PASS: Die Testdatei entspricht AC2 neu: Zeile 4 lautet a…",
+      "  Runde 2  Mensch    AC2 geändert",
+      "  Runde 2  Review    PASS: AC1 ist erfuellt: version.py vergleicht Versionen…",
       "  Abschluss          Fast-forward integriert",
       "Fix is_newer()",
       "",
       " test_version.py | 2 +-",
-      " version.py      | 4 +++-",
+      " version.py      | 5 ++++-",
+      " 2 files changed, 5 insertions(+), 2 deletions(-)",
       "…"
     ]
   }

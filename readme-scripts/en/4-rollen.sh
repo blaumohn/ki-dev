@@ -26,6 +26,9 @@ argv = ["python3", "test_version.py"]
 [limits]
 changes_rounds = 2              # at most two correction rounds
 
+[safety_limits]
+max_agent_calls = 10            # agent calls in the whole run
+
 [finalization]                  # where an accepted result goes
 target_workdir = "../versions"  # target repo with branch main
 target_ref = "refs/heads/main"
@@ -36,5 +39,7 @@ EOF
 # - `executor` can be swapped per role; available are `codex`,
 #   `claude`, `mock` and `manual`
 #   ([executors](docs/ausfuehrer.de.md#executoren), German).
-# - Per-call limits (time, cost, quota) have
+# - `max_agent_calls` limits the agent calls of the whole run,
+#   including retries after empty or invalid answers (default 6).
+#   Per-call limits (time, cost, quota) have
 #   [defaults](docs/ausfuehrer.de.md#verbrauchsschutz) (German).

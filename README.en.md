@@ -197,6 +197,9 @@ argv = ["python3", "test_version.py"]
 [limits]
 changes_rounds = 2              # at most two correction rounds
 
+[safety_limits]
+max_agent_calls = 10            # agent calls in the whole run
+
 [finalization]                  # where an accepted result goes
 target_workdir = "../versions"  # target repo with branch main
 target_ref = "refs/heads/main"
@@ -209,7 +212,9 @@ EOF
 - `executor` can be swapped per role; available are `codex`,
   `claude`, `mock` and `manual`
   ([executors](docs/ausfuehrer.de.md#executoren), German).
-- Per-call limits (time, cost, quota) have
+- `max_agent_calls` limits the agent calls of the whole run,
+  including retries after empty or invalid answers (default 6).
+  Per-call limits (time, cost, quota) have
   [defaults](docs/ausfuehrer.de.md#verbrauchsschutz) (German).
 <!-- /readme-script -->
 
@@ -235,10 +240,11 @@ The review's answer determines the next transition:
 | `decision` | Halt for your decision; continue under [Decide](#5-decide). |
 
 The end state follows as JSON. A halt for you is expected:
-`"status": "waiting_decision"` if the review asks for a decision, or
-`"paused_interactive"` with `checks_failed` in `detail` if it answered
-`PASS` despite red tests. Either way `main` stays unchanged
-([halting and resuming](docs/ausfuehrer.de.md), German).
+`"status": "waiting_decision"` if the review asks for a decision,
+otherwise `"paused_interactive"` with the reason in `detail`:
+`checks_failed` if the review answered `PASS` despite red tests, or the
+used-up correction rounds if it answered `fix`. In every case `main`
+stays unchanged ([halting and resuming](docs/ausfuehrer.de.md), German).
 <!-- /readme-script -->
 
 ### 5. Decide
@@ -261,11 +267,13 @@ ki-dev -f implement resume version-fix  # reads the bead again
 > ✅ Run with real agents · [test](tests/readme/test_9_entscheiden.sh)
 
 ```text
-Lauf version-fix: waiting_decision nach 1 Runde
+Lauf version-fix: paused_interactive nach 2 Runden
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    decision: Der Fix in version.py ist korrekt: is_newer ve…
-  Halt               wartet auf Entscheidung (Bead ändern, resume)
+  Runde 1  Review    fix (AC1): Die CHECKS-Nachweisprojektion zeigt einen Feh…
+  Runde 2  Umsetzer  keine Dateiänderung
+  Runde 2  Tests     test_version fehlgeschlagen
+  Halt               empty_result_unresolved
 ```
 
 `resume` reads the bead again and gives the review and the implementer
@@ -295,17 +303,17 @@ git -C ../versions show main:version.py            # corrected file
 Lauf version-fix: passed nach 2 Runden
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    decision: Der Fix in version.py ist korrekt: is_newer ve…
-  Runde 1  Mensch    AC2 geändert
-  Runde 1  Review    fix (AC2): Die Entscheidung des Menschen nach Runde 1 le…
+  Runde 1  Review    fix (AC1): Die CHECKS-Nachweisprojektion zeigt einen Feh…
   Runde 2  Umsetzer  geändert: test_version.py
   Runde 2  Tests     test_version bestanden
-  Runde 2  Review    PASS: Die Testdatei entspricht AC2 neu: Zeile 4 lautet a…
+  Runde 2  Mensch    AC2 geändert
+  Runde 2  Review    PASS: AC1 ist erfuellt: version.py vergleicht Versionen…
   Abschluss          Fast-forward integriert
 Fix is_newer()
 
  test_version.py | 2 +-
- version.py      | 4 +++-
+ version.py      | 5 ++++-
+ 2 files changed, 5 insertions(+), 2 deletions(-)
 …
 ```
 
