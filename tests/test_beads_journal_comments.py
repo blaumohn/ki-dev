@@ -1,7 +1,10 @@
 """Kommentar-Journal: comments export/mark-incorporated/lint (ebqv)."""
 
 import json
+import os
+import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +14,8 @@ from tests.test_beads_journal import IDENTITY, git, issue, subjects
 
 SECRET = "GEHEIM-7f3a"
 MARK = comments.COMMAND + " mark-incorporated"
+HOOK = Path(__file__).parents[1] / ".beads" / "hooks" / "pre-commit.old"
+EXPORT = ["--readonly", "export"]
 
 
 def comment(number, text=SECRET):
@@ -27,7 +32,8 @@ class FakeBd:
     """bd und Löschskript über eine Zustandsdatei mit Exportzeilen.
 
     calls.jsonl hält jeden Aufruf mit der Commitzahl des Journals zum
-    Aufrufzeitpunkt fest.
+    Aufrufzeitpunkt fest. bd kennt nur den lesenden Export; jeder
+    andere Aufruf (Schreiben nach bd) endet mit Exit 9.
     """
 
     def __init__(self, folder, monkeypatch, journal):
@@ -56,6 +62,10 @@ class FakeBd:
             for line in self.calls.read_text().splitlines()
         ]
 
+    def writes(self):
+        """Aufrufe außer dem lesenden bd export."""
+        return [args for args, _ in self.logged() if args != EXPORT]
+
     def _script(self, name, body):
         script = self.folder / name
         script.write_text(f"#!{sys.executable}\n{body}")
@@ -77,19 +87,10 @@ class FakeBd:
 
     def _bd_body(self, journal):
         return self._prelude(journal) + (
-            "args = sys.argv[1:]\n"
-            "if args[:2] == ['--readonly', 'export']:\n"
-            "    for row in rows:\n"
-            "        print(json.dumps({'_type': 'issue', **row}))\n"
-            "    sys.exit(0)\n"
-            "action, ids, label = args[1], args[2:-1], args[-1]\n"
+            f"if sys.argv[1:] != {EXPORT!r}:\n"
+            "    sys.exit(9)\n"
             "for row in rows:\n"
-            "    if row['id'] in ids:\n"
-            "        labels = set(row.get('labels', []))\n"
-            "        labels = labels | {label} if action == 'add'"
-            " else labels - {label}\n"
-            "        row['labels'] = sorted(labels)\n"
-            "json.dump(rows, open(state, 'w'))\n"
+            "    print(json.dumps({'_type': 'issue', **row}))\n"
         )
 
     def _clear_body(self, journal):
@@ -205,9 +206,7 @@ def test_second_export_keeps_state_and_appends_new(
     fake.rows([issue(comments=[comment(1)])])
     assert run(repo, "export") == 0
     assert run(repo, "mark-incorporated", "t-1") == 0
-    fake.rows(
-        [issue(labels=[], comments=[comment(1, "neu"), comment(2)])]
-    )
+    fake.rows([issue(comments=[comment(1, "neu"), comment(2)])])
 
     assert run(repo, "export") == 0
 
@@ -224,7 +223,7 @@ def test_export_without_new_comments_commits_nothing(
     fake.rows([issue(comments=[comment(1)])])
     assert run(repo, "export") == 0
     before = subjects(journal_dir)
-    fake.rows([issue(labels=["comments:open"], comments=[comment(1)])])
+    fake.rows([issue(comments=[comment(1)])])
 
     assert run(repo, "export") == 0
 
@@ -232,7 +231,7 @@ def test_export_without_new_comments_commits_nothing(
     assert "comments" not in fake.current()[0]
 
 
-def test_mark_incorporated_selected_and_label_follows(
+def test_mark_incorporated_selected_then_all(
     repo,
     journal_dir,
     fake,
@@ -240,10 +239,8 @@ def test_mark_incorporated_selected_and_label_follows(
 ):
     fake.rows([issue(comments=[comment(1), comment(2)])])
     assert run(repo, "export") == 0
-    assert fake.current()[0]["labels"] == ["comments:open"]
 
     assert run(repo, "mark-incorporated", "t-1", "c-1") == 0
-    assert fake.current()[0]["labels"] == ["comments:open"]
     assert f"{MARK} t-1" in capsys.readouterr().out
 
     assert run(repo, "mark-incorporated", "t-1") == 0
@@ -252,7 +249,8 @@ def test_mark_incorporated_selected_and_label_follows(
         "c-1": "incorporated",
         "c-2": "incorporated",
     }
-    assert fake.current()[0]["labels"] == []
+    assert "labels" not in fake.current()[0]
+    assert fake.writes() == [["t-1"]]
     assert subjects(journal_dir)[-2:] == [
         "comments t-1: 1 eingebaut",
         "comments t-1: 1 eingebaut",
@@ -275,7 +273,12 @@ def test_mark_incorporated_selected_and_label_follows(
             f"{comments.COMMAND} export",
         ),
         ([issue("t-2")], ["t-2"], "comments/t-2.json fehlt", "export"),
-        ([issue()], ["../t-1"], "ungültige Vorgangs-ID", "bd list"),
+        (
+            [issue()],
+            ["../t-1"],
+            "ungültige Vorgangs-ID",
+            f"{comments.COMMAND} lint",
+        ),
     ],
 )
 def test_mark_incorporated_rejects_without_writing(
@@ -318,7 +321,7 @@ def test_lint_fails_on_comments_in_bd(
     assert SECRET not in output
 
 
-def test_lint_open_entries_are_only_a_hint(
+def test_lint_fails_on_open_entries(
     repo,
     journal_dir,
     fake,
@@ -328,10 +331,51 @@ def test_lint_open_entries_are_only_a_hint(
     assert run(repo, "export") == 0
     capsys.readouterr()
 
-    assert run(repo, "lint") == 0
+    assert run(repo, "lint") == 1
 
     assert f"t-1: 1 offen. Einbauen nach Bedarf, dann: {MARK} t-1" in (
         capsys.readouterr().out
+    )
+
+
+def test_lint_passes_when_all_incorporated(
+    repo,
+    journal_dir,
+    fake,
+    capsys,
+):
+    fake.rows([issue(comments=[comment(1)]), issue("t-2")])
+    assert run(repo, "export") == 0
+    assert run(repo, "mark-incorporated", "t-1") == 0
+    capsys.readouterr()
+
+    assert run(repo, "lint") == 0
+
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("hand_edit", [False, True])
+def test_lint_writes_nothing(repo, journal_dir, fake, hand_edit):
+    fake.rows([issue(comments=[comment(1)])])
+    assert run(repo, "export") == 0
+    if hand_edit:
+        path = journal_dir / "comments" / "t-1.json"
+        path.write_text("{}")
+    fake.rows([issue(comments=[comment(1), comment(2)])])
+    before = (
+        subjects(journal_dir),
+        git(journal_dir, "status", "--porcelain"),
+        fake.current(),
+        fake.writes(),
+    )
+
+    assert run(repo, "lint") == 1
+
+    assert before == (
+        subjects(journal_dir),
+        git(journal_dir, "status", "--porcelain"),
+        fake.current(),
+        fake.writes(),
     )
 
 
@@ -428,3 +472,78 @@ def test_inactive_journal_points_to_init(repo, capsys):
     assert run(repo, "lint") == 1
 
     assert "beads_journal init" in capsys.readouterr().err
+
+
+def hook_repo(tmp_path, export_exit, lint_exit):
+    """Wegwerf-Repo mit pre-commit.old und einem Fake-venv-Python.
+
+    Das Fake-Python protokolliert die comments-Aktion und endet mit dem
+    vorgegebenen Exit.
+    """
+    path = tmp_path / "hook-repo"
+    (path / ".venv" / "bin").mkdir(parents=True)
+    git(path, "init", "-q")
+    python = path / ".venv" / "bin" / "python"
+    python.write_text(
+        "#!/bin/sh\n"
+        'echo "$4" >> "$(dirname "$0")/calls"\n'
+        f'[ "$4" = export ] && exit {export_exit}\n'
+        f"exit {lint_exit}\n"
+    )
+    python.chmod(0o755)
+    return path
+
+
+def run_hook(path):
+    return subprocess.run(
+        ["sh", str(HOOK)],
+        cwd=path,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATH": "/usr/bin:/bin"},
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "export_exit, lint_exit, calls, expected",
+    [
+        (0, 0, ["export", "lint"], 0),
+        (0, 1, ["export", "lint"], 1),
+        (3, 0, ["export"], 3),
+    ],
+)
+def test_pre_commit_old_chains_export_then_lint(
+    tmp_path, export_exit, lint_exit, calls, expected
+):
+    path = hook_repo(tmp_path, export_exit, lint_exit)
+
+    result = run_hook(path)
+
+    assert result.returncode == expected
+    log = path / ".venv" / "bin" / "calls"
+    assert log.read_text().split() == calls
+
+
+def test_pre_commit_old_without_venv_fails(tmp_path):
+    path = tmp_path / "leer"
+    path.mkdir()
+    git(path, "init", "-q")
+
+    result = run_hook(path)
+
+    assert result.returncode == 1
+    assert "make setup" in result.stderr
+
+
+def test_pre_commit_old_is_not_taken_for_a_bd_hook():
+    """bd überspringt .old mit eigenen Markern (getHookVersion)."""
+    text = HOOK.read_text(encoding="utf-8")
+
+    for marker in (
+        "# --- BEGIN BEADS INTEGRATION",
+        "# bd-shim ",
+        "# bd-hooks-version: ",
+        "# bd (beads)",
+    ):
+        assert marker not in text

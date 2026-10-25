@@ -1,0 +1,22 @@
+#!/usr/bin/env sh
+# ki-dev pre-commit, von bd verkettet: der bd-Shim pre-commit führt
+# eine ausführbare pre-commit.old vor dem eigenen Teil aus und bricht
+# bei Exit ungleich 0 ab. Diese Datei trägt keine Beads-Marker, sonst
+# hielte bd sie für einen eigenen Hook und überspränge sie.
+#
+# Kommentar-Journal (ki-dev-ablauf-ebqv): erst comments export (neue
+# bd-Kommentare ins Journal committen, dann in bd löschen), dann
+# comments lint als reine Prüfung. Offene Einträge blockieren den
+# Commit, bis mark-incorporated sie abschließt. Kein git add: export
+# ändert nur gitignorierte Pfade (.local/, .beads/issues.jsonl).
+root=$(git rev-parse --show-toplevel) || exit 1
+bin="$root/.venv/bin"
+if [ ! -x "$bin/python" ]; then
+  echo >&2 "Kommentar-Journal: .venv fehlt; zuerst make setup"
+  exit 1
+fi
+# bd aus dem Projekt-venv, wie make beads-comments-lint.
+PATH="$bin:$PATH"
+export PATH
+python -m ki_dev.beads_journal comments export || exit $?
+exec python -m ki_dev.beads_journal comments lint

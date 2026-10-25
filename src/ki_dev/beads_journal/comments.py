@@ -5,8 +5,11 @@ Vorgang mit Kommentaren ``comments/<ID>.json`` ins Journal, committet
 und löscht erst danach die Kommentare in bd
 (scripts/bd-clear-comments.sh). Jeder Eintrag trägt den Einbau-Zustand
 open oder incorporated; nur ``mark-incorporated`` schließt ab. ``lint``
-meldet Kommentare in bd und vertragswidrige (von Hand bearbeitete)
-Dateien. Ausgaben nennen IDs und Anzahlen, keine Kommentartexte.
+prüft nur und meldet Kommentare in bd, vertragswidrige (von Hand
+bearbeitete) Dateien und offene Einträge; jedes davon blockiert den
+Commit (pre-commit). In bd schreibt das Modul keinen Zustand, etwa ein
+Label: Beads tragen nur den aktuellen Stand. Ausgaben nennen IDs und
+Anzahlen, keine Kommentartexte.
 """
 
 from __future__ import annotations
@@ -29,11 +32,9 @@ from ki_dev.beads_journal.comments_contract import (
     COMMENTS,
     FIELDS,
     INCORPORATED,
-    LABEL,
     OPEN,
     bd_comments,
     comment_file,
-    labelled,
     load,
     open_count,
 )
@@ -51,7 +52,6 @@ from ki_dev.beads_journal.journal import (
 README = "README.md"
 CLEAR_SCRIPT = Path("scripts/bd-clear-comments.sh")
 CLEAR_TIMEOUT = 120
-BD_TIMEOUT = 30
 _README_TEXT = (
     files(__package__)
     .joinpath("comments-readme.md")
@@ -81,8 +81,8 @@ def add_parser(commands: argparse._SubParsersAction) -> None:
     )
     actions.add_parser(
         "lint",
-        help="Exit 1 bei Kommentaren in bd oder vertragswidriger "
-        "Datei; offene Einträge als Hinweis",
+        help="Exit 1 bei Kommentaren in bd, vertragswidriger Datei "
+        "oder offenen Einträgen; schreibt nichts",
     )
 
 
@@ -91,7 +91,6 @@ def run(
     journal: Path,
     arguments: argparse.Namespace,
     export_rows: Callable[[Path], list[dict]],
-    bd_program: str,
 ) -> int:
     if not is_active(journal):
         raise JournalError(
@@ -100,22 +99,16 @@ def run(
         )
     rows = export_rows(root)
     if arguments.action == "export":
-        return run_export(root, journal, rows, bd_program)
+        return run_export(root, journal, rows)
     if arguments.action == "mark-incorporated":
         return run_mark(
-            root,
-            journal,
-            rows,
-            bd_program,
-            (arguments.issue_id, arguments.comment_ids),
+            journal, rows, arguments.issue_id, arguments.comment_ids
         )
     return run_lint(journal, rows)
 
 
-def run_export(
-    root: Path, journal: Path, rows: list[dict], bd_program: str
-) -> int:
-    """Erst committen, dann Label setzen und in bd löschen."""
+def run_export(root: Path, journal: Path, rows: list[dict]) -> int:
+    """Erst committen, dann in bd löschen; nie umgekehrt."""
     pending = bd_comments(rows)
     with locked(journal):
         _write_readme(journal)
@@ -128,50 +121,36 @@ def run_export(
             f"{issue_id}: {len(pending[issue_id])} in bd, "
             f"{added[issue_id]} neu ausgelagert"
         )
-    unlabelled = sorted(set(pending) - labelled(rows))
-    if unlabelled:
-        _external(
-            root,
-            [bd_program, "label", "add", *unlabelled, LABEL],
-            BD_TIMEOUT,
-        )
     if pending:
         _clear(root, sorted(pending))
     print(f"In bd gelöscht: {len(pending)} Vorgänge")
-    return _report_files(journal)
+    broken, _ = _report_files(journal)
+    return 1 if broken else 0
 
 
 def run_mark(
-    root: Path,
     journal: Path,
     rows: list[dict],
-    bd_program: str,
-    target: tuple[str, list[str]],
+    issue_id: str,
+    comment_ids: list[str],
 ) -> int:
-    """Prüft vor dem Schreiben; Label erst ohne offene Einträge."""
-    issue_id, comment_ids = target
+    """Prüft vor dem Schreiben: ID, Kommentare in bd, Datei."""
     path = _checked_target(journal, rows, issue_id)
-    still_open = _incorporate_file(journal, path, comment_ids)
-    if not still_open and issue_id in labelled(rows):
-        _external(
-            root,
-            [bd_program, "label", "remove", issue_id, LABEL],
-            BD_TIMEOUT,
-        )
-    if still_open:
+    if _incorporate_file(journal, path, comment_ids):
         print(_open_hint(issue_id))
     return 0
 
 
 def run_lint(journal: Path, rows: list[dict]) -> int:
+    """Reine Prüfung: schreibt weder ins Journal noch nach bd."""
     remaining = bd_comments(rows)
     for issue_id in sorted(remaining):
         count = len(remaining[issue_id])
         print(f"{issue_id}: {count} Kommentare in bd")
     if remaining:
         print(f"Auslagern: {COMMAND} export")
-    broken = _report_files(journal)
-    return 1 if remaining or broken else 0
+    broken, unincorporated = _report_files(journal)
+    return 1 if remaining or broken or unincorporated else 0
 
 
 def _checked_target(
@@ -179,8 +158,8 @@ def _checked_target(
 ) -> Path:
     if not is_issue_id(issue_id):
         raise JournalError(
-            "ungültige Vorgangs-ID; offene Vorgänge: "
-            f"bd list --label {LABEL}"
+            "ungültige Vorgangs-ID; Vorgänge mit offenen Einträgen: "
+            f"{COMMAND} lint"
         )
     remaining = bd_comments(rows).get(issue_id)
     if remaining:
@@ -329,8 +308,7 @@ def _clear(root: Path, issue_ids: list[str]) -> None:
 
 def _external(root: Path, command: list[str], timeout: int) -> None:
     """Startet command im Projekt-Repo; Meldung ohne Ausgabe."""
-    program = Path(command[0]).name
-    label = f"{program} {command[1]}" if program == "bd" else program
+    label = Path(command[0]).name
     try:
         with local.cwd(root):
             local[command[0]][command[1:]].run(
@@ -344,9 +322,13 @@ def _external(root: Path, command: list[str], timeout: int) -> None:
         raise JournalError(f"{label}: Exit {exc.retcode}") from exc
 
 
-def _report_files(journal: Path) -> int:
-    """Offene Einträge als Hinweis; Zahl vertragswidriger Dateien."""
-    broken = 0
+def _report_files(journal: Path) -> tuple[int, int]:
+    """Meldet je Datei Verstoß oder offene Einträge mit Befehl.
+
+    Ergebnis: Zahl vertragswidriger Dateien, Zahl der Vorgänge mit
+    offenen Einträgen.
+    """
+    broken = unincorporated = 0
     for path in sorted((journal / COMMENTS).glob("*.json")):
         try:
             record = load(journal, path)
@@ -355,11 +337,12 @@ def _report_files(journal: Path) -> int:
             broken += 1
             continue
         if open_count(record):
+            unincorporated += 1
             print(
                 f"{path.stem}: {open_count(record)} offen. "
                 + _open_hint(path.stem)
             )
-    return broken
+    return broken, unincorporated
 
 
 def _open_hint(issue_id: str) -> str:

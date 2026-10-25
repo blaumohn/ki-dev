@@ -146,7 +146,7 @@ def _run_comments(repo: Path, arguments: argparse.Namespace) -> int:
     try:
         root = repo_root(repo)
         return comments.run(
-            root, journal_path(root), arguments, export_rows, BD_PROGRAM
+            root, journal_path(root), arguments, export_rows
         )
     except _EXPECTED as exc:
         return _fail(exc)

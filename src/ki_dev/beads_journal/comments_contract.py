@@ -20,7 +20,6 @@ from ki_dev.beads_journal.contract import (
 )
 
 COMMENTS = "comments"
-LABEL = "comments:open"
 OPEN = "open"
 INCORPORATED = "incorporated"
 COMMAND = ".venv/bin/python -m ki_dev.beads_journal comments"
@@ -106,12 +105,6 @@ def load(journal: Path, path: Path) -> dict:
 
 def open_count(record: dict) -> int:
     return sum(entry["state"] == OPEN for entry in record["comments"])
-
-
-def labelled(rows: list[dict]) -> set[str]:
-    return {
-        row["id"] for row in rows if LABEL in (row.get("labels") or [])
-    }
 
 
 def comment_file(journal: Path, issue_id: str) -> Path:

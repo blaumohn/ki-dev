@@ -11,8 +11,10 @@ Zustand je Eintrag (`state`):
   Vorgang eingebaut. Eingebaut heißt nicht zwingend, dass der Vorgang
   geändert wurde.
 
-Vorgänge mit offenen Einträgen tragen in bd das Label `comments:open`
-(`bd list --label comments:open`).
+bd erfährt vom Zustand nichts (kein Label): Beads tragen nur den
+aktuellen Stand, Historie liegt hier. Offene Einträge blockieren den
+Commit im Projekt-Repo (pre-commit: erst `export`, dann `lint`), bis
+sie eingebaut und abgeschlossen sind.
 
 ```bash
 # Kommentare aus bd auslagern, je Vorgang committen, dann in bd löschen
@@ -20,8 +22,8 @@ Vorgänge mit offenen Einträgen tragen in bd das Label `comments:open`
 # Einträge eines Vorgangs abschließen (optional nur genannte
 # Kommentar-IDs); vorher erneut export
 .venv/bin/python -m ki_dev.beads_journal comments mark-incorporated <ID>
-# Kommentare in bd und vertragswidrige Dateien (Exit 1),
-# offene Einträge als Hinweis
+# reine Prüfung, Exit 1 bei Kommentaren in bd, vertragswidrigen
+# Dateien oder offenen Einträgen
 .venv/bin/python -m ki_dev.beads_journal comments lint
 ```
 

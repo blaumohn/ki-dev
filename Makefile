@@ -126,8 +126,8 @@ readme-live: .venv/bin/ki-dev setup-agents
 	  run_readme_test tests/readme/test_9_ergebnis.sh'; \
 	$(BIN)/python scripts/render-readme.py
 
-# Exit 1 bei Kommentaren in bd oder von Hand geänderten Dateien im
-# Kommentar-Journal; offene Einträge nur als Hinweis.
+# Exit 1 bei Kommentaren in bd, von Hand geänderten Dateien im
+# Kommentar-Journal oder offenen Einträgen; schreibt nichts.
 beads-comments-lint: .venv/bin/ki-dev
 	PATH=$(BIN):$$PATH $(BIN)/python -m ki_dev.beads_journal comments lint
 
