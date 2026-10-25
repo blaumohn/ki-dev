@@ -14,19 +14,12 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from plumbum import local
-from plumbum.commands.processes import (
-    CommandNotFound,
-    ProcessExecutionError,
-    ProcessTimedOut,
-)
-
 from ki_dev.beads_journal import comments, queue
+from ki_dev.beads_journal.bd_export import export_issues, export_rows
 from ki_dev.beads_journal.contract import (
     EVENTS,
     PayloadError,
     check_event,
-    check_issue,
     is_issue_id,
 )
 from ki_dev.beads_journal.drain import (
@@ -49,35 +42,25 @@ from ki_dev.beads_journal.publish_cli import run_audit, run_index
 
 CONFIG_KEY = "ki-dev.beadsJournal"
 DEFAULT_LOCATION = Path(".local/beads-journal")
-BD_PROGRAM = "bd"
-EXPORT_TIMEOUT = 60
 IDENTITY_KEYS = ("user.name", "user.email")
-# Nur bd export liefert diese Felder, die Hook-Nutzlast nicht. Ohne sie
-# entspricht der Erststand der Hook-Form: das erste Ereignis zeigt keine
-# Scheinlöschungen, und Kommentartexte gelangen nicht ins Journal.
-EXPORT_ONLY_FIELDS = (
-    "comments",
-    "comment_count",
-    "dependency_count",
-    "dependent_count",
-)
 _EXPECTED = (PayloadError, JournalError, GitError, queue.QueueError)
 
 
 def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     repo = arguments.repo or Path.cwd()
-    if arguments.command == "hook":
-        return run_hook(repo, arguments.issue_id, arguments.event)
-    if arguments.command == "init":
-        return run_init(repo, arguments.path)
-    if arguments.command == "drain":
-        return run_drain(repo)
-    if arguments.command in ("audit", "index"):
-        return _run_publish(repo, arguments.command)
-    if arguments.command == "comments":
-        return _run_comments(repo, arguments)
-    return run_status(repo)
+    handlers: dict[str, Callable[[], int]] = {
+        "hook": lambda: run_hook(
+            repo, arguments.issue_id, arguments.event
+        ),
+        "init": lambda: run_init(repo, arguments.path),
+        "drain": lambda: run_drain(repo),
+        "status": lambda: run_status(repo),
+        "audit": lambda: _run_publish(repo, "audit"),
+        "index": lambda: _run_publish(repo, "index"),
+        "comments": lambda: _run_comments(repo, arguments),
+    }
+    return handlers[arguments.command]()
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -372,52 +355,6 @@ def read_identity(root: Path) -> dict[str, str]:
         if code == 0:
             identity[key] = stdout.strip()
     return identity
-
-
-def export_issues(root: Path) -> list[dict]:
-    """bd export in Hook-Form: ohne EXPORT_ONLY_FIELDS."""
-    rows = export_rows(root)
-    for row in rows:
-        for field in EXPORT_ONLY_FIELDS:
-            row.pop(field, None)
-    return rows
-
-
-def export_rows(root: Path) -> list[dict]:
-    """bd export ohne Memories und Infrastruktur; jede Zeile geprüft."""
-    try:
-        with local.cwd(root):
-            _, stdout, _ = local[BD_PROGRAM][
-                "--readonly", "export"
-            ].run(retcode=0, timeout=EXPORT_TIMEOUT)
-    except CommandNotFound as exc:
-        raise JournalError("bd nicht gefunden") from exc
-    except ProcessTimedOut as exc:
-        raise JournalError(
-            f"bd export: über {EXPORT_TIMEOUT} s"
-        ) from exc
-    except ProcessExecutionError as exc:
-        raise JournalError(f"bd export: Exit {exc.retcode}") from exc
-    return [
-        _export_row(line, number)
-        for number, line in enumerate(stdout.splitlines(), start=1)
-        if line.strip()
-    ]
-
-
-def _export_row(line: str, number: int) -> dict:
-    label = f"bd export Zeile {number}"
-    try:
-        row = json.loads(line)
-    except json.JSONDecodeError as exc:
-        raise PayloadError(f"{label}: kein JSON") from exc
-    if (
-        not isinstance(row, dict)
-        or row.pop("_type", "issue") != "issue"
-    ):
-        raise PayloadError(f"{label}: kein Issue-Datensatz")
-    check_issue(row, [label])
-    return row
 
 
 def _read_payload() -> object:

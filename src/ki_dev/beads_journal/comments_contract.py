@@ -25,8 +25,9 @@ INCORPORATED = "incorporated"
 COMMAND = ".venv/bin/python -m ki_dev.beads_journal comments"
 FIELDS = ("id", "author", "created_at", "text")
 _STRING = {"type": "string"}
+# Ohne Komma: scripts/bd-clear-comments.sh trennt IDs damit.
 _ENTRY = {
-    "id": {"type": "string", "pattern": r"\S"},
+    "id": {"type": "string", "pattern": r"^[^\s,]+$"},
     "author": _STRING,
     "created_at": _STRING,
     "text": _STRING,

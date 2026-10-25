@@ -2,9 +2,11 @@
 
 Zwischenlösung bis ki-dev-ablauf-dg9e. ``comments export`` schreibt je
 Vorgang mit Kommentaren ``comments/<ID>.json`` ins Journal, committet
-und löscht erst danach die Kommentare in bd
-(scripts/bd-clear-comments.sh). Jeder Eintrag trägt den Einbau-Zustand
-open oder incorporated; nur ``mark-incorporated`` schließt ab. ``lint``
+und löscht erst danach genau diese Kommentare (nach id) in bd
+(scripts/bd-clear-comments.sh); was nach dem Lesen des Exports
+hinzukommt, bleibt für den nächsten export in bd. Jeder Eintrag trägt
+den Einbau-Zustand open oder incorporated; nur ``mark-incorporated``
+schließt ab. ``lint``
 prüft nur und meldet Kommentare in bd, vertragswidrige (von Hand
 bearbeitete) Dateien und offene Einträge; jedes davon blockiert den
 Commit (pre-commit). In bd schreibt das Modul keinen Zustand, etwa ein
@@ -108,7 +110,11 @@ def run(
 
 
 def run_export(root: Path, journal: Path, rows: list[dict]) -> int:
-    """Erst committen, dann in bd löschen; nie umgekehrt."""
+    """Erst committen, dann in bd löschen; nie umgekehrt.
+
+    Eine vertragswidrige Datei bricht vor jedem Löschen ab: dann bleiben
+    alle Kommentare in bd, schon gemachte Commits auch.
+    """
     pending = bd_comments(rows)
     with locked(journal):
         _write_readme(journal)
@@ -122,7 +128,7 @@ def run_export(root: Path, journal: Path, rows: list[dict]) -> int:
             f"{added[issue_id]} neu ausgelagert"
         )
     if pending:
-        _clear(root, sorted(pending))
+        _clear(root, pending)
     print(f"In bd gelöscht: {len(pending)} Vorgänge")
     broken, _ = _report_files(journal)
     return 1 if broken else 0
@@ -293,10 +299,17 @@ def _commit_file(
         raise
 
 
-def _clear(root: Path, issue_ids: list[str]) -> None:
+def _clear(root: Path, pending: dict[str, list[dict]]) -> None:
+    """Löscht je Vorgang nur die exportierten IDs (<ID>=<id>,...)."""
+    issue_ids = sorted(pending)
+    targets = [
+        f"{issue_id}="
+        + ",".join(entry["id"] for entry in pending[issue_id])
+        for issue_id in issue_ids
+    ]
     try:
         _external(
-            root, [str(root / CLEAR_SCRIPT), *issue_ids], CLEAR_TIMEOUT
+            root, [str(root / CLEAR_SCRIPT), *targets], CLEAR_TIMEOUT
         )
     except JournalError as exc:
         raise JournalError(

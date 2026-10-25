@@ -16,6 +16,10 @@ aktuellen Stand, Historie liegt hier. Offene Einträge blockieren den
 Commit im Projekt-Repo (pre-commit: erst `export`, dann `lint`), bis
 sie eingebaut und abgeschlossen sind.
 
+`export` löscht in bd nur die Kommentare, die es gerade committet hat
+(nach `id`); was danach hinzukommt, holt der nächste `export`. Eine
+vertragswidrige Datei bricht `export` vor jedem Löschen ab.
+
 ```bash
 # Kommentare aus bd auslagern, je Vorgang committen, dann in bd löschen
 .venv/bin/python -m ki_dev.beads_journal comments export

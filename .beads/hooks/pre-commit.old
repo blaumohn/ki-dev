@@ -9,7 +9,19 @@
 # comments lint als reine Prüfung. Offene Einträge blockieren den
 # Commit, bis mark-incorporated sie abschließt. Kein git add: export
 # ändert nur gitignorierte Pfade (.local/, .beads/issues.jsonl).
+#
+# Das Journal ist lokales Opt-in wie die bd-Ereignis-Hooks (cli.py,
+# run_hook): ohne Marker (Klon ohne init, CI) Exit 0. Ort wie
+# cli.journal_path: git config ki-dev.beadsJournal, sonst
+# .local/beads-journal; relativ zum Repo oder absolut.
 root=$(git rev-parse --show-toplevel) || exit 1
+journal=$(git -C "$root" config --local --get ki-dev.beadsJournal) ||
+  journal=.local/beads-journal
+case $journal in
+  /*) ;;
+  *) journal="$root/$journal" ;;
+esac
+[ -f "$journal/.beads-journal" ] || exit 0
 bin="$root/.venv/bin"
 if [ ! -x "$bin/python" ]; then
   echo >&2 "Kommentar-Journal: .venv fehlt; zuerst make setup"

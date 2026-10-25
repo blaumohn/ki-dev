@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.beads_journal import cli, drain, journal, queue
+from ki_dev.beads_journal import bd_export, cli, drain, journal, queue
 from ki_dev.beads_journal.git import GitError
 from ki_dev.beads_journal.journal import ERRORS_LOG, MARKER
 
@@ -712,7 +712,7 @@ def fake_bd(directory, monkeypatch, rows):
     lines = "".join(json.dumps(row) + "\n" for row in rows)
     script.write_text(f"#!/bin/sh\ncat <<'EOF'\n{lines}EOF\n")
     script.chmod(0o755)
-    monkeypatch.setattr(cli, "BD_PROGRAM", str(script))
+    monkeypatch.setattr(bd_export, "BD_PROGRAM", str(script))
 
 
 def test_init_fills_once_from_bd_export(

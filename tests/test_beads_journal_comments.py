@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ki_dev.beads_journal import cli, comments, journal
+from ki_dev.beads_journal import bd_export, cli, comments, journal
 from ki_dev.beads_journal.contract import PayloadError
 from tests.test_beads_journal import IDENTITY, git, issue, subjects
 
@@ -33,7 +33,9 @@ class FakeBd:
 
     calls.jsonl hält jeden Aufruf mit der Commitzahl des Journals zum
     Aufrufzeitpunkt fest. bd kennt nur den lesenden Export; jeder
-    andere Aufruf (Schreiben nach bd) endet mit Exit 9.
+    andere Aufruf (Schreiben nach bd) endet mit Exit 9. Liegt
+    after-export.json vor, ersetzt der Export danach den Zustand damit
+    (Kommentar entsteht zwischen Export und Löschen).
     """
 
     def __init__(self, folder, monkeypatch, journal):
@@ -41,11 +43,12 @@ class FakeBd:
         self.state = folder / "state.json"
         self.calls = folder / "calls.jsonl"
         self.fail = folder / "clear-fails"
+        self.after_export = folder / "after-export.json"
         folder.mkdir()
         self.rows([])
         bd = self._script("bd", self._bd_body(journal))
         clear = self._script("clear", self._clear_body(journal))
-        monkeypatch.setattr(cli, "BD_PROGRAM", str(bd))
+        monkeypatch.setattr(bd_export, "BD_PROGRAM", str(bd))
         monkeypatch.setattr(comments, "CLEAR_SCRIPT", clear)
 
     def rows(self, rows):
@@ -91,15 +94,23 @@ class FakeBd:
             "    sys.exit(9)\n"
             "for row in rows:\n"
             "    print(json.dumps({'_type': 'issue', **row}))\n"
+            f"after = {str(self.after_export)!r}\n"
+            "if __import__('os').path.exists(after):\n"
+            "    __import__('shutil').move(after, state)\n"
         )
 
     def _clear_body(self, journal):
         return self._prelude(journal) + (
             f"if __import__('os').path.exists({str(self.fail)!r}):\n"
             "    sys.exit(3)\n"
+            "targets = dict(arg.split('=') for arg in sys.argv[1:])\n"
             "for row in rows:\n"
-            "    if row['id'] in sys.argv[1:]:\n"
-            "        row.pop('comments', None)\n"
+            "    ids = targets.get(row['id'], '').split(',')\n"
+            "    kept = [c for c in row.get('comments', [])\n"
+            "            if c['id'] not in ids]\n"
+            "    row['comments'] = kept\n"
+            "    if not kept:\n"
+            "        row.pop('comments')\n"
             "json.dump(rows, open(state, 'w'))\n"
         )
 
@@ -155,7 +166,9 @@ def test_export_commits_before_clearing(
         "comments t-1: 2 ausgelagert",
     ]
     clear_call = [
-        count for args, count in fake.logged() if args == ["t-1"]
+        count
+        for args, count in fake.logged()
+        if args == ["t-1=c-1,c-2"]
     ]
     assert clear_call == ["3"]
     assert "comments" not in fake.current()[0]
@@ -215,6 +228,54 @@ def test_second_export_keeps_state_and_appends_new(
     assert subjects(journal_dir)[-1] == "comments t-1: 1 ausgelagert"
 
 
+def test_export_keeps_comment_added_after_reading(
+    repo, journal_dir, fake
+):
+    fake.rows([issue(comments=[comment(1)])])
+    fake.after_export.write_text(
+        json.dumps([issue(comments=[comment(1), comment(2)])])
+    )
+
+    assert run(repo, "export") == 0
+
+    assert [c["id"] for c in fake.current()[0]["comments"]] == ["c-2"]
+    assert states(journal_dir) == {"c-1": "open"}
+
+    assert run(repo, "export") == 0
+
+    assert "comments" not in fake.current()[0]
+    assert states(journal_dir) == {"c-1": "open", "c-2": "open"}
+
+
+def test_export_stops_before_clearing_on_broken_file(
+    repo,
+    journal_dir,
+    fake,
+    capsys,
+):
+    """Vertragswidrige Datei: nichts wird in bd gelöscht."""
+    fake.rows([issue(comments=[comment(1)])])
+    assert run(repo, "export") == 0
+    (journal_dir / "comments" / "t-1.json").write_text("{}")
+    rows = [
+        issue("t-0", comments=[comment(3)]),
+        issue(comments=[comment(2)]),
+    ]
+    fake.rows(rows)
+    writes = fake.writes()
+    capsys.readouterr()
+
+    assert run(repo, "export") == 1
+
+    assert fake.writes() == writes
+    assert fake.current() == rows
+    assert subjects(journal_dir)[-1] == "comments t-0: 1 ausgelagert"
+    error = capsys.readouterr().err
+    assert (
+        f"git -C {journal_dir} checkout -- comments/t-1.json" in error
+    )
+
+
 def test_export_without_new_comments_commits_nothing(
     repo,
     journal_dir,
@@ -250,7 +311,7 @@ def test_mark_incorporated_selected_then_all(
         "c-2": "incorporated",
     }
     assert "labels" not in fake.current()[0]
-    assert fake.writes() == [["t-1"]]
+    assert fake.writes() == [["t-1=c-1,c-2"]]
     assert subjects(journal_dir)[-2:] == [
         "comments t-1: 1 eingebaut",
         "comments t-1: 1 eingebaut",
@@ -474,15 +535,20 @@ def test_inactive_journal_points_to_init(repo, capsys):
     assert "beads_journal init" in capsys.readouterr().err
 
 
-def hook_repo(tmp_path, export_exit, lint_exit):
-    """Wegwerf-Repo mit pre-commit.old und einem Fake-venv-Python.
+def hook_repo(tmp_path, export_exit=0, lint_exit=0, location=None):
+    """Wegwerf-Repo mit aktivem Journal und einem Fake-venv-Python.
 
     Das Fake-Python protokolliert die comments-Aktion und endet mit dem
-    vorgegebenen Exit.
+    vorgegebenen Exit. location setzt git config ki-dev.beadsJournal.
     """
     path = tmp_path / "hook-repo"
     (path / ".venv" / "bin").mkdir(parents=True)
     git(path, "init", "-q")
+    if location is not None:
+        git(path, "config", "--local", cli.CONFIG_KEY, str(location))
+    target = path / (location or cli.DEFAULT_LOCATION)
+    target.mkdir(parents=True)
+    (target / journal.MARKER).write_text("")
     python = path / ".venv" / "bin" / "python"
     python.write_text(
         "#!/bin/sh\n"
@@ -505,6 +571,11 @@ def run_hook(path):
     )
 
 
+def hook_calls(path):
+    log = path / ".venv" / "bin" / "calls"
+    return log.read_text().split() if log.exists() else []
+
+
 @pytest.mark.parametrize(
     "export_exit, lint_exit, calls, expected",
     [
@@ -521,14 +592,33 @@ def test_pre_commit_old_chains_export_then_lint(
     result = run_hook(path)
 
     assert result.returncode == expected
-    log = path / ".venv" / "bin" / "calls"
-    assert log.read_text().split() == calls
+    assert hook_calls(path) == calls
 
 
-def test_pre_commit_old_without_venv_fails(tmp_path):
-    path = tmp_path / "leer"
-    path.mkdir()
-    git(path, "init", "-q")
+@pytest.mark.parametrize("location", ["journal", "/ABS"])
+def test_pre_commit_old_follows_configured_location(tmp_path, location):
+    if location == "/ABS":
+        location = tmp_path / "anderswo"
+    path = hook_repo(tmp_path, lint_exit=1, location=location)
+
+    assert run_hook(path).returncode == 1
+    assert hook_calls(path) == ["export", "lint"]
+
+
+def test_pre_commit_old_passes_without_journal(tmp_path):
+    """Klon ohne init oder CI: kein Marker, kein venv nötig."""
+    path = hook_repo(tmp_path, export_exit=3)
+    (path / cli.DEFAULT_LOCATION / journal.MARKER).unlink()
+
+    result = run_hook(path)
+
+    assert result.returncode == 0
+    assert hook_calls(path) == []
+
+
+def test_pre_commit_old_without_venv_fails_for_active_journal(tmp_path):
+    path = hook_repo(tmp_path)
+    (path / ".venv" / "bin" / "python").unlink()
 
     result = run_hook(path)
 
