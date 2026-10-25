@@ -3,15 +3,13 @@
     "skript": "9-entscheiden.sh",
     "parameter": {},
     "ergebnis": "passed",
-    "datum": "2026-10-24T10:44:35Z",
+    "datum": "2026-10-24T11:08:18Z",
     "auszug": [
-      "Lauf version-fix: paused_interactive nach 2 Runden",
+      "Lauf version-fix: waiting_decision nach 1 Runde",
       "  Runde 1  Umsetzer  geändert: version.py",
       "  Runde 1  Tests     test_version fehlgeschlagen",
-      "  Runde 1  Review    fix (AC1): Die CHECKS-Nachweisprojektion zeigt einen Feh…",
-      "  Runde 2  Umsetzer  keine Dateiänderung",
-      "  Runde 2  Tests     test_version fehlgeschlagen",
-      "  Halt               empty_result_unresolved"
+      "  Runde 1  Review    decision: AC1 verlangt is_newer('1.10.0', '1.9.0') == Tr…",
+      "  Halt               wartet auf Entscheidung (Bead ändern, resume)"
     ]
   }
 ]

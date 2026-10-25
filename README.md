@@ -269,13 +269,11 @@ ki-dev -f implement resume version-fix  # liest den Bead neu
 > ✅ Mit echten Agenten ausgeführt · [Test](tests/readme/test_9_entscheiden.sh)
 
 ```text
-Lauf version-fix: paused_interactive nach 2 Runden
+Lauf version-fix: waiting_decision nach 1 Runde
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    fix (AC1): Die CHECKS-Nachweisprojektion zeigt einen Feh…
-  Runde 2  Umsetzer  keine Dateiänderung
-  Runde 2  Tests     test_version fehlgeschlagen
-  Halt               empty_result_unresolved
+  Runde 1  Review    decision: AC1 verlangt is_newer('1.10.0', '1.9.0') == Tr…
+  Halt               wartet auf Entscheidung (Bead ändern, resume)
 ```
 
 `resume` liest den Bead neu und gibt Review und Umsetzer die
@@ -304,17 +302,17 @@ git -C ../versions show main:version.py            # korrigierte Datei
 Lauf version-fix: passed nach 2 Runden
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    fix (AC1): Die CHECKS-Nachweisprojektion zeigt einen Feh…
+  Runde 1  Review    decision: AC1 verlangt is_newer('1.10.0', '1.9.0') == Tr…
+  Runde 1  Mensch    AC2 geändert
+  Runde 1  Review    fix (AC2): Die Entscheidung des Menschen nach Runde 1 se…
   Runde 2  Umsetzer  geändert: test_version.py
   Runde 2  Tests     test_version bestanden
-  Runde 2  Mensch    AC2 geändert
-  Runde 2  Review    PASS: AC1 ist erfuellt: version.py vergleicht Versionen…
+  Runde 2  Review    PASS: Keine Befunde. AC2 neu ist umgesetzt: test_version…
   Abschluss          Fast-forward integriert
 Fix is_newer()
 
  test_version.py | 2 +-
- version.py      | 5 ++++-
- 2 files changed, 5 insertions(+), 2 deletions(-)
+ version.py      | 4 +++-
 …
 ```
 
