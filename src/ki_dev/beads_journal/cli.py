@@ -1,4 +1,5 @@
-"""Befehle des Beads-Journals: init, hook, drain, status, audit, index.
+"""Befehle des Beads-Journals: init, hook, drain, status, audit, index,
+comments.
 
 argparse statt typer: der Hook startet je bd-Ereignis neu und hat 10 s
 Frist. Ort des Journals: git config ki-dev.beadsJournal im Projekt-Repo
@@ -20,7 +21,7 @@ from plumbum.commands.processes import (
     ProcessTimedOut,
 )
 
-from ki_dev.beads_journal import queue
+from ki_dev.beads_journal import comments, queue
 from ki_dev.beads_journal.contract import (
     EVENTS,
     PayloadError,
@@ -74,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_drain(repo)
     if arguments.command in ("audit", "index"):
         return _run_publish(repo, arguments.command)
+    if arguments.command == "comments":
+        return _run_comments(repo, arguments)
     return run_status(repo)
 
 
@@ -120,6 +123,7 @@ def _parser() -> argparse.ArgumentParser:
         help="index.md aus issues/*.json schreiben, gegen bd export "
         "abgleichen und committen",
     )
+    comments.add_parser(commands)
     return parser
 
 
@@ -131,6 +135,19 @@ def _run_publish(repo: Path, command: str) -> int:
         if command == "audit":
             return run_audit(journal)
         return run_index(root, journal, export_issues)
+    except _EXPECTED as exc:
+        return _fail(exc)
+    except OSError as exc:
+        return _fail(io_error(exc))
+
+
+def _run_comments(repo: Path, arguments: argparse.Namespace) -> int:
+    """comments export/mark-incorporated/lint (Kommentar-Journal)."""
+    try:
+        root = repo_root(repo)
+        return comments.run(
+            root, journal_path(root), arguments, export_rows, BD_PROGRAM
+        )
     except _EXPECTED as exc:
         return _fail(exc)
     except OSError as exc:
@@ -358,6 +375,15 @@ def read_identity(root: Path) -> dict[str, str]:
 
 
 def export_issues(root: Path) -> list[dict]:
+    """bd export in Hook-Form: ohne EXPORT_ONLY_FIELDS."""
+    rows = export_rows(root)
+    for row in rows:
+        for field in EXPORT_ONLY_FIELDS:
+            row.pop(field, None)
+    return rows
+
+
+def export_rows(root: Path) -> list[dict]:
     """bd export ohne Memories und Infrastruktur; jede Zeile geprüft."""
     try:
         with local.cwd(root):
@@ -391,8 +417,6 @@ def _export_row(line: str, number: int) -> dict:
     ):
         raise PayloadError(f"{label}: kein Issue-Datensatz")
     check_issue(row, [label])
-    for field in EXPORT_ONLY_FIELDS:
-        row.pop(field, None)
     return row
 
 

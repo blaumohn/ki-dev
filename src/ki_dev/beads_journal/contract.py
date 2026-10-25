@@ -60,6 +60,7 @@ _REASONS = {
     "enum": "unbekannter Wert",
     "pattern": "ungültiges Format",
     "format": "ungültiges Format",
+    "additionalProperties": "unbekanntes Feld",
 }
 
 
@@ -69,23 +70,24 @@ class PayloadError(ValueError):
 
 def check_event(event: str, hook_id: str, issue: object) -> None:
     """Prüft Ereignis, Issue-Felder und die ID gegen die Hook-ID."""
-    _raise_first(_EVENT_VALIDATOR, {"event": event, "issue": issue}, [])
+    check_schema(_EVENT_VALIDATOR, {"event": event, "issue": issue}, [])
     if issue["id"] != hook_id:
         raise PayloadError("issue.id: passt nicht zur Hook-ID")
 
 
 def check_issue(issue: object, prefix: list[str]) -> None:
     """Prüft ein einzelnes Issue, etwa eine Zeile aus bd export."""
-    _raise_first(_ISSUE_VALIDATOR, issue, prefix)
+    check_schema(_ISSUE_VALIDATOR, issue, prefix)
 
 
 def is_issue_id(value: str) -> bool:
     return _ID_VALIDATOR.is_valid(value)
 
 
-def _raise_first(
+def check_schema(
     validator: Draft202012Validator, instance: object, prefix: list[str]
 ) -> None:
+    """Erster Verstoß als PayloadError: Feldpfad, Grund, kein Wert."""
     error = best_match(validator.iter_errors(instance))
     if error is None:
         return

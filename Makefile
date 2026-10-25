@@ -9,6 +9,7 @@
 #   make spec-test      Anforderungstests mit Ergebnismatrix (dürfen rot sein)
 #   make readme-check   README-Befehle im Wegwerf-Container, setzt Statuszeilen (braucht Docker)
 #   make readme-live    README-Beispiel mit echten Agenten (verbraucht Tokens; codex und claude angemeldet)
+#   make beads-comments-lint  Kommentare in bd und Kommentar-Journal prüfen
 #   make clean          Temporäre Dateien und venv entfernen
 
 .DEFAULT_GOAL := help
@@ -29,13 +30,14 @@ help:
 	@echo "  make spec-test      Anforderungstests mit Ergebnismatrix (dürfen rot sein)"
 	@echo "  make readme-check   README-Befehle im Wegwerf-Container, setzt Statuszeilen (braucht Docker)"
 	@echo "  make readme-live    README-Beispiel mit echten Agenten (verbraucht Tokens; codex und claude angemeldet)"
+	@echo "  make beads-comments-lint  Kommentare in bd und Kommentar-Journal prüfen"
 	@echo "  make clean          Entfernen Sie venv und temporäre Dateien"
 	@echo ""
 	@echo "Beispiele:"
 	@echo "  make setup          # Initialisierung durchführen"
 	@echo "  make test           # Tests ausführen"
 
-.PHONY: setup setup-agents setup-runtime demo test spec-test readme-check readme-live clean
+.PHONY: setup setup-agents setup-runtime demo test spec-test readme-check readme-live beads-comments-lint clean
 
 setup: .venv/bin/ki-dev setup-bd
 
@@ -123,6 +125,11 @@ readme-live: .venv/bin/ki-dev setup-agents
 	bash -c 'source tests/readme/lib.sh; \
 	  run_readme_test tests/readme/test_9_ergebnis.sh'; \
 	$(BIN)/python scripts/render-readme.py
+
+# Exit 1 bei Kommentaren in bd oder von Hand geänderten Dateien im
+# Kommentar-Journal; offene Einträge nur als Hinweis.
+beads-comments-lint: .venv/bin/ki-dev
+	PATH=$(BIN):$$PATH $(BIN)/python -m ki_dev.beads_journal comments lint
 
 clean:
 	rm -rf .venv

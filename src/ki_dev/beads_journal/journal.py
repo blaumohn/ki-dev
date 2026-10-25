@@ -43,8 +43,10 @@ _README = """\
 
 Je Änderung an einem Beads-Vorgang ein Commit, geschrieben von den
 bd-Hooks on_create, on_update und on_close. `issues/<ID>.json` enthält
-die letzte Hook-Nutzlast des Vorgangs. Löschungen und Kommentartexte
-fehlen.
+die letzte Hook-Nutzlast des Vorgangs. Löschungen fehlen.
+Kommentare stehen nicht in `issues/`, sondern ausgelagert in
+`comments/<ID>.json`, nur über `python -m ki_dev.beads_journal comments`
+geändert; siehe `comments/README.md`.
 
 Sitzungsangaben in lesbaren Quellen-Beads sind interne Hinweise,
 z. B. `Claude-Sitzung …b1d0d`. Neue Quellen-Beads verwenden einen unter
@@ -166,7 +168,7 @@ def initialize(
         )
         (journal / "README.md").write_text(_README, encoding="utf-8")
         for issue in issues:
-            _write_atomic(
+            write_atomic(
                 _issue_file(journal, issue["id"]), _normalize(issue)
             )
         (journal / MARKER).write_text(_MARKER_TEXT, encoding="utf-8")
@@ -241,7 +243,7 @@ def commit_event(
     )
     try:
         if not late:
-            _write_atomic(target, _normalize(issue))
+            write_atomic(target, _normalize(issue))
             run_git(
                 journal, "add", "--", str(target.relative_to(journal))
             )
@@ -260,17 +262,17 @@ def commit_event(
     except (GitError, OSError):
         if not late:
             # Verworfenes Ereignis nicht in den nächsten Commit tragen.
-            _restore_issue(journal, target, previous)
+            restore_file(journal, target, previous)
         raise
 
 
-def _restore_issue(
+def restore_file(
     journal: Path, target: Path, previous: str | None
 ) -> None:
     if previous is None:
         target.unlink(missing_ok=True)
     else:
-        _write_atomic(target, previous)
+        write_atomic(target, previous)
     run_git(
         journal,
         "reset",
@@ -337,7 +339,7 @@ def _normalize(issue: dict) -> str:
     )
 
 
-def _write_atomic(target: Path, text: str) -> None:
+def write_atomic(target: Path, text: str) -> None:
     temporary = target.with_name(f".{target.name}.tmp")
     try:
         temporary.write_text(text, encoding="utf-8")

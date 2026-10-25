@@ -61,6 +61,9 @@ Commit bleibt ausdrücklich uncommitteter Stand. Einzige Beads-Schreibausnahme
 ist `notes` als temporäre Kurzmitteilung (höchstens 600 Zeichen, ersetzen statt
 anhängen). Der nächste Handoff-Schritt ersetzt oder leert sie nach Verarbeitung;
 Reviewer bilden davor ihr eigenes Urteil. Keine Fortschrittskommentare.
+Vorhandene Kommentare lagert `comments export` ins Beads-Journal aus;
+abgeschlossen wird nur per `comments mark-incorporated`, geprüft mit
+`comments lint` (Kommentar-Journal nur per Befehl ändern).
 Handoff-Aufträge bleiben kurz; Materialisierungsreview benennt Übergröße,
 widersprüchliche Nachträge und nötige Teilung konkret.
 
