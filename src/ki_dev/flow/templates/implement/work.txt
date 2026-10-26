@@ -23,4 +23,11 @@ Bearbeite den Auftrag und pruefe seine Wirkung.
 Arbeite innerhalb der Aufrufgrenzen. Bei fehlendem Zugriff oder
 anderem Blocker beende die Arbeit mit einer konkreten Begruendung;
 versuche nicht wiederholt, denselben Blocker zu umgehen.
-Berichte knapp, was getan und geprueft wurde.
+Antworte als JSON-Objekt ohne Markdown und ohne weitere Felder:
+{"outcome":"completed","summary":"Was getan und geprueft wurde"}
+outcome ist completed bei erledigtem Auftrag, needs_decision bei einem
+fachlichen Widerspruch oder einer offenen Entscheidung (z.B. Auftrag
+und Abnahmekriterium widersprechen sich), escalate bei einem technischen
+Blocker (z.B. fehlender Zugriff). Halte bei needs_decision oder escalate
+an; umgehe den Grund nicht durch eigenmaechtige Aenderung der Kriterien.
+summary muss einen nichtleeren Bericht oder konkreten Haltgrund enthalten.

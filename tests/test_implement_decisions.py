@@ -11,6 +11,7 @@ from dataclasses import replace
 
 import pytest
 
+from ki_dev.adapter.contract import WorkReport
 from ki_dev.flow_ops.implement.decisions import (
     decision_document,
     prompt_text,
@@ -57,6 +58,32 @@ class RecordingReviewer(FakeReviewer):
     def review(self, request):
         self.prompts.append(request.prompt)
         return super().review(request)
+
+
+def test_worker_decision_resumes_in_new_runtime(tmp_path):
+    class DecidingWorker(RecordingWorker):
+        def work(self, request):
+            report = super().work(request)
+            if self.calls == 1:
+                return WorkReport(
+                    "Darf AC2 geändert werden?", "needs_decision"
+                )
+            return report
+
+    worker = DecidingWorker()
+    reviewer = FakeReviewer(["PASS"])
+    with _runtime(tmp_path, "worker", worker, reviewer, []) as runtime:
+        result = runtime.start(_version_task("worker"), Limits())
+        assert result.status == "waiting_decision"
+    assert reviewer.calls == 0
+
+    with _runtime(
+        tmp_path, "worker", worker, reviewer, [_context(1)]
+    ) as runtime:
+        result = runtime.resume("AC2 darf angepasst werden")
+    assert result.status == "passed"
+    assert worker.calls == 2
+    assert "AC2 darf angepasst werden" in worker.prompts[1]
 
 
 def _version_task(run_id: str, criteria=OLD):

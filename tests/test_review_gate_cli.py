@@ -55,7 +55,9 @@ answers = ["PASS"]
 """
 
 
-def _implement(sandbox: Sandbox, operator: str) -> dict:
+def _implement(
+    sandbox: Sandbox, operator: str, *, worker_answer: str | None = None
+) -> dict:
     """Lauf mit Review-PASS über die öffentliche CLI, ``add`` als
     ``a <operator> b``; Ergebnis samt Ziel-Ref vorher/nachher,
     Ereignissen und Prüfnachweisen."""
@@ -63,7 +65,12 @@ def _implement(sandbox: Sandbox, operator: str) -> dict:
     sandbox.write(
         "add.py", f"def add(a, b):\n    return a {operator} b\n"
     )
-    sandbox.write("test_add.py", TEST_ADD)
+    sandbox.write(
+        "test_add.py",
+        "from pathlib import Path\n"
+        f"Path({str(sandbox.base / 'test-started')!r}).touch()\n"
+        + TEST_ADD,
+    )
     sandbox.commit("start")
     work = sandbox.base / "arbeit"
     runs = sandbox.base / "runs"
@@ -85,13 +92,17 @@ def _implement(sandbox: Sandbox, operator: str) -> dict:
         cwd=work,
     ).stdout.strip()
     profile = sandbox.base / "profil.toml"
-    profile.write_text(
-        PROFILE.format(
-            workdir=work,
-            target=sandbox.repo,
-            oracle=json.dumps(list(ORACLE)),
-        )
+    configuration = PROFILE.format(
+        workdir=work,
+        target=sandbox.repo,
+        oracle=json.dumps(list(ORACLE)),
     )
+    if worker_answer is not None:
+        configuration = configuration.replace(
+            '[worker]\nexecutor = "mock"',
+            '[worker]\nexecutor = "inbox"',
+        )
+    profile.write_text(configuration)
     before = _target_ref(sandbox)
     outcome = sandbox.run(
         ["ki-dev", "-f", "implement", bead, "--profile", profile,
@@ -100,7 +111,21 @@ def _implement(sandbox: Sandbox, operator: str) -> dict:
     )
     assert outcome.code == 0, outcome.stderr
     run = runs / "r"
+    if worker_answer is not None:
+        assert json.loads(outcome.stdout)["status"] == "awaiting_input"
+        (ask,) = (run / "inbox").glob("*.input.md")
+        answer = ask.with_name(ask.name.replace(".input.", ".answer."))
+        answer.write_text(worker_answer)
+        (work / "MOCK.md").write_text("Änderung des Workers\n")
+        outcome = sandbox.run(
+            ["ki-dev", "-f", "implement", "resume", "r",
+             "--runs-dir", runs], cwd=work,
+        )
+        assert outcome.code == 0, outcome.stderr
     return {
+        "run": run,
+        "work": work,
+        "test_marker": sandbox.base / "test-started",
         "result": json.loads(outcome.stdout),
         "before": before,
         "after": _target_ref(sandbox),

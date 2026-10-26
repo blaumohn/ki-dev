@@ -13,6 +13,9 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 
+from ki_dev.adapter.contract import (
+    AgentProtocolError as AgentProtocolError,
+)
 from ki_dev.flow.model import Flow
 from ki_dev.review_decision import (
     CORE_FIELDS,
@@ -22,10 +25,6 @@ from ki_dev.review_decision import (
     load_json_object,
     parse_verdict,
 )
-
-
-class AgentProtocolError(ValueError):
-    """Agentenausgabe verletzt Urteilskern oder Referenzbindung."""
 
 
 @dataclass(frozen=True)

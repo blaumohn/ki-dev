@@ -610,13 +610,17 @@ class RunRuntime:
             # (z. B. bei einer Protokoll-Wiederholung), wuerde
             # sonst dieselbe operation_id wie der vorige
             # Versuch erhalten und dessen gespeichertes
-            # Artefakt faelschlich wiederverwenden.
+            # Artefakt faelschlich wiederverwenden. Ebenso jede
+            # Entscheidung des Menschen: nach einer Worker-Eskalation
+            # bleibt der Ablauf im selben Zustand, der Versuch mit
+            # der Entscheidung ist aber neu.
             counters = run.state.counters
             operation_id = (
                 f"r{state['round_id']:04d}-{kind}-"
                 f"w{counters.worker_attempt:04d}"
                 f"-p{counters.process_retry:04d}"
                 f"-t{counters.protocol_attempt:04d}"
+                f"-d{len(state['decisions']):04d}"
             )
         return {
             "id": operation_id,
@@ -1051,12 +1055,15 @@ class RunRuntime:
         name = cast(str, pending["kind"])
         update, event_name = self._operations.accept(name, artifact)
         binding = IMPLEMENT.bindings[name]
-        if binding.success is not None:
+        if binding.do != "review.decide":
             payload = project(artifact, binding.payload or {})
             event = decode_operation_event(event_name, payload)
             run = decode_run_state(state["run_state"])
             moved = self._transition(run, event)
             detail = artifact.get("detail")
+            next_run = decode_run_state(moved["run_state"])
+            if next_run.halted:
+                detail = detail or artifact.get("summary")
             return self._write_handoff_if_stopped(
                 state,
                 {
@@ -1294,7 +1301,8 @@ def _result(lauf: RunMachine, data: RunData) -> RunResult:
     detail = data["last_error"]
     if run.escalation is not None:
         cause = str(run.escalation.cause)
-        detail = f"{cause}: {detail}" if detail else cause
+        if detail != cause:
+            detail = f"{cause}: {detail}" if detail else cause
     return RunResult(
         run_id=run.run_id,
         status=lauf.status,

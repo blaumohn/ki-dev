@@ -33,6 +33,7 @@ from ki_dev.adapter.contract import (
     TurnPrompt,
     WorkReport,
     WorkRequest,
+    parse_work_report,
 )
 from ki_dev.adapter.executors import ExecutorSpec, Measure
 
@@ -152,7 +153,7 @@ class ManualRelay:
     spec: ExecutorSpec
 
     def work(self, request: WorkRequest) -> WorkReport:
-        return WorkReport(self._relay(request))
+        return parse_work_report(self._relay(request))
 
     def review(self, request: ReviewRequest) -> str:
         return self._relay(request)

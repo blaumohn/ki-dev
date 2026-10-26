@@ -420,7 +420,8 @@ input = [
   "operation_id",
 ]
 output = { work_report = ["summary"] }
-success = "worker_completed"
+payload = { summary = ["summary"] }
+events = ["worker_completed", "worker_needs_decision", "worker_escalate"]
 
 [op.evidence]
 do = "evidence.collect"

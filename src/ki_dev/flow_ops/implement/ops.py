@@ -49,7 +49,19 @@ class ImplementationOperations:
             "agent.work": OperationSpec(
                 self.work,
                 {"type": "array", "minItems": 6, "maxItems": 6},
-                {"type": "object"},
+                {
+                    "type": "object",
+                    "required": ["summary", "event"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "summary": {"type": "string", "pattern": r"\S"},
+                        "event": {
+                            "enum": list(
+                                IMPLEMENT.bindings["work"].events
+                            )
+                        },
+                    },
+                },
             ),
             "evidence.collect": OperationSpec(
                 self.evidence,
@@ -111,7 +123,10 @@ class ImplementationOperations:
                 operation_id,
             )
         )
-        return {"summary": report.summary}
+        return {
+            "summary": report.summary,
+            "event": f"worker_{report.outcome}",
+        }
 
     def evidence(
         self, task, round_id, work_report, round_base, run_base
@@ -254,6 +269,14 @@ def _result_refs(context: dict) -> dict:
 
 def decode_operation_event(name: str, payload: dict):
     """Typisierte Ereignisnutzlast des Implementierungsvertrags."""
+    worker_fields = {
+        "worker_completed": None,
+        "worker_needs_decision": "question",
+        "worker_escalate": "cause",
+    }
+    if name in worker_fields:
+        field = worker_fields[name]
+        payload = {field: payload["summary"]} if field else {}
     if "assessment" in payload:
         payload = {
             **payload,

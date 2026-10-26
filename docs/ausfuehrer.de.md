@@ -222,8 +222,10 @@ bd update BEAD --acceptance "…"   # Entscheidung am Auftrag
 ki-dev -f implement resume run-42 # oder mit --answer "…"
 ```
 
-Eine Eskalation führt nach Resume wieder zum Reviewer und niemals direkt zu
-`PASS`. Wenn ein externer Aufruf nachweislich begonnen wurde, aber kein
+Eine Eskalation des Reviewers führt nach Resume wieder zum Reviewer und
+niemals direkt zu `PASS`. Eine Eskalation des Workers (`worker_escalate`)
+führt nach Resume wieder zum Worker. Er erhält die Entscheidung im Auftrag.
+Danach folgen Prüfungen und Review wie nach jedem Bau-Turn. Wenn ein externer Aufruf nachweislich begonnen wurde, aber kein
 Ergebnisartefakt existiert, meldet der Lauf `uncertain`. Er wiederholt den
 Aufruf nicht automatisch. Damit verspricht der Ausführer keine unbelegbare
 Exactly-once-Ausführung über Agentenprozesse, Git und Beads hinweg.
@@ -235,6 +237,16 @@ ki-dev -f implement resume run-42 --reconcile-result abgeglichen.json
 ```
 
 Ohne diesen expliziten Abgleich bleibt der Lauf angehalten.
+
+Für eine Bauoperation (`work`) nennt das Ergebnis neben `summary` auch
+`event`: `worker_completed`, `worker_needs_decision` oder
+`worker_escalate`. Ein Ergebnis ohne `event` wird abgewiesen und nicht als
+erledigt übernommen. Das gilt auch für ein Ergebnis, das vor Einführung des
+Worker-Halts gespeichert wurde.
+
+```json
+{"summary":"Funktion ergänzt, Tests grün","event":"worker_completed"}
+```
 
 ## Auftragsbindung fuer CHANGES
 

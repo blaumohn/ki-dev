@@ -17,6 +17,7 @@ from ki_dev.adapter.contract import (
     TurnPrompt,
     WorkReport,
     WorkRequest,
+    parse_work_report,
 )
 from ki_dev.adapter.executors import (
     Access,
@@ -44,7 +45,7 @@ class AgentWorker:
     def work(self, request: WorkRequest) -> WorkReport:
         task = request.task
         access = Access(task.access_profile)
-        return WorkReport(
+        return parse_work_report(
             _send(self, request.prompt, task.workdir, task.env, access)
         )
 

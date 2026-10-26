@@ -404,7 +404,7 @@ def test_crash_after_effect_without_artifact_is_not_repeated(tmp_path):
         result = resumed.resume()
 
     assert result.status == "uncertain"
-    assert result.operation_id == "r0001-work-w0001-p0000-t0000"
+    assert result.operation_id == "r0001-work-w0001-p0000-t0000-d0000"
     assert worker.calls == 1
 
 
@@ -425,7 +425,11 @@ def test_uncertain_effect_can_be_reconciled_explicitly(tmp_path):
     ) as resumed:
         uncertain = resumed.resume()
         result = resumed.reconcile(
-            uncertain.operation_id, {"summary": "extern abgeglichen"}
+            uncertain.operation_id,
+            {
+                "summary": "extern abgeglichen",
+                "event": "worker_completed",
+            },
         )
 
     assert result.status == "passed"

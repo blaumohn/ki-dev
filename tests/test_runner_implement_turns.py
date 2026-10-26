@@ -24,7 +24,10 @@ def test_work_prompt_fills_the_template():
     assert text.startswith("Bauauftrag fuer Lauf run-1, Runde 3.\n")
     assert "Offene Beanstandung: keine\n" in text
     assert "Massgebliche Quellen:\n- keine\n" in text
-    assert text.endswith("geprueft wurde.\n")
+    assert '{"outcome":"completed","summary":' in text
+    assert "needs_decision" in text
+    assert "escalate" in text
+    assert "ohne weitere Felder" in text
 
 
 def test_adapters_carry_no_role_texts():

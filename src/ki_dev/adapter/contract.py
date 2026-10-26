@@ -9,10 +9,11 @@ er nicht.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from ki_dev.adapter.executors.contract import ExecutorSpec, TurnResult
 
@@ -21,6 +22,10 @@ class AnswerPending(Exception):
     """Die Eingabe ist übergeben, die Antwort des Transports fehlt noch
     (z. B. Bote ohne Antwort). Halt des Ausführers, kein
     Ablaufzustand: die Operation läuft nach ``resume`` erneut."""
+
+
+class AgentProtocolError(ValueError):
+    """Agentenausgabe verletzt den formalen Antwortvertrag."""
 
 
 class AgentTurnError(RuntimeError):
@@ -124,10 +129,76 @@ class WorkRequest:
 @dataclass(frozen=True)
 class WorkReport:
     summary: str
+    outcome: Literal["completed", "needs_decision", "escalate"] = (
+        "completed"
+    )
 
     def __post_init__(self) -> None:
+        if not isinstance(self.summary, str):
+            raise ValueError("WorkReport.summary muss Text sein")
         if not self.summary.strip():
-            raise ValueError("BuildReport.summary darf nicht leer sein")
+            raise ValueError("WorkReport.summary darf nicht leer sein")
+        if self.outcome not in (
+            "completed", "needs_decision", "escalate"
+        ):
+            raise ValueError("WorkReport.outcome ist ungültig")
+
+
+def parse_work_report(raw: str) -> WorkReport:
+    """Freitext bleibt completed; JSON-Objekte verlangen beide Felder.
+
+    Objekt-, Array- und Codeblock-Anfänge reservieren strukturierte
+    Antworten, ebenso ein Objekt am Ende nach einleitendem Text oder
+    ein Feld ``"outcome"`` irgendwo im Text. Fehler darin dürfen nie
+    als erfolgreicher Text gelten.
+    """
+    text = raw.strip()
+    try:
+        if text.startswith(("{", "[", "```")):
+            value = json.loads(text, object_pairs_hook=_work_fields)
+        elif _embeds_report(text):
+            value = _trailing_object(text)
+        else:
+            return WorkReport(raw)
+        if not isinstance(value, dict) or set(value) != {
+            "outcome", "summary"
+        }:
+            raise ValueError(
+                "Worker-JSON verlangt genau outcome und summary"
+            )
+        return WorkReport(**value)
+    except ValueError as exc:
+        raise AgentProtocolError(str(exc)) from exc
+
+
+def _embeds_report(text: str) -> bool:
+    last = text.splitlines()[-1].lstrip() if text else ""
+    return last.startswith("{") or '"outcome"' in text
+
+
+def _trailing_object(text: str) -> object:
+    """Erstes zeilenbeginnendes JSON, das bis zum Textende reicht."""
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith("{"):
+            try:
+                return json.loads(
+                    text[offset:], object_pairs_hook=_work_fields
+                )
+            except json.JSONDecodeError:
+                pass
+        offset += len(line)
+    raise ValueError(
+        "Worker-Antwort enthält nach dem Text kein gültiges "
+        "JSON-Objekt am Ende"
+    )
+
+
+def _work_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value = dict(pairs)
+    if len(value) != len(pairs):
+        raise ValueError("Worker-JSON enthält doppelte Felder")
+    return value
 
 
 @dataclass(frozen=True)
