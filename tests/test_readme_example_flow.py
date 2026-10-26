@@ -36,6 +36,9 @@ answer() {
   fi
   printf '%s\n' "$1" >"${open[0]%.input.md}.answer.md"
 }
+work() {  # Bericht des Umsetzers nach dem Worker-Vertrag
+  answer '{"outcome":"completed","summary":"erledigt"}'
+}
 review() {  # $1 Runde, $2 Ereignis, $3 Befund, $4 Kriterium
   answer "{\"run_id\":\"$RUN\",\"round_id\":$1,\"event\":\"$2\",
 \"detail\":\"$3\",\"requirement_ref\":$4}"
@@ -50,18 +53,18 @@ source "$SCRIPTS/4-rollen.sh"
 # Bash 3.2 kann source nicht aus einer Prozesssubstitution lesen.
 inbox "$SCRIPTS/5-starten.sh" >"$TMPDIR/5-starten-inbox.sh"
 source "$TMPDIR/5-starten-inbox.sh" >/dev/null
-for _ in $(seq "$EMPTY"); do answer '{}'; step; done  # ohne Änderung
+for _ in $(seq "$EMPTY"); do work; step; done  # ohne Änderung
 printf 'def is_newer(a, b):\n    return %s > %s\n' \
   'tuple(map(int, a.split(".")))' 'tuple(map(int, b.split(".")))' \
   >version.py
-answer '{}'; step
+work; step
 review 1 "$REVIEW" "Test widerspricht AC1" null; step || true
 echo "=== Schritt 5"
 inbox "$SCRIPTS/9-entscheiden.sh" >"$TMPDIR/9-entscheiden-inbox.sh"
 source "$TMPDIR/9-entscheiden-inbox.sh"
 review 1 fix "Test laut Entscheidung anpassen" '"AC2"'; step
 sed -i 's/^assert not is_newer/assert is_newer/' test_version.py
-answer '{}'; step
+work; step
 review 2 PASS "AC1 erfüllt" null; step
 echo "=== Schritt 6"
 source "$SCRIPTS/9-ergebnis.sh"
