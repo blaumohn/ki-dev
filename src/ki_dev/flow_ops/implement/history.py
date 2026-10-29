@@ -1,10 +1,13 @@
 """Verlauf eines ``implement``-Laufs für Menschen.
 
 ``status`` nennt den Endzustand als JSON; ``history`` erklärt, wie er
-entstand: je Runde geänderte Dateien, Prüfergebnisse, jede Antwort des
-Reviews und davor eine Entscheidung des Menschen, danach Abschluss oder
+entstand: je Runde eine Frage oder Eskalation des Umsetzers, geänderte
+Dateien, Prüfergebnisse, jede Antwort des Reviews und die Entscheidung
+des Menschen nach dem Halt, der sie verlangt hat; danach Abschluss oder
 Halt. Gelesen werden nur die Artefakte des Laufs (für Umsetzer und
-Tests der letzte Versuch der Runde).
+Tests der letzte Versuch der Runde). Zeilen sind auf ``WIDTH`` Zeichen
+gekürzt; umbrochen werden nur Gründe, über die der Mensch entscheidet:
+der Halt des Umsetzers und ``decision`` oder ``escalate`` des Reviews.
 
     Lauf version-fix: passed nach 2 Runden
       Runde 1  Umsetzer  geändert: version.py
@@ -21,16 +24,26 @@ Tests der letzte Versuch der Runde).
 from __future__ import annotations
 
 import re
+import textwrap
 from typing import cast
 
 from ki_dev.flow_ops.implement.decisions import summary
-from ki_dev.flow_ops.implement.runtime import read_run_status
+from ki_dev.flow_ops.implement.runtime import RunResult, read_run_status
 from ki_dev.run_store import RunStore
 
 # Operationen einer Runde: r0001-work-…, -evidence-…, -review-…
 _ROUND_OPERATION = re.compile(r"^r(\d{4})-(work|evidence|review)-")
 _INTEGRATION = re.compile(r"^final-integrate-")
+# Halt des Umsetzers (Antwortvertrag): Art und Grund in eigener Zeile.
+_WORKER_HALT = {
+    "worker_needs_decision": "Frage",
+    "worker_escalate": "Eskalation",
+}
 WIDTH = 78
+REASON_LINES = 3
+# Review-Antworten, nach denen der Mensch entscheidet: Grund umbrochen.
+_REVIEW_HALTS = {"decision", "escalate"}
+_DECISION_PENDING = "wartet auf Entscheidung (Bead ändern, resume)"
 
 
 def run_history(store: RunStore) -> list[str]:
@@ -43,13 +56,14 @@ def run_history(store: RunStore) -> list[str]:
         f"{'Runde' if count == 1 else 'Runden'}"
     ]
     seen = 0
+    asked = None
     for round_id, parts in sorted(rounds.items()):
-        round_lines, seen = _round_lines(round_id, parts, seen)
+        round_lines, seen, asked = _round_lines(round_id, parts, seen)
         lines += round_lines
     if integration is not None:
         lines.append(_line("Abschluss", "", integration["detail"]))
     elif result.status != "passed":
-        lines.append(_line("Halt", "", _halt(result.detail)))
+        lines.append(_line("Halt", "", _halt(result, asked)))
     return lines
 
 
@@ -73,13 +87,31 @@ def _artifacts(
 
 def _round_lines(
     round_id: int, parts: dict[str, list[dict]], seen: int
-) -> tuple[list[str], int]:
-    """Umsetzer und Tests aus dem letzten Nachweisversuch der Runde,
-    danach jedes Review-Urteil; eine Entscheidung des Menschen steht
-    vor dem ersten Urteil, das sie erhalten hat (``seen``: so viele
-    Entscheidungen kannten frühere Reviews schon)."""
+) -> tuple[list[str], int, str | None]:
+    """Halte des Umsetzers, dann Umsetzer und Tests aus dem letzten
+    Nachweisversuch der Runde, danach jedes Review-Urteil. Eine
+    Entscheidung des Menschen steht nach dem Halt des Umsetzers der
+    Runde, sonst vor dem ersten Urteil, das sie erhalten hat (``seen``:
+    so viele Entscheidungen kannten frühere Reviews schon). Dazu der
+    Grund eines noch offenen Halts des Umsetzers."""
     label = f"Runde {round_id}"
     lines = []
+    halts = [
+        work for work in parts.get("work", [])
+        if work.get("event") in _WORKER_HALT
+    ]
+    for work in halts:
+        kind = _WORKER_HALT[work["event"]]
+        reason = f"{kind}: {work['summary']}"
+        lines += _wrapped(label, "Umsetzer", reason)
+    reviews = parts.get("review", [])
+    if halts and reviews:
+        known = reviews[0].get("decisions", [])
+        lines += [
+            _line(label, "Mensch", summary(document))
+            for document in known[seen:]
+        ]
+        seen = max(seen, len(known))
     if parts.get("evidence"):
         context = parts["evidence"][-1]["context"]
         files = [
@@ -91,7 +123,7 @@ def _round_lines(
             _line(label, "Tests", _check(check))
             for check in context["checks"]
         ]
-    for review in parts.get("review", []):
+    for review in reviews:
         known = review.get("decisions", [])
         lines += [
             _line(label, "Mensch", summary(document))
@@ -99,14 +131,22 @@ def _round_lines(
         ]
         seen = max(seen, len(known))
         answer = _answer(review["decision"])
-        lines.append(_line(label, "Review", answer))
-    return lines, seen
+        if review["decision"]["event"] in _REVIEW_HALTS:
+            lines += _wrapped(label, "Review", answer)
+        else:
+            lines.append(_line(label, "Review", answer))
+    open_halt = halts and not parts.get("evidence") and not reviews
+    return lines, seen, halts[-1]["summary"] if open_halt else None
 
 
-def _halt(detail: str | None) -> str:
-    """Grund des Halts; eine Entscheidung des Reviews nennt ihren
-    Grund schon in der Review-Zeile."""
-    return detail or "wartet auf Entscheidung (Bead ändern, resume)"
+def _halt(result: RunResult, asked: str | None) -> str:
+    """Grund des Halts; eine Entscheidung des Reviews oder eine Frage
+    des Umsetzers (``asked``) nennt ihren Grund schon in ihrer Zeile."""
+    detail = result.detail
+    shown = asked is not None and asked in (detail or "")
+    if not detail or (result.status == "waiting_decision" and shown):
+        return _DECISION_PENDING
+    return detail
 
 
 def _answer(decision: dict) -> str:
@@ -131,9 +171,26 @@ def _check(check: dict) -> str:
 
 def _line(label: str, actor: str, text: str) -> str:
     """Eine Zeile, auf ``WIDTH`` Zeichen gekürzt (``…``)."""
-    head = f"  {label:<9}{actor:<10}" if actor else f"  {label:<19}"
+    head = _head(label, actor)
     text = " ".join(text.split())
     room = WIDTH - len(head)
     if len(text) > room:
         text = text[: room - 1].rstrip() + "…"
     return head + text
+
+
+def _wrapped(label: str, actor: str, text: str) -> list[str]:
+    """Wie :func:`_line`, aber umbrochen; Folgezeilen beginnen unter dem
+    Text, nach ``REASON_LINES`` Zeilen gekürzt (``…``)."""
+    head = _head(label, actor)
+    room = WIDTH - len(head)
+    rows = textwrap.wrap(" ".join(text.split()), room)
+    if len(rows) > REASON_LINES:
+        rows = rows[:REASON_LINES]
+        rows[-1] = rows[-1][: room - 1].rstrip() + "…"
+    indent = " " * len(head)
+    return [head + rows[0], *(indent + row for row in rows[1:])]
+
+
+def _head(label: str, actor: str) -> str:
+    return f"  {label:<9}{actor:<10}" if actor else f"  {label:<19}"

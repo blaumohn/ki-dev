@@ -45,7 +45,7 @@ text = "an ein Abnahmekriterium gebunden, korrigierbar"
 # fachliche Entscheidung, oder kommt der Lauf technisch nicht weiter?
 [finding_class.decision]
 verdict = "NEEDS_DECISION"
-text = "eine fachliche Entscheidung fehlt, etwa weil Auftrag, Kriterien oder Tests einander widersprechen; nur der Mensch kann entscheiden"
+text = "eine fachliche Entscheidung fehlt, etwa weil Auftrag, Kriterien oder Tests einander widersprechen; nur der Mensch kann entscheiden. detail nennt den Widerspruch (welches Kriterium, welcher Test) und die Möglichkeiten, ihn aufzulösen"
 
 [finding_class.escalate]
 verdict = "ESCALATE"
@@ -286,9 +286,25 @@ on = "retry_process"
 event = "worker_completed"
 target = "capture_step_result"
 
+# Halt des Workers nach eigener Änderung (Fakt des Ausführers): etwa
+# ein behaupteter Widerspruch oder Aufgeben bei rotem Test. Die Runde
+# geht wie ein Ergebnis durch Nachweis, Test-Tor und Review; erst ein
+# decision des Reviews hält für den Menschen an, sonst folgt fix.
+# Ohne Änderung (Rückfrage vor der Arbeit, fehlender Zugriff) hält der
+# Lauf sofort an.
+[[statechart.states.active.states.worker_step.transitions]]
+event = "worker_needs_decision"
+cond = "worker_changed"
+target = "capture_step_result"
+
 [[statechart.states.active.states.worker_step.transitions]]
 event = "worker_needs_decision"
 target = "waiting_decision"
+
+[[statechart.states.active.states.worker_step.transitions]]
+event = "worker_escalate"
+cond = "worker_changed"
+target = "capture_step_result"
 
 [[statechart.states.active.states.worker_step.transitions]]
 event = "worker_escalate"

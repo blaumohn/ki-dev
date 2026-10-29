@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from ki_dev.flow_ops.implement import cli as runner_cli
-from ki_dev.flow_ops.implement.history import WIDTH, run_history
+from ki_dev.flow_ops.implement.history import (
+    WIDTH,
+    _round_lines,
+    run_history,
+)
 from ki_dev.flow_ops.implement.runtime import StaticEvidenceCollector
 from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
@@ -162,3 +166,34 @@ def test_history_names_bead_change_read_by_resume(
         ["Runde", "1", "Review", "fix", "(AC1):"],
     ]
     assert sum("Mensch" in line for line in lines) == 1
+
+
+def test_history_wraps_review_reason_the_human_decides_on():
+    """Bei ``decision`` braucht der Mensch die Begründung des Reviews:
+    umbrochen statt nach einer Zeile gekürzt; ``fix`` bleibt eine
+    Zeile."""
+    reason = (
+        "AC1 verlangt is_newer('1.10.0', '1.9.0') is True, die "
+        "zweite Assertion in test_version.py das Gegenteil; AC2 "
+        "verbietet, sie zu ändern."
+    )
+
+    def review(event):
+        return {
+            "decision": {
+                "event": event,
+                "detail": reason,
+                "requirement_ref": None,
+            },
+            "decisions": [],
+        }
+
+    lines, _, _ = _round_lines(1, {"review": [review("decision")]}, 0)
+    assert len(lines) > 1
+    shown = " ".join(" ".join(lines).split()[3:])
+    assert shown == f"decision: {reason}"
+    assert all(len(line) <= WIDTH for line in lines)
+
+    lines, _, _ = _round_lines(1, {"review": [review("fix")]}, 0)
+    assert len(lines) == 1
+    assert lines[0].endswith("…")

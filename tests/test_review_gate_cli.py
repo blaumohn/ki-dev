@@ -56,11 +56,17 @@ answers = ["PASS"]
 
 
 def _implement(
-    sandbox: Sandbox, operator: str, *, worker_answer: str | None = None
+    sandbox: Sandbox,
+    operator: str,
+    *,
+    worker_answer: str | None = None,
+    worker_changes: bool = True,
 ) -> dict:
     """Lauf mit Review-PASS über die öffentliche CLI, ``add`` als
     ``a <operator> b``; Ergebnis samt Ziel-Ref vorher/nachher,
-    Ereignissen und Prüfnachweisen."""
+    Ereignissen und Prüfnachweisen. Mit ``worker_answer`` antwortet der
+    Worker über die Inbox; ``worker_changes`` legt fest, ob er vorher
+    eine Datei ändert."""
     sandbox.write(".gitignore", ".beads.gate.lock\n__pycache__/\n")
     sandbox.write(
         "add.py", f"def add(a, b):\n    return a {operator} b\n"
@@ -116,7 +122,8 @@ def _implement(
         (ask,) = (run / "inbox").glob("*.input.md")
         answer = ask.with_name(ask.name.replace(".input.", ".answer."))
         answer.write_text(worker_answer)
-        (work / "MOCK.md").write_text("Änderung des Workers\n")
+        if worker_changes:
+            (work / "MOCK.md").write_text("Änderung des Workers\n")
         outcome = sandbox.run(
             ["ki-dev", "-f", "implement", "resume", "r",
              "--runs-dir", runs], cwd=work,

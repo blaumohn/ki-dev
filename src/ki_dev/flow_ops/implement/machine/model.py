@@ -19,10 +19,11 @@ Aktion, die ``worker_attempt``, ``process_retry`` oder
 Wächter begrenzt. ``changes_round`` begrenzt zusätzlich die Korrekturen
 innerhalb genau eines TASK; ``begin_task`` setzt ihn bewusst zurück.
 
-Drei Wächter sind Fakten des Ausführers (``changes_refused``,
-``stagnation``, ``checks_failed``): sie hängen an Laufdaten außerhalb
-dieses Zustands (Verbrauchsbuch, Beanstandungsverlauf, Prüfungen der
-Runde). Der Ausführer ermittelt sie und übergibt sie als ``facts``; die
+Vier Wächter sind Fakten des Ausführers (``changes_refused``,
+``stagnation``, ``checks_failed``, ``worker_changed``): sie hängen an
+Laufdaten außerhalb dieses Zustands (Verbrauchsbuch,
+Beanstandungsverlauf, Prüfungen der Runde, Arbeitsstand). Der
+Ausführer ermittelt sie und übergibt sie als ``facts``; die
 Entscheidung, was daraus folgt, bleibt im Ablauf.
 """
 
@@ -120,6 +121,11 @@ class ImplementModel:
         """Fakt des Ausführers: eine Prüfung aus dem Profil ist in der
         geprüften Runde rot."""
         return "checks_failed" in self.facts
+
+    def worker_changed(self) -> bool:
+        """Fakt des Ausführers: der Arbeitsstand weicht nach dem
+        Worker-Schritt von der Rundenbasis ab."""
+        return "worker_changed" in self.facts
 
     # --- Aktionen -----------------------------------------------------
 

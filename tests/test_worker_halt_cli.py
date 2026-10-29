@@ -25,6 +25,7 @@ def test_worker_halt_persists_reason_without_followup(
         worker_answer=json.dumps(
             {"outcome": outcome, "summary": reason}
         ),
+        worker_changes=False,
     )
     assert run["result"]["status"] == status
     assert reason in run["result"]["detail"]
@@ -60,6 +61,65 @@ def test_worker_halt_persists_reason_without_followup(
     persisted = json.loads(status_result.stdout)
     assert persisted["status"] == status
     assert reason in persisted["detail"]
+
+
+def test_history_names_worker_question_in_full_before_halt(sandbox):
+    """Die Frage des Umsetzers steht als eigene Zeile, umbrochen statt
+    gekürzt; der Halt verweist nur noch auf die Entscheidung."""
+    reason = "Vorgaben widersprechen sich; Entscheidung erforderlich."
+    run = _implement(
+        sandbox,
+        "+",
+        worker_answer=json.dumps(
+            {"outcome": "needs_decision", "summary": reason}
+        ),
+        worker_changes=False,
+    )
+    history = sandbox.run(
+        ["ki-dev", "-f", "implement", "history", "r",
+         "--runs-dir", run["run"].parent],
+        cwd=run["work"],
+    )
+    assert history.code == 0, history.stderr
+    lines = history.stdout.splitlines()
+    assert lines[1].split()[:4] == ["Runde", "1", "Umsetzer", "Frage:"]
+    question = " ".join(" ".join(lines[1:-1]).split()[3:])
+    assert question == f"Frage: {reason}"
+    assert lines[-1].split() == [
+        "Halt", "wartet", "auf", "Entscheidung", "(Bead", "ändern,",
+        "resume)",
+    ]
+    assert all(len(line) <= 78 for line in lines)
+
+    def ki_dev(*args):
+        outcome = sandbox.run(
+            ["ki-dev", "-f", "implement", *args, "--runs-dir",
+             run["run"].parent],
+            cwd=run["work"],
+        )
+        assert outcome.code == 0, outcome.stderr
+        return outcome.stdout
+
+    ki_dev("resume", "r", "--answer", "Test anpassen")
+    (ask,) = [
+        path for path in (run["run"] / "inbox").glob("*.input.md")
+        if not path.with_name(
+            path.name.replace(".input.", ".answer.")
+        ).exists()
+    ]
+    ask.with_name(ask.name.replace(".input.", ".answer.")).write_text(
+        json.dumps({"outcome": "completed", "summary": "Fertig"})
+    )
+    (run["work"] / "MOCK.md").write_text("Änderung nach der Antwort\n")
+    assert json.loads(ki_dev("resume", "r"))["status"] == "passed"
+
+    actors = [
+        line.split()[2] for line in ki_dev("history", "r").splitlines()
+        if line.startswith("  Runde ")
+    ]
+    assert actors == [
+        "Umsetzer", "Mensch", "Umsetzer", "Tests", "Review",
+    ]
 
 
 def test_completed_worker_still_runs_checks_review_and_integration(
@@ -103,6 +163,7 @@ def test_worker_escalation_resumes_at_worker_not_reviewer(sandbox):
         worker_answer=json.dumps(
             {"outcome": "escalate", "summary": "Zugriff fehlt"}
         ),
+        worker_changes=False,
     )
     assert run["result"]["status"] == "paused_interactive"
     assert run["result"]["detail"] == "Zugriff fehlt"
@@ -115,6 +176,7 @@ def test_worker_escalation_resumes_at_worker_not_reviewer(sandbox):
     assert len(inputs) == 2
     assert "Zugriff ist eingerichtet" in inputs[1].read_text()
 
+    (run["work"] / "MOCK.md").write_text("Änderung des Workers\n")
     finished = _resume(
         sandbox,
         run,
@@ -127,6 +189,30 @@ def test_worker_escalation_resumes_at_worker_not_reviewer(sandbox):
     assert names.index("worker_escalate") < names.index(
         "worker_completed"
     ) < names.index("PASS")
+
+
+@pytest.mark.parametrize("outcome", ["needs_decision", "escalate"])
+def test_worker_halt_after_change_goes_through_review(sandbox, outcome):
+    """Hält der Worker nach eigener Änderung an (behaupteter
+    Widerspruch, Aufgeben bei rotem Test), hält der Lauf nicht allein
+    deshalb: Nachweis, Test-Tor und Review beurteilen die Runde; hier
+    sind die Tests grün und das Review sagt PASS."""
+    reason = "Test bleibt rot, ich komme nicht weiter."
+    run = _implement(
+        sandbox,
+        "+",
+        worker_answer=json.dumps(
+            {"outcome": outcome, "summary": reason}
+        ),
+    )
+    assert run["result"]["status"] == "passed"
+    names = [event["event"] for event in run["events"]]
+    assert names.index(f"worker_{outcome}") < names.index(
+        "step_result_captured"
+    ) < names.index("PASS")
+    assert run["checks"], "Test-Tor lief nicht"
+    record = json.loads((run["run"] / "record.json").read_text())
+    assert record["data"]["work_report"] == reason
 
 
 def _resume(

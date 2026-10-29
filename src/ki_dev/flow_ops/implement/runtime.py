@@ -40,6 +40,8 @@ from ki_dev.adapter.executors.contract import (
 )
 from ki_dev.deltas import (
     ControllerContext,
+    StepDeltaAssessment,
+    assess_step_delta,
 )
 from ki_dev.flow.binding import project
 from ki_dev.flow.model import (
@@ -161,6 +163,11 @@ _AGENT_ROLES = {
 _LANGGRAPH_CHECKPOINT = "checkpoints.sqlite"
 
 
+# Halte des Workers, die nach eigener Änderung durch Test-Tor und Review
+# gehen (Fakt ``worker_changed``).
+_WORKER_HALTS = frozenset({"worker_escalate", "worker_needs_decision"})
+
+
 class RunResumeError(RuntimeError):
     """Eine Wiederaufnahme passt nicht zum gespeicherten Lauf."""
 
@@ -182,6 +189,10 @@ class EvidenceCollector(Protocol):
     def adopt_issue_change(
         self, task: RunTask, refs: object, issues: frozenset[str]
     ) -> object: ...
+
+    def changed(
+        self, task: RunTask, round_id: int, base: object
+    ) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -1059,7 +1070,9 @@ class RunRuntime:
             payload = project(artifact, binding.payload or {})
             event = decode_operation_event(event_name, payload)
             run = decode_run_state(state["run_state"])
-            moved = self._transition(run, event)
+            moved = self._transition(
+                run, event, facts=self._worker_facts(state, event_name)
+            )
             detail = artifact.get("detail")
             next_run = decode_run_state(moved["run_state"])
             if next_run.halted:
@@ -1085,6 +1098,19 @@ class RunRuntime:
             "review_sequence": state["review_sequence"] + 1,
             "protocol_error": None,
         }
+
+    def _worker_facts(
+        self, state: RunData, event_name: str
+    ) -> frozenset[str]:
+        """Fakt ``worker_changed`` für den Halt des Workers in
+        ``implement.toml``: hat er vorher etwas geändert, geht die
+        Runde durch Test-Tor und Review."""
+        if event_name not in _WORKER_HALTS:
+            return frozenset()
+        changed = self.evidence_collector.changed(
+            _task(state), state["round_id"], state["round_base"]
+        )
+        return frozenset({"worker_changed"}) if changed else frozenset()
 
     def _apply_decision(
         self,
@@ -1429,6 +1455,16 @@ class StaticEvidenceCollector:
     ) -> object:
         del task, issues
         return refs
+
+    def changed(
+        self, task: RunTask, round_id: int, base: object
+    ) -> bool:
+        """Wie der Kontext der Runde: wirksamer Schrittdelta."""
+        del task, base
+        if round_id > len(self.contexts):
+            return False
+        step = self.contexts[round_id - 1].step_delta
+        return assess_step_delta(step) is StepDeltaAssessment.EFFECTIVE
 
     def collect(
         self,

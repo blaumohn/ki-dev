@@ -24,6 +24,7 @@ from ki_dev.deltas import (
     build_run_delta,
     build_step_delta,
     capture_beads_ref,
+    capture_git_ref,
     capture_media_refs,
     checkpoint_step_result,
 )
@@ -80,6 +81,17 @@ class RepositoryEvidenceCollector:
             "beads": {"medium": now.medium.value, "value": now.value},
         }
 
+    def changed(
+        self, task: RunTask, round_id: int, base: object
+    ) -> bool:
+        """Arbeitsstand nach dem Worker-Schritt: ``HEAD`` weicht von der
+        Rundenbasis ab, oder der Worktree hat Änderungen."""
+        del round_id
+        head = capture_git_ref(task.workdir).value
+        return head != _decode_refs(base).git.value or bool(
+            _worktree_status(task.workdir)
+        )
+
     def collect(
         self,
         task: RunTask,
@@ -133,6 +145,15 @@ def _run_check(task: RunTask, check: CheckCommand) -> CheckOutcome:
 
 
 def _require_clean_worktree(repo: Path) -> None:
+    if _worktree_status(repo):
+        raise RuntimeError(
+            "Bau-Worktree enthaelt vor dem Worker-Schritt fremde "
+            "Aenderungen"
+        )
+
+
+def _worktree_status(repo: Path) -> str:
+    """``git status --porcelain`` samt unversionierter Dateien."""
     completed = subprocess.run(
         [
             "git",
@@ -149,11 +170,7 @@ def _require_clean_worktree(repo: Path) -> None:
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
         raise RuntimeError(f"Git-Arbeitsstand nicht pruefbar: {detail}")
-    if completed.stdout:
-        raise RuntimeError(
-            "Bau-Worktree enthaelt vor dem Worker-Schritt fremde "
-            "Aenderungen"
-        )
+    return completed.stdout
 
 
 def _encode_refs(refs: MediaRefs) -> dict[str, object]:

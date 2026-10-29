@@ -86,7 +86,10 @@ max_total_bytes = 65536
 
 Weist ki-dev eine Antwort als Vertragsfehler ab, wiederholt der Ablauf
 die Operation (`protocol_attempts`, laufweit); die Wiederholung nennt der
-Rolle den Fehler in der Zeile „Vertragsfehler deiner vorigen Antwort“.
+Rolle den Fehler in der Zeile „Vertragsfehler deiner vorigen Antwort“,
+bei unlesbarem JSON mit Art und Stelle. Steht die Antwort in genau einem
+umschließenden Markdown-Codeblock (```` ```json ````), fällt nur diese
+Hülle weg; Text davor oder danach bleibt ein Vertragsfehler.
 
 `session_id` ist optional. Ohne sie legt ki-dev für die Rolle beim ersten
 Aufruf eine neue Sitzung an und setzt sie in den weiteren Runden fort,
@@ -215,7 +218,18 @@ wiederholbaren Abschlussweg. Ein Lauf hat genau einen Schreiber; ein
 zweiter Aufruf für denselben Lauf wird abgewiesen. Die an den Reviewer übergebene Projektion
 bleibt auch nach einem Neustart byte-, zeilen- und gesamtbegrenzt.
 
-Bei `NEEDS_DECISION` und `ESCALATE` hält der Prozess dauerhaft an:
+Bei `NEEDS_DECISION` und `ESCALATE` hält der Prozess dauerhaft an. Eine
+Ausnahme: Meldet der Worker `needs_decision` oder `escalate`, nachdem er
+selbst Dateien geändert hat, geht die Runde wie ein Ergebnis durch
+Nachweis, Test-Tor und Review. Das Review prüft den gemeldeten Grund
+gegen Auftrag und Tests: `decision` hält für den Menschen an, `fix`
+schickt den Worker in die nächste Runde. So hält ein behaupteter
+Widerspruch, den es nicht gibt, oder ein Aufgeben bei rotem Test den
+Lauf nicht allein an. Ob der Worker etwas geändert hat, ermittelt der
+Ausführer aus dem Arbeitsstand (Fakt `worker_changed` in
+`implement.toml`).
+
+Fortsetzen nach einem Halt:
 
 ```bash
 bd update BEAD --acceptance "…"   # Entscheidung am Auftrag
