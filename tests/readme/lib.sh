@@ -10,7 +10,7 @@
 #     "datum": "2026-10-20T08:00:00Z", "auszug": ["{", "…"]}]
 #
 # ergebnis: passed | failed | skipped | stub. grund_de und grund_en nur
-# bei stub; auszug nur mit Auszugsdatei, nie bei failed: höchstens 15
+# bei stub; auszug nur mit Auszugsdatei, nie bei failed: höchstens 20
 # Zeilen, die für Besucher bedeutsam und von Lauf zu Lauf gleich sind
 # (keine temporären Pfade, Hashes, vergebenen IDs oder Zeiten). Vertrag:
 # RESULT_SCHEMA in scripts/readme_results.py; daraus setzt
@@ -18,7 +18,7 @@
 set -Eeuo pipefail
 # Bash 3.2 löscht errexit in $(…). Bei mehreren Befehlen oder
 # Funktionsaufrufen darin setzen wir es deshalb ausdrücklich erneut.
-trap 'echo "[readme-check] Fehler in ${0##*/} Zeile $LINENO: $BASH_COMMAND" >&2' ERR
+trap 'echo "[readme-check] Fehler in ${0##*/} Zeile $LINENO: ${BASH_COMMAND%%$'"'"'\n'"'"'*}" >&2' ERR
 
 README_REPO_DIR="$(set -e; cd "$(dirname "${BASH_SOURCE[0]}")/../.."; pwd)"
 README_SCRIPTS_DIR="${README_SCRIPTS_DIR:-$README_REPO_DIR/readme-scripts}"
@@ -155,6 +155,8 @@ readme_log_file() {
 }
 
 # Schreibt die Ergebnisdatei eines Skripts (ein Eintrag, parameter {}).
+# Ohne passed entfällt das Ereignisprotokoll daneben (<skript>.events.jsonl):
+# Ergebnis und Beleg stammen immer aus demselben Lauf.
 readme_write_entry() {
   local script="$1" result="$2" excerpt="$3" reason_de="$4" reason_en="$5"
   mkdir -p "$README_RESULTS_DIR"
@@ -166,7 +168,7 @@ import os
 import sys
 
 path, script, result, excerpt, reason_de, reason_en = sys.argv[1:]
-MAX_LINES = 15
+MAX_LINES = 20
 if result not in ("passed", "failed", "skipped", "stub"):
     sys.exit(f"[readme-check] {script}: unbekanntes Ergebnis {result!r}")
 entry = {"skript": script, "parameter": {}, "ergebnis": result}
@@ -195,5 +197,8 @@ if excerpt:
 with open(path, "w", encoding="utf-8") as file:
     json.dump([entry], file, ensure_ascii=False, indent=2)
     file.write("\n")
+events = path.removesuffix(".json") + ".events.jsonl"
+if result != "passed" and os.path.exists(events):
+    os.remove(events)
 PY
 }

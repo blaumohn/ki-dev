@@ -113,6 +113,37 @@ def test_failing_command_is_failed(env, tmp_path):
     assert str(tmp_path) not in json.dumps(entry)
 
 
+def test_failed_result_drops_events_of_an_earlier_run(env, tmp_path):
+    results = Path(env["README_RESULTS_DIR"])
+    results.mkdir()
+    events = results / "1-ok.events.jsonl"
+    events.write_text('{"event": "integration_completed"}\n')
+    test = _test(
+        tmp_path,
+        "test_1_ok.sh",
+        'readme_write_entry 1-ok.sh failed "" "" ""\n',
+    )
+    code, _, _ = _run(env, test)
+    assert code == 0
+    assert _entries(env, "1-ok")[0]["ergebnis"] == "failed"
+    assert not events.exists()
+
+
+def test_passed_result_keeps_events(env, tmp_path):
+    results = Path(env["README_RESULTS_DIR"])
+    results.mkdir()
+    events = results / "1-ok.events.jsonl"
+    events.write_text('{"event": "integration_completed"}\n')
+    test = _test(
+        tmp_path,
+        "test_1_ok.sh",
+        "readme_run 1-ok.sh\nreadme_result passed\n",
+    )
+    code, _, _ = _run(env, test)
+    assert code == 0
+    assert events.exists()
+
+
 def test_failing_effect_check_is_failed(env, tmp_path):
     test = _test(
         tmp_path,
@@ -154,7 +185,7 @@ def test_test_without_result_is_failed(env, tmp_path):
 @pytest.mark.parametrize(
     ("excerpt", "message"),
     [
-        ("x\n" * 16, "Auszug mit 16 Zeilen, höchstens 15"),
+        ("x\n" * 21, "Auszug mit 21 Zeilen, höchstens 20"),
         ("ok\n/tmp/abc/run\n", "Zeile 2 enthält einen lokalen Pfad"),
     ],
 )
@@ -197,7 +228,7 @@ def test_workdir_is_where_the_session_ended(env, tmp_path):
     """readme_workdir nennt das Verzeichnis am Ende der Sitzung, auch
     wenn ein Skript in ein mktemp-Verzeichnis außerhalb von TMPDIR
     wechselt (macOS ohne gesetztes TMPDIR)."""
-    target = tmp_path / "wo" / "versions-work"
+    target = tmp_path / "wo" / "app-work"
     target.mkdir(parents=True)
     scripts = Path(env["README_SCRIPTS_DIR"])
     (scripts / "3-wechsel.sh").write_text(f'cd "{target}"\n')

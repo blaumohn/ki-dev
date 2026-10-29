@@ -1,8 +1,7 @@
-# Weiter in `versions-work`. `history` zeigt, wie es zum Halt kam:
-# Änderung des Umsetzers, Testergebnis und Antwort des Reviews. Die
-# Entscheidung liegt bei dir; hier lautet sie: Der Test hält das alte
-# Verhalten fest und soll angepasst werden. Du entscheidest, indem du
-# den Auftrag im Bead änderst, hier Kriterium 2.
+# Weiter in `app-work`. `history` zeigt, wer den Lauf angehalten hat
+# und warum: `worker`, `review` oder Test-Tor. Du entscheidest, indem
+# du den Bead änderst; hier soll der Test das neue Verhalten prüfen,
+# also wird Kriterium 2 neu gefasst.
 #
 # ```bash
 ki-dev -f implement history version-fix  # warum der Lauf hält
@@ -12,9 +11,7 @@ it becomes assert is_newer('1.10.0', '1.9.0')"
 ki-dev -f implement resume version-fix  # liest den Bead neu
 # ```
 #
-# `resume` liest den Bead neu und gibt Review und Umsetzer die
-# geänderten Kriterien. Was nicht in den Bead gehört, etwa ein Hinweis
-# zur Umgebung, gibst du mit `resume --answer "…"` mit. Verlangt das
-# Review daraufhin eine Korrektur (`fix`), folgt eine weitere Runde des
-# Umsetzers; erst mit grünen Tests und `PASS` übernimmt ki-dev das
-# Ergebnis nach `main`.
+# - `resume` liest den Bead neu und setzt dort fort, wo der Lauf hielt;
+#   hier prüft zuerst das Review mit den geänderten Kriterien.
+# - Was nicht in den Bead gehört, etwa ein Hinweis zur Umgebung, gibst
+#   du mit `resume --answer "…"` mit.

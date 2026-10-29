@@ -9,11 +9,17 @@ von ki-dev zusammenarbeiten. Die Befehle setzen die
 
 ## Inhalt
 
+<!-- readme-inhalt -->
+
 - [Demo ohne Modellzugang](#demo-ohne-modellzugang)
-- [Ablaufregeln](#ablaufregeln) · [Ereignisprotokoll](#ereignisprotokoll)
-- [Architektur](#architektur) · [Entwurfsentscheidung](#entwurfsentscheidung)
-- [Weiteres Beispiel: Planung](#planung)
-- [Betriebsinstallation für Entwicklungsläufe](#betriebsinstallation)
+- [Ablaufregeln](#ablaufregeln)
+- [Ereignisprotokoll](#ereignisprotokoll)
+- [Architektur](#architektur)
+- [Entwurfsentscheidung](#entwurfsentscheidung)
+- [Weiteres Beispiel: Planung](#weiteres-beispiel-planung)
+- [Betriebsinstallation für Entwicklungsläufe](#betriebsinstallation-für-entwicklungsläufe)
+
+<!-- /readme-inhalt -->
 
 ## Demo ohne Modellzugang
 
@@ -27,7 +33,7 @@ eine Korrektur und akzeptiert Runde 2.
 make demo
 ```
 
-> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_8_demo.sh)
+<p align="right"><sub>✓ Im leeren Container ausgeführt · <a href="../tests/readme/test_8_demo.sh">Test</a></sub></p>
 
 ```text
 Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):
@@ -49,7 +55,7 @@ Demo zeigt die Steuerung mit vorgegebenen Antworten; was ein Agent
 leistet, zeigt der Lauf im Minimalbeispiel.
 <!-- /readme-script -->
 
-[↑ Inhalt](#inhalt)
+<p align="right"><a href="#inhalt">↑ Zum Inhalt</a></p>
 
 ## Ablaufregeln
 
@@ -102,7 +108,7 @@ führt die Zustandsmaschine aus.
 Operationen in Python. Ein Paketverzeichnis wird über `KI_DEV_FLOW_PATH`
 geladen. [Paket anlegen](ablaufpakete.de.md#paket-außerhalb-des-gerüsts)
 
-[↑ Inhalt](#inhalt)
+<p align="right"><a href="#inhalt">↑ Zum Inhalt</a></p>
 
 ## Ereignisprotokoll
 
@@ -142,7 +148,9 @@ stateDiagram-v2
     worker_step_prepare --> worker_step: worker_inputs_prepared
     worker_step_prepare --> worker_step_prepare: process_error / retry_process
     worker_step --> capture_step_result: worker_completed
+    worker_step --> capture_step_result: worker_needs_decision [worker_changed]
     worker_step --> waiting_decision: worker_needs_decision
+    worker_step --> capture_step_result: worker_escalate [worker_changed]
     worker_step --> worker_step_prepare: worker_process_error / retry_process
     worker_step --> worker_step: protocol_error / retry_protocol
     capture_step_result --> checkpoint: step_result_captured [delta_effective]
@@ -174,7 +182,7 @@ stateDiagram-v2
 
 </details>
 
-[↑ Inhalt](#inhalt)
+<p align="right"><a href="#inhalt">↑ Zum Inhalt</a></p>
 
 ## Architektur
 
@@ -217,7 +225,7 @@ dass der gemeinsame Kern keine Ablauf- oder Rollennamen kennt.
                           ▼                     │
                        Agent oder Mensch ───────┘
 
- Eingaben je Lauf: Auftrag (Schritt 2) · Profil (Schritt 3)
+ Eingabe je Lauf: Auftrag (Schritt 2) · dazu gewählt: Profil (Schritt 3)
 ```
 
 | Ebene | Quellen |
@@ -227,10 +235,12 @@ dass der gemeinsame Kern keine Ablauf- oder Rollennamen kennt.
 | Wirkung | [Paket-Ops](../src/ki_dev/flow_ops/implement/ops.py), [gemeinsame Ops](../src/ki_dev/ops), [Übergaben](ablaufpakete.de.md#parametrisierte-übergaben) |
 | Executor | [Anbindungen und Messungen](../src/ki_dev/adapter/executors.toml) |
 
-◇ ist geplant. Die Skizze zeigt die
-[vereinbarte Architektur](ausfuehrer-luecken.de.md#schichten-und-orte).
-`implement` hat heute noch einen eigenen Ausführer; die Zusammenführung
-steht in der [Roadmap](../README.md#weiterbauen).
+Die Skizze zeigt die Architektur von V1, wie sie
+[vereinbart](ausfuehrer-luecken.de.md#schichten-und-orte) ist; ◇ ist
+geplant. Bis V1 fehlt außerdem: `implement` läuft heute über einen
+eigenen Ausführer statt über den Runner, und eigene Abläufe trägt ein
+Mensch mit `ki-dev step` weiter ([Stand](../README.md#stand)).
+<!-- bead: ige.6.4.13 5ch.4 cak -->
 
 | Begriff | Aufgabe im Beispiel |
 |---|---|
@@ -242,7 +252,7 @@ steht in der [Roadmap](../README.md#weiterbauen).
 [Paketformat und Bindungen](ablaufpakete.de.md) ·
 [Runner, Profile und Executoren](ausfuehrer.de.md)
 
-[↑ Inhalt](#inhalt)
+<p align="right"><a href="#inhalt">↑ Zum Inhalt</a></p>
 
 ## Entwurfsentscheidung
 
@@ -269,9 +279,9 @@ Drei fachliche Bezugspunkte:
   Test-Tor, Halt mit `decision` und das Review in eigener Sitzung; ihre
   Wirkung ist [noch nicht gemessen](wirksamkeitsmessung.de.md).
 
-[↑ Inhalt](#inhalt)
+<p align="right"><a href="#inhalt">↑ Zum Inhalt</a></p>
 
-## Planung
+## Weiteres Beispiel: Planung
 
 Mit `map` lässt sich eine Sammlung von Notizen in Anforderungen überführen:
 
@@ -330,7 +340,7 @@ ki-dev -f map step "$BEAD" map  # Übergabe an den Kartierungsagenten
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_6_map_step.sh)
+<p align="right"><sub>✓ Im leeren Container ausgeführt · <a href="../tests/readme/test_6_map_step.sh">Test</a></sub></p>
 
 ```text
 Empfänger: Umsetzer (bisherige Sitzung)
@@ -380,9 +390,9 @@ Die [Diagrammprüfung](../tests/test_flow_diagram.py) vergleicht beide
 Zustandsdiagramme mit ihren TOML-Quellen.
 [Übergaben mit step](step.de.md)
 
-[↑ Inhalt](#inhalt)
+<p align="right"><a href="#inhalt">↑ Zum Inhalt</a></p>
 
-## Betriebsinstallation
+## Betriebsinstallation für Entwicklungsläufe
 
 <!-- readme-script: readme-scripts/2-runtime.sh -->
 Wer ki-dev mit ki-dev weiterentwickelt, installiert es getrennt vom
@@ -395,5 +405,5 @@ export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```
 
-> ✅ Im leeren Container ausgeführt · [Test](../tests/readme/test_2_runtime.sh)
+<p align="right"><sub>✓ Im leeren Container ausgeführt · <a href="../tests/readme/test_2_runtime.sh">Test</a></sub></p>
 <!-- /readme-script -->

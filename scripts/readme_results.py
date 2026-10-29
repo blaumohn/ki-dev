@@ -16,6 +16,7 @@ vor, das dort nur ein Stub sein kann.
 
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
 
@@ -48,7 +49,16 @@ TEXT = {
         "reason": "grund_en",
     },
 }
-SYMBOL = {"passed": "✅", "failed": "❌", "skipped": "⏳", "stub": "⏳"}
+# Textzeichen in Schriftfarbe statt farbiger Emoji; die früheren
+# Zeichen übersetzt status_text.
+SYMBOL = {"passed": "✓", "failed": "✗", "skipped": "○", "stub": "○"}
+LEGACY_SYMBOL = {"✅": "✓", "❌": "✗", "⏳": "○"}
+# Statuszeile als kleine, rechtsbündige Zeile unter dem Block, wie eine
+# Bildunterschrift; kein Zitat (``>``), denn sie zitiert nichts. Als
+# HTML-Block wertet GitHub darin kein Markdown aus: Links als <a href>.
+# ``<small>…</small>`` und ``> …`` sind frühere Formen (status_text).
+STATUS_OPEN, STATUS_CLOSE = '<p align="right"><sub>', "</sub></p>"
+LEGACY_FRAMES = (("<small>", "</small>"), ("> ", ""))
 
 _TEXT_FIELD = {"type": "string", "pattern": r"\S"}
 RESULT_SCHEMA = Draft202012Validator(
@@ -74,7 +84,7 @@ RESULT_SCHEMA = Draft202012Validator(
                 },
                 "auszug": {
                     "type": "array",
-                    "maxItems": 15,
+                    "maxItems": 20,
                     "items": {"type": "string"},
                 },
             },
@@ -165,8 +175,9 @@ def status_line(
     *,
     live: bool = False,
 ) -> str:
-    """``> ✅ Im leeren Container ausgeführt · [Test](tests/…)``;
-    ``live``: ``> ✅ Mit echten Agenten ausgeführt · …``."""
+    """``<p align="right"><sub>✓ Im leeren Container ausgeführt ·
+    <a href="tests/…">Test</a></sub></p>``; ``live``: ``…✓ Mit echten
+    Agenten ausgeführt · …``."""
     text = TEXT[readme]
     result = entries[0]["ergebnis"] if entries else None
     if live and result in ("passed", "failed"):
@@ -178,26 +189,50 @@ def status_line(
     else:
         parts = [parameter_status(text, entry) for entry in entries]
         status = f"{text['container']}: " + " · ".join(parts)
-    if test:
-        status += f" · [{text['test']}]({test})"
-    return f"> {status}"
+    return framed(status + test_link(readme, test))
+
+
+def test_link(readme: str, test: str | None) -> str:
+    """`` · <a href="tests/…">Test</a>`` als Ende der Statuszeile, sonst
+    leer."""
+    if not test:
+        return ""
+    label = TEXT[readme]["test"]
+    return f' · <a href="{html.escape(test)}">{label}</a>'
+
+
+def status_text(line: str) -> str | None:
+    """Text einer Statuszeile ohne Rahmen, auch einer früheren Form, mit
+    den aktuellen Zeichen; keine Statuszeile: None."""
+    frames = ((STATUS_OPEN, STATUS_CLOSE), *LEGACY_FRAMES)
+    for opening, closing in frames:
+        if line.startswith(opening) and line.endswith(closing):
+            text = line[len(opening) : len(line) - len(closing)]
+            for old, new in LEGACY_SYMBOL.items():
+                text = text.replace(old, new)
+            return text
+    return None
+
+
+def framed(text: str) -> str:
+    return f"{STATUS_OPEN}{text}{STATUS_CLOSE}"
 
 
 def single_status(text: dict[str, str], entry: dict) -> str:
     result = entry["ergebnis"]
     status = f"{SYMBOL[result]} {text[result]}"
     if result == "stub":
-        status += f": {entry[text['reason']]}"
+        status += f": {html.escape(entry[text['reason']])}"
     return status
 
 
 def parameter_status(text: dict[str, str], entry: dict) -> str:
-    """Parameterwert statt Ergebnistext: ``✅ mock``, ``⏳ claude``."""
+    """Parameterwert statt Ergebnistext: ``✓ mock``, ``○ claude``."""
     result = entry["ergebnis"]
-    label = " ".join(entry["parameter"].values())
+    label = html.escape(" ".join(entry["parameter"].values()))
     status = f"{SYMBOL[result]} {label}"
     if result == "stub":
-        status += f" ({entry[text['reason']]})"
+        status += f" ({html.escape(entry[text['reason']])})"
     return status
 
 

@@ -1,7 +1,6 @@
-# The profile fills the roles: Codex implements, Claude Code reviews.
-# Both use the cheapest model of their CLI with effort `low`; ki-dev
-# creates a separate session for each role on its first call.
-# Continue in `versions-work`:
+# Every run reads the profile at start, without `--profile` the profile
+# `default`; ki-dev creates a separate session for each role on its
+# first call. Continue in `app-work`:
 #
 # ```bash
 mkdir -p .ki-dev/profiles       # profiles in the starting directory
@@ -9,17 +8,17 @@ cat >.ki-dev/profiles/default.toml <<'EOF'
 workdir = "."                   # agents' worktree, ki-dev starts here
 access_profile = "write"        # the worker may write here
 
-[worker]                        # implements
+[worker]                        # implements; history: Umsetzer
 executor = "codex"
-model = "gpt-6-luna"
+model = "gpt-6-luna"            # cheapest model of the CLI
 effort = "low"
 
 [review]                        # reviews, read-only
 executor = "claude"
-model = "haiku"
+model = "haiku"                 # cheapest model of the CLI
 effort = "low"
 
-[[tests]]                       # each round; red blocks the merge
+[[tests]]                       # the repo's tests; the flow runs them
 name = "test_version"
 argv = ["python3", "test_version.py"]
 
@@ -30,9 +29,9 @@ changes_rounds = 2              # at most two correction rounds
 max_agent_calls = 10            # agent calls in the whole run
 
 [finalization]                  # where an accepted result goes
-target_workdir = "../versions"  # target repo with branch main
+target_workdir = "../app"       # target repo with branch main
 target_ref = "refs/heads/main"
-commit_message = "Fix is_newer()"
+commit_message = "Tests green, review PASS"  # for every task
 EOF
 # ```
 #

@@ -1,12 +1,15 @@
-"""README-Beispiel, Schritte 2 bis 6, mit vorgegebenen Antworten statt
-Agenten (ki-dev-ablauf-7v99).
+"""README-Beispiel, Schritte 2 bis 7, mit vorgegebenen Antworten statt
+Agenten (ki-dev-ablauf-7v99, ki-dev-ablauf-eoqf).
 
 Dieselben ``readme-scripts`` wie in der README; ``--adapter inbox``
 ersetzt Codex und Claude, die Antworten legt der Test als Datei ab.
 Belegt die Mechanik des Wegs Halt → Bead geändert, ``resume`` →
-Korrekturrunde → ``main`` für beide Halte (Review ``decision`` und
-Test-Tor nach ``PASS`` bei roten Tests), nicht die Leistung eines
-Agenten; die zeigt ``make readme-live``. Braucht ``bd``.
+``main`` für jeden Halt: Frage des Umsetzers (der Weg des
+dokumentierten echten Laufs), Review ``decision`` und Test-Tor nach
+``PASS`` bei roten Tests, die beiden letzten mit Korrekturrunde. Danach
+der lösbare zweite Auftrag (Schritt 7) ohne Halt bis ``main``. Nicht
+die Leistung eines Agenten, die zeigt ``make readme-live``. Braucht
+``bd``.
 """
 
 from __future__ import annotations
@@ -45,8 +48,8 @@ review() {  # $1 Runde, $2 Ereignis, $3 Befund, $4 Kriterium
 }
 step() { ki-dev -f implement resume "$RUN" --adapter inbox >/dev/null; }
 inbox() {
-  sed "s/--run-id $RUN/& --adapter inbox/;
-       s/implement resume $RUN /&--adapter inbox /" "$1"
+  sed -E "s/--run-id [a-z-]+/& --adapter inbox/;
+       s/implement resume [a-z-]+ /&--adapter inbox /" "$1"
 }
 source "$SCRIPTS/3-auftrag.sh"
 source "$SCRIPTS/4-rollen.sh"
@@ -54,25 +57,78 @@ source "$SCRIPTS/4-rollen.sh"
 inbox "$SCRIPTS/5-starten.sh" >"$TMPDIR/5-starten-inbox.sh"
 source "$TMPDIR/5-starten-inbox.sh" >/dev/null
 for _ in $(seq "$EMPTY"); do work; step; done  # ohne Änderung
-printf 'def is_newer(a, b):\n    return %s > %s\n' \
-  'tuple(map(int, a.split(".")))' 'tuple(map(int, b.split(".")))' \
-  >version.py
-work; step
-review 1 "$REVIEW" "Test widerspricht AC1" null; step || true
+fix_version() {
+  printf 'def is_newer(a, b):\n    return %s > %s\n' \
+    'tuple(map(int, a.split(".")))' 'tuple(map(int, b.split(".")))' \
+    >version.py
+}
+if [[ $REVIEW == worker ]]; then
+  answer '{"outcome":"needs_decision",
+"summary":"Test widerspricht AC1"}'
+  step || true
+else
+  fix_version
+  work; step
+  review 1 "$REVIEW" "Test widerspricht AC1" null; step || true
+fi
 echo "=== Schritt 5"
 inbox "$SCRIPTS/9-entscheiden.sh" >"$TMPDIR/9-entscheiden-inbox.sh"
 source "$TMPDIR/9-entscheiden-inbox.sh"
-review 1 fix "Test laut Entscheidung anpassen" '"AC2"'; step
-sed -i 's/^assert not is_newer/assert is_newer/' test_version.py
-work; step
-review 2 PASS "AC1 erfüllt" null; step
+if [[ $REVIEW == worker ]]; then
+  fix_version
+  sed -i 's/^assert not is_newer/assert is_newer/' test_version.py
+  work; step
+  review 1 PASS "AC1 erfüllt" null; step
+else
+  review 1 fix "Test laut Entscheidung anpassen" '"AC2"'; step
+  sed -i 's/^assert not is_newer/assert is_newer/' test_version.py
+  work; step
+  review 2 PASS "AC1 erfüllt" null; step
+fi
 echo "=== Schritt 6"
 source "$SCRIPTS/9-ergebnis.sh"
+echo "=== Schritt 7"
+inbox "$SCRIPTS/9-loesbar.sh" >"$TMPDIR/9-loesbar-inbox.sh"
+source "$TMPDIR/9-loesbar-inbox.sh" >/dev/null
+RUN=palindrome
+cat >palindrome.py <<'EOF'
+def shortest_palindrome_with_prefix(s: str) -> str:
+    for i in range(len(s)):
+        if s[i:] == s[i:][::-1]:
+            return s + s[:i][::-1]
+EOF
+work; step
+review 1 PASS "Tests grün" null; step
+ki-dev -f implement history palindrome
+git -C ../app log -1 --format=%s main
+git -C ../app show main:test_palindrome.py >"$TMPDIR/test_palindrome.py"
 """
 
 
 _DECISION_HALT = "Halt wartet auf Entscheidung (Bead ändern, resume)"
 _TEST_GATE_HALT = "Halt checks_failed: Review PASS bei roter Prüfung:"
+_WORKER_ROUNDS = [
+    ["Runde", "1", "Umsetzer", "Frage:"],
+    ["Runde", "1", "Mensch", "AC2"],
+    ["Runde", "1", "Umsetzer", "geändert:"],
+    ["Runde", "1", "Tests", "test_version"],
+    ["Runde", "1", "Review", "PASS:"],
+    ["Abschluss", "Fast-forward", "integriert"],
+]
+
+
+def _review_rounds(review):
+    return [
+        ["Runde", "1", "Umsetzer", "geändert:"],
+        ["Runde", "1", "Tests", "test_version"],
+        ["Runde", "1", "Review", f"{review}:"],
+        ["Runde", "1", "Mensch", "AC2"],
+        ["Runde", "1", "Review", "fix"],
+        ["Runde", "2", "Umsetzer", "geändert:"],
+        ["Runde", "2", "Tests", "test_version"],
+        ["Runde", "2", "Review", "PASS:"],
+        ["Abschluss", "Fast-forward", "integriert"],
+    ]
 
 
 # empty: Versuche des Umsetzers ohne Änderung vor dem ersten Ergebnis;
@@ -82,6 +138,7 @@ _TEST_GATE_HALT = "Halt checks_failed: Review PASS bei roter Prüfung:"
 @pytest.mark.parametrize(
     ("review", "halt", "empty"),
     [
+        ("worker", _DECISION_HALT, 0),
         ("decision", _DECISION_HALT, 0),
         ("PASS", _TEST_GATE_HALT, 0),
         ("decision", _DECISION_HALT, 2),
@@ -105,25 +162,34 @@ def test_readme_example_halts_then_merges_after_answer(
     }
     completed = subprocess.run(
         ["bash", "-c", DRIVER],
-        env=env, text=True, capture_output=True, check=False,
+        cwd=ROOT, env=env, text=True, capture_output=True, check=False,
         timeout=300,
     )
     assert completed.returncode == 0, completed.stderr[-3000:]
     halted, _, finished = completed.stdout.partition("=== Schritt 6")
     halted = halted.partition("=== Schritt 5")[2]
+    finished, _, second = finished.partition("=== Schritt 7")
 
     assert " ".join(halted.split()).count(halt) == 1, halted
     final = [line.split() for line in finished.splitlines() if line]
     assert final[0][:3] == ["Lauf", "version-fix:", "passed"]
-    assert [line[:4] for line in final[1:10]] == [
+    rounds = (
+        _WORKER_ROUNDS if review == "worker" else _review_rounds(review)
+    )
+    assert [line[:4] for line in final[1:len(rounds) + 1]] == rounds
+    assert ["Tests", "green,", "review", "PASS"] in final
+
+    # Schritt 7: lösbar, ohne Halt nach main; Test unverändert.
+    rows = [line.split()[:4] for line in second.splitlines() if line]
+    assert rows == [
+        ["Lauf", "palindrome:", "passed", "nach"],
         ["Runde", "1", "Umsetzer", "geändert:"],
         ["Runde", "1", "Tests", "test_version"],
-        ["Runde", "1", "Review", f"{review}:"],
-        ["Runde", "1", "Mensch", "AC2"],
-        ["Runde", "1", "Review", "fix"],
-        ["Runde", "2", "Umsetzer", "geändert:"],
-        ["Runde", "2", "Tests", "test_version"],
-        ["Runde", "2", "Review", "PASS:"],
+        ["Runde", "1", "Tests", "test_palindrome"],
+        ["Runde", "1", "Review", "PASS:"],
         ["Abschluss", "Fast-forward", "integriert"],
+        ["Tests", "green,", "review", "PASS"],
     ]
-    assert ["Fix", "is_newer()"] in final
+    assert (tmp_path / "test_palindrome.py").read_text() == (
+        ROOT / "docs/beispiele/impossiblebench/test_palindrome.py"
+    ).read_text()

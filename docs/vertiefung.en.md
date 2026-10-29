@@ -8,11 +8,17 @@ together. The commands assume the [setup](../README.en.md#1-set-up).
 
 ## Contents
 
+<!-- readme-inhalt -->
+
 - [Demo without model access](#demo-without-model-access)
-- [Flow rules](#flow-rules) · [Event log](#event-log)
-- [Architecture](#architecture) · [Design decision](#design-decision)
-- [Another example: planning](#planning)
-- [Runtime installation for development runs](#runtime-installation)
+- [Flow rules](#flow-rules)
+- [Event log](#event-log)
+- [Architecture](#architecture)
+- [Design decision](#design-decision)
+- [Another example: planning](#another-example-planning)
+- [Runtime installation for development runs](#runtime-installation-for-development-runs)
+
+<!-- /readme-inhalt -->
 
 ## Demo without model access
 
@@ -26,7 +32,7 @@ accepts round 2.
 make demo
 ```
 
-> ✅ Run in an empty container · [test](../tests/readme/test_8_demo.sh)
+<p align="right"><sub>✓ Run in an empty container · <a href="../tests/readme/test_8_demo.sh">test</a></sub></p>
 
 ```text
 Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):
@@ -48,7 +54,7 @@ demo shows the control flow with scripted answers; what an agent
 achieves is shown by the run in the minimal example.
 <!-- /readme-script -->
 
-[↑ Contents](#contents)
+<p align="right"><a href="#contents">↑ Back to contents</a></p>
 
 ## Flow rules
 
@@ -101,7 +107,7 @@ the state machine.
 operations in Python. Load a package directory through `KI_DEV_FLOW_PATH`.
 [Create a package](ablaufpakete.de.md#paket-außerhalb-des-gerüsts) (German)
 
-[↑ Contents](#contents)
+<p align="right"><a href="#contents">↑ Back to contents</a></p>
 
 ## Event log
 
@@ -141,7 +147,9 @@ stateDiagram-v2
     worker_step_prepare --> worker_step: worker_inputs_prepared
     worker_step_prepare --> worker_step_prepare: process_error / retry_process
     worker_step --> capture_step_result: worker_completed
+    worker_step --> capture_step_result: worker_needs_decision [worker_changed]
     worker_step --> waiting_decision: worker_needs_decision
+    worker_step --> capture_step_result: worker_escalate [worker_changed]
     worker_step --> worker_step_prepare: worker_process_error / retry_process
     worker_step --> worker_step: protocol_error / retry_protocol
     capture_step_result --> checkpoint: step_result_captured [delta_effective]
@@ -173,7 +181,7 @@ stateDiagram-v2
 
 </details>
 
-[↑ Contents](#contents)
+<p align="right"><a href="#contents">↑ Back to contents</a></p>
 
 ## Architecture
 
@@ -215,7 +223,7 @@ checks that the shared core knows no flow or role names.
                           ▼                       │
                        agent or human ────────────┘
 
- inputs per run, not a layer: task (step 2) · profile (step 3)
+ input per run: task (step 2) · chosen with it: profile (step 3)
 ```
 
 | Layer | Sources |
@@ -225,10 +233,12 @@ checks that the shared core knows no flow or role names.
 | Effect | [Package ops](../src/ki_dev/flow_ops/implement/ops.py), [shared ops](../src/ki_dev/ops), [handoffs](ablaufpakete.de.md#parametrisierte-übergaben) |
 | Executor | [Connections and measurements](../src/ki_dev/adapter/executors.toml) |
 
-◇ means planned. The sketch shows the
-[agreed architecture](ausfuehrer-luecken.de.md#schichten-und-orte).
-`implement` still has its own runner today; consolidation is on the
-[roadmap](../README.en.md#extend-it).
+The sketch shows the V1 architecture as
+[agreed](ausfuehrer-luecken.de.md#schichten-und-orte); ◇ means planned.
+Also missing until V1: `implement` runs through its own runner today
+instead of the shared runner, and a human advances custom flows with
+`ki-dev step` ([status](../README.en.md#status)).
+<!-- bead: ige.6.4.13 5ch.4 cak -->
 
 | Term | Job in the example |
 |---|---|
@@ -240,7 +250,7 @@ checks that the shared core knows no flow or role names.
 [Package format and bindings](ablaufpakete.de.md) ·
 [Runner, profiles and executors](ausfuehrer.de.md) (German)
 
-[↑ Contents](#contents)
+<p align="right"><a href="#contents">↑ Back to contents</a></p>
 
 ## Design decision
 
@@ -267,9 +277,9 @@ Three references behind this design:
   `decision` halt and the review in its own session; their effect is
   [not yet measured](wirksamkeitsmessung.de.md) (German).
 
-[↑ Contents](#contents)
+<p align="right"><a href="#contents">↑ Back to contents</a></p>
 
-## Planning
+## Another example: planning
 
 `map` turns a collection of notes into requirements:
 
@@ -329,7 +339,7 @@ ki-dev -f map step "$BEAD" map  # handoff to the mapping agent
 ki-dev -f map step "$BEAD" map.review map.review=verdict.json
 ```
 
-> ✅ Run in an empty container · [test](../tests/readme/test_6_map_step.sh)
+<p align="right"><sub>✓ Run in an empty container · <a href="../tests/readme/test_6_map_step.sh">test</a></sub></p>
 
 ```text
 Empfänger: Umsetzer (bisherige Sitzung)
@@ -380,9 +390,9 @@ The [diagram check](../tests/test_flow_diagram.py) compares both state
 diagrams with their TOML sources.
 [Handoffs with step](step.de.md) (German)
 
-[↑ Contents](#contents)
+<p align="right"><a href="#contents">↑ Back to contents</a></p>
 
-## Runtime installation
+## Runtime installation for development runs
 
 <!-- readme-script: readme-scripts/en/2-runtime.sh -->
 To develop ki-dev with ki-dev, install it apart from the source tree,
@@ -395,5 +405,5 @@ export PATH="$HOME/.local/bin:$PATH"
 ki-dev --help
 ```
 
-> ✅ Run in an empty container · [test](../tests/readme/test_2_runtime.sh)
+<p align="right"><sub>✓ Run in an empty container · <a href="../tests/readme/test_2_runtime.sh">test</a></sub></p>
 <!-- /readme-script -->

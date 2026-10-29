@@ -3,10 +3,16 @@
     "skript": "9-entscheiden.sh",
     "parameter": {},
     "ergebnis": "passed",
-    "datum": "2026-10-25T23:46:28Z",
+    "datum": "2026-10-29T00:47:57Z",
     "auszug": [
+      "$ ki-dev -f implement history version-fix",
       "Lauf version-fix: waiting_decision nach 1 Runde",
-      "  Halt               `version.py` wurde auf numerischen Vergleich der Version…"
+      "  Runde 1  Umsetzer  geändert: version.py",
+      "  Runde 1  Tests     test_version fehlgeschlagen",
+      "  Runde 1  Review    decision: Widerspruch zwischen Abnahmekriterium AC1 und",
+      "                     test_version.py. AC1 verlangt is_newer('1.10.0', '1.9.0')",
+      "                     is True. test_version.py Zeile 4 verlangt dagegen assert…",
+      "  Halt               wartet auf Entscheidung (Bead ändern, resume)"
     ]
   }
 ]

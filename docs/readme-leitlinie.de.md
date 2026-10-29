@@ -31,6 +31,33 @@ Danach kann ein Leser entscheiden: weiter erkunden, ausprobieren, beitragen
 oder Kontakt aufnehmen. Der Entwicklungsstand ist vor einem eigenen Lauf
 sichtbar. Die README verspricht nur, was Code und Prüfungen belegen.
 
+ki-dev ist ein Werkzeug zum Bauen und Ausführen von Abläufen, kein
+einzelner KI-Ablauf; `implement` ist ein damit gebauter, mitgelieferter
+Ablauf. Der Kopf sagt in einem Halbsatz, wie weit der Stand von V1 (eigene
+Abläufe selbsttätig, laufender Verbrauchsschutz) entfernt ist. „Stand“
+trennt Geprüftes von dem, was bis V1 fehlt; jede Lücke trägt ihre Beads als
+`<!-- bead: ID … -->` (Kurz-ID ohne Präfix), bis das Journal veröffentlicht
+ist und sie verlinkt werden (`jlk`, `tests/test_readme_beads.py`).
+
+## Begriffe
+
+Ein Begriff, ein Wort, in README, Vertiefung und Skizze. Ein Synonym lässt
+den Leser fragen, ob es ein zweiter Begriff ist, und kostet Kohärenz;
+ebenso ein Beispielname, der sich anders lesen lässt (`versions` neben
+den Werkzeug-Versionen, deshalb `app`).
+
+| Begriff | Bedeutung | Nicht |
+|---|---|---|
+| Auftrag | Eingabe eines Laufs, gespeichert in Beads | Aufgabe, Vorgang, Bead als Begriff |
+| Ablauf | Paket aus TOML und Python: Schritte, Übergänge, Rollen | Verfahren, Workflow |
+| Profil | wer arbeitet, wie stark, wie viel; heute auch Tests und Ziel; je Lauf gewählt | „einmal je Repo“ |
+| Rolle | `worker` setzt um (in `history`: Umsetzer), `review` prüft | Reviewer |
+| Executor | Anbindung einer Rolle an Agent oder Mensch | Ausführer, Adapter |
+| Gerüst | ki-dev ohne seine Abläufe | Kern, Framework |
+
+„Aufgabe“ bleibt dem Benchmark vorbehalten (Aufgabe `lcbhard_91` aus
+ImpossibleBench); als Auftrag in ki-dev heißt sie Auftrag.
+
 ## Wie ein Mensch liest
 
 - **Überfliegen:** Überschriften, Listen, Beispiele und Ausgaben ergeben
@@ -89,6 +116,11 @@ sichtbar. Die README verspricht nur, was Code und Prüfungen belegen.
 15. **Gegenstand statt Bewertung.** Unbelegte Wertungen und Abgrenzungen
     gegen unerwartete Alternativen streichen. Positiv erklären, was das
     Programm tut, auch wo eine frühere Leitlinie einen Kontrast erlaubte.
+16. **Artefakt zuerst.** Echter Ablauf-TOML-Auszug, kommentiertes Profil,
+    Skizze und echte Ausgabe tragen die Erklärung; Prosa sagt nur, was
+    sie nicht zeigen. Sieben Sätze über Übergänge ersetzt eine Skizze mit
+    dem Auszug aus `implement.toml` darunter. Zitierte Quelltexte prüft
+    ein Test gegen die Quelle.
 
 ## Leserzeit und Bildschirmfläche
 
@@ -100,7 +132,10 @@ dürfen dafür keine Voraussetzung sein.
 - **Ein Beispiel trägt die Erklärung.** Ablauf und Beispielauftrag getrennt
   benennen: `implement` führt Codeänderungen durch; `is_newer` ist ein gewählter
   Auftrag. Allgemeines Verfahren und konkrete Arbeit nicht im selben
-  unklaren „soll … reparieren“-Satz zusammenziehen.
+  unklaren „soll … reparieren“-Satz zusammenziehen. Die zwei Aufträge sind
+  ein Paar nach ImpossibleBench: der unlösbare hält an, der lösbare kommt
+  ohne Halt nach `main`. Weitere Aufträge gehören in die Wirksamkeitsmessung,
+  nicht in die README.
 - **Ein Hauptweg.** Erst das Zusammenspiel am Minimalbeispiel, dann die
   Einrichtung, dann Stand und Erweiterung. Der nächste Link führt zum
   angekündigten nächsten Schritt.
@@ -124,6 +159,31 @@ dürfen dafür keine Voraussetzung sein.
 - **Vertiefung auf Nachfrage.** Lange Profile, Zustandsdiagramme, Protokolle
   und Architekturdetails sind verlinkt. Beim Kürzen ihre Fundstellen
   erhalten; nicht allein durch Einklappen aus dem Blick nehmen.
+
+## Gestaltungsformen
+
+Eine Markdown-Form trägt für den Leser eine Bedeutung; sie wird nach
+dieser Bedeutung gewählt, nicht nach ihrem Aussehen.
+
+- **Zitat nur für Zitate.** `>` zeigt auf GitHub ein Zitat an. Hinweise
+  stehen als Absatz mit fetter Bezeichnung (`**Prototyp:** …`),
+  Navigation als Liste oder Link.
+- **Keine eigenen Farben.** Keine farbigen Emoji, Badges oder Alerts
+  ergänzen; was GitHub selbst färbt, etwa Links, bleibt. Statuszeichen
+  sind Textzeichen: ✓ ausgeführt, ✗ fehlgeschlagen, ○ ungeprüft.
+- **Erzeugt statt von Hand.** `scripts/render-readme.py` füllt den
+  Block `<!-- readme-inhalt -->` … `<!-- /readme-inhalt -->` unter
+  „Inhalt“ aus den `##`- und `###`-Überschriften (nummerierte
+  Unterabschnitte „1. …“ als nummerierte Liste) und setzt den
+  rechtsbündigen Rücksprung „↑ Zum Inhalt“ am Ende jedes Abschnitts
+  ohne Unterabschnitte und die kleine, rechtsbündige Statuszeile unter
+  jedem geprüften Befehlsblock. Ein neuer Abschnitt braucht nur seine
+  Überschrift; der Inhalt nennt ihn mit ihrem Wortlaut.
+- **Mittel ohne CSS.** GitHub entfernt `style`, `class` und Skripte
+  ohne Fehlermeldung; Ausrichtung geht über `align`, Größe über `<sub>`.
+  Markdown in einem HTML-Block wertet GitHub nur nach einer Leerzeile
+  aus; einzeilige HTML-Zeilen wie Statuszeile und Rücksprung verlinken
+  deshalb mit `<a href>`.
 
 Für jeden Absatz, Codeblock und Link fragen: Welche Entscheidung ermöglicht
 er jetzt? Fehlt sein Vorwissen? Wiederholt er etwas? Erzeugt er einen
@@ -150,7 +210,8 @@ README; die beobachteten Fehler sind Beispiele, keine abschließende Liste.
 - Beide Renderer mit `--check` prüfen, dazu `tests/test_doku_links.py`,
   `tests/test_readme_render.py`, `tests/test_readme_walkthrough.py`,
   `tests/test_flow_diagram.py`, `tests/test_readme_profile.py` und
-  `tests/test_readme_skizze.py` ausführen.
+  `tests/test_readme_skizze.py`, `tests/test_readme_beads.py` und
+  `tests/test_impossiblebench_task.py` ausführen.
 
 ## Abnahme
 

@@ -1,7 +1,6 @@
-# Das Profil besetzt die Rollen: Codex setzt um, Claude Code prüft.
-# Beide nutzen das günstigste Modell ihrer CLI mit Effort `low`; ki-dev
-# legt für jede Rolle beim ersten Aufruf eine eigene Sitzung an.
-# Weiter in `versions-work`:
+# Jeder Lauf liest das Profil beim Start, ohne `--profile` das Profil
+# `default`; ki-dev legt je Rolle beim ersten Aufruf eine eigene Sitzung
+# an. Weiter in `app-work`:
 #
 # ```bash
 mkdir -p .ki-dev/profiles       # ki-dev sucht Profile im Startordner
@@ -9,17 +8,17 @@ cat >.ki-dev/profiles/default.toml <<'EOF'
 workdir = "."                   # Arbeits-Worktree, hier startet ki-dev
 access_profile = "write"        # der Umsetzer darf hier schreiben
 
-[worker]                        # setzt um
+[worker]                        # setzt um; in history: Umsetzer
 executor = "codex"
-model = "gpt-6-luna"
+model = "gpt-6-luna"            # günstigstes Modell der CLI
 effort = "low"
 
 [review]                        # prüft, nur lesend
 executor = "claude"
-model = "haiku"
+model = "haiku"                 # günstigstes Modell der CLI
 effort = "low"
 
-[[tests]]                       # je Runde; rot sperrt die Übernahme
+[[tests]]                       # Tests des Repos; der Ablauf ruft sie
 name = "test_version"
 argv = ["python3", "test_version.py"]
 
@@ -30,9 +29,9 @@ changes_rounds = 2              # höchstens zwei Korrekturrunden
 max_agent_calls = 10            # Agentenaufrufe im ganzen Lauf
 
 [finalization]                  # wohin ein akzeptiertes Ergebnis geht
-target_workdir = "../versions"  # Ziel-Repo mit Branch main
+target_workdir = "../app"       # Ziel-Repo mit Branch main
 target_ref = "refs/heads/main"
-commit_message = "Fix is_newer()"
+commit_message = "Tests green, review PASS"  # für jeden Auftrag
 EOF
 # ```
 #

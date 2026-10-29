@@ -10,6 +10,8 @@ extend-exclude = [
   "vendor",
   "node_modules",
   "var",
+  # Aufgabe aus ImpossibleBench, unverändert übernommen
+  "docs/beispiele/impossiblebench",
 ]
 
 [lint]

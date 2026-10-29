@@ -101,8 +101,8 @@ readme-check:
 	if [ "$$check" -ne 0 ]; then exit "$$check"; fi; \
 	exit "$$render"
 
-# Das README-Beispiel einmal mit echten Agenten, auf diesem Rechner:
-# ruft Modelle auf und verbraucht Tokens. Ergebnis und Ereignisprotokoll
+# Das README-Beispiel (beide Aufträge) einmal mit echten Agenten:
+# ruft Modelle auf und verbraucht Tokens. Ergebnisse und Ereignisprotokolle
 # landen eingecheckt in docs/beispiele/echtlauf/; render-readme.py setzt
 # daraus die Statuszeile „Mit echten Agenten ausgeführt“. Variablen einer
 # umgebenden Claude-Code-Sitzung gehen nicht an das claude des Laufs.

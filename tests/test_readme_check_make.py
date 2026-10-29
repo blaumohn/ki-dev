@@ -24,6 +24,8 @@ COPY = (
     "scripts/render-readme.py",
     "scripts/readme_results.py",
 )
+# Anfang einer Statuszeile (scripts/readme_results.py).
+STATUS = '<p align="right"><sub>'
 # build: Exit aus FAKE_BUILD_EXIT; run: legt ein Ergebnis für
 # 3-auftrag.sh ab, wie der Container es in /tmp/readme-ergebnisse tut.
 FAKE_CHECK = """#!/bin/sh
@@ -53,14 +55,13 @@ def test_failed_build_sets_all_not_run(repo, tmp_path):
     assert code != 0
     assert "Error 3" in err
     assert (tmp_path / "calls").read_text() == "build check\n"
+    de = f"{STATUS}Im letzten Prüflauf nicht ausgeführt"
+    en = f"{STATUS}Not run in the last check"
     for name, not_run in (
-        ("README.md", "> Im letzten Prüflauf nicht ausgeführt"),
-        ("README.en.md", "> Not run in the last check"),
-        (
-            "docs/vertiefung.de.md",
-            "> Im letzten Prüflauf nicht ausgeführt",
-        ),
-        ("docs/vertiefung.en.md", "> Not run in the last check"),
+        ("README.md", de),
+        ("README.en.md", en),
+        ("docs/vertiefung.de.md", de),
+        ("docs/vertiefung.en.md", en),
     ):
         lines = _status_lines(repo / name).values()
         assert lines
@@ -79,7 +80,7 @@ def test_run_results_set_status_lines(repo, tmp_path):
         **_status_lines(repo / "docs/vertiefung.de.md"),
     }
     assert lines["readme-scripts/3-auftrag.sh"].startswith(
-        "> ✅ Im leeren Container ausgeführt"
+        f"{STATUS}✓ Im leeren Container ausgeführt"
     )
     not_run = [line for line in lines.values() if "nicht aus" in line]
     assert len(not_run) == len(lines) - 1

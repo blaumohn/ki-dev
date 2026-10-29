@@ -20,8 +20,8 @@ READMES = ("README.md", "README.en.md")
 GUIDES = ("docs/vertiefung.de.md", "docs/vertiefung.en.md")
 LATER = "2026-10-21T09:30:00Z"
 TEST = "tests/readme/test_1_setup.sh"
-DE_LINK = f"[Test]({TEST})"
-EN_LINK = f"[test]({TEST})"
+DE_LINK = f'<a href="{TEST}">Test</a>'
+EN_LINK = f'<a href="{TEST}">test</a>'
 BLOCK_RE = re.compile(
     r"^<!-- readme-script: \S*1-setup\.sh -->\n"
     r".*?^<!-- /readme-script -->\n",
@@ -157,17 +157,16 @@ def test_new_block_starts_not_run(repo):
     assert _render(repo)[0] == 0
     assert (
         "\n```\n\n"
-        f"> Im letzten Prüflauf nicht ausgeführt · [Test]({TEST})\n"
+        + _status(f"Im letzten Prüflauf nicht ausgeführt · {DE_LINK}")
+        + "\n"
     ) in readme.read_text()
 
 
 def test_missing_result_is_not_run(repo, results):
     assert _render(repo, "--write", results)[0] == 0
-    assert (
-        f"> Im letzten Prüflauf nicht ausgeführt · [Test]({TEST})\n"
-        in (repo / "README.md").read_text()
-    )
-    assert f"> Not run in the last check · [test]({TEST})\n" in (
+    not_run = f"Im letzten Prüflauf nicht ausgeführt · {DE_LINK}"
+    assert _status(not_run) + "\n" in (repo / "README.md").read_text()
+    assert _status(f"Not run in the last check · {EN_LINK}") in (
         repo / "README.en.md"
     ).read_text()
 
@@ -175,13 +174,14 @@ def test_missing_result_is_not_run(repo, results):
 def test_passed_line_and_output_follow_the_bash_block(repo, results):
     _result(results, "1-setup", "passed", auszug=['"status": "passed"'])
     assert _render(repo, "--write", results)[0] == 0
-    de, en = DE_LINK, EN_LINK
+    passed_de = f"✓ Im leeren Container ausgeführt · {DE_LINK}"
+    passed_en = f"✓ Run in an empty container · {EN_LINK}"
     for name, line in (
-        ("README.md", f"> ✅ Im leeren Container ausgeführt · {de}"),
-        ("README.en.md", f"> ✅ Run in an empty container · {en}"),
+        ("README.md", _status(passed_de)),
+        ("README.en.md", _status(passed_en)),
     ):
         block = _block(repo / name)
-        assert not block.splitlines()[1].startswith("> ")
+        assert not block.splitlines()[1].startswith("<p align=")
         assert (
             f"\n```\n\n{line}\n\n```text\n"
             '"status": "passed"\n```\n'
@@ -193,8 +193,9 @@ def test_failed_has_no_output_block(repo, results):
     _result(results, "1-setup", "failed")
     assert _render(repo, "--write", results)[0] == 0
     de, en = (_block(repo / name) for name in READMES)
-    assert f"> ❌ Im leeren Container fehlgeschlagen · {DE_LINK}" in de
-    assert f"> ❌ Failed in an empty container · {EN_LINK}" in en
+    failed = f"✗ Im leeren Container fehlgeschlagen · {DE_LINK}"
+    assert _status(failed) in de
+    assert _status(f"✗ Failed in an empty container · {EN_LINK}") in en
     assert "```text" not in de
 
 
@@ -202,10 +203,10 @@ def test_stub_shows_reason_per_language(repo, results):
     reasons = {"grund_de": "braucht X", "grund_en": "needs X"}
     _result(results, "1-setup", "stub", **reasons)
     assert _render(repo, "--write", results)[0] == 0
-    assert f"> ⏳ Ungeprüft: braucht X · [Test]({TEST})" in _block(
+    assert _status(f"○ Ungeprüft: braucht X · {DE_LINK}") in _block(
         repo / "README.md"
     )
-    assert f"> ⏳ Not checked: needs X · [test]({TEST})" in _block(
+    assert _status(f"○ Not checked: needs X · {EN_LINK}") in _block(
         repo / "README.en.md"
     )
 
@@ -218,7 +219,7 @@ def test_parameters_share_one_line(repo, results):
     (results / "1-setup.json").write_text(json.dumps(entries))
     assert _render(repo, "--write", results)[0] == 0
     assert (
-        f"> Im leeren Container: ✅ mock · ⏳ claude · [Test]({TEST})"
+        _status(f"Im leeren Container: ✓ mock · ○ claude · {DE_LINK}")
         in _block(repo / "README.md")
     )
 
@@ -227,7 +228,7 @@ def test_without_test_file_no_link(repo, results):
     (repo / TEST).unlink()
     _result(results, "1-setup", "passed")
     assert _render(repo, "--write", results)[0] == 0
-    assert "> ✅ Im leeren Container ausgeführt\n" in _block(
+    assert _status("✓ Im leeren Container ausgeführt") + "\n" in _block(
         repo / "README.md"
     )
 
@@ -237,10 +238,132 @@ def test_kept_status_follows_the_test_file(repo, results):
     assert _render(repo, "--write", results)[0] == 0
     (repo / TEST).rename(repo / "tests/readme/test_1_setup.py")
     assert _render(repo)[0] == 0
+    assert _status(
+        "✓ Im leeren Container ausgeführt · "
+        '<a href="tests/readme/test_1_setup.py">Test</a>'
+    ) + "\n" in _block(repo / "README.md")
+
+
+@pytest.mark.parametrize(
+    "former",
+    [
+        f"> ✅ Im leeren Container ausgeführt · [Test]({TEST})",
+        f"<small>✅ Im leeren Container ausgeführt · [Test]({TEST})"
+        "</small>",
+    ],
+)
+def test_kept_status_in_former_form_becomes_current(
+    repo, results, former
+):
+    """Eine Statuszeile einer früheren Form (Zitat, ``<small>``, Emoji)
+    bleibt erhalten und erscheint beim nächsten Rendern in der
+    aktuellen Form."""
+    _result(results, "1-setup", "passed")
+    assert _render(repo, "--write", results)[0] == 0
+    readme = repo / "README.md"
+    current = _status(f"✓ Im leeren Container ausgeführt · {DE_LINK}")
+    readme.write_text(readme.read_text().replace(current, former))
+    assert _render(repo)[0] == 0
+    assert f"\n{current}\n" in _block(readme)
+
+
+def test_stub_reason_is_escaped_in_the_html_line(repo, results):
+    reasons = {"grund_de": "braucht <X> & Y", "grund_en": "needs X"}
+    _result(results, "1-setup", "stub", **reasons)
+    assert _render(repo, "--write", results)[0] == 0
+    assert "○ Ungeprüft: braucht &lt;X&gt; &amp; Y · " in _block(
+        repo / "README.md"
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "toc", "back"),
+    [
+        ("README.md", "inhalt", "↑ Zum Inhalt"),
+        ("README.en.md", "contents", "↑ Back to contents"),
+    ],
+)
+def test_contents_and_back_links_follow_the_headings(
+    repo, name, toc, back
+):
+    """Inhalt und Rücksprünge entstehen aus den Überschriften: ein neuer
+    Unterabschnitt erscheint eingerückt im Inhalt und bekommt seinen
+    Rücksprung, ohne Handarbeit."""
+    readme = repo / name
+    text = readme.read_text()
+    heading = next(
+        line for line in text.splitlines() if line.startswith("### ")
+    )
+    readme.write_text(
+        text.replace(heading, f"### Neu `x`\n\nText.\n\n{heading}", 1)
+    )
+    code, _, err = _render(repo, "--check")
+    assert code == 1
+    assert _render(repo)[0] == 0
+    rendered = readme.read_text()
+    nav = f'<p align="right"><a href="#{toc}">{back}</a></p>'
+    assert "\n  - [Neu `x`](#neu-x)\n" in rendered
+    # Nicht mehr alle Unterabschnitte nummeriert: ungeordnete Liste.
+    assert "\n  - [Neu `x`](#neu-x)\n  - [1. " in rendered
+    assert f"### Neu `x`\n\nText.\n\n{nav}\n\n{heading}" in rendered
+    assert _render(repo, "--check")[0] == 0
+
+
+def test_numbered_subsections_become_an_ordered_list():
+    """Heißen alle Unterabschnitte „1. …“, „2. …“, zeigt der Inhalt sie
+    als nummerierte Liste; die Nummer steht nicht doppelt im Link."""
+    text = (ROOT / "README.md").read_text()
     assert (
-        "> ✅ Im leeren Container ausgeführt · "
-        "[Test](tests/readme/test_1_setup.py)\n"
-    ) in _block(repo / "README.md")
+        "- [Ausprobieren](#ausprobieren)\n"
+        "  1. [Einrichten](#1-einrichten)\n"
+        "  2. [Auftrag anlegen](#2-auftrag-anlegen)\n"
+    ) in text
+    assert "  6. [Ergebnis ansehen](#6-ergebnis-ansehen)\n" in text
+    assert "[1. Einrichten]" not in text
+
+
+def test_hand_edit_in_contents_block_is_replaced(repo):
+    readme = repo / "README.md"
+    original = readme.read_text()
+    readme.write_text(
+        original.replace("- [Stand](#stand)\n", "- [Alt](#alt)\n", 1)
+    )
+    assert _render(repo, "--check")[0] == 1
+    assert _render(repo)[0] == 0
+    assert readme.read_text() == original
+
+
+@pytest.mark.parametrize(
+    "marker", ["<!-- readme-inhalt -->", "<!-- /readme-inhalt -->"]
+)
+def test_incomplete_contents_block_fails(repo, marker):
+    readme = repo / "README.md"
+    original = readme.read_text()
+    readme.write_text(original.replace(f"{marker}\n", "", 1))
+    code, _, err = _render(repo)
+    assert code == 1
+    assert "README.md: Inhaltsblock unvollständig oder mehrfach" in err
+    assert marker not in readme.read_text()
+
+
+def test_back_link_only_after_sections_without_subsections(repo):
+    lines = (repo / "README.md").read_text().splitlines()
+    nav = '<p align="right"><a href="#inhalt">↑ Zum Inhalt</a></p>'
+    headings = [
+        i
+        for i, line in enumerate(lines)
+        if line.startswith(("## ", "### "))
+    ]
+    before = {
+        lines[i]: nav in lines[j:i]
+        for j, i in zip(headings, headings[1:], strict=False)
+    }
+    assert before["## Ausprobieren"]  # nach dem Minimalbeispiel
+    assert not before["### 1. Einrichten"]  # Ausprobieren hat Schritte
+    assert before["### 2. Auftrag anlegen"]
+    assert before["## Stand"]
+    assert nav not in lines[headings[-1] :]  # letzter Abschnitt
+    assert not any(line.startswith(">") for line in lines)
 
 
 def test_two_writes_give_the_same_readme(repo, results):
@@ -323,14 +446,14 @@ def test_results_and_links_follow_a_section_into_the_guide(
     for name, status, setup in (
         (
             GUIDES[0],
-            "✅ Im leeren Container ausgeführt",
+            "✓ Im leeren Container ausgeführt",
             "1-einrichten",
         ),
-        (GUIDES[1], "✅ Run in an empty container", "1-set-up"),
+        (GUIDES[1], "✓ Run in an empty container", "1-set-up"),
     ):
         text = (repo / name).read_text()
         assert status in text
-        assert "(../tests/readme/test_8_demo.sh)" in text
+        assert 'href="../tests/readme/test_8_demo.sh"' in text
         readme = (
             "README.en.md" if name.endswith(".en.md") else "README.md"
         )
@@ -350,6 +473,11 @@ def _entry(stem, ergebnis, **fields):
         "ergebnis": ergebnis,
         "datum": "2026-10-20T08:00:00Z",
     } | fields
+
+
+def _status(status):
+    """Statuszeile wie in der README (scripts/readme_results.py)."""
+    return f'<p align="right"><sub>{status}</sub></p>'
 
 
 def _block(readme):
@@ -380,8 +508,8 @@ def test_live_result_is_marked_and_wins_over_the_container_stub(
     )
     assert _render(repo, "--write", results)[0] == 0
     for name, status in (
-        ("README.md", "> ✅ Mit echten Agenten ausgeführt · [Test]"),
-        ("README.en.md", "> ✅ Run with real agents · [test]"),
+        ("README.md", "<sub>✓ Mit echten Agenten ausgeführt · <a "),
+        ("README.en.md", "<sub>✓ Run with real agents · <a href="),
     ):
         text = (repo / name).read_text()
         assert status in text

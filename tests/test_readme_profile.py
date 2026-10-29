@@ -37,7 +37,7 @@ def test_profile_is_toml_with_both_roles():
     shown = profile(SCRIPTS[0])
     assert shown["worker"]["executor"] == "codex"
     assert shown["review"]["executor"] == "claude"
-    assert shown["finalization"]["target_workdir"] == "../versions"
+    assert shown["finalization"]["target_workdir"] == "../app"
 
 
 def test_profile_values_match_between_languages():

@@ -49,6 +49,7 @@ main() {
   run_readme_test "$staging_dir/tests/readme/test_5_starten.sh"
   run_readme_test "$staging_dir/tests/readme/test_9_entscheiden.sh"
   run_readme_test "$staging_dir/tests/readme/test_9_ergebnis.sh"
+  run_readme_test "$staging_dir/tests/readme/test_9_loesbar.sh"
   run_readme_test "$staging_dir/tests/readme/test_8_demo.sh"
   run_readme_test "$staging_dir/tests/readme/test_6_map_step.sh"
   run_readme_test "$staging_dir/tests/readme/test_2_runtime.sh"

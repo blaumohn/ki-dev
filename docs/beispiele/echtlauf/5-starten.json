@@ -1,0 +1,18 @@
+[
+  {
+    "skript": "5-starten.sh",
+    "parameter": {},
+    "ergebnis": "passed",
+    "datum": "2026-10-29T00:47:57Z",
+    "auszug": [
+      "$ ki-dev -f implement \"$BEAD\" --run-id version-fix",
+      "{",
+      "  \"run_id\": \"version-fix\",",
+      "  \"status\": \"waiting_decision\",",
+      "  \"phase\": \"waiting_decision\",",
+      "  \"detail\": \"\"",
+      "  …",
+      "}"
+    ]
+  }
+]

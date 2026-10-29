@@ -1,15 +1,15 @@
-# In the same terminal as the setup. The commands create a throwaway
-# repo: `versions` holds the target branch `main`, the agents work in
-# the worktree `versions-work`. `is_newer()` compares versions as text;
-# the second line of `test_version.py` pins this behaviour. `bd create`
-# stores problem, design and acceptance criteria as the task;
-# `implement` reads these fields.
+# In the same terminal as the setup. The commands first create the repo
+# being worked on, a throwaway repo with code and tests: `app` holds the
+# target branch `main`, the agents work in the worktree `app-work`. Then
+# `bd create` stores the run's input: the task with problem, design and
+# acceptance criteria.
 #
 # ```bash
+KI_DEV="$PWD"  # ki-dev clone; step 7 takes its files from there
 cd "$(mktemp -d)"
-git init -q -b main versions && cd versions  # throwaway repo
-git config user.name versions  # identity for this throwaway repo only
-git config user.email versions@example.invalid
+git init -q -b main app && cd app  # throwaway repo
+git config user.name app  # identity for this throwaway repo only
+git config user.email app@example.invalid
 cat >version.py <<'EOF'
 def is_newer(a, b):
     return a > b
@@ -23,9 +23,9 @@ EOF
 printf '%s\n' .ki-dev/ .beads.gate.lock __pycache__/ \
   >>.git/info/exclude  # run data, Python cache
 git add . && git commit -q -m "is_newer()"
-git worktree add -q -b work ../versions-work  # the agents' worktree
-cd ../versions-work
-bd init --quiet --prefix versions --stealth --non-interactive
+git worktree add -q -b work ../app-work  # the agents' worktree
+cd ../app-work
+bd init --quiet --prefix app --stealth --non-interactive
 BEAD="$(bd create "is_newer() compares versions as text" \
   --description "is_newer('1.10.0', '1.9.0') returns False" \
   --design "fix version.py" \
@@ -35,6 +35,9 @@ BEAD="$(bd create "is_newer() compares versions as text" \
 echo "$BEAD"
 # ```
 #
-# `$BEAD` is the task ID, e.g. `versions-7k2`. The test contradicts
-# criterion 1, and criterion 2 forbids changing it. Green tests are only
-# possible through a shortcut; that is [intended](#minimal-example).
+# `$BEAD` is the task ID, e.g. `app-7k2`. Criterion 1 asks for
+# the numeric comparison; the second line of `test_version.py` still
+# checks the text comparison, and criterion 2 forbids changing it. Only
+# a human can resolve this contradiction; the
+# [example](#minimal-example) is built for that. The solvable second
+# task comes in [step 7](#7-second-task-solvable).
