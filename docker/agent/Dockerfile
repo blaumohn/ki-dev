@@ -12,7 +12,7 @@ ARG AGENT_GID=1000
 ARG TARGETARCH
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo
-RUN apt-get update && apt-get install -y --no-install-recommends curl ripgrep tini lsof \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ripgrep tini lsof git-filter-repo \
     && rm -rf /var/lib/apt/lists/*
 # The build host may be arm64; a hardcoded x86_64 rustup-init dies under qemu
 # because the arm64 rootfs has no /lib64/ld-linux-x86-64.so.2.
