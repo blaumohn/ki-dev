@@ -7,6 +7,7 @@ verschieben sie; die Liste zeigt deshalb auch die Sitzungs-ID.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Annotated
 
 import typer
@@ -16,6 +17,7 @@ from ki_dev.adapter.executors.session_catalog import (
     SessionRef,
     recent_sessions,
 )
+from ki_dev.adapter.executors.session_config import read_session_config
 from ki_dev.adapter.executors.session_transcript import (
     TranscriptError,
     TranscriptRequestError,
@@ -25,6 +27,7 @@ from ki_dev.adapter.executors.transcript import (
     transcript_agents,
     validate_agent,
 )
+from ki_dev.session_filter import is_automatic_session
 from ki_dev.session_output import fail, print_rich
 from ki_dev.session_view import ListEntry, listing_renderable
 
@@ -54,8 +57,15 @@ NR_OPTION = Annotated[
         "--nr",
         metavar="NR",
         min=1,
-        help="Sitzung Nr. aus `session list` (gleicher --agent).",
+        help="Sitzung Nr. aus `session list` (gleiche Filter).",
         show_default=False,
+    ),
+]
+INCLUDE_TESTS_OPTION = Annotated[
+    bool,
+    typer.Option(
+        "--include-tests",
+        help="Auch Bau-/Review-, Test- und Subagentensitzungen.",
     ),
 ]
 
@@ -63,16 +73,19 @@ NR_OPTION = Annotated[
 def list_sessions(
     count: COUNT_ARG = DEFAULT_COUNT,
     agent: LIST_AGENT_OPTION = None,
+    include_tests: INCLUDE_TESTS_OPTION = False,
 ) -> None:
     """Neueste Sitzungen nummeriert mit Kurzvorschau (schreibt nichts).
 
     Alle Anbieter zusammen, neueste Datei zuerst. Je Sitzung: Nummer,
     Anbieter, letzte Aktivität, ID sowie Beginn des ersten Mensch- und
     Agent-Beitrags. Auswahl: `session show -n NR` oder `export -n NR`.
-    Ordner: KI_DEV_CODEX_SESSIONS_DIR/CODEX_HOME (Standard
-    ~/.codex/sessions), KI_DEV_CLAUDE_SESSIONS_DIR (~/.claude/projects).
+    Quellen: Umgebungsvariablen, dann tool.ki-dev.session in
+    pyproject.toml,
+    sonst ~/.codex/sessions beziehungsweise ~/.claude/projects.
+    Automatische Sitzungen werden vor der Anzahlbegrenzung ausgeblendet.
     """
-    listing = _recent(agent, count)
+    listing = select_listing(agent, count, include_tests)
     if not listing.refs:
         typer.echo("Keine Sitzungen gefunden.", err=True)
         return
@@ -80,9 +93,11 @@ def list_sessions(
     print_rich(listing_renderable(entries), pager=False)
 
 
-def pick_ref(agent: str | None, number: int) -> SessionRef:
+def pick_ref(
+    agent: str | None, number: int, include_tests: bool = False
+) -> SessionRef:
     """Eintrag ``number`` der Liste; zu große Nummer ist ein Fehler."""
-    listing = _recent(agent, number)
+    listing = select_listing(agent, number, include_tests)
     if len(listing.refs) < number:
         fail(
             f"Nummer {number} nicht vorhanden "
@@ -92,17 +107,32 @@ def pick_ref(agent: str | None, number: int) -> SessionRef:
     return listing.refs[number - 1]
 
 
-def _recent(agent: str | None, limit: int) -> SessionListing:
+def select_listing(
+    agent: str | None, limit: int | None, include_tests: bool = False
+) -> SessionListing:
     agents = (agent,) if agent is not None else transcript_agents()
     try:
         if agent is not None:
             validate_agent(agent)
-        listing = recent_sessions(agents, limit)
+        config = read_session_config()
+        exclude = (
+            None
+            if include_tests
+            else partial(
+                is_automatic_session,
+                exclude_cwd=config.get("exclude_cwd", ()),
+            )
+        )
+        listing = recent_sessions(
+            agents, limit, exclude=exclude, config=config
+        )
     except TranscriptRequestError as exc:
         fail(str(exc), code=2)
     except TranscriptError as exc:
         details = "\n".join(f"  {problem}" for problem in exc.problems)
         fail(f"Sitzungen nicht auflistbar:\n{details}", code=1)
+    except ValueError as exc:
+        fail(str(exc), code=1)
     if agent is not None and listing.missing:
         fail(f"Sitzungsordner für {agent} fehlt", code=1)
     for name in listing.missing:

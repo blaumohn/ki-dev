@@ -61,6 +61,18 @@ def local_command(text="<command-name>/model</command-name>"):
     }
 
 
+def interruption(text="[Request interrupted by user]"):
+    """Unterbrechungsmarke, wie Claude sie schreibt: ohne Herkunft."""
+    return {
+        "type": "user",
+        "userType": "external",
+        "message": {
+            "role": "user",
+            "content": [{"type": "text", "text": text}],
+        },
+    }
+
+
 def tool_result():
     return {
         "type": "user",

@@ -105,7 +105,7 @@ def test_claude_session_uses_the_same_contract(env, monkeypatch):
 @pytest.mark.parametrize(
     "args",
     [
-        TRANSCRIPT,
+        ["session", "transcript"],
         [*TRANSCRIPT, "--title", " "],
         [*TRANSCRIPT, "--title", "!!!"],
         [
@@ -341,11 +341,11 @@ def test_export_jsonl_matches_the_stored_snapshot(env):
     assert result.stdout_bytes == path.read_bytes()
 
 
-def test_export_jsonl_without_title_is_a_call_error(env):
+def test_export_jsonl_without_title_preserves_missing_title(env):
     codex_session(env)
     result = runner.invoke(app, [*EXPORT, "--format", "jsonl"])
-    assert result.exit_code == 2
-    assert result.stdout == ""
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout.splitlines()[0])["title"] is None
 
 
 def test_export_output_creates_a_new_file_only(env):

@@ -3,6 +3,7 @@ import os
 import pytest
 from typer.testing import CliRunner
 
+from ki_dev import session_list
 from ki_dev.cli import app
 from tests import claude_session_fixtures as claude
 from tests.codex_session_fixtures import (
@@ -53,9 +54,7 @@ def claude_session(env, text, second):
 
 
 def rows_of(result):
-    return [
-        line for line in result.stdout.splitlines() if line.strip()
-    ]
+    return [line for line in result.stdout.splitlines() if line.strip()]
 
 
 def test_list_merges_agents_newest_first_with_numbers_and_ids(env):
@@ -65,8 +64,8 @@ def test_list_merges_agents_newest_first_with_numbers_and_ids(env):
     result = runner.invoke(app, ["session", "list"])
     assert result.exit_code == 0, result.stderr
     out = result.stdout
-    assert out.index(CODEX_ID) < out.index(CLAUDE_ID) < out.index(
-        OLDER_ID
+    assert (
+        out.index(CODEX_ID) < out.index(CLAUDE_ID) < out.index(OLDER_ID)
     )
     assert "Mensch: Frage X" in out
     assert "Agent: Antwort X" in out
@@ -83,6 +82,111 @@ def test_count_argument_limits_the_list(env):
     assert result.exit_code == 0, result.stderr
     assert CODEX_ID in result.stdout
     assert OLDER_ID not in result.stdout
+
+
+def test_list_and_number_only_filter_until_enough_matches(
+    env, monkeypatch
+):
+    old = codex_session(env, OLDER_ID, "Alt", "Antwort", 100)
+    newest = codex_session(env, CODEX_ID, "Neu", "Antwort", 200)
+    automatic = claude_session(
+        env,
+        "Bauauftrag fuer Lauf test, Runde 1.\n"
+        "Arbeitsverzeichnis: /work",
+        300,
+    )
+    actual_filter = session_list.is_automatic_session
+    examined = []
+
+    def track(agent, path, exclude_cwd):
+        examined.append(path)
+        return actual_filter(agent, path, exclude_cwd)
+
+    monkeypatch.setattr(session_list, "is_automatic_session", track)
+    for args in (["list", "1"], ["show", "-n", "1"]):
+        examined.clear()
+        result = runner.invoke(app, ["session", *args])
+        assert result.exit_code == 0, result.stderr
+        assert CODEX_ID in result.stdout
+        assert examined == [automatic, newest]
+        assert old not in examined
+
+
+def test_automatic_sessions_are_filtered_before_limit_and_number(env):
+    codex_session(env, OLDER_ID, "Echte Frage", "Antwort", 100)
+    prompt = (
+        "Bauauftrag fuer Lauf version-fix, Runde 1.\n"
+        "Arbeitsverzeichnis: /tmp/tmp.example/app-work\nAuftrag"
+    )
+    codex_session(env, CODEX_ID, prompt, "Fertig", 300)
+    # Codex legt vor dem belegten UserMessage Umgebung und Anweisungen
+    # ebenfalls als response_item mit role=user ab: kein Menschbeitrag.
+    generated = [
+        session_meta(CODEX_ID),
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "<environment_context>",
+                    }
+                ],
+            },
+        },
+        user(1, "t0", prompt),
+        assistant(2, "t0", "Fertig"),
+    ]
+    at(write_session(env.codex, CODEX_ID, generated), 300)
+    sdk = claude.human(prompt, turnOrigin="sdk", promptSource="sdk")
+    sdk.pop("origin")
+    path = claude.write_session(
+        env.projects,
+        CLAUDE_ID,
+        claude.chain([sdk, claude.reply()]),
+    )
+    at(path, 400)
+    result = runner.invoke(app, ["session", "list", "1"])
+    assert result.exit_code == 0, result.stderr
+    assert OLDER_ID in result.stdout
+    assert CODEX_ID not in result.stdout
+    assert CLAUDE_ID not in result.stdout
+    shown = runner.invoke(app, ["session", "show", "-n", "1"])
+    assert shown.exit_code == 0, shown.stderr
+    assert "Echte Frage" in shown.stdout
+    exported = runner.invoke(
+        app, ["session", "export", "-n", "1", "--format", "jsonl"]
+    )
+    assert exported.exit_code == 0, exported.stderr
+    assert OLDER_ID in exported.stdout
+    all_rows = runner.invoke(
+        app, ["session", "list", "3", "--include-tests"]
+    )
+    assert CODEX_ID in all_rows.stdout
+    assert CLAUDE_ID in all_rows.stdout
+    assert "nicht verwendbar" in all_rows.stdout
+    selected = runner.invoke(
+        app, ["session", "show", "-n", "2", "--include-tests"]
+    )
+    assert selected.exit_code == 0, selected.stderr
+    assert CODEX_ID in selected.stdout
+    explicit = runner.invoke(
+        app, ["session", "show", CODEX_ID, "--agent", "codex"]
+    )
+    assert explicit.exit_code == 0, explicit.stderr
+
+
+def test_sdk_origin_alone_does_not_hide_unusable_sessions(env):
+    sdk = claude.human("Frage", turnOrigin="sdk", promptSource="sdk")
+    sdk.pop("origin")
+    claude.write_session(
+        env.projects, CLAUDE_ID, claude.chain([sdk, claude.reply()])
+    )
+    result = runner.invoke(app, ["session", "list"])
+    assert CLAUDE_ID in result.stdout
+    assert "nicht verwendbar" in result.stdout
 
 
 def test_agent_filters_the_list(env):

@@ -25,7 +25,13 @@ from ki_dev.adapter.executors.transcript import (
     read_session_transcript,
     validate_session_request,
 )
-from ki_dev.session_list import NR_OPTION, list_sessions, pick_ref
+from ki_dev.session_archive import ArchivePeriod, archive_sessions
+from ki_dev.session_list import (
+    INCLUDE_TESTS_OPTION,
+    NR_OPTION,
+    list_sessions,
+    pick_ref,
+)
 from ki_dev.session_output import (
     OutputExistsError,
     fail,
@@ -58,18 +64,6 @@ app = typer.Typer(
     add_completion=False,
 )
 
-SESSION_ARG = Annotated[
-    str,
-    typer.Argument(metavar="SESSION_ID", help="Sitzungs-ID."),
-]
-AGENT_OPTION = Annotated[
-    str,
-    typer.Option(
-        "--agent",
-        metavar="AGENT",
-        help="Anbieter der Sitzung (codex oder claude).",
-    ),
-]
 OPTIONAL_SESSION_ARG = Annotated[
     str | None,
     typer.Argument(
@@ -103,16 +97,16 @@ app.command("list")(list_sessions)
 
 @app.command("transcript")
 def transcript(
-    session_id: SESSION_ARG,
-    agent: AGENT_OPTION,
+    session_id: OPTIONAL_SESSION_ARG = None,
+    agent: OPTIONAL_AGENT_OPTION = None,
     title: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--title",
             metavar="TITEL",
-            help="Titel; ergibt den Dateinamen.",
+            help="Optionaler Titel für Kopfzeile und Dateiname.",
         ),
-    ],
+    ] = None,
     directory: Annotated[
         Path,
         typer.Option(
@@ -121,15 +115,49 @@ def transcript(
             help="Snapshot-Ordner.",
         ),
     ] = SNAPSHOT_DIR,
+    since: Annotated[
+        str | None,
+        typer.Option(
+            "--since", help="Letzte Aktivität ab UTC-Datum/Zeit."
+        ),
+    ] = None,
+    until: Annotated[
+        str | None,
+        typer.Option(
+            "--until", help="Bis UTC-Tag inkl. oder Zeitpunkt exkl."
+        ),
+    ] = None,
+    all_sessions: Annotated[
+        bool, typer.Option("--all", help="Alle Sitzungen nach Filter.")
+    ] = False,
+    include_tests: INCLUDE_TESTS_OPTION = False,
 ) -> None:
-    """Sitzung als Snapshot ablegen (schreibt eine Datei).
+    """Eine Sitzung oder alle Sitzungen eines Zeitraums archivieren.
 
-    Name: YYMMDDTHH_titel_sid8.jsonl nach UTC-Sitzungsbeginn. Gleicher
-    Stand wird wiederverwendet, ein neuer Stand erhält ein Suffix;
-    vorhandene Dateien werden nie überschrieben. Gibt den Pfad aus.
+    Ohne Titel: YYMMDDTHH_agent_sid8.jsonl. --since/--until wählen nach
+    letzter protokollierter Aktivität; --all wählt ohne Zeitgrenze.
+    Gleicher Stand wird wiederverwendet, ein neuer erhält ein Suffix.
+    Vorhandene Dateien werden nie überschrieben. Gibt die Pfade aus.
     """
+    period = ArchivePeriod.parse(since, until)
+    if title is not None:
+        _check_title(title)
+    batch = all_sessions or since is not None or until is not None
+    if batch:
+        if session_id is not None:
+            fail(
+                "SESSION_ID nicht mit --all/--since/--until mischen",
+                code=2,
+            )
+        archive_sessions(agent, directory, title, period, include_tests)
+        return
+    if session_id is None or agent is None:
+        fail(
+            "SESSION_ID mit --agent oder --since/--all angeben", code=2
+        )
+    if include_tests:
+        fail("--include-tests gilt für --since/--until/--all", code=2)
     _check_request(agent, session_id)
-    _check_title(title)
     loaded = _read(agent, session_id)
     try:
         path = store_snapshot(loaded, title, directory)
@@ -166,6 +194,7 @@ def show(
     agent: OPTIONAL_AGENT_OPTION = None,
     snapshot: SNAPSHOT_OPTION = None,
     nr: NR_OPTION = None,
+    include_tests: INCLUDE_TESTS_OPTION = False,
     pager: Annotated[
         bool,
         typer.Option(
@@ -180,7 +209,9 @@ def show(
     Markdown-Beiträge. Umgeleitete Ausgabe ist ungekürzt und ohne
     Farbcodes; --pager wirkt nur am Terminal.
     """
-    loaded, title = _select(session_id, agent, snapshot, nr)
+    loaded, title = _select(
+        session_id, agent, snapshot, nr, include_tests
+    )
     print_rich(transcript_renderable(loaded, title), pager=pager)
 
 
@@ -194,12 +225,13 @@ def export(
     agent: OPTIONAL_AGENT_OPTION = None,
     snapshot: SNAPSHOT_OPTION = None,
     nr: NR_OPTION = None,
+    include_tests: INCLUDE_TESTS_OPTION = False,
     title: Annotated[
         str | None,
         typer.Option(
             "--title",
             metavar="TITEL",
-            help="Titel (für jsonl ohne gespeicherten Titel Pflicht).",
+            help="Optionaler Titel.",
             show_default=False,
         ),
     ] = None,
@@ -220,13 +252,11 @@ def export(
     """
     if title is not None:
         _check_title(title)
-    loaded, stored_title = _select(session_id, agent, snapshot, nr)
+    loaded, stored_title = _select(
+        session_id, agent, snapshot, nr, include_tests
+    )
     chosen = title or stored_title
     if output_format is ExportFormat.JSONL:
-        if chosen is None:
-            fail(
-                "--title ist für jsonl erforderlich (Kopfzeile)", code=2
-            )
         data = _serialized(loaded, chosen)
     else:
         data = transcript_markdown(loaded, chosen).encode("utf-8")
@@ -235,9 +265,7 @@ def export(
     except OutputExistsError as exc:
         fail(str(exc), code=1)
     except OSError as exc:
-        fail(
-            f"Ausgabe nicht schreibbar ({type(exc).__name__})", code=1
-        )
+        fail(f"Ausgabe nicht schreibbar ({type(exc).__name__})", code=1)
 
 
 def _select(
@@ -245,15 +273,16 @@ def _select(
     agent: str | None,
     snapshot: Path | None,
     nr: int | None,
+    include_tests: bool = False,
 ) -> tuple[SessionTranscript, str | None]:
     """Genau eine Auswahl: ID mit Anbieter, Nummer oder Snapshot."""
     if nr is not None:
         if session_id is not None or snapshot is not None:
-            fail(
-                "-n nicht mit SESSION_ID/--snapshot mischen", code=2
-            )
-        ref = pick_ref(agent, nr)
+            fail("-n nicht mit SESSION_ID/--snapshot mischen", code=2)
+        ref = pick_ref(agent, nr, include_tests)
         return _read(ref.agent, ref.session_id), None
+    if include_tests:
+        fail("--include-tests gilt bei show/export nur mit -n", code=2)
     if snapshot is not None:
         if session_id is not None or agent is not None:
             fail(
@@ -275,7 +304,7 @@ def _select(
     return _read(agent, session_id), None
 
 
-def _serialized(loaded: SessionTranscript, title: str) -> bytes:
+def _serialized(loaded: SessionTranscript, title: str | None) -> bytes:
     try:
         return serialize_snapshot(loaded, title)
     except SnapshotError as exc:

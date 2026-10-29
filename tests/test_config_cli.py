@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 from ki_dev import (
     tool_versions,
 )
+from ki_dev.adapter.executors import session_config
 from ki_dev.cli import app
 from ki_dev.config_cli import SOURCES
 from ki_dev.flow import package
@@ -54,6 +55,7 @@ def test_config_lists_every_source_from_module_constants(
         package.CONFIG_SOURCE,
         runner_cli.CONFIG_SOURCE,
         tool_versions.CONFIG_SOURCE,
+        session_config.CONFIG_SOURCE,
     )
     assert len(lines) == len(SOURCES)
     output = _output(tmp_path, monkeypatch)

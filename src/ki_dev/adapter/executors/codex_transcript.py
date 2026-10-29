@@ -26,6 +26,7 @@ from .codex_sessions import (
     resolve_codex_sessions_dir,
     validate_codex_session_id,
 )
+from .session_config import session_environ
 from .session_transcript import (
     SessionTranscript,
     TranscriptError,
@@ -58,7 +59,9 @@ def read_codex_session(session_id: str) -> SessionTranscript:
     """
     validate_codex_session_id(session_id)
     try:
-        root = resolve_codex_sessions_dir(os.environ, Path.home())
+        root = resolve_codex_sessions_dir(
+            session_environ(os.environ), Path.home()
+        )
     except (ValueError, RuntimeError) as exc:
         cause = _config_cause(exc)
         raise TranscriptError(

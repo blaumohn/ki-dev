@@ -83,11 +83,25 @@ def test_slug_is_safe_and_deterministic(title, slug):
     assert title_slug(title) == slug
 
 
-@pytest.mark.parametrize("title", ["", " ", "!!!", "x" * 121, None, 5])
+@pytest.mark.parametrize("title", ["", " ", "!!!", "x" * 121, 5])
 def test_invalid_titles_are_rejected_before_any_write(tmp_path, title):
     with pytest.raises(SnapshotTitleError):
         store_snapshot(make(), title, tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_title_is_optional_and_identity_spans_both_filename_forms(
+    tmp_path,
+):
+    transcript = make()
+    path = store_snapshot(transcript, None, tmp_path)
+    assert path.name == "261002T14_codex_0199aaaa.jsonl"
+    assert lines(path)[0]["title"] is None
+    assert read_snapshot(path).transcript == transcript
+    assert store_snapshot(transcript, "Titel", tmp_path) == path
+    other = tmp_path / "other"
+    titled = store_snapshot(transcript, "Titel", other)
+    assert store_snapshot(transcript, None, other) == titled
 
 
 def test_header_comes_first_and_is_not_a_message(tmp_path):

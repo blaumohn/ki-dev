@@ -1,4 +1,4 @@
-"""Neueste Sitzungen der Anbieter auflisten (nur Dateien, kein Inhalt).
+"""Sitzungen der Anbieter auflisten und automatische Vorspänne filtern.
 
 Ein-/Ausgabegrenze wie die Transkriptleser: Umgebung, Home und
 Sitzungsordner werden nur hier gelesen. Die Reihenfolge folgt der
@@ -10,6 +10,7 @@ dem Transkript.
 from __future__ import annotations
 
 import os
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,7 @@ from .codex_sessions import (
     list_session_rollouts,
     resolve_codex_sessions_dir,
 )
+from .session_config import session_environ
 from .session_transcript import TranscriptError
 
 _RESOLVERS: dict[str, Callable[[Mapping[str, str], Path], Path]] = {
@@ -39,6 +41,8 @@ class SessionRef:
     agent: str
     session_id: str
     modified: float
+    path: Path
+    ambiguous: bool = False
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,11 @@ class SessionListing:
 
 
 def recent_sessions(
-    agents: Sequence[str], limit: int
+    agents: Sequence[str],
+    limit: int | None,
+    *,
+    exclude: Callable[[str, Path], bool] | None = None,
+    config: Mapping | None = None,
 ) -> SessionListing:
     """Hoechstens ``limit`` Sitzungen der Anbieter, neueste zuerst.
 
@@ -58,23 +66,34 @@ def recent_sessions(
     Sitzungsordner ist kein Fehler dieser Funktion: der Anbieter
     erscheint in ``missing``, der Aufrufer entscheidet.
     """
-    if limit < 1:
+    if limit is not None and limit < 1:
         raise ValueError("limit muss positiv sein")
+    try:
+        environ = session_environ(os.environ, config)
+    except ValueError as exc:
+        raise TranscriptError((str(exc),)) from None
     refs: list[SessionRef] = []
     missing: list[str] = []
     for agent in agents:
-        root = _root(agent)
+        root = _root(agent, environ)
         if not root.is_dir():
             missing.append(agent)
             continue
         refs.extend(_refs(agent, root))
     refs.sort(key=lambda r: (-r.modified, r.agent, r.session_id))
-    return SessionListing(tuple(refs[:limit]), tuple(missing))
+    selected: list[SessionRef] = []
+    for ref in refs:
+        if exclude is not None and exclude(ref.agent, ref.path):
+            continue
+        selected.append(ref)
+        if limit is not None and len(selected) == limit:
+            break
+    return SessionListing(tuple(selected), tuple(missing))
 
 
-def _root(agent: str) -> Path:
+def _root(agent: str, environ: Mapping[str, str]) -> Path:
     try:
-        return _RESOLVERS[agent](os.environ, Path.home())
+        return _RESOLVERS[agent](environ, Path.home())
     except ValueError as exc:
         raise TranscriptError(
             (f"Sitzungsordner {agent} nicht bestimmbar: {exc}",)
@@ -90,9 +109,17 @@ def _root(agent: str) -> Path:
 
 def _refs(agent: str, root: Path) -> list[SessionRef]:
     try:
+        sources = _LISTERS[agent](root)
+        counts = Counter(session_id for session_id, _ in sources)
         return [
-            SessionRef(agent, session_id, path.stat().st_mtime)
-            for session_id, path in _LISTERS[agent](root)
+            SessionRef(
+                agent,
+                session_id,
+                path.stat().st_mtime,
+                path,
+                counts[session_id] > 1,
+            )
+            for session_id, path in sources
         ]
     except OSError as exc:
         raise TranscriptError(

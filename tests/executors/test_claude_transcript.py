@@ -24,6 +24,7 @@ from tests.claude_session_fixtures import (
     compact_summary,
     dialog,
     human,
+    interruption,
     jsonl,
     local_command,
     reply,
@@ -176,6 +177,34 @@ def test_unmarked_local_command_lines_are_excluded_and_counted():
     transcript = extract(rows)
     assert [m.text for m in transcript.messages] == ["Frage", "Antwort"]
     assert transcript.diagnostics["local_commands_excluded"] == 2
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[Request interrupted by user]",
+        "[Request interrupted by user for tool use]",
+    ],
+)
+def test_unmarked_interruption_markers_are_excluded_and_counted(text):
+    rows = chain(
+        [human(), interruption(text), human("Weiter"), reply()]
+    )
+    transcript = extract(rows)
+    assert [m.text for m in transcript.messages] == [
+        "Frage",
+        "Weiter",
+        "Antwort",
+    ]
+    assert transcript.diagnostics["interruption_markers"] == 1
+
+
+def test_interruption_text_with_origin_or_other_text_is_not_excluded():
+    quoted = interruption() | {"promptSource": "system"}
+    other = interruption("[Request interrupted by someone]")
+    for entry in (quoted, other):
+        text = problems_of(chain([human(), entry, reply()]))
+        assert "ohne belegte menschliche Herkunft" in text
 
 
 def test_command_tag_with_foreign_origin_is_an_error_not_excluded():

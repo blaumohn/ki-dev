@@ -1,11 +1,7 @@
-"""Datierte JSONL-Snapshots normalisierter Sitzungstranskripte.
+"""Datierte JSONL-Snapshots: Metadatenkopf, dann Nachrichten.
 
-Ein Snapshot ist eine Datei ``YYMMDDTHH_slug_sid8.jsonl``: zuerst genau
-eine Kopfzeile ``transcript_meta`` (Version 1), danach je Nachricht eine
-Zeile ``message``. Standalone-Export und ``step map`` verwenden
-denselben Serializer und denselben Speicher. Identitaet ist
-(agent, session_id, source_digest, parser_version), nicht Titel oder
-Dateiname.
+Standalone-Export und ``step map`` teilen Serializer und Speicher.
+Identität: (agent, session_id, source_digest, parser_version).
 """
 
 from __future__ import annotations
@@ -56,6 +52,7 @@ _TRANSLITERATION = str.maketrans(
 LEGACY_FORMAT = "handoff-v0"
 _LEGACY_NAME = re.compile(r"(?P<digest>[0-9a-f]{64})-(?P<parser>.+)")
 
+_TITLE_SCHEMA = TEXT_SCHEMA | {"maxLength": TITLE_MAX_CHARS}
 _HEADER_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -79,7 +76,7 @@ _HEADER_SCHEMA = {
         "session_id": {},
         "started_at": TIMESTAMP_SCHEMA,
         "last_activity_at": {},
-        "title": TEXT_SCHEMA | {"maxLength": TITLE_MAX_CHARS},
+        "title": {"anyOf": [_TITLE_SCHEMA, {"type": "null"}]},
         "source_digest": {},
         "parser_version": {},
         "diagnostics": {},
@@ -99,9 +96,7 @@ _SNAPSHOT_SCHEMA = {
     "items": _MESSAGE_LINE_SCHEMA,
 }
 _VALIDATOR = Draft202012Validator(_SNAPSHOT_SCHEMA)
-_TITLE_VALIDATOR = Draft202012Validator(
-    _HEADER_SCHEMA["properties"]["title"]
-)
+_TITLE_VALIDATOR = Draft202012Validator(_TITLE_SCHEMA)
 
 
 class SnapshotError(RuntimeError):
@@ -112,12 +107,12 @@ class SnapshotError(RuntimeError):
 
 
 class SnapshotTitleError(SnapshotError):
-    """--title fehlt, ist ungueltig oder ergibt keinen Dateinamen."""
+    """Angegebener Titel ist ungültig oder ergibt keinen Dateinamen."""
 
 
 @dataclass(frozen=True)
 class Snapshot:
-    """Gelesener Snapshot; ``title`` fehlt nur im Altformat."""
+    """Gelesener Snapshot mit optionalem Titel."""
 
     format: str
     title: str | None
@@ -125,13 +120,10 @@ class Snapshot:
 
 
 def store_snapshot(
-    transcript: SessionTranscript, title: str, directory: Path
+    transcript: SessionTranscript, title: str | None, directory: Path
 ) -> Path:
-    """Snapshot atomar ablegen; identischen Stand wiederverwenden.
-
-    Rueckgabe ist ``directory / name``. Bestehende Dateien werden nie
-    ueberschrieben: Ein neuer Quellstand derselben Sitzung erhaelt ein
-    Digest-Suffix, das bei Kollision deterministisch verlaengert wird.
+    """Atomar ablegen; identische Stände wiederverwenden.
+    Neue Stände erhalten ein bei Kollision verlängertes Digest-Suffix.
     """
     content = serialize_snapshot(transcript, title)
     base = snapshot_stem(transcript, title)
@@ -146,14 +138,11 @@ def store_snapshot(
 
 
 def serialize_snapshot(
-    transcript: SessionTranscript, title: str
+    transcript: SessionTranscript, title: str | None
 ) -> bytes:
-    """Kopfzeile plus eine Zeile je Nachricht, deterministisch.
-
-    Vertrag vor Ausgabe: ein ungueltiges Transkript oder ein ungueltiger
-    Titel wird nie serialisiert.
-    """
-    validate_title(title)
+    """Geprüften Kopf und Nachrichten deterministisch serialisieren."""
+    if title is not None:
+        validate_title(title)
     try:
         validate_transcript(transcript)
         require_started_at(transcript)
@@ -173,8 +162,10 @@ def serialize_snapshot(
     ).encode("utf-8")
 
 
-def snapshot_stem(transcript: SessionTranscript, title: str) -> str:
-    """``YYMMDDTHH_slug_sid8`` aus UTC-Sitzungsbeginn und Titel."""
+def snapshot_stem(
+    transcript: SessionTranscript, title: str | None
+) -> str:
+    """UTC-Sitzungsbeginn, optionaler Titelslug/Anbieter und Kurz-ID."""
     started = require_started_at(transcript).astimezone(UTC)
     if not 2000 <= started.year <= 2099:
         raise SnapshotError(
@@ -182,7 +173,8 @@ def snapshot_stem(transcript: SessionTranscript, title: str) -> str:
             "YY-Name nicht eindeutig"
         )
     sid8 = transcript.session_id[:_SID_CHARS]
-    return f"{started:%y%m%dT%H}_{title_slug(title)}_{sid8}"
+    label = title_slug(title) if title is not None else transcript.agent
+    return f"{started:%y%m%dT%H}_{label}_{sid8}"
 
 
 def validate_title(title: object) -> None:
@@ -213,11 +205,7 @@ def title_slug(title: str) -> str:
 
 
 def read_snapshot(path: Path) -> Snapshot:
-    """Snapshot (Version 1) oder bekanntes Altformat lesen und pruefen.
-
-    Unbekannte Formate werden sichtbar abgelehnt; fehlende historische
-    Metadaten bleiben leer statt erfunden.
-    """
+    """Version 1 und bekanntes Altformat prüfen; andere ablehnen."""
     lines = _parse_lines(path)
     first = lines[0] if lines else None
     if isinstance(first, dict) and "type" in first:
@@ -234,7 +222,7 @@ def read_snapshot(path: Path) -> Snapshot:
     )
 
 
-def _header(transcript: SessionTranscript, title: str) -> dict:
+def _header(transcript: SessionTranscript, title: str | None) -> dict:
     return {
         "type": "transcript_meta",
         "version": FORMAT_VERSION,

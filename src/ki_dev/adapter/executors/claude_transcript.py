@@ -31,6 +31,7 @@ from .claude_sessions import (
     resolve_claude_sessions_dir,
     validate_claude_session_id,
 )
+from .session_config import session_environ
 from .session_transcript import (
     SessionTranscript,
     TranscriptError,
@@ -159,6 +160,16 @@ _LOCAL_COMMAND_PREFIXES = tuple(
     f"<{tag}>" for tag in _LOCAL_COMMAND_TAGS
 )
 
+# Unterbrechungsmarke: Claude schreibt sie teils mit
+# ``interruptedMessageId``, teils ohne jede Herkunftsangabe als einzigen
+# Textblock.
+_INTERRUPTION_TEXTS = frozenset(
+    {
+        "[Request interrupted by user]",
+        "[Request interrupted by user for tool use]",
+    }
+)
+
 # Nur diese bekannten Kennzeichen erscheinen woertlich in Diagnosen;
 # jeder andere Wert nur als Typ, damit keine Inhalte durchrutschen.
 _KNOWN_MARKERS = frozenset(
@@ -200,7 +211,9 @@ def read_claude_session(session_id: str) -> SessionTranscript:
     """
     validate_claude_session_id(session_id)
     try:
-        root = resolve_claude_sessions_dir(os.environ, Path.home())
+        root = resolve_claude_sessions_dir(
+            session_environ(os.environ), Path.home()
+        )
     except ValueError as exc:
         raise TranscriptError(
             (f"Claude-Sitzungsordner nicht bestimmbar: {exc}",)
@@ -432,7 +445,9 @@ def _classify_user(
     if _is_local_command(entry, content):
         stats["local_commands_excluded"] += 1
         return None
-    if "interruptedMessageId" in entry:
+    if "interruptedMessageId" in entry or _is_interruption_text(
+        entry, content
+    ):
         stats["interruption_markers"] += 1
         return None
     if (
@@ -460,6 +475,22 @@ def _is_local_command(entry: dict, content: object) -> bool:
         unmarked
         and isinstance(content, str)
         and content.lstrip().startswith(_LOCAL_COMMAND_PREFIXES)
+    )
+
+
+def _is_interruption_text(entry: dict, content: object) -> bool:
+    """Unterbrechungsmarke ohne jede Herkunftsangabe: genau ein
+    Textblock mit bekanntem Wortlaut. Ein menschliches Zitat traegt
+    Herkunftsfelder und bleibt Eingabe."""
+    unmarked = not any(
+        key in entry for key in ("origin", "turnOrigin", "promptSource")
+    )
+    return (
+        unmarked
+        and isinstance(content, list)
+        and len(content) == 1
+        and content[0]["type"] == "text"
+        and content[0]["text"] in _INTERRUPTION_TEXTS
     )
 
 

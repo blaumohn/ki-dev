@@ -1,10 +1,22 @@
 # Sitzungen als Snapshot (`ki-dev session`)
 
-`ki-dev session` liest eine lokale Codex- oder Claude-Sitzung per
-**expliziter ID und Anbieter** und legt sie als datierten JSONL-Snapshot ab.
-`session list` zeigt die neuesten Sitzungen beider Anbieter nummeriert; die
-Nummer wählt eine Sitzung für `show` und `export`. Die Suche nach Inhalten und
-Listen zuletzt angesehener Sitzungen sind noch nicht enthalten.
+`ki-dev session` archiviert lokale Codex- und Claude-Sitzungen als datierte
+JSONL-Snapshots. Mit einem Zeitraum werden alle passenden Sitzungen aus den
+konfigurierten Rohsitzungsordnern ergänzt:
+
+```bash
+ki-dev session transcript --since 2026-10-01 --until 2026-10-28
+```
+
+stdout enthält je Sitzung den Snapshot-Pfad; stderr zeigt die Bilanz.
+Identische Stände werden wiederverwendet, neue Stände zusätzlich abgelegt.
+Der Zielordner ist `.local/var/transcripts/`. Der Aufruf braucht keinen Titel.
+
+`session list` zeigt die neuesten Sitzungen beider Anbieter nummeriert. Die
+Nummer wählt eine Sitzung für `show` und `export`. Automatische Bau- und
+Review-Aufträge sowie bekannte Testsitzungen werden standardmäßig
+ausgeblendet. Die Suche nach Inhalten und Listen zuletzt angesehener Sitzungen
+sind noch nicht enthalten. Eine Sitzung lässt sich auch gezielt per ID ablegen:
 
 ```bash
 ki-dev session transcript 0de11ef0-1ad2-48ad-af5c-45fa89e5ecab --agent claude --title 'Zustandstabelle'
@@ -15,9 +27,86 @@ Die Sitzungsordner und die Dialogprüfung sind dieselben wie bei
 [`step map`](step.de.md#sitzung-als-quelle-step-map). Beide Aufrufe
 verwenden denselben Serializer und denselben Speicher.
 
+## Zeitraum und Quellen
+
+`--since` schließt die untere Grenze ein. Ein Datum (`YYYY-MM-DD`) beginnt um
+00:00 UTC. `--until` mit Datum schließt den ganzen UTC-Tag ein; ein genauer
+ISO-Zeitpunkt mit Zeitzone ist dagegen eine ausgeschlossene obere Grenze.
+Beispiel: `--since 2026-10-28T10:00:00+02:00 --until 2026-10-28T12:00:00Z`.
+Ein Zeitpunkt ohne Zeitzone und ein umgekehrter Zeitraum sind Aufruffehler.
+
+Ausgewählt wird nach **letzter protokollierter Aktivität** (`last_activity_at`),
+nicht nach Sitzungsbeginn oder Dateiänderungszeit. Eine früher begonnene,
+im Zeitraum zuletzt aktive Sitzung wird vollständig archiviert. Fehlt eine
+belegte Aktivitätszeit, wird sie bei einer Zeitraumwahl als Fehler gemeldet.
+`--all` archiviert ohne Zeitgrenze. Der Sammelexport hat kein Listenlimit;
+`--agent codex` beziehungsweise `--agent claude` begrenzt den Anbieter.
+
+Vor der Dialogprüfung werden die Zeitstempel der Rohzeilen eingegrenzt.
+Liegt dieser gesamte Bereich außerhalb des Zeitraums, zählt die Sitzung als
+„außerhalb“, auch wenn ihr Dialog leer oder unbrauchbar ist. Steuerereignisse
+können den Bereich erweitern; bei einer möglichen Überschneidung entscheidet
+weiterhin die normalisierte letzte Aktivität. Sind Rohzeiten nicht bestimmbar
+oder Zeilen beschädigt, bleibt die volle Prüfung mit sichtbaren Fehlern nötig.
+Die Dateiänderungszeit dient nicht zum Ausschluss, da Kopien oder
+wiederhergestellte Dateien abweichende Zeiten haben können.
+
+Der Sammelexport lädt die Projektkonfiguration einmal und verwendet die
+gefundenen Dateipfade direkt. Historische Rohdateien werden für die
+Zeitprüfung weiterhin gelesen; eine Dialogvalidierung und das Hashen sind
+nur für mögliche Treffer nötig.
+
+Die Projektdatei `pyproject.toml` kann Quellen und zusätzliche auszublendende
+Arbeitsverzeichnisse festlegen. Relative Pfade beziehen sich auf das aktuelle
+Projektverzeichnis; `~` wird aufgelöst. `ki-dev config` nennt diesen Abschnitt:
+
+```toml
+[tool.ki-dev.session]
+codex_sessions_dir = "/pfad/zu/codex/sessions"
+claude_sessions_dir = "/pfad/zu/claude/projects"
+exclude_cwd = ["/pfad/testlaeufe/*"]
+```
+
+Explizite Umgebungsvariablen haben Vorrang: Codex liest zuerst
+`KI_DEV_CODEX_SESSIONS_DIR`, dann `CODEX_HOME/sessions`, dann den Projektwert,
+sonst `~/.codex/sessions`. Claude liest `KI_DEV_CLAUDE_SESSIONS_DIR`, dann den
+Projektwert, sonst `~/.claude/projects`. Ungültige Konfiguration wird gemeldet.
+Diese Quellen gelten auch für direkte ID-Aufrufe und `step map`.
+
+Ein Sammelexport setzt nach einzelnen Lese- oder Speicherfehlern fort. Er
+meldet Anbieter, Sitzungs-ID und Diagnose auf stderr und endet bei mindestens
+einem solchen Fehler mit Exit 1. Erfolgreiche Snapshots bleiben erhalten.
+
+## Automatische Sitzungen ausblenden
+
+Liste, Nummernauswahl und Sammelexport verwenden denselben Filter **vor** dem
+Listenlimit. Er erkennt im Rohvorspann die von ki-dev erzeugten Bau- und
+Review-Aufträge, Codex-Subagenten sowie Arbeitsverzeichnisse unter
+`pytest-of-*`, `readme-check` und `readme-walkthrough`. `exclude_cwd` ergänzt
+diese Verzeichnismuster (`*` und `?` als Platzhalter).
+
+Damit werden auch automatische Claude-Aufträge ausgeblendet, deren
+SDK-Herkunft die spätere Dialogprüfung ablehnt. SDK-/exec-Herkunft allein und
+ein beliebiges temporäres Arbeitsverzeichnis reichen nicht zum Ausblenden.
+Unbekannte oder beschädigte Vorspänne bleiben zur sichtbaren Prüfung erhalten.
+
+`--include-tests` nimmt die ausgeblendeten Sitzungen wieder in die Auswahl
+auf. Bei `show -n` und `export -n` muss dieselbe Option wie bei `list` gelten:
+
+```bash
+ki-dev session list 20 --include-tests
+ki-dev session show -n 2 --include-tests
+ki-dev session transcript --since 2026-10-01 --include-tests
+```
+
+Ein direkter ID-Aufruf bleibt unabhängig vom Filter möglich. Der Filter
+ändert oder löscht keine Rohsitzungen oder bereits gespeicherten Snapshots.
+
 ## Datierte JSONL-Snapshots
 
-**Name:** `YYMMDDTHH_titel_sid8.jsonl`
+**Name:** ohne Titel `YYMMDDTHH_agent_sid8.jsonl`, mit Titel weiterhin
+`YYMMDDTHH_titel_sid8.jsonl`. Der Anbieter ersetzt nur das Dateinamensegment;
+es wird kein Ersatztitel gespeichert.
 
 | Teil | Herkunft | Beispiel |
 |---|---|---|
@@ -27,9 +116,11 @@ verwenden denselben Serializer und denselben Speicher.
 
 Der genaue Zeitpunkt steht im Kopf. Fehlt der belegte Sitzungsbeginn, endet
 der Aufruf mit Exit 1. Ein Export- oder Dateidatum wird nicht als Ersatz
-eingesetzt. `--title` ist Pflicht: nichtleerer Text mit höchstens 120 Zeichen,
-der Buchstaben oder Ziffern enthält. Der Titel wird nie aus dem Prompttext
-abgeleitet.
+eingesetzt. `--title` ist optional. Ein angegebener Titel muss nichtleerer
+Text mit höchstens 120 Zeichen sein und Buchstaben oder Ziffern enthalten.
+Ohne Titel steht `"title": null` im Kopf. Der Titel wird nie aus dem
+Prompttext abgeleitet. `step map` verlangt weiterhin einen Titel für die
+Quellenübergabe.
 
 **Inhalt:** Zeile 1 ist genau ein Kopf, danach folgt eine Nachricht je Zeile.
 
@@ -81,10 +172,12 @@ gültig, solange die Datei vorhanden ist.
 
 | Aufruf | Wirkung |
 |---|---|
-| `session transcript ID --agent A --title T [--dir D]` | schreibt einen Snapshot und gibt seinen Pfad aus |
-| `session list [ANZAHL] [--agent A]` | listet die neuesten Sitzungen nummeriert mit Vorschau und schreibt nichts |
-| `session show -n NR [--agent A] [--pager]` | zeigt Eintrag NR der Liste an |
-| `session export -n NR [--agent A] --format …` | dasselbe als Export |
+| `session transcript ID --agent A [--title T] [--dir D]` | schreibt einen Snapshot und gibt seinen Pfad aus |
+| `session transcript --since DATUM [--until DATUM] [--agent A] [--dir D] [--include-tests]` | ergänzt alle passenden Sitzungen im Archiv |
+| `session transcript --all [--agent A] [--dir D] [--include-tests]` | ergänzt alle Sitzungen nach Filter ohne Zeitgrenze |
+| `session list [ANZAHL] [--agent A] [--include-tests]` | listet die neuesten Sitzungen nummeriert mit Vorschau und schreibt nichts |
+| `session show -n NR [--agent A] [--include-tests] [--pager]` | zeigt Eintrag NR der Liste an |
+| `session export -n NR [--agent A] [--include-tests] --format …` | dasselbe als Export |
 | `session show ID --agent A [--pager]` | zeigt die Rohsitzung an und schreibt nichts |
 | `session show --snapshot DATEI [--pager]` | zeigt einen gespeicherten Snapshot an (auch `handoff-v0`) |
 | `session export ID --agent A --format markdown\|jsonl [--title T] [--output DATEI]` | Ausgabe auf stdout oder in eine **neue** Datei; kein Archiv |
@@ -103,11 +196,12 @@ ersten Mensch- und des ersten Agent-Beitrags. Die Reihenfolge folgt der
 Änderungszeit der Sitzungsdatei, bei Gleichstand Anbieter und ID. Unterordner
 (Subagenten) und Dateien ohne erkennbaren Sitzungsnamen zählen nicht. Eine
 nicht lesbare Sitzung erscheint als Zeile `nicht verwendbar: …` mit Prüfcodes,
-nie mit Inhalt.
+nie mit Inhalt. Zunächst werden nur die Dateireferenzen sortiert. Danach
+werden die Vorspänne geprüft, bis die gewünschte Anzahl nach Filter erreicht
+ist; ältere Sitzungen müssen dafür nicht geöffnet werden.
 
-Die Ordner sind dieselben wie bei `show`: `KI_DEV_CODEX_SESSIONS_DIR`, sonst
-`CODEX_HOME/sessions`, sonst `~/.codex/sessions`; `KI_DEV_CLAUDE_SESSIONS_DIR`,
-sonst `~/.claude/projects`. Fehlt ein Ordner, meldet `list` das als Hinweis auf
+Die Ordner sind dieselben wie bei `show` und dem Sammelexport (siehe
+[Zeitraum und Quellen](#zeitraum-und-quellen)). Fehlt ein Ordner, meldet `list` das als Hinweis auf
 stderr; mit ausdrücklichem `--agent` ist es ein Fehler (Exit 1).
 
 ```bash
@@ -116,9 +210,11 @@ ki-dev session show -n 2 --pager
 ```
 
 `-n NR` gilt für die Liste zum Zeitpunkt des Aufrufs, mit demselben `--agent`
-wie bei `list`. Neue Sitzungen verschieben die Nummern; die ID in der Liste
+und `--include-tests` wie bei `list`. Neue Sitzungen verschieben die Nummern; die ID in der Liste
 bleibt stabil. `-n` lässt sich nicht mit `SESSION_ID` oder `--snapshot`
-mischen (Exit 2); eine zu große Nummer ist Exit 1.
+mischen (Exit 2); eine zu große Nummer ist Exit 1. Die Nummer ist an keinen
+gespeicherten Listenstand gebunden. Für eine feste Auswahl über mehrere
+Aufrufe die angezeigte Sitzungs-ID mit `--agent` verwenden.
 
 **Anzeige:** `show` gibt Titel, Anbieter, Sitzung und Zeiten einmal aus
 (fehlende Zeiten als `—`). Danach folgt je Beitrag eine Linie mit Position,
@@ -137,8 +233,8 @@ Shell. Das ist eine dokumentierte Ausnahme zur
 [Technikleitlinie](technikleitlinie.de.md#ausnahmen).
 
 **Export:** `jsonl` folgt dem Snapshot-Vertrag. Der Titel kommt aus
-`--title` oder aus dem gespeicherten Snapshot; fehlen beide, endet der Aufruf
-mit Exit 2. `markdown` enthält denselben Transkriptinhalt (`# Titel`, dann
+`--title` oder aus dem gespeicherten Snapshot; fehlen beide, bleibt er im
+JSONL-Kopf `null`. `markdown` enthält denselben Transkriptinhalt (`# Titel`, dann
 `## Position Rolle · Zeit` je Beitrag). stdout enthält nur die Daten,
 Diagnosen gehen nach stderr. `--output` legt nur eine neue Datei an; eine
 vorhandene Datei bleibt unverändert (Exit 1).

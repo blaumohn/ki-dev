@@ -10,6 +10,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ki_dev import tool_versions
+from ki_dev.adapter.executors import session_config
 from ki_dev.config_sources import ConfigSource
 from ki_dev.flow import package
 from ki_dev.flow_ops.implement import cli as runner_cli
@@ -25,6 +26,7 @@ SOURCES = (
     package.CONFIG_SOURCE,
     runner_cli.CONFIG_SOURCE,
     tool_versions.CONFIG_SOURCE,
+    session_config.CONFIG_SOURCE,
 )
 
 _STATE_STYLES = {

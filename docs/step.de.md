@@ -500,9 +500,13 @@ Ziffern enthalten; daraus entsteht der Dateislug. Der Titel wird nie aus
 Gesprächsinhalten abgeleitet; fehlt er, endet der Aufruf mit Exit 2.
 
 **Sitzungsordner:** Codex: `KI_DEV_CODEX_SESSIONS_DIR` (ausdrücklicher
-Ordner), sonst `CODEX_HOME/sessions`, sonst `~/.codex/sessions`. Claude:
+Ordner), sonst `CODEX_HOME/sessions`, sonst der Projektwert unter
+`tool.ki-dev.session.codex_sessions_dir`, sonst `~/.codex/sessions`. Die
+Projektkonfiguration für beide Anbieter steht unter
+[`session`: Zeitraum und Quellen](session.de.md#zeitraum-und-quellen). Claude:
 `KI_DEV_CLAUDE_SESSIONS_DIR` (ausdrückliche Projektwurzel), sonst
-`~/.claude/projects`; gesucht wird `PROJEKT/SESSION_ID.jsonl`. Ein gesetzter, aber leerer
+`tool.ki-dev.session.claude_sessions_dir`, sonst `~/.claude/projects`;
+gesucht wird `PROJEKT/SESSION_ID.jsonl`. Ein gesetzter, aber leerer
 Wert ist ein Fehler (mit Klartextmeldung, ohne Traceback), ebenso ein nicht
 lesbarer Ordner oder eine nicht lesbare Sitzungsdatei. Die ID darf nur aus Buchstaben, Ziffern, `_` und `-`
 bestehen und muss genau eine Sitzung treffen.
