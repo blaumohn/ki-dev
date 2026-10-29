@@ -161,9 +161,9 @@ umbenannt oder konvertiert.
 | Format | Ort | Schlüssel je Zeile | Behandlung |
 |---|---|---|---|
 | `handoff-v0` | `.local/handoff/AGENT/SESSION_ID/DIGEST-PARSER.jsonl` | `position, ordinal, role, text, source_line, timestamp` | lesbar; Identität aus dem Pfad, Titel und Zeiten bleiben leer |
-| Auszugsformat A | Codex-Sitzungen 01a08147 und 01a09aef | Index-Zeilen eines Sitzungsarchivs (`document_id`, `message_role`, …) | nur inventarisiert |
-| Auszugsformat B | Codex-Sitzungen 01a0c2f9 und 01a0cf85 | `ordinal, role, text` | nur inventarisiert |
-| Auszugsformat C | Claude-Sitzungen cc0227f9, d1926e71 und 64d6eb11, Codex-Sitzung 01a0fc40 | `role, text, timestamp` | nur inventarisiert |
+| Auszugsformat A | Codex-Sitzungen 01a08147 und 01a09aef (nicht veröffentlicht) | Index-Zeilen eines Sitzungsarchivs (`document_id`, `message_role`, …) | nur inventarisiert |
+| Auszugsformat B | Codex-Sitzungen 01a0c2f9 und 01a0cf85 (nicht veröffentlicht) | `ordinal, role, text` | nur inventarisiert |
+| Auszugsformat C | Claude-Sitzungen cc0227f9, d1926e71 und 64d6eb11, Codex-Sitzung 01a0fc40 (nicht veröffentlicht) | `role, text, timestamp` | nur inventarisiert |
 
 Frühere Quellen-Beads mit Verweis auf `handoff-v0` bleiben für `step map`
 gültig, solange die Datei vorhanden ist.

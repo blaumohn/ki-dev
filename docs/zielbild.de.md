@@ -367,7 +367,7 @@ Ablauf bleibt, wo er ist.
 
 **Entscheidung (2026-10-11): die Abläufe laufen auf python-statemachine**
 (SCXML-Semantik), ohne LangGraph und ohne eigene Agentenlaufzeit
-(`bd:ki-dev-ablauf-nrkj`).
+(Epic `ki-dev-ablauf-9cn`).
 
 Es gibt genau ein Zustandsmodell je Ablauf: `[statechart]` in der
 Ablaufdatei, im nativen Format der Bibliothek. Sie wählt die Kante (Wächter

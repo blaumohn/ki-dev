@@ -8,7 +8,11 @@ Versuchsentscheidungen. Sie dürfen nach Sichtung des Laufergebnisses
 (`urq.6`) nicht gelockert werden (siehe `urq.1` Nicht-Umfang).
 
 Quellen: `.loope/runs/0002-hier-ist-eine-vorschlage-ziel-bd/report.md`
-(Vorgang 2); Quellen-Beads ki-dev-ablauf-9407, ki-dev-ablauf-phdp, ki-dev-ablauf-74lc und ki-dev-ablauf-uxdk sowie Codex-Sitzung `01a09aef`.
+(Vorgang 2); Quellen-Beads ki-dev-ablauf-9407, ki-dev-ablauf-phdp, ki-dev-ablauf-74lc und ki-dev-ablauf-uxdk sowie
+Codex-Sitzung `01a09aef`. Die Auszüge enthalten persönliche Gesprächsinhalte
+und sind nicht veröffentlicht; Zitate stehen unten wörtlich, Zeilen- und
+Nachrichtenangaben beziehen sich auf die lokale Fassung. Für 001–008 ist keine
+Sitzungs-ID belegt.
 
 ## Prüfbeispiel-Set
 
@@ -22,7 +26,7 @@ Projektaussage in den Bestand geraten.
 
 ### PB-1 — Bedingte Rücknahme / Widerspruch (echt)
 
-Quelle: `bd:ki-dev-ablauf-phdp#L102` (Planerausgabe 1) und
+Quelle: Quellen-Bead ki-dev-ablauf-phdp, Zeile 102 (Planerausgabe 1) und
 `:106` (Planerausgabe 2).
 
 > Zeile 102: „Ich würde deshalb **Ralphex jetzt nicht aus dem Bootstrap
@@ -41,7 +45,7 @@ Fehlerklasse bei Verstoß: **kritisch** (Modalitätsverlust).
 
 ### PB-2 — Verwerfen und Ersetzen eines Plans (echt)
 
-Quelle: `bd:ki-dev-ablauf-phdp#L358`.
+Quelle: Quellen-Bead ki-dev-ablauf-phdp, Zeile 358.
 
 > „Ich würde daher den bisherigen „Bootstrap Stufe 1–4“-Plan weitgehend
 > **verwerfen** und durch etwas wie **„Minimal-Go-live von ki-dev“**
@@ -62,7 +66,7 @@ ein alter Knoten, ein neuer Knoten). Der in `urq.2` namentlich verlangte
 Fall „verzweigte Ersetzung“ (ein Knoten wird durch **mehrere** parallele
 Nachfolgeknoten ersetzt) findet sich nicht eindeutig in den Quellen und ist
 daher konstruiert, unter Wiederverwendung desselben Quellankers wie PB-2
-(`bd:ki-dev-ablauf-phdp#L358`) für einen strukturell
+(Quellen-Bead ki-dev-ablauf-phdp, Zeile 358) für einen strukturell
 gültigen Quellenverweis:
 
 > `KONSTRUIERT`: „Der bisherige „Bootstrap Stufe 1–4“-Plan wird nicht durch
@@ -83,9 +87,9 @@ verloren geht oder beide Ziele fälschlich zusammengeführt werden;
 
 ### PB-3 — Bereichsübergreifende Dublette (echt)
 
-Quelle: `bd:ki-dev-ablauf-9407#L503-L695` (Ralphex als
+Quelle: Quellen-Bead ki-dev-ablauf-9407, Zeilen 503–695 (Ralphex als
 Ausführungs- und Reviewmaschine im Bootstrap) und
-`bd:ki-dev-ablauf-phdp#L102-L106` (PB-1, Ralphex-Verbleib als
+Quellen-Bead ki-dev-ablauf-phdp, Zeilen 102–106 (PB-1, Ralphex-Verbleib als
 offene Entscheidung).
 
 Erwartung: Beide Passagen betreffen dieselbe fachliche Einheit („Ralphex im
@@ -101,19 +105,19 @@ Fehlerklasse bei Verstoß (Bezug nicht gefunden): **kritisch** (Suchfehler).
 
 Quellen, in dieser Reihenfolge:
 
-1. Empfehlung: `bd:ki-dev-ablauf-74lc#L3315` — „**LangGraph
+1. Empfehlung: Quellen-Bead ki-dev-ablauf-74lc, Zeile 3315 — „**LangGraph
    ist dabei am nächsten an deinem Orchestrator.**“
-2. Entscheidung: `bd:ki-dev-ablauf-uxdk#L52` — „Ja. **Für den
+2. Entscheidung: Quellen-Bead ki-dev-ablauf-uxdk, Zeile 52 — „Ja. **Für den
    eigentlichen `ki-dev loop` ist LangGraph sehr wahrscheinlich bereits die
    passendere Grundlage** … Aber LangGraph ist dabei **der
    Orchestrator-Unterbau**, nicht das fertige `ki-dev`.“
-3. Zurückstellungsvorschlag: `codex:01a09aef`,
+3. Zurückstellungsvorschlag: Codex-Sitzung `01a09aef`,
    Nachricht 59 (Zeile 60) — „**Entscheidung:** LangGraph ist als
    Orchestrierungsbasis vorgesehen. **Vorschlag:** Den eigenen Loop
    vorläufig zurückstellen und Loope als Bootstrap verwenden.“
 
 Zusätzlicher Beleg für die Modalität des dritten Beitrags:
-`codex:01a09aef` Nachricht 58 (Zeile 59) hält ausdrücklich fest,
+Codex-Sitzung `01a09aef`, Nachricht 58 (Zeile 59) hält ausdrücklich fest,
 dass eine frühere Rückmeldung die Zurückstellung fälschlich als „beschlossene
 Rücknahme“ zugespitzt hatte und korrigiert: „die Zurückstellung [war]
 ausdrücklich ein Entscheidungsvorschlag, noch keine Änderung des
@@ -147,7 +151,7 @@ Fehlerklasse bei Verstoß: **kritisch**.
 
 ### PB-6 — Raumumbau mit mitwandernden Anteilen (KONSTRUIERT)
 
-Motiviert durch die in `codex:01a09aef` Nachricht 47
+Motiviert durch die in Codex-Sitzung `01a09aef` Nachricht 47
 zitierte offene Frage „F₁ → F₂: wandern Abschnitte mit?“. Konstruierte
 Testeingabe:
 
@@ -169,7 +173,7 @@ Bedeutungsverlust), außer die Einheit wird dabei verdoppelt — dann
 
 ### PB-7 — Erhaltung von Vorschlag, Beispiel und Bedingung bei „bereits enthalten“ (echt)
 
-Quelle: `codex:01a09aef`, Nachricht 49 (Zeile 50),
+Quelle: Codex-Sitzung `01a09aef`, Nachricht 49 (Zeile 50),
 Tabelle „Was ich übernehme — mit einigen Präzisierungen“, Zeile zu
 „KI-Verarbeitung“: „Jede relevante Quellpassage muss einem Ergebnis
 zugeordnet sein: übernommen, präzisiert, **bereits enthalten** oder

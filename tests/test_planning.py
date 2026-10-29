@@ -18,6 +18,12 @@ import pytest
 from ki_dev import planning
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# Synthetische Quellen; die echten Planungsauszüge sind nicht
+# veröffentlicht.
+_FIXTURES = "tests/fixtures/planning"
+_BOOTSTRAP = f"{_FIXTURES}/bootstrap.md"
+_AUSFUEHRUNG = f"{_FIXTURES}/ausfuehrung.md"
+_ORCHESTRATOR = f"{_FIXTURES}/orchestrator.md"
 
 _AUSSAGE_TYPE = {
     "id": "aussage@1",
@@ -112,10 +118,10 @@ def test_pb1_bedingte_ruecknahme_erhaelt_beide_anteile(tmp_path):
     Aussagen."""
     root = REPO_ROOT
     ref_102 = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 102, 102,
+        root, _BOOTSTRAP, 3, 3,
     )
     ref_106 = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 106, 106,
+        root, _BOOTSTRAP, 4, 4,
     )
     store = tmp_path / "steps"
     delta = _delta(
@@ -154,7 +160,7 @@ def test_pb2_ersetzung_verknuepft_statt_zu_loeschen(tmp_path):
     """PB-2: der alte Plan-Knoten bleibt erhalten und wird verknüpft."""
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     delta = _delta(
         1,
@@ -198,7 +204,7 @@ def test_pb2b_verzweigte_ersetzung_erhaelt_beide_zweige(tmp_path):
     Zweige werden nicht zusammengeführt oder verloren."""
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     delta = _delta(
         1,
@@ -262,7 +268,7 @@ def test_pb6_raumumbau_ist_neue_revision_nicht_neue_identitaet(
     Kennung."""
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     store = tmp_path / "steps"
     delta1 = _delta(
@@ -314,10 +320,10 @@ def test_pb3_dublette_ist_ohne_ortsbindung_verknuepfbar(
     """
     root = REPO_ROOT
     ref_ausfuehrung = planning.source_ref(
-        root, "bd:ki-dev-ablauf-9407", 503, 695,
+        root, _AUSFUEHRUNG, 3, 5,
     )
     ref_verbleib = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 102, 102,
+        root, _BOOTSTRAP, 3, 3,
     )
     delta = _delta(
         1,
@@ -378,13 +384,13 @@ def test_pb4_langgraph_fall_l_haelt_drei_modalitaeten_nebeneinander(
     Entscheidung nicht."""
     root = REPO_ROOT
     ref_empfehlung = planning.source_ref(
-        root, "bd:ki-dev-ablauf-74lc", 3315, 3315,
+        root, _ORCHESTRATOR, 3, 3,
     )
     ref_entscheidung = planning.source_ref(
-        root, "bd:ki-dev-ablauf-uxdk", 52, 52,
+        root, _ORCHESTRATOR, 4, 4,
     )
     ref_vorschlag = planning.source_ref(
-        root, "codex:01a09aef", 60, 60,
+        root, _ORCHESTRATOR, 5, 5,
     )
     delta = _delta(
         1,
@@ -461,10 +467,10 @@ def test_pb5_ruecknahme_ist_neue_kante_auf_bestehende_entscheidung(
     daran."""
     root = REPO_ROOT
     ref_bedingung = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 102, 102,
+        root, _BOOTSTRAP, 3, 3,
     )
     ref_entscheidung = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 106, 106,
+        root, _BOOTSTRAP, 4, 4,
     )
     # KONSTRUIERT: keine reale Quelle enthaelt eine eindeutige,
     # unbedingte Ruecknahme (siehe planning-pruefbeispiele.de.md PB-5);
@@ -529,7 +535,7 @@ def test_pb5_ruecknahme_ist_neue_kante_auf_bestehende_entscheidung(
 def test_node_without_location_is_rejected(tmp_path):
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     op = _put_node(
         "x", location="irrelevant", data={"text": "t"}, sources=[ref],
@@ -545,7 +551,7 @@ def test_node_without_location_is_rejected(tmp_path):
 def test_edge_with_location_is_rejected(tmp_path):
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     delta = _delta(
         1,
@@ -577,7 +583,7 @@ def test_competing_replacement_is_rejected(tmp_path):
     abgelehnt."""
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     store = tmp_path / "steps"
     delta1 = _delta(
@@ -607,7 +613,7 @@ def test_competing_replacement_is_rejected(tmp_path):
 def test_dangling_edge_is_rejected(tmp_path):
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     delta = _delta(
         1,
@@ -631,7 +637,7 @@ def test_dangling_edge_is_rejected(tmp_path):
 def test_retired_identity_cannot_be_reused(tmp_path):
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     store = tmp_path / "steps"
     delta1 = _delta(
@@ -712,7 +718,7 @@ def test_source_changed_is_rejected(tmp_path):
 def test_resolve_at_k_is_deterministic(tmp_path):
     root = REPO_ROOT
     ref = planning.source_ref(
-        root, "bd:ki-dev-ablauf-phdp", 358, 358,
+        root, _BOOTSTRAP, 5, 5,
     )
     store = tmp_path / "steps"
     delta1 = _delta(

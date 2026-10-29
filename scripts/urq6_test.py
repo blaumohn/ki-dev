@@ -10,6 +10,12 @@ Zuordnung/Operation je Passage liefert eine getrennte, blinde
 Abflachungsagent-Sitzung (siehe
 docs/architecture/urq6-run/role1-prompt.md), nicht dieses Skript.
 
+Die Quellen sind die lokalen, nicht veroeffentlichten
+Planungsauszuege (persoenliche Gespraechsinhalte). Ohne sie ist das
+Skript nicht ausfuehrbar; die aufgezeichneten Quellpfade in
+docs/architecture/urq6-run/ bleiben als Herkunftsangabe des
+damaligen Laufs unveraendert.
+
 Nutzung:
     .venv/bin/python scripts/urq6_test.py
 """

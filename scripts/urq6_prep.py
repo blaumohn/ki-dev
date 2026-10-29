@@ -16,6 +16,12 @@ das ist die Grundlage der Suchtrefferquoten-Messpunkte nach 3/6
 Sitzungen (docs/architecture/planning-pruefbeispiele.de.md, Abschnitt
 "Suchtrefferquote").
 
+Die Quellen sind die lokalen, nicht veroeffentlichten
+Planungsauszuege (persoenliche Gespraechsinhalte). Ohne sie ist das
+Skript nicht ausfuehrbar; die aufgezeichneten Quellpfade in
+docs/architecture/urq6-run/ bleiben als Herkunftsangabe des
+damaligen Laufs unveraendert.
+
 Nutzung:
     .venv/bin/python scripts/urq6_prep.py
 """

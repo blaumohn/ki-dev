@@ -87,6 +87,13 @@ Zahlen oder Kriterien.
 
 ## Nachtrag (Lauf 0017): Vorbereitung geprüft statt nur behauptet
 
+Hinweis zur Veröffentlichung: Die Quellen der Sitzungen 001–010 sind lokale
+Planungsauszüge mit persönlichen Gesprächsinhalten und nicht veröffentlicht.
+`scripts/urq6_prep.py` und `scripts/urq6_test.py` laufen deshalb nur mit der
+lokalen Fassung; die in `docs/architecture/urq6-run/` aufgezeichneten
+Quellpfade und Prüfsummen bleiben als Herkunftsangabe des damaligen Laufs
+unverändert.
+
 Der vorangegangene Implementer-Schritt (Lauf 0015, Iteration 2) hat neben
 diesem Dokument bereits `scripts/urq6_prep.py` sowie
 `docs/architecture/urq6-run/` erzeugt (Sitzungen 001–008, siehe
