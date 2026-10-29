@@ -342,15 +342,23 @@ kontoweite Quota-Semantik (`_freshest_account_window`) liegt dort.
 
 Claude-Einzelheiten liegen in `claude_sessions.py` (ID-Regeln,
 Projektwurzel, Dateisuche; geteilt mit `claude_context_tokens`) und
-`claude_transcript.py` (fachlich aus `mdman-ai-session` uebernommen):
+`claude_transcript.py` (fachlich aus `mdman-ai-session` uebernommen).
+
+Der Transkriptadapter liest und extrahiert den Dialog;
+`claude_transcript_schema.py` buendelt die Datenvertraege,
+`claude_transcript_content.py` die Inhaltsklassifikation.
 
 - **Verzeichnis:** `KI_DEV_CLAUDE_SESSIONS_DIR` (ausdrueckliche
   Projektwurzel), sonst `~/.claude/projects`; gesucht wird
   `PROJEKT/SESSION_ID.jsonl`. Leerer Wert ist ein Fehler. Der Executor
   (`measure_context`) nutzt weiter fest `~/.claude/projects`.
 - **Filter:** menschliche Eingaben (`origin.kind=human`,
-  `promptSource` `typed`/`queued`) und `end_turn`-Text. Aufgabenmeldungen
-  nur bei belegter technischer Herkunft ausgelassen und gezaehlt,
+  `promptSource` `typed`/`queued`) und `end_turn`-Text. Assistant-Text
+  mit `stop_reason=tool_use` oder explizitem `stop_reason=null`
+  (laufende/unterbrochene Antwort) wird als Zwischenstand gezaehlt
+  und ausgelassen; die Eingabe bleibt ohne `end_turn` offen.
+  Aufgabenmeldungen nur bei belegter technischer Herkunft ausgelassen
+  und gezaehlt,
   Slash-Befehlszeilen und Verdichtungszusammenfassungen (beide
   Kennzeichen `isCompactSummary`/`isVisibleInTranscriptOnly`) nur ohne
   jede Herkunftsangabe; menschliche Zitate

@@ -517,8 +517,11 @@ offene letzte Eingabe sind gültig und bleiben vollständig erhalten; bei Codex
 zählen T1 (nur eine Rolle), T2 (ungleiche Anzahl) und T4 (Rollenbrüche) nur
 als Diagnose, bei Claude zusätzlich offene Eingaben. Codex verlangt ein
 eindeutiges, endliches `ordinal` und bei sauberem Wechsel passende
-`turn_id`-Paare. Claude übernimmt menschliche Eingaben und `end_turn`-Text;
-technische Aufgabenmeldungen werden nur bei belegter Herkunft (`origin.kind`,
+`turn_id`-Paare. Claude übernimmt menschliche Eingaben und `end_turn`-Text.
+Assistant-Text mit `stop_reason=tool_use` oder explizitem `stop_reason=null`
+(laufende/unterbrochene Antwort) zählt als Zwischenstand und wird ausgelassen;
+ohne `end_turn` bleibt die Eingabe offen.
+Technische Aufgabenmeldungen werden nur bei belegter Herkunft (`origin.kind`,
 `turnOrigin`, `promptSource`) ausgelassen und gezählt, Slash-Befehlszeilen
 nur ohne jede Herkunftsangabe, ebenso Verdichtungszusammenfassungen nur mit
 beiden Kennzeichen (`isCompactSummary`, `isVisibleInTranscriptOnly`) und ohne
