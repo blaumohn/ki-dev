@@ -21,35 +21,16 @@ from ki_dev.adapter.executors.transcript import (
 from tests.claude_session_fixtures import (
     SESSION,
     chain,
-    compact_summary,
     dialog,
+    extract,
     human,
-    interruption,
     jsonl,
-    local_command,
+    problems_of,
     reply,
-    task_notification,
     tool_result,
     write_session,
 )
 from tests.codex_session_fixtures import SECRET
-
-
-def extract(rows_or_text):
-    text = (
-        rows_or_text
-        if isinstance(rows_or_text, str)
-        else jsonl(rows_or_text)
-    )
-    return claude_transcript.transcript_from_bytes(
-        SESSION, text.encode("utf-8")
-    )
-
-
-def problems_of(rows_or_text) -> str:
-    with pytest.raises(TranscriptError) as caught:
-        extract(rows_or_text)
-    return "\n".join(caught.value.problems)
 
 
 def test_extracts_human_inputs_and_final_texts_without_ordinals():
@@ -101,166 +82,6 @@ def test_repeated_roles_and_open_input_are_kept_and_counted():
     assert diagnostics["human_input_pending_at_eof"] == 1
     assert diagnostics["T2_count_mismatch"] == 1
     assert diagnostics["T4_role_breaks"] > 0
-
-
-def test_tool_use_texts_are_commentary_counted_not_kept():
-    rows = chain(
-        [human(), reply("zwischen", stop_reason="tool_use"), reply()]
-    )
-    transcript = extract(rows)
-    assert [m.text for m in transcript.messages] == ["Frage", "Antwort"]
-    assert transcript.diagnostics["commentary_text_records"] == 1
-
-
-def test_proven_task_notification_is_excluded_and_counted():
-    rows = chain([human(), task_notification(SECRET), reply()])
-    transcript = extract(rows)
-    assert len(transcript.messages) == 2
-    assert transcript.diagnostics["task_notifications_excluded"] == 1
-
-
-def test_compact_summary_is_excluded_and_counted():
-    rows = chain(
-        [human(), reply(), compact_summary(SECRET), human(), reply()]
-    )
-    transcript = extract(rows)
-    assert [m.text for m in transcript.messages] == [
-        "Frage",
-        "Antwort",
-        "Frage",
-        "Antwort",
-    ]
-    assert transcript.diagnostics["compact_summaries_excluded"] == 1
-
-
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"isCompactSummary": False},
-        {"isVisibleInTranscriptOnly": False},
-        {"origin": {"kind": "human"}},
-        {"turnOrigin": "human"},
-        {"promptSource": "typed"},
-    ],
-)
-def test_compact_summary_needs_both_marks_and_no_origin(override):
-    entry = compact_summary(SECRET) | override
-    text = problems_of(chain([human(), reply(), entry, reply()]))
-    assert "Zeile 3" in text
-    assert SECRET not in text
-
-
-@pytest.mark.parametrize(
-    "quoted",
-    [
-        "<command-name>/model</command-name> warum passiert das?",
-        "<local-command-stdout>Fehler</local-command-stdout> hilf",
-    ],
-)
-def test_human_quote_of_a_command_tag_is_kept(quoted):
-    transcript = extract(chain([human(quoted), reply()]))
-    assert [m.text for m in transcript.messages] == [quoted, "Antwort"]
-    assert "local_commands_excluded" not in transcript.diagnostics
-
-
-def test_unmarked_local_command_lines_are_excluded_and_counted():
-    rows = chain(
-        [
-            local_command(),
-            local_command(
-                "<local-command-stdout>ok</local-command-stdout>"
-            ),
-            human(),
-            reply(),
-        ]
-    )
-    transcript = extract(rows)
-    assert [m.text for m in transcript.messages] == ["Frage", "Antwort"]
-    assert transcript.diagnostics["local_commands_excluded"] == 2
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "[Request interrupted by user]",
-        "[Request interrupted by user for tool use]",
-    ],
-)
-def test_unmarked_interruption_markers_are_excluded_and_counted(text):
-    rows = chain(
-        [human(), interruption(text), human("Weiter"), reply()]
-    )
-    transcript = extract(rows)
-    assert [m.text for m in transcript.messages] == [
-        "Frage",
-        "Weiter",
-        "Antwort",
-    ]
-    assert transcript.diagnostics["interruption_markers"] == 1
-
-
-def test_interruption_text_with_origin_or_other_text_is_not_excluded():
-    quoted = interruption() | {"promptSource": "system"}
-    other = interruption("[Request interrupted by someone]")
-    for entry in (quoted, other):
-        text = problems_of(chain([human(), entry, reply()]))
-        assert "ohne belegte menschliche Herkunft" in text
-
-
-def test_command_tag_with_foreign_origin_is_an_error_not_excluded():
-    entry = local_command() | {"promptSource": "system"}
-    text = problems_of(chain([entry, human(), reply()]))
-    assert "Zeile 1" in text
-    assert "ohne belegte menschliche Herkunft" in text
-    assert "content=str<command-name>" in text
-
-
-def test_human_quote_of_a_notification_tag_is_kept():
-    quoted = (
-        "<task-notification>zitiert</task-notification> bitte prüfen"
-    )
-    transcript = extract(chain([human(quoted), reply()]))
-    assert transcript.messages[0].text == quoted
-    assert "task_notifications_excluded" not in transcript.diagnostics
-
-
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"promptSource": "typed"},
-        {"turnOrigin": "human"},
-        {"origin": {"kind": "human"}},
-    ],
-)
-def test_contradictory_notification_origin_is_an_error(override):
-    entry = task_notification(SECRET) | override
-    text = problems_of(chain([human(), entry, reply()]))
-    assert "Zeile 2" in text
-    assert SECRET not in text
-
-
-def test_unknown_human_origin_values_never_leak_into_diagnostics():
-    entry = human(SECRET, promptSource=SECRET, turnOrigin=SECRET)
-    entry["origin"] = {"kind": "human"}
-    text = problems_of(chain([entry, reply()]))
-    assert "unbekannte menschliche Herkunftsmarkierung" in text
-    assert "promptSource=<str>" in text
-    assert SECRET not in text
-
-
-def test_user_entry_without_origin_is_an_error():
-    entry = {
-        "type": "user",
-        "message": {"role": "user", "content": SECRET},
-    }
-    text = problems_of(chain([entry, reply()]))
-    assert "ohne belegte menschliche Herkunft" in text
-    assert SECRET not in text
-
-
-def test_tool_results_are_excluded():
-    transcript = extract(chain([human(), tool_result(), reply()]))
-    assert transcript.diagnostics["tool_results_excluded"] == 1
 
 
 def test_invalid_json_is_an_error_with_line_only():
@@ -337,13 +158,6 @@ def test_session_must_match_the_requested_id():
     assert "Zeile 1: sessionId passt nicht" in text
     assert SECRET not in text
     assert len(extract(dialog(1)).messages) == 2
-
-
-def test_unknown_stop_reason_is_an_error_without_value():
-    rows = chain([human(), reply(stop_reason=SECRET)])
-    text = problems_of(rows)
-    assert "stop_reason=<str>" in text
-    assert SECRET not in text
 
 
 def test_sentinel_stays_out_of_every_problem_string():

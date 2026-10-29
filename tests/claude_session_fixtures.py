@@ -3,7 +3,29 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from ki_dev.adapter.executors import claude_transcript
+from ki_dev.adapter.executors.session_transcript import TranscriptError
+
 SESSION = "1c0aaaaa-bbbb-cccc-dddd-eeeeffff0002"
+
+
+def extract(rows_or_text):
+    text = (
+        rows_or_text
+        if isinstance(rows_or_text, str)
+        else jsonl(rows_or_text)
+    )
+    return claude_transcript.transcript_from_bytes(
+        SESSION, text.encode("utf-8")
+    )
+
+
+def problems_of(rows_or_text) -> str:
+    with pytest.raises(TranscriptError) as caught:
+        extract(rows_or_text)
+    return "\n".join(caught.value.problems)
 
 
 def human(text="Frage", **overrides):
