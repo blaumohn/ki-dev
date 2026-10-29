@@ -88,6 +88,11 @@ def test_report_after_leading_text_is_structured(work, raw):
     assert work(raw) == WorkReport("Grund", "needs_decision")
 
 
+def test_report_in_one_code_block_is_structured(work):
+    raw = '```json\n{"outcome":"needs_decision","summary":"Grund"}\n```'
+    assert work(raw) == WorkReport("Grund", "needs_decision")
+
+
 def test_braces_inside_text_remain_completed(work):
     raw = "Nutzt {a} intern.\nfertig"
     assert work(raw) == WorkReport(raw)

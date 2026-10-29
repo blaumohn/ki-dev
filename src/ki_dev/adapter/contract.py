@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from ki_dev.adapter.executors.contract import ExecutorSpec, TurnResult
+from ki_dev.json_reply import unwrap_json_fence
 
 
 class AnswerPending(Exception):
@@ -149,13 +150,16 @@ def parse_work_report(raw: str) -> WorkReport:
 
     Objekt-, Array- und Codeblock-Anfänge reservieren strukturierte
     Antworten, ebenso ein Objekt am Ende nach einleitendem Text oder
-    ein Feld ``"outcome"`` irgendwo im Text. Fehler darin dürfen nie
-    als erfolgreicher Text gelten.
+    ein Feld ``"outcome"`` irgendwo im Text. Ein einziger
+    umschließender Codeblock fällt weg (``unwrap_json_fence``). Fehler
+    darin dürfen nie als erfolgreicher Text gelten.
     """
     text = raw.strip()
     try:
         if text.startswith(("{", "[", "```")):
-            value = json.loads(text, object_pairs_hook=_work_fields)
+            value = json.loads(
+                unwrap_json_fence(text), object_pairs_hook=_work_fields
+            )
         elif _embeds_report(text):
             value = _trailing_object(text)
         else:

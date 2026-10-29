@@ -25,6 +25,7 @@ from typing import Protocol, cast
 from jsonschema import Draft202012Validator
 
 from ki_dev.flow.model import PASS, Flow, Verdict
+from ki_dev.json_reply import unwrap_json_fence
 
 CORE_FIELDS = ("event", "detail", "requirement_ref")
 
@@ -44,12 +45,17 @@ class ReviewVerdict:
 
 
 def load_json_object(raw: str) -> dict:
-    """Genau ein JSON-Objekt; Parsing getrennt von der Prüfung."""
+    """Genau ein JSON-Objekt, höchstens in einem umschließenden
+    Codeblock; Parsing getrennt von der Prüfung. Der Fehler nennt Art
+    und Stelle, keine Rohwerte, damit die Wiederholung ihn beheben
+    kann."""
     try:
-        value = json.loads(raw)
+        value = json.loads(unwrap_json_fence(raw))
     except json.JSONDecodeError as exc:
         raise ReviewContractError(
-            "Review-Ausgabe ist kein einzelnes JSON-Objekt"
+            "Review-Ausgabe ist kein einzelnes JSON-Objekt "
+            f"({exc.msg}, Zeile {exc.lineno}, Spalte {exc.colno}); "
+            "nur das Objekt, ohne Text davor oder danach"
         ) from exc
     if not isinstance(value, dict):
         raise ReviewContractError(

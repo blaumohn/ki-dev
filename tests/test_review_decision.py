@@ -9,6 +9,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from ki_dev.flow.model import load_flow
+from ki_dev.json_reply import unwrap_json_fence
 from ki_dev.review_decision import (
     ReviewContractError,
     ReviewVerdict,
@@ -70,10 +71,53 @@ def test_invalid_core_names_field_without_raw_value(value, message):
     assert "MAYBE" not in str(excinfo.value)
 
 
-@pytest.mark.parametrize("raw", ["PASS", "[]", "{", '"x"'])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "PASS",
+        "[]",
+        "{",
+        '"x"',
+        'Urteil:\n{"a": 1}',
+        '{"a": 1}\nDanke.',
+        '```json\n{"a": 1}\n```\nDanke.',
+        '```json\n{"a": 1}\n```\n```json\n{"b": 2}\n```',
+        '```json\n[1]\n```',
+        '```python\n{"a": 1}\n```',
+    ],
+)
 def test_only_a_single_json_object_is_accepted(raw):
     with pytest.raises(ReviewContractError, match="JSON-Objekt"):
         load_json_object(raw)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"a": 1}',
+        '```json\n{"a": 1}\n```',
+        '```\n{"a": 1}\n```',
+        '\n  ```json \n{\n  "a": 1\n}\n```\n',
+    ],
+)
+def test_one_enclosing_code_block_is_only_a_wrapper(raw):
+    """Nur die Hülle fällt weg; der Inhalt bleibt der Vertrag."""
+    assert load_json_object(raw) == {"a": 1}
+
+
+def test_parse_error_names_kind_and_position_without_raw_text():
+    with pytest.raises(ReviewContractError) as excinfo:
+        load_json_object('Geheim {"a": 1}')
+    message = str(excinfo.value)
+    assert "Expecting value, Zeile 1, Spalte 1" in message
+    assert "ohne Text davor oder danach" in message
+    assert "Geheim" not in message
+
+
+def test_unwrap_leaves_anything_but_one_block_unchanged():
+    two = '```\n{}\n```\n```\n{}\n```'
+    assert unwrap_json_fence(two) == two
+    assert unwrap_json_fence("Text") == "Text"
 
 
 @given(

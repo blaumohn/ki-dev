@@ -324,3 +324,34 @@ def test_build_prompt_includes_acceptance_criteria():
     message = executor.requests[0].message
     assert "AC1: Ausgabe ist deterministisch" in message
     assert "AC2: Kein Netzwerkzugriff" in message
+
+
+_HAIKU_FILE = (
+    Path(__file__).parent / "golden" / "review" / "haiku-codeblock.json"
+)
+_HAIKU = json.loads(_HAIKU_FILE.read_text(encoding="utf-8"))[
+    "antworten"
+]
+
+
+def test_replay_of_live_answers_in_code_blocks():
+    """Echte Antworten aus make readme-live (Haiku, jedes Mal in
+    ```json```): früher alle ``protocol_attempts_exhausted``. Die Hülle
+    fällt weg, der Vertrag bleibt streng: ``"null"`` als Text ist
+    weiter ein Fehler."""
+    first, *rest = _HAIKU
+    assert all(raw.startswith("```json\n") for raw in _HAIKU)
+    with pytest.raises(AgentProtocolError, match="requirement_ref"):
+        parse_review_decision(first, run_id="version-fix", round_id=1)
+    decisions = [
+        parse_review_decision(raw, run_id="version-fix", round_id=1)
+        for raw in rest
+    ]
+    assert [(d.event, d.requirement_ref) for d in decisions] == [
+        ("decision", None),
+        ("decision", None),
+        ("decision", None),
+        ("fix", "AC2"),
+    ]
+    with pytest.raises(AgentProtocolError, match="fremdem Lauf"):
+        parse_review_decision(rest[0], run_id="anderer", round_id=1)
