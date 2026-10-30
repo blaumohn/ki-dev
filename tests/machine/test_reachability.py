@@ -1,9 +1,10 @@
 """Erschoepfender Beweis der Begrenztheit ueber den Zustandsraum.
 
 Der V0-Automat ist unter festen Grenzen endlich. Deshalb laesst sich
-die Kerninvariante aus Quellen-Bead ki-dev-ablauf-9p4a, Planerausgabe 18, nicht
-nur stichprobenartig, sondern vollstaendig pruefen: der gesamte
-erreichbare Graph wird aufgezaehlt und danach als Ganzes beurteilt.
+die Kerninvariante aus Quellen-Bead ki-dev-ablauf-9p4a,
+Planerausgabe 18, nicht nur stichprobenartig, sondern vollstaendig
+pruefen: der gesamte erreichbare Graph wird aufgezaehlt und danach
+als Ganzes beurteilt.
 
 Dass diese Aufzaehlung ueberhaupt terminiert, ist bereits der Nachweis,
 dass kein aktiver Zyklus unbegrenzt wiederholbar ist.

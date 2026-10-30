@@ -88,11 +88,14 @@ Zahlen oder Kriterien.
 ## Nachtrag (Lauf 0017): Vorbereitung geprüft statt nur behauptet
 
 Hinweis zur Veröffentlichung: Die Quellen der Sitzungen 001–010 sind lokale
-Planungsauszüge mit persönlichen Gesprächsinhalten und nicht veröffentlicht.
-`scripts/urq6_prep.py` und `scripts/urq6_test.py` laufen deshalb nur mit der
-lokalen Fassung; die in `docs/architecture/urq6-run/` aufgezeichneten
-Quellpfade und Prüfsummen bleiben als Herkunftsangabe des damaligen Laufs
-unverändert.
+Planungsquellen mit persönlichen Gesprächsinhalten und nicht veröffentlicht.
+Skripte und `docs/architecture/urq6-run/` nennen sie mit ortsunabhängiger
+Quellen-ID (`bd:<Quellen-Bead>` oder `codex:<Sitzungs-ID>`) statt mit lokalem
+Pfad; Zeilen und Prüfsummen bleiben die der aufgezeichneten Kopie. Die
+Hash-Kette des aufgezeichneten Laufs ist damit nicht mehr prüfbar.
+`scripts/urq6_prep.py` und `scripts/urq6_test.py` brechen vor jedem Lesen mit
+Exitcode 1 ab, solange die Auflösung ID → Datei fehlt
+(`ki-dev-ablauf-xy78.2.1`, Entscheidung `ki-dev-ablauf-guq`).
 
 Der vorangegangene Implementer-Schritt (Lauf 0015, Iteration 2) hat neben
 diesem Dokument bereits `scripts/urq6_prep.py` sowie

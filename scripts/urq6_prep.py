@@ -1,13 +1,14 @@
-"""Vorbereitung (Planungsquellen der ersten acht Sitzungen, "regulaer") fuer den unabhaengigen
-Durchlauf ki-dev-ablauf-urq.6.
+"""Vorbereitung (Planungsquellen der ersten acht Sitzungen,
+"regulaer") fuer den unabhaengigen Durchlauf ki-dev-ablauf-urq.6.
 
 Baut einen echten, leeren Planungsgraphen-Speicher aus tatsaechlichen
-Zitaten der Planungsquellen der ersten acht Sitzungen auf (docs/architecture/
-planning-pruefbeispiele.de.md legt fest, dass 001-008 als "regulaere"
-Vorverarbeitung eingearbeitet werden, bevor der budgetierte Testschritt
-009/010 dagegen laeuft). Die PB-1/PB-2/PB-2b/PB-3/PB-6-Zitate aus
-Quellen-Bead ki-dev-ablauf-phdp und Codex-Sitzung 01a09aef bleiben dem Testschritt vorbehalten und werden hier
-NICHT vorweggenommen.
+Zitaten der Planungsquellen der ersten acht Sitzungen auf
+(docs/architecture/planning-pruefbeispiele.de.md legt fest, dass
+001-008 als "regulaere" Vorverarbeitung eingearbeitet werden, bevor
+der budgetierte Testschritt 009/010 dagegen laeuft). Die
+PB-1/PB-2/PB-2b/PB-3/PB-6-Zitate aus Quellen-Bead ki-dev-ablauf-phdp
+und Codex-Sitzung 01a09aef bleiben dem Testschritt vorbehalten und
+werden hier NICHT vorweggenommen.
 
 Vor jeder Sitzung wird die bereichsuebergreifende Kandidatensuche
 (pilot.search/pilot.workflow, Kontrollschritt) ueber den bis dahin
@@ -16,11 +17,16 @@ das ist die Grundlage der Suchtrefferquoten-Messpunkte nach 3/6
 Sitzungen (docs/architecture/planning-pruefbeispiele.de.md, Abschnitt
 "Suchtrefferquote").
 
-Die Quellen sind die lokalen, nicht veroeffentlichten
-Planungsauszuege (persoenliche Gespraechsinhalte). Ohne sie ist das
-Skript nicht ausfuehrbar; die aufgezeichneten Quellpfade in
-docs/architecture/urq6-run/ bleiben als Herkunftsangabe des
-damaligen Laufs unveraendert.
+Die Quellen sind lokale, nicht veroeffentlichte Planungsquellen
+(persoenliche Gespraechsinhalte). Passagen und
+docs/architecture/urq6-run/ nennen sie mit ortsunabhaengiger
+Quellen-ID (bd:<Quellen-Bead> oder codex:<Sitzungs-ID>), nicht mit
+lokalem Pfad. Bei Art-A-Quellen (codex:...) zaehlen start/end die
+Zeilen der aufgezeichneten Kopie; im Transkript ist es Zeile + 1
+(Zeile 1 ist transcript_meta). Die Hash-Kette des aufgezeichneten
+Laufs ist damit nicht mehr pruefbar. Solange die Aufloesung ID ->
+Datei fehlt (ki-dev-ablauf-xy78.2.1), bricht das Skript vor jedem
+Lesen mit Exitcode 1 ab (ki_dev.pilot.quellen).
 
 Nutzung:
     .venv/bin/python scripts/urq6_prep.py
@@ -32,7 +38,7 @@ import random
 from pathlib import Path
 
 from ki_dev import planning
-from ki_dev.pilot import search, workflow
+from ki_dev.pilot import quellen, search, workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_DIR = ROOT / "docs/architecture/urq6-run"
@@ -360,6 +366,9 @@ def hit_rate_at(
 
 
 if __name__ == "__main__":
+    quellen.abbruch_ohne_quellablage(
+        "SESSIONS[0][1][0].path", SESSIONS[0][1][0]["path"]
+    )
     if STORE.exists():
         raise SystemExit(
             f"{STORE} existiert bereits; vorher entfernen."

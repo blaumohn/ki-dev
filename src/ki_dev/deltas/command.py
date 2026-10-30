@@ -1,9 +1,9 @@
 """Gemeinsamer Prozessaufruf fuer die Schrittdelta-Bildung.
 
 Git und ``bd`` werden ueber Plumbum gestartet (vorgesehener
-Python-Werkzeugsatz aus Quellen-Bead ki-dev-ablauf-9p4a). Beide CLIs erhalten das
-Arbeitsverzeichnis ueber ``-C``; ein Wechsel des Prozess-Arbeitsordners
-findet nicht statt. Jeder Fehlausgang wird als
+Python-Werkzeugsatz aus Quellen-Bead ki-dev-ablauf-9p4a). Beide CLIs
+erhalten das Arbeitsverzeichnis ueber ``-C``; ein Wechsel des
+Prozess-Arbeitsordners findet nicht statt. Jeder Fehlausgang wird als
 :class:`DeltaCommandError` sichtbar und niemals still verschluckt.
 """
 

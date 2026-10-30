@@ -2,10 +2,10 @@
 
 Ein Aufruf entspricht genau einem Agenten-Turn. Der externe Prozess
 wird ueber Plumbum gestartet (vorgesehener Python-Werkzeugsatz aus
-Quellen-Bead ki-dev-ablauf-9p4a). Prozessstart, Standardausgabe, Fehlerausgabe,
-Exitstatus, Timeout und Start-/Prozessfehler werden hier einheitlich
-erfasst. Es gibt keine stillen Fallbacks: jeder Ausgang wird als
-expliziter :class:`TurnStatus` zurueckgegeben.
+Quellen-Bead ki-dev-ablauf-9p4a). Prozessstart, Standardausgabe,
+Fehlerausgabe, Exitstatus, Timeout und Start-/Prozessfehler werden
+hier einheitlich erfasst. Es gibt keine stillen Fallbacks: jeder
+Ausgang wird als expliziter :class:`TurnStatus` zurueckgegeben.
 """
 
 from __future__ import annotations

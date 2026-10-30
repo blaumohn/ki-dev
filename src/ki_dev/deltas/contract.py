@@ -1,7 +1,7 @@
 """Vertrag fuer Git- und ``bd``-/Dolt-Schrittdeltas.
 
-Die Orchestrator-Abstraktion aus Quellen-Beads ki-dev-ablauf-8ysk und ki-dev-ablauf-rdcs
-ist fuer beide Wahrheiten gleich:
+Die Orchestrator-Abstraktion aus Quellen-Beads ki-dev-ablauf-8ysk und
+ki-dev-ablauf-rdcs ist fuer beide Wahrheiten gleich:
 
     Basisreferenz -> ein Worker-Schritt -> Ergebnisreferenz -> Delta
 

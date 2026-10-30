@@ -10,11 +10,16 @@ Zuordnung/Operation je Passage liefert eine getrennte, blinde
 Abflachungsagent-Sitzung (siehe
 docs/architecture/urq6-run/role1-prompt.md), nicht dieses Skript.
 
-Die Quellen sind die lokalen, nicht veroeffentlichten
-Planungsauszuege (persoenliche Gespraechsinhalte). Ohne sie ist das
-Skript nicht ausfuehrbar; die aufgezeichneten Quellpfade in
-docs/architecture/urq6-run/ bleiben als Herkunftsangabe des
-damaligen Laufs unveraendert.
+Die Quellen sind lokale, nicht veroeffentlichte Planungsquellen
+(persoenliche Gespraechsinhalte). Passagen und
+docs/architecture/urq6-run/ nennen sie mit ortsunabhaengiger
+Quellen-ID (bd:<Quellen-Bead> oder codex:<Sitzungs-ID>), nicht mit
+lokalem Pfad. Bei Art-A-Quellen (codex:...) zaehlen start/end die
+Zeilen der aufgezeichneten Kopie; im Transkript ist es Zeile + 1
+(Zeile 1 ist transcript_meta). Die Hash-Kette des aufgezeichneten
+Laufs ist damit nicht mehr pruefbar. Solange die Aufloesung ID ->
+Datei fehlt (ki-dev-ablauf-xy78.2.1), bricht das Skript vor jedem
+Lesen mit Exitcode 1 ab (ki_dev.pilot.quellen).
 
 Nutzung:
     .venv/bin/python scripts/urq6_test.py
@@ -27,7 +32,7 @@ import random
 from pathlib import Path
 
 from ki_dev import planning
-from ki_dev.pilot import search, workflow
+from ki_dev.pilot import quellen, search, workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_DIR = ROOT / "docs/architecture/urq6-run"
@@ -114,7 +119,8 @@ SESSION_9 = [
         "id_": "ralphex-entfernung-aufgehoben",
         "location": "bootstrap/ralphex",
         "text": (
-            "KONSTRUIERT: Die in Quellen-Bead ki-dev-ablauf-phdp (Zeile 106) beschlossene "
+            "KONSTRUIERT: Die in Quellen-Bead ki-dev-ablauf-phdp "
+            "(Zeile 106) beschlossene "
             "Entfernung von Ralphex aus dem Bootstrap wird aufgehoben. "
             "Ralphex bleibt endgueltig Teil des Bootstrap-Vorgehens; "
             "die Bedingung aus Zeile 102 gilt als nicht eingetreten."
@@ -251,6 +257,10 @@ def _context_to_json(context: workflow.FlatteningContext) -> dict:
 
 
 def main() -> None:
+    # Vor planning.resolve und vor jeder Pruefung der Hash-Kette.
+    quellen.abbruch_ohne_quellablage(
+        "SESSION_9[0].path", SESSION_9[0]["path"]
+    )
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     state = _load_prep_state()
     rng = random.Random(RNG_SEED)
