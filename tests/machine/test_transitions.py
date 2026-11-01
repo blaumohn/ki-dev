@@ -232,8 +232,8 @@ _ALLOWED: list[tuple[MachineState, Event, Phase, type | None]] = [
     (
         _at(Phase.FREEZE_REVIEWED_RESULT),
         FinalizationError("Referenz fehlt"),
-        Phase.ERROR,
-        None,
+        Phase.FREEZE_REVIEWED_RESULT,
+        MachineEscalation,
     ),
     (
         _at(Phase.FINALIZE_HISTORY),
@@ -631,6 +631,19 @@ def test_empty_delta_is_not_a_success():
     assert result.phase is not Phase.CHECKPOINT
     assert result.phase is Phase.WORKER_STEP_PREPARE
     assert result.state.checkpointed_result is False
+
+
+def test_empty_step_with_run_result_goes_to_review():
+    """Leerer Schritt bei vorhandenem Laufergebnis: kein gleicher
+    Bauauftrag, sondern Checkpoint und Review (ki-dev-ablauf-hm76);
+    die Zähler bleiben, die fix-Kante begrenzt die Schleife."""
+    state = _at(
+        Phase.CAPTURE_STEP_RESULT, worker_attempt=2, changes_round=1
+    )
+    result = advance(state, _EMPTY, facts=frozenset({"run_changed"}))
+    assert result.phase is Phase.CHECKPOINT
+    assert result.escalation is None
+    assert result.state.counters == state.counters
 
 
 _ADAPTIVE = Limits(

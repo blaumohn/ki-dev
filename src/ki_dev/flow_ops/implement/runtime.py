@@ -186,9 +186,7 @@ class EvidenceCollector(Protocol):
         report: WorkReport,
     ) -> ControllerContext: ...
 
-    def adopt_issue_change(
-        self, task: RunTask, refs: object, issues: frozenset[str]
-    ) -> object: ...
+    def adopt_beads(self, task: RunTask, refs: object) -> object: ...
 
     def changed(
         self, task: RunTask, round_id: int, base: object
@@ -396,13 +394,14 @@ class RunRuntime:
     ) -> None:
         """Entscheidung festhalten; ein geänderter Auftrag ersetzt die
         Kopie im Lauf, damit Prompts und Bindung von ``fix`` ihm
-        folgen."""
+        folgen. Mit der Entscheidung verantwortet der Mensch den
+        Beads-Stand (siehe :meth:`_adopt_beads`)."""
         update: dict[str, object] = {
             "decisions": [*self._data["decisions"], document]
         }
         if task is not None and changes_task(document):
             update["task"] = _encode_task(task)
-            update |= self._adopt_bead_change(task)
+        update |= self._adopt_beads()
         # Der Mensch hat die Ursache geklärt: Korrekturrunden des
         # Ablaufs beginnen neu, auch nach leeren Versuchen vor dem
         # Halt.
@@ -412,39 +411,25 @@ class RunRuntime:
         )
         self._apply(update)
 
-    def _adopt_bead_change(self, task: RunTask) -> dict[str, object]:
-        """Die Änderung des Menschen am Bead gehört nicht zum Ergebnis
-        des Laufs: die Beads-Grenzen, die auf dem letzten erfassten
-        Stand stehen, rücken auf den heutigen. Hat sich daneben ein
-        anderer Bead geändert, bleibt der Lauf, wie er war."""
+    def _adopt_beads(self) -> dict[str, object]:
+        """Änderungen des Menschen an Beads gehören nicht zum Ergebnis
+        des Laufs: alle Beads-Grenzen rücken auf den heutigen Stand.
+        Git bleibt unberührt und läuft weiter durch Checks und
+        Review."""
         state = self._data
-        names = ("run_base", "round_base", "reviewed_refs")
-        last = _last_checkpoint(state)
-        if last is None:
-            return {}
-        issues = frozenset(
-            source[3:]
-            for source in task.sources
-            if source.startswith("bd:")
-        )
+        task = _task(state)
         try:
-            moved = self.evidence_collector.adopt_issue_change(
-                task, last, issues
-            )
+            return {
+                name: self.evidence_collector.adopt_beads(
+                    task, state[name]
+                )
+                for name in ("run_base", "round_base", "reviewed_refs")
+                if state[name] is not None
+            }
         except Exception as exc:
             raise RunResumeError(
                 f"Entscheidung nicht übernommen: {exc}"
             ) from exc
-        before = cast(dict[str, object], last).get("beads")
-        beads = cast(dict[str, object], moved).get("beads")
-        if beads == before:
-            return {}
-        update: dict[str, object] = {}
-        for name in names:
-            refs = cast("dict[str, object] | None", state[name])
-            if refs is not None and refs["beads"] == before:
-                update[name] = {**refs, "beads": beads}
-        return update
 
     def reconcile(
         self, operation_id: str, artifact: object
@@ -1071,7 +1056,11 @@ class RunRuntime:
             event = decode_operation_event(event_name, payload)
             run = decode_run_state(state["run_state"])
             moved = self._transition(
-                run, event, facts=self._worker_facts(state, event_name)
+                run,
+                event,
+                facts=self._operation_facts(
+                    state, event_name, artifact
+                ),
             )
             detail = artifact.get("detail")
             next_run = decode_run_state(moved["run_state"])
@@ -1099,12 +1088,18 @@ class RunRuntime:
             "protocol_error": None,
         }
 
-    def _worker_facts(
-        self, state: RunData, event_name: str
+    def _operation_facts(
+        self, state: RunData, event_name: str, artifact: dict
     ) -> frozenset[str]:
-        """Fakt ``worker_changed`` für den Halt des Workers in
-        ``implement.toml``: hat er vorher etwas geändert, geht die
-        Runde durch Test-Tor und Review."""
+        """Fakten für die Wächter von ``implement.toml`` nach einer
+        Operation: ``run_changed`` für einen leeren Schritt bei
+        vorhandenem Laufergebnis (Review statt gleichem Bauauftrag),
+        ``worker_changed`` für den Halt des Workers (hat er vorher
+        etwas geändert, geht die Runde durch Test-Tor und Review)."""
+        if event_name == "step_result_captured":
+            if artifact["run_changed"]:
+                return frozenset({"run_changed"})
+            return frozenset()
         if event_name not in _WORKER_HALTS:
             return frozenset()
         changed = self.evidence_collector.changed(
@@ -1393,17 +1388,6 @@ def _quota_reserve_reason(
     )
 
 
-def _last_checkpoint(state: RunData) -> object | None:
-    """Zuletzt erfasste Grenze: Ergebnis der Runde, sonst ihre Basis,
-    sonst das Ergebnis der vorigen Runde oder die Basis des Laufs."""
-    if state["evidence"] is not None:
-        return state["reviewed_refs"]
-    for name in ("round_base", "reviewed_refs", "run_base"):
-        if state[name] is not None:
-            return state[name]
-    return None
-
-
 def _encode_task(task: RunTask) -> dict[str, object]:
     return {
         "run_id": task.run_id,
@@ -1450,10 +1434,8 @@ class StaticEvidenceCollector:
     def prepare(self, task: RunTask, round_id: int) -> object:
         return {"run_id": task.run_id, "round_id": round_id}
 
-    def adopt_issue_change(
-        self, task: RunTask, refs: object, issues: frozenset[str]
-    ) -> object:
-        del task, issues
+    def adopt_beads(self, task: RunTask, refs: object) -> object:
+        del task
         return refs
 
     def changed(

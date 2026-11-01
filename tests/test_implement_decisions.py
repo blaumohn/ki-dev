@@ -23,7 +23,10 @@ from ki_dev.flow_ops.implement.runtime import (
     RunRuntime,
     StaticEvidenceCollector,
 )
-from ki_dev.repository_finalization import StaticFinalizer
+from ki_dev.repository_finalization import (
+    FinalizationFailure,
+    StaticFinalizer,
+)
 from ki_dev.run_store import RunStore
 from tests.test_runner_runtime import (
     FakeReviewer,
@@ -162,10 +165,7 @@ def test_prompt_and_history_name_added_and_dropped_criteria():
 
 class BeadsCollector(StaticEvidenceCollector):
     """Grenzen mit Beads-Stand wie RepositoryEvidenceCollector; der
-    Mensch hat den Bead des Auftrags von ``b1`` auf ``b2`` geändert,
-    ``foreign`` meldet zusätzlich einen fremden Bead."""
-
-    foreign = False
+    Mensch hat Beads geändert, der Stand ist jetzt ``b2``."""
 
     def prepare(self, task, round_id):
         del task
@@ -174,11 +174,8 @@ class BeadsCollector(StaticEvidenceCollector):
             "beads": {"medium": "beads", "value": f"b{round_id}"},
         }
 
-    def adopt_issue_change(self, task, refs, issues):
+    def adopt_beads(self, task, refs):
         del task
-        assert issues == {"jbr.2"}
-        if self.foreign:
-            raise RuntimeError("Beads außerhalb des Auftrags: x")
         return {**refs, "beads": {"medium": "beads", "value": "b2"}}
 
 
@@ -210,16 +207,52 @@ def test_bead_change_moves_beads_boundaries_of_the_run(tmp_path):
     assert data["run_base"]["git"] == before["run_base"]["git"]
 
 
-def test_foreign_bead_change_refuses_the_decision(tmp_path):
+def test_answer_adopts_beads_change_of_the_human(tmp_path):
+    """Regression eigenprobe-641: ein neuer Bead in der Pause beendet
+    den Lauf nicht. Die Antwort übernimmt den Stand für alle Grenzen,
+    Git bleibt unberührt."""
     collector = BeadsCollector((_context(1),))
-    collector.foreign = True
-    reviewer = FakeReviewer(["decision"])
+    reviewer = FakeReviewer(["decision", "PASS"])
     with _beads_runtime(tmp_path, "f", reviewer, collector) as runtime:
         runtime.start(_version_task("f"), Limits())
-        with pytest.raises(RunResumeError, match="außerhalb"):
-            runtime.resume(task=_version_task("f", NEW))
+        before = RunStore(tmp_path, "f").load_record()["data"]
 
+        result = runtime.resume("Neuer Bead gehört nicht zum Auftrag")
+
+    assert result.status == "passed"
     data = RunStore(tmp_path, "f").load_record()["data"]
-    assert data["task"]["acceptance_criteria"] == list(OLD)
-    assert data["decisions"] == []
+    assert data["run_base"]["beads"]["value"] == "b2"
+    assert data["run_base"]["git"] == before["run_base"]["git"]
+
+
+def test_refused_freeze_halts_and_answer_retries_it(tmp_path):
+    """Beads während eines Turns geändert: Halt statt ``error``, kein
+    neuer Worker und kein neues Review."""
+
+    class OnceRefusing(StaticFinalizer):
+        refused = False
+
+        def freeze(self, **kwargs):
+            if not self.refused:
+                self.refused = True
+                raise FinalizationFailure("Beads-Stand abweichend")
+            return super().freeze(**kwargs)
+
+    worker = FakeWorker()
+    reviewer = FakeReviewer(["PASS"])
+    with RunRuntime(
+        RunStore(tmp_path, "z"),
+        worker,
+        reviewer,
+        BeadsCollector((_context(1),)),
+        OnceRefusing(),
+    ) as runtime:
+        halted = runtime.start(_version_task("z"), Limits())
+        assert halted.status == "paused_interactive"
+        assert "finalization_refused" in halted.detail
+
+        result = runtime.resume("Stand übernehmen")
+
+    assert result.status == "passed"
+    assert worker.calls == 1
     assert reviewer.calls == 1

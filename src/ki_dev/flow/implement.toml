@@ -337,6 +337,16 @@ event = "step_result_captured"
 cond = "delta_effective"
 target = "checkpoint"
 
+# Leerer Schritt bei vorhandenem Ergebnis des Laufs (Fakt des
+# Ausführers): kein Erfolg, aber auch kein Anlass für denselben
+# Bauauftrag mit unveränderter Eingabe. Ob der Stand die Beanstandung
+# erfüllt, prüft das Review mit der Begründung des Workers; die
+# fix-Kante begrenzt die Schleife (changes_refused, stagnation).
+[[statechart.states.active.states.capture_step_result.transitions]]
+event = "step_result_captured"
+cond = "run_changed"
+target = "checkpoint"
+
 [[statechart.states.active.states.capture_step_result.transitions]]
 event = "step_result_captured"
 unless = "changes_rounds_left"
@@ -375,9 +385,12 @@ on = "keep_result"
 event = "reviewed_result_frozen"
 target = "finalize_history"
 
+# Nicht einfrierbar, meist wegen eines geänderten Beads-Stands: Halt statt
+# Abbruch, damit Worker und Review nicht verloren gehen. Die Antwort des
+# Menschen übernimmt den Stand; danach läuft das Einfrieren erneut.
 [[statechart.states.active.states.freeze_reviewed_result.transitions]]
 event = "finalization_error"
-target = "error"
+on = [{ raise = { event = "escalation.finalization_refused" } }]
 
 [[statechart.states.active.states.finalize_history.transitions]]
 event = "history_finalized"

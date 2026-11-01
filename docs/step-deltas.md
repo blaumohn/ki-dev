@@ -95,6 +95,35 @@ Ein leerer `step_delta` wird nie automatisch als Erfolg behandelt
 | `EMPTY_WITH_SIGNAL` | Delta leer, Worker meldete `NEEDS_DECISION` oder `ESCALATE` |
 | `EMPTY_UNEXPLAINED` | Delta leer, kein Worker-Sonderfall – der Aufrufer muss Rueckkopplung oder Eskalation ausloesen |
 
+Was nach `EMPTY_UNEXPLAINED` folgt, entscheidet der Ablauf
+(`flow/implement.toml`, Zustand `capture_step_result`). Ein Schritt wird
+nie mit unveränderter Eingabe wiederholt:
+
+- Der Lauf hat schon ein Ergebnis (Fakt `run_changed`: `run_delta` ist nicht
+  leer). Dann geht der Schritt über `checkpoint` ins Review. Das Review
+  prüft den unveränderten Stand mit der Begründung des Workers. Beispiel: Das
+  Review sagt `fix`, weil eine Prüfung falsch eingerichtet war. Der Mensch
+  korrigiert die Prüfung, und der Worker meldet `completed` ohne Änderung.
+  Weitere Runden begrenzt die `fix`-Kante (`changes_refused`, `stagnation`).
+- Der Lauf hat noch kein Ergebnis. Dann folgt eine Korrekturrunde und an
+  der Rundengrenze `empty_result_unresolved`.
+
+## Beads-Änderungen des Menschen
+
+Worktrees teilen sich die Beads-Datenbank. Der Mensch weiß das und
+verantwortet, was er dort ändert. Der Ablauf erkennt die Änderung, entscheidet
+aber nicht über sie:
+
+- Geändert in einer Pause: Jede Entscheidung (`resume --answer` oder ein
+  geänderter Auftrag) rückt `run_base`, `round_base` und `reviewed_refs` auf
+  den heutigen Beads-Stand. Git bleibt unberührt und läuft weiter durch Checks
+  und Review. Beispiel: Der Lauf startet bei `b1`, in der Pause entsteht ein
+  neuer Bead (`b2`); nach der Antwort gelten alle Grenzen ab `b2`.
+- Geändert während eines Turns: Der Stand weicht beim Einfrieren ab. Der Lauf
+  hält mit `finalization_refused` an statt abzubrechen. Die Antwort übernimmt
+  den Stand, das Einfrieren läuft erneut, ohne neuen Worker und ohne neues
+  Review.
+
 ## Erhaltung der Pruefgeschichte
 
 Waehrend der aktiven Kontrollschleife wird weder Git- noch Dolt-Historie

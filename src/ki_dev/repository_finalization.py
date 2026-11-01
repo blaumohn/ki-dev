@@ -51,7 +51,8 @@ class RepositoryFinalizer:
     Der kleine Schnitt unterstuetzt absichtlich nur dateibasierte
     Ergebnisse. Ein Git-Worktree isoliert die von Beads verwendete
     Dolt-Datenbank nicht; deshalb darf sich deren Referenz waehrend des
-    Laufs nicht geaendert haben.
+    Laufs nicht geaendert haben, ausser eine Entscheidung des Menschen
+    hat den Stand uebernommen.
     """
 
     target_workdir: Path
@@ -85,9 +86,10 @@ class RepositoryFinalizer:
         reviewed_beads = _ref_value(reviewed_refs, "beads")
         if base_beads != reviewed_beads:
             raise FinalizationFailure(
-                "direkte Beads-/Dolt-Aenderungen werden in diesem "
-                "Schnitt nicht uebernommen; einen dateibasierten "
-                "Aenderungsvorschlag erzeugen"
+                "Beads-/Dolt-Stand weicht von der Laufbasis ab; "
+                "Agenten liefern Beads-Aenderungen als Dateivorschlag, "
+                "eine Antwort des Menschen (resume --answer) "
+                "uebernimmt den Stand"
             )
         _require_equal(
             _capture_beads_value(source),

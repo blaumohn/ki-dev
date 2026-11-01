@@ -14,6 +14,7 @@ from ki_dev.deltas import ChangeMedium, MediaRefs, VcsRef
 from ki_dev.repository_evidence import (
     CheckCommand,
     RepositoryEvidenceCollector,
+    _checkpoint_message,
     _decode_refs,
     _encode_refs,
     _run_check,
@@ -118,3 +119,28 @@ def test_encode_decode_refs_roundtrip():
     )
 
     assert _decode_refs(_encode_refs(refs)) == refs
+
+
+@pytest.mark.parametrize(
+    ("sources", "expected"),
+    [
+        (
+            ("bd:p-1.2", "docs/a.md"),
+            "ki-dev run-1 Runde 3 (p-1.2)",
+        ),
+        (
+            ("bd:p-1", "bd:p-2"),
+            "ki-dev run-1 Runde 3 (p-1) (p-2)",
+        ),
+        (("docs/a.md",), "ki-dev run-1 Runde 3"),
+    ],
+)
+def test_checkpoint_message_names_each_bead(sources, expected):
+    """Der commit-msg-Hook der Beads-Integration verlangt am Zeilenende
+    je Beads-ID eine eigene Klammer; ein Lauf ohne Bead hat keine."""
+    task = RunTask(
+        "run-1", "task", sources, Path("/repo"), "write",
+        acceptance_criteria=("Kriterium 1",),
+    )
+
+    assert _checkpoint_message(task, 3) == expected

@@ -178,10 +178,10 @@ neu, der geänderte Auftrag ersetzt die Kopie im Lauf. Was nicht in den
 Bead gehört (Umgebung, Vorgehen), gibt `--answer "…"` mit; beides geht
 zusammen. Jede Entscheidung bleibt in den Laufdaten (`decisions`) und
 steht bis zum Ende des Laufs im Prompt von Review und Umsetzer, mit
-alter und neuer Fassung geänderter Kriterien. Die Änderung am Bead ist
-kein Ergebnis des Laufs: Die Beads-Grenzen rücken auf den neuen Stand,
-wenn sich seit dem letzten erfassten Stand nur der Bead des Auftrags
-geändert hat; sonst wird die Entscheidung abgewiesen. Ohne Änderung
+alter und neuer Fassung geänderter Kriterien. Änderungen des Menschen an
+Beads sind kein Ergebnis des Laufs: Jede Entscheidung rückt die
+Beads-Grenzen auf den heutigen Stand, auch bei Beads außerhalb des
+Auftrags; der Mensch verantwortet, was er dort ändert. Ohne Änderung
 und ohne Antwort weist `resume` ab, denn dieselbe Frage stünde erneut an.
 
 Vollständig offline vorführen: `scripts/demo-mock-lauf.sh`.
@@ -681,9 +681,10 @@ Ein Git-Worktree isoliert nur Git-Dateistand und Branch, nicht automatisch die
 von `bd` verwendete Dolt-Datenbank. Der kleine Go-live-Schnitt unterstützt
 deshalb ausschließlich `data_mode: "file_proposal"`: Der Agent darf einen
 dateibasierten Änderungsvorschlag erzeugen, aber die Beads-/Dolt-Referenz muss
-von der Laufbasis bis über die Integration unverändert bleiben. Direkte
-Beads-Schreibwirkungen oder `data_mode: "beads_direct"` werden ausdrücklich
-abgewiesen. Sie dürfen erst unterstützt werden, wenn ein eigener isolierter,
+von der Laufbasis bis über die Integration unverändert bleiben, außer eine
+Entscheidung des Menschen übernimmt den Stand. Weicht sie beim Einfrieren ab,
+hält der Lauf mit `finalization_refused` an. Direkte Beads-Schreibwirkungen
+von Agenten oder `data_mode: "beads_direct"` werden ausdrücklich abgewiesen. Sie dürfen erst unterstützt werden, wenn ein eigener isolierter,
 versionierter DB-Arbeitsstand samt geprüftem Delta und kontrollierter Übernahme
 vorhanden ist. `.beads/issues.jsonl` ist dabei nur Export, nie DB-Wahrheit.
 

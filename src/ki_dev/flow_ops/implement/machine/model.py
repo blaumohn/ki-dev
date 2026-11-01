@@ -127,6 +127,12 @@ class ImplementModel:
         Worker-Schritt von der Rundenbasis ab."""
         return "worker_changed" in self.facts
 
+    def run_changed(self) -> bool:
+        """Fakt des Ausführers: der Arbeitsstand weicht von der
+        Laufbasis ab; es gibt ein Ergebnis, das das Review prüfen
+        kann."""
+        return "run_changed" in self.facts
+
     # --- Aktionen -----------------------------------------------------
 
     def begin_task(self) -> None:

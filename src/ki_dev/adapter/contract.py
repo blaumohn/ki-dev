@@ -113,6 +113,14 @@ class RunTask:
             for i in range(1, len(self.acceptance_criteria) + 1)
         )
 
+    def bead_ids(self) -> tuple[str, ...]:
+        """Beads-IDs des Auftrags aus seinen Quellen ``bd:ID``."""
+        return tuple(
+            source[3:]
+            for source in self.sources
+            if source.startswith("bd:")
+        )
+
 
 @dataclass(frozen=True)
 class WorkRequest:

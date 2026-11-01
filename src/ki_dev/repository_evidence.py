@@ -17,10 +17,8 @@ from ki_dev.deltas import (
     CheckOutcome,
     ControllerContext,
     MediaRefs,
-    RefBoundary,
     RoundStatus,
     VcsRef,
-    build_beads_delta,
     build_run_delta,
     build_step_delta,
     capture_beads_ref,
@@ -57,25 +55,10 @@ class RepositoryEvidenceCollector:
         _require_clean_worktree(task.workdir)
         return _encode_refs(capture_media_refs(task.workdir))
 
-    def adopt_issue_change(
-        self, task: RunTask, refs: object, issues: frozenset[str]
-    ) -> object:
-        """Grenze ``refs`` auf den heutigen Beads-Stand setzen, wenn
-        sich seitdem nur ``issues`` geändert haben (Entscheidung des
-        Menschen im Bead); jede andere Beads-Änderung bleibt
-        sichtbar."""
-        before = _decode_refs(refs).beads
+    def adopt_beads(self, task: RunTask, refs: object) -> object:
+        """Grenze ``refs`` auf den heutigen Beads-Stand setzen; Git
+        bleibt, wie es ist."""
         now = capture_beads_ref(task.workdir)
-        if now.value == before.value:
-            return refs
-        boundary = RefBoundary(before, now)
-        delta = build_beads_delta(task.workdir, boundary)
-        foreign = sorted({c.issue_id for c in delta.issues} - issues)
-        if foreign:
-            raise RuntimeError(
-                "Beads außerhalb des Auftrags geändert: "
-                + ", ".join(foreign)
-            )
         return {
             **cast(dict[str, object], refs),
             "beads": {"medium": now.medium.value, "value": now.value},
@@ -105,7 +88,7 @@ class RepositoryEvidenceCollector:
         first_base = _decode_refs(run_base)
         result = checkpoint_step_result(
             task.workdir,
-            message=f"ki-dev {task.run_id} Runde {round_id}",
+            message=_checkpoint_message(task, round_id),
         )
         return ControllerContext(
             task=task.task,
@@ -118,6 +101,13 @@ class RepositoryEvidenceCollector:
             ),
             run_delta=build_run_delta(task.workdir, first_base, result),
         )
+
+
+def _checkpoint_message(task: RunTask, round_id: int) -> str:
+    """Betreffzeile des Checkpoints; jede Beads-ID in eigener Klammer,
+    wie es der ``commit-msg``-Hook der Beads-Integration verlangt."""
+    refs = "".join(f" ({bead})" for bead in task.bead_ids())
+    return f"ki-dev {task.run_id} Runde {round_id}{refs}"
 
 
 def _run_check(task: RunTask, check: CheckCommand) -> CheckOutcome:

@@ -176,7 +176,7 @@ def test_git_integration_failure_does_not_report_success(
 def test_direct_beads_writes_are_explicitly_rejected(finalization_repo):
     _, source, base, reviewed, finalizer = finalization_repo
 
-    with pytest.raises(FinalizationFailure, match="dateibasierten"):
+    with pytest.raises(FinalizationFailure, match="Dateivorschlag"):
         _freeze(
             source,
             base,

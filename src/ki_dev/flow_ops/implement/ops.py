@@ -151,6 +151,8 @@ class ImplementationOperations:
                 ],
             },
             "assessment": assess_step_delta(context.step_delta).value,
+            "run_changed": context.run_delta is not None
+            and not context.run_delta.is_empty,
         }
 
     def review(

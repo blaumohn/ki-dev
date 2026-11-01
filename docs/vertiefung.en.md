@@ -153,11 +153,11 @@ stateDiagram-v2
     worker_step --> worker_step_prepare: worker_process_error / retry_process
     worker_step --> worker_step: protocol_error / retry_protocol
     capture_step_result --> checkpoint: step_result_captured [delta_effective]
+    capture_step_result --> checkpoint: step_result_captured [run_changed]
     capture_step_result --> worker_step_prepare: step_result_captured / begin_correction, drop_result
     capture_step_result --> capture_step_result: process_error / retry_process
     checkpoint --> controller_step: checkpoint_recorded / keep_result
     freeze_reviewed_result --> finalize_history: reviewed_result_frozen
-    freeze_reviewed_result --> error: finalization_error
     finalize_history --> verify_final_result: history_finalized
     finalize_history --> error: finalization_error
     verify_final_result --> fast_forward_integrate: final_result_verified [result_ok]

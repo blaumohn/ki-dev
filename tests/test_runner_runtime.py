@@ -364,6 +364,43 @@ def test_empty_result_feedback_reruns_build_instead_of_reusing_artifact(
     assert worker.calls == 2
 
 
+def test_empty_correction_with_run_result_goes_to_review(tmp_path):
+    """Regression eigenprobe-641 (ki-dev-ablauf-hm76): nach ``fix``
+    ändert der Worker nichts, weil der Stand schon passt. Statt
+    desselben Bauauftrags prüft das Review den Stand erneut."""
+    unchanged = VcsRef(ChangeMedium.GIT, "g1-b")
+    beads = VcsRef(ChangeMedium.BEADS, "b1")
+    round_one = _context(1)
+    empty_round_two = ControllerContext(
+        "Auftrag",
+        CombinedDelta(
+            DeltaScope.STEP,
+            GitDelta(RefBoundary(unchanged, unchanged), (), ""),
+            BeadsDelta(RefBoundary(beads, beads), (), ""),
+        ),
+        RoundStatus(2, 5),
+        run_delta=CombinedDelta(
+            DeltaScope.RUN,
+            round_one.step_delta.git,
+            round_one.step_delta.beads,
+        ),
+    )
+    worker = FakeWorker()
+    reviewer = FakeReviewer(["fix", "PASS"])
+    with _runtime(
+        tmp_path,
+        "run-empty-fix",
+        worker,
+        reviewer,
+        [round_one, empty_round_two],
+    ) as runtime:
+        result = runtime.start(_task("run-empty-fix"), Limits())
+
+    assert result.status == "passed"
+    assert worker.calls == 2
+    assert reviewer.calls == 2
+
+
 def test_changes_rounds_are_bounded(tmp_path):
     reviewer = FakeReviewer(
         ["fix", "fix"]

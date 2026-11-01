@@ -92,6 +92,7 @@ class MachineEscalationCause(StrEnum):
     CHANGES_ROUNDS_EXHAUSTED = "changes_rounds_exhausted"
     PROCESS_RETRIES_EXHAUSTED = "process_retries_exhausted"
     EMPTY_RESULT_UNRESOLVED = "empty_result_unresolved"
+    FINALIZATION_REFUSED = "finalization_refused"
     FINAL_VERIFICATION_FAILED = "final_verification_failed"
     INTEGRATION_FAILED = "integration_failed"
     EXECUTION_GUARD = "execution_guard"
