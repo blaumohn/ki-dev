@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import ClassVar
 
 import pytest
 from typer.testing import CliRunner
@@ -16,6 +17,7 @@ from ki_dev.cli import main
 from ki_dev.flow.model import FlowError, load_flow_file
 from ki_dev.flow.templates import text
 from ki_dev.ops.context.bead_input import BeadInput
+from ki_dev.runner.limits import EMPTY_FLOW_SCHEMA
 from ki_dev.runner.protocol import RunModel
 from ki_dev.step import projection
 from ki_dev.step.cli import step_app
@@ -84,6 +86,8 @@ class DraftOps:
     Felder werden Laufdaten, das Ereignis heißt ``ready``."""
 
     model: type[RunModel] = RunModel
+    flow_limits: ClassVar[dict] = {}
+    flow_limits_schema: ClassVar[dict] = EMPTY_FLOW_SCHEMA
 
     def catalog(self, _call):
         return {}

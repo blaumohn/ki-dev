@@ -240,6 +240,8 @@ class Package:
                 RunStore(Path(root), request.bead_id),
                 model=self.ops.model,
                 turns=self.dispatch(rendering, messenger),
+                flow_limits=self.ops.flow_limits,
+                flow_limits_schema=self.ops.flow_limits_schema,
             )
             try:
                 return runner.start(data, request.position)
