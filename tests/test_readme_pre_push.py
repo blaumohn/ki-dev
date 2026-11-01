@@ -111,7 +111,10 @@ def test_failing_readme_check_is_rejected(repo, fake_bin, tmp_path):
 def test_changed_readme_is_rejected(repo, fake_bin, tmp_path):
     code, _, err = _push(repo, fake_bin, tmp_path, FAKE_MAKE_WRITES="1")
     assert code == 1
-    assert "README aktualisiert: committen und erneut pushen" in err
+    assert (
+        "README aktualisiert: unter ki-dev-ablauf-7xvx committen "
+        "und erneut pushen"
+    ) in err
 
 
 def _push(
