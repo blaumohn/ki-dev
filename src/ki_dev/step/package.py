@@ -46,6 +46,14 @@ class PackageOps(Protocol):
     model: type[RunModel]
     """Wächter und Aktionen des Ablaufs."""
 
+    flow_limits: Mapping[str, object]
+    """Standardwerte der Ablaufgrenzen (``limits.flow``); ein Paket
+    ohne eigene Grenzen liefert ``{}``."""
+
+    flow_limits_schema: Mapping[str, object]
+    """JSON Schema der Ablaufgrenzen; ohne eigene Grenzen
+    :data:`~ki_dev.runner.limits.EMPTY_FLOW_SCHEMA`."""
+
     def catalog(self, call: Call) -> Mapping[str, OperationSpec]:
         """Katalogoperationen, die der Ablauf binden kann."""
         ...

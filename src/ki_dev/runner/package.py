@@ -39,6 +39,7 @@ from ki_dev.runner.events import (
     event_record,
     run_event_record,
 )
+from ki_dev.runner.limits import EMPTY_FLOW_SCHEMA, resolve
 from ki_dev.runner.protocol import (
     RUN_DOC,
     AwaitingAnswer,
@@ -78,7 +79,11 @@ class PackageRunner:
         max_steps: int = 1000,
         model: type[RunModel] = RunModel,
         turns: TurnRun | None = None,
+        flow_limits: Mapping[str, object] | None = None,
+        flow_limits_schema: Mapping[str, object] = EMPTY_FLOW_SCHEMA,
     ) -> None:
+        """``flow_limits`` und ``flow_limits_schema``: Standardwerte
+        und Schema der Ablaufgrenzen des Pakets (``limits.flow``)."""
         validate(
             max_steps, {"type": "integer", "minimum": 1}, "max_steps"
         )
@@ -101,6 +106,14 @@ class PackageRunner:
         self.turns = turns
         self.max_steps = max_steps
         self.model_type = model
+        self.flow_limits = dict(flow_limits or {})
+        self.flow_limits_schema = flow_limits_schema
+        self.roles = {
+            op.role
+            for s in flow.states.values()
+            for op in s.operations
+            if op.role is not None
+        }
         self.chart = bind(
             compose(RUN_DOC, flow.statechart),
             model,
@@ -133,17 +146,26 @@ class PackageRunner:
         at: str | None = None,
         *,
         again: bool = False,
+        limits: Mapping[str, object] | None = None,
     ) -> dict:
         """Neuer Lauf am Start des Ablaufs oder in ``at``. Ein
         gespeicherter Lauf bleibt, außer ``again`` beginnt ausdrücklich
-        neu (Zähler für Protokoll und Versuche laufen weiter)."""
+        neu (Zähler für Protokoll und Versuche laufen weiter).
+        ``limits``: Grenzwerte dieses Laufs; was fehlt, ist
+        Standardwert (:func:`~ki_dev.runner.limits.resolve`)."""
+        limits = resolve(
+            limits or {},
+            self.roles,
+            self.flow_limits,
+            self.flow_limits_schema,
+        )
         with self.store.acquire_writer():
             previous = self.store.load_record()
             if previous is not None and not again:
                 raise RunStoreError("Lauf existiert bereits")
             self.path = []
             self.data = dict(data)
-            self.model = self.model_type(data=self.data)
+            self.model = self.model_type(data=self.data, limits=limits)
             self.machine = Durable(
                 self.chart,
                 self.model,
@@ -451,6 +473,7 @@ class PackageRunner:
                 "machine": self.machine.record,
                 "pending": self.model.pending,
                 "data": self.data,
+                "limits": self.model.limits,
                 "revision": self.revision,
                 "line": self.line,
                 "attempts": self.attempts,
@@ -464,7 +487,9 @@ class PackageRunner:
         if record["digest"] != self.digest:
             raise RunStoreError("Paket wurde seit Laufbeginn verändert")
         self.data = record["data"]
-        self.model = self.model_type(record["pending"], self.data)
+        self.model = self.model_type(
+            record["pending"], self.data, record["limits"]
+        )
         self.machine = Durable(
             self.chart, self.model, record["machine"]
         )
@@ -525,6 +550,7 @@ _RECORD = {
         "machine",
         "pending",
         "data",
+        "limits",
         "revision",
         "line",
         "attempts",
@@ -535,6 +561,7 @@ _RECORD = {
         "digest": {"type": "string"},
         "machine": {"type": "object"},
         "data": {"type": "object"},
+        "limits": {"type": "object"},
         "pending": {
             "anyOf": [
                 {"type": "null"},

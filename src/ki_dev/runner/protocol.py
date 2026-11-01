@@ -21,15 +21,18 @@ class AwaitingAnswer(Exception):
 class RunModel:
     """Ops der Regionen ``operation`` und ``halt``: die offene
     Operation. Ein Paket erweitert sie um die Wächter und Aktionen
-    seines Ablaufs; sie lesen die Laufdaten (``data``)."""
+    seines Ablaufs; sie lesen die Laufdaten (``data``) und die
+    Grenzwerte des Laufs (``limits``, :mod:`ki_dev.runner.limits`)."""
 
     def __init__(
         self,
         pending: Operation | None = None,
         data: dict[str, object] | None = None,
+        limits: Mapping[str, object] | None = None,
     ) -> None:
         self.pending = pending
         self.data = {} if data is None else data
+        self.limits = {} if limits is None else dict(limits)
 
     def is_running(self, machine: object) -> bool:
         """Region halt fährt (kein Halt)."""

@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import cast
+from typing import ClassVar, cast
 
 from jsonschema import Draft202012Validator
 
@@ -59,6 +59,23 @@ DONE = "done"
 """Ereignis „Schreiben bzw. Korrektur getan“: die Antwort des Boten
 auf eine Schreib- oder Korrekturübergabe."""
 
+COUNT = {"type": "integer", "minimum": 1}
+FLOW_LIMITS = {
+    "changes_rounds": 5,
+    "worker_attempts": 12,
+    "max_failed_corrections": 2,
+    "max_stagnant_changes": 3,
+}
+"""Standardwerte der Ablaufgrenzen (``limits.flow``): Runden der
+Änderungen, Versuche des Schreibens, abgelehnte Korrekturen und
+Änderungen ohne Fortschritt."""
+FLOW_LIMITS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": list(FLOW_LIMITS),
+    "properties": dict.fromkeys(FLOW_LIMITS, COUNT),
+}
+
 # Laufdaten des Musters neben denen der Wächter (model.py).
 REPORT = "report"
 FINDING = "finding"
@@ -74,6 +91,10 @@ class ReviewOps:
 
     flow: ReviewFlow
     model: type[ReviewModel] = ReviewModel
+    flow_limits: ClassVar[Mapping[str, object]] = FLOW_LIMITS
+    flow_limits_schema: ClassVar[Mapping[str, object]] = (
+        FLOW_LIMITS_SCHEMA
+    )
 
     def catalog(self, call: Call) -> Mapping[str, OperationSpec]:
         return {
