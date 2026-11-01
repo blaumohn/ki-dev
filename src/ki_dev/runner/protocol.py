@@ -7,6 +7,8 @@ import tomllib
 from collections.abc import Mapping
 from importlib.resources import files
 
+from ki_dev.runner.limits import limit_reasons
+
 Operation = dict[str, object]
 _ROOT = "lauf"
 ABLAUF = "ablauf"
@@ -33,6 +35,7 @@ class RunModel:
         self.pending = pending
         self.data = {} if data is None else data
         self.limits = {} if limits is None else dict(limits)
+        self.halt_reason: str | None = None
 
     def is_running(self, machine: object) -> bool:
         """Region halt fährt (kein Halt)."""
@@ -42,6 +45,16 @@ class RunModel:
         """Die offene Operation darf nach Prozessende erneut laufen."""
         return self.pending is not None and bool(
             self.pending["repeatable"]
+        )
+
+    def within_limits(self, measurement: Mapping) -> bool:
+        """Die Messung liegt unter allen Grenzwerten des Laufs."""
+        return not limit_reasons(measurement, self.limits)
+
+    def note_stop(self, measurement: Mapping) -> None:
+        """Alle erreichten Grenzen als Grund des Schutzhalts ablegen."""
+        self.halt_reason = "; ".join(
+            limit_reasons(measurement, self.limits)
         )
 
     def hold_operation(self, operation: Operation) -> None:

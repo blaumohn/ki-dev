@@ -3,7 +3,7 @@
 # Konfiguration ist ein Tupel, z. B. (review, started, running).
 #
 # - `ablauf`: der `[statechart]` des Pakets; das Gerüst setzt ihn beim
-#   Laden ein (src/ki_dev/flow_ops/implement/run_machine.py, `compose`). Diese
+#   Laden ein (src/ki_dev/runner/protocol.py, `compose`). Diese
 #   Datei nennt ihn nur über `done.state.ablauf`.
 # - `operation`: die offene Operation als Zwei-Schreib-Protokoll.
 #   Absicht speichern (`prepared` → `started`), externe Wirkung
@@ -16,12 +16,17 @@
 #   Ablaufzustand ebenso, und das Ende des Ablaufs meldet die
 #   Bibliothek als `done.state.ablauf`.
 #
+# Grenzen: der Adapter misst, `measured` trägt die Messung; der
+# Wächter `within_limits` vergleicht sie mit den Grenzwerten des Laufs
+# (Regel 4). Eine Überschreitung hält an (`stopped`); `resume` setzt
+# am selben Zustand fort.
+#
 # Fortsetzen ist `resume` (ohne Antwort) oder `answer` (mit Antwort des
 # Menschen); was im aktuellen Halt nicht passt, weist die Bibliothek ab.
 #
 # Format: [statechart] von python-statemachine (src/ki_dev/fsm.py); die
 # Namen in `cond`/`on`/`enter` sind Methoden von RunModel
-# (src/ki_dev/flow_ops/implement/run_machine.py).
+# (src/ki_dev/runner/protocol.py).
 
 [statechart]
 name = "run"
@@ -62,6 +67,10 @@ on = "begin_operation"
 event = "artifact_saved"
 target = "idle"
 
+# Messung vor der Wirkung: die Region bleibt, der Halt entscheidet.
+[[statechart.states.lauf.states.operation.states.prepared.transitions]]
+event = "measured"
+
 [statechart.states.lauf.states.operation.states.started]
 transitions = [
   { event = "artifact_saved", target = "idle" },
@@ -78,6 +87,7 @@ initial = true
 transitions = [
   # nach Prozessende dort weiter, wo der Datensatz steht
   { event = "resume" },
+  { event = "measured", unless = "within_limits", target = "stopped", on = "note_stop" },
   { event = "escalation", target = "paused_interactive" },
   { event = "wait", target = "waiting" },
   { event = "answer_pending", target = "awaiting_input" },
@@ -87,6 +97,10 @@ transitions = [
 
 # Bote ohne Antwort: Halt des Ausführers, nicht des Ablaufs.
 [statechart.states.lauf.states.halt.states.awaiting_input]
+transitions = [{ event = "resume", target = "running" }]
+
+# Schutzhalt: eine Grenze ist erreicht (Grund: `halt_reason`).
+[statechart.states.lauf.states.halt.states.stopped]
 transitions = [{ event = "resume", target = "running" }]
 
 # Bis der Mensch das Ergebnis abgleicht (`--reconcile-result`).

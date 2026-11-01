@@ -39,7 +39,11 @@ from ki_dev.runner.events import (
     event_record,
     run_event_record,
 )
-from ki_dev.runner.limits import EMPTY_FLOW_SCHEMA, resolve
+from ki_dev.runner.limits import (
+    EMPTY_FLOW_SCHEMA,
+    MEASUREMENT_SCHEMA,
+    resolve,
+)
 from ki_dev.runner.protocol import (
     RUN_DOC,
     AwaitingAnswer,
@@ -190,7 +194,7 @@ class PackageRunner:
         with self.store.acquire_writer():
             self._load()
             self.path = []
-            if self.status in {"running", "awaiting_input"}:
+            if self.status in {"running", "awaiting_input", "stopped"}:
                 self._send("resume")
                 self._save()
             return self._drive()
@@ -304,6 +308,7 @@ class PackageRunner:
             "data": self.data,
             "path": list(self.path),
             "attempt": None if pending is None else pending["attempt"],
+            "reason": self.model.halt_reason,
         }
 
     def _holds(self, name: str) -> bool:
@@ -419,7 +424,13 @@ class PackageRunner:
         protokolliert, die des Ablaufs mit ``by`` (wer das Ereignis
         brachte)."""
         source = self.state
+        if event == "measured":
+            validate(
+                kwargs.get("measurement"), MEASUREMENT_SCHEMA, event
+            )
         self.machine.send(event, **kwargs)
+        if self.status == "running":
+            self.model.halt_reason = None
         for taken in self.machine.journal:
             region = self.regions[taken.owner]
             key = (taken.owner, taken.index, source)
@@ -474,6 +485,7 @@ class PackageRunner:
                 "pending": self.model.pending,
                 "data": self.data,
                 "limits": self.model.limits,
+                "halt_reason": self.model.halt_reason,
                 "revision": self.revision,
                 "line": self.line,
                 "attempts": self.attempts,
@@ -490,6 +502,7 @@ class PackageRunner:
         self.model = self.model_type(
             record["pending"], self.data, record["limits"]
         )
+        self.model.halt_reason = record["halt_reason"]
         self.machine = Durable(
             self.chart, self.model, record["machine"]
         )
@@ -551,6 +564,7 @@ _RECORD = {
         "pending",
         "data",
         "limits",
+        "halt_reason",
         "revision",
         "line",
         "attempts",
@@ -562,6 +576,9 @@ _RECORD = {
         "machine": {"type": "object"},
         "data": {"type": "object"},
         "limits": {"type": "object"},
+        "halt_reason": {
+            "anyOf": [{"type": "null"}, {"type": "string"}]
+        },
         "pending": {
             "anyOf": [
                 {"type": "null"},

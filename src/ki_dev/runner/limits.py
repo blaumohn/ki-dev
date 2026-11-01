@@ -135,3 +135,71 @@ def _schema(roles: list[str], flow_schema: Mapping) -> dict:
             "flow": dict(flow_schema),
         },
     }
+
+
+MEASUREMENT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["role"],
+    "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "context": {"type": ["integer", "null"], "minimum": 0},
+        "quota_left": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 100,
+        },
+        "quota_delta": {"type": ["number", "null"], "minimum": 0},
+        "calls": {"type": ["integer", "null"], "minimum": 0},
+        "tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cost_usd": {"type": ["number", "null"], "minimum": 0},
+        "gaps": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+        },
+    },
+}
+"""Nutzlast des Ereignisses ``measured``. Ein Feld ``None`` (oder
+fehlend) ist nicht gemessen: der Executor deklariert die Messung
+nicht."""
+
+
+def limit_reasons(measurement: Mapping, limits: Mapping) -> list[str]:
+    """Alle erreichten Grenzen, keine Kurzschlussauswertung; leer,
+    wenn die Messung unter allen Grenzen liegt. Rein."""
+    run = limits["run"]
+    role = measurement["role"]
+    # Rolle ohne eigene Grenzen (nicht im Ablauf): Standardwerte
+    own = limits["role"].get(role, ROLE_DEFAULTS)
+    context = measurement.get("context")
+    left = measurement.get("quota_left")
+    delta = measurement.get("quota_delta")
+    calls = measurement.get("calls")
+    tokens = measurement.get("tokens")
+    cost = measurement.get("cost_usd")
+    reasons = []
+    if context is not None and context >= own["max_context_tokens"]:
+        reasons.append(
+            f"Kontextgrenze erreicht für {role}: gemessen {context} "
+            f">= Grenze {own['max_context_tokens']}"
+        )
+    if left is not None and left < run["min_remaining_percent"]:
+        reasons.append(
+            f"Kontingentreserve unterschritten für {role}: "
+            f"{left:g} % < {run['min_remaining_percent']:g} %"
+        )
+    allowed = own["max_usage_delta_percentage_points"]
+    if delta is not None and delta >= allowed:
+        reasons.append(
+            f"Aufgaben-Delta-Budget erreicht für {role}: beobachteter "
+            f"kontoweiter Verbrauch seit Rollenbaseline im aktuellen "
+            f"Fenster {delta:g} Prozentpunkte >= Budget {allowed:g}"
+        )
+    if calls is not None and calls >= run["max_agent_calls"]:
+        reasons.append(f"Aufrufgrenze erreicht: {calls}")
+    if tokens is not None and tokens >= run["max_total_tokens"]:
+        reasons.append(f"Token-Grenze erreicht: {tokens}")
+    if cost is not None and cost >= run["max_claude_cost_usd"]:
+        reasons.append(f"Claude-Kostengrenze erreicht: {cost:g} USD")
+    reasons.extend(measurement.get("gaps") or ())
+    return reasons
