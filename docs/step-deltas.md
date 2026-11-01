@@ -114,15 +114,18 @@ Worktrees teilen sich die Beads-Datenbank. Der Mensch weiß das und
 verantwortet, was er dort ändert. Der Ablauf erkennt die Änderung, entscheidet
 aber nicht über sie:
 
-- Geändert in einer Pause: Jede Entscheidung (`resume --answer` oder ein
-  geänderter Auftrag) rückt `run_base`, `round_base` und `reviewed_refs` auf
-  den heutigen Beads-Stand. Git bleibt unberührt und läuft weiter durch Checks
-  und Review. Beispiel: Der Lauf startet bei `b1`, in der Pause entsteht ein
-  neuer Bead (`b2`); nach der Antwort gelten alle Grenzen ab `b2`.
+- Geändert in einer Pause: `resume` vergleicht den heutigen Beads-Stand mit
+  `run_base`. Bei einer Abweichung startet kein Agent; die Abweisung zeigt
+  `bd diff` und den Stand. Erst `--accept-beads STAND` übernimmt genau diesen
+  Stand für `run_base`, `round_base` und `reviewed_refs` und legt das Diff in
+  `handoff/beads-accepted-STAND.json` ab. Ein anderer Stand weist erneut ab.
+  Git bleibt unberührt und läuft weiter durch Checks und Review. Beispiel:
+  Der Lauf startet bei `b1`, in der Pause entsteht ein neuer Bead (`b2`);
+  nach `--accept-beads b2` gelten alle Grenzen ab `b2`.
 - Geändert während eines Turns: Der Stand weicht beim Einfrieren ab. Der Lauf
-  hält mit `finalization_refused` an statt abzubrechen. Die Antwort übernimmt
-  den Stand, das Einfrieren läuft erneut, ohne neuen Worker und ohne neues
-  Review.
+  hält mit `finalization_refused` an statt abzubrechen. Die Antwort mit
+  `--accept-beads` übernimmt den Stand, das Einfrieren läuft erneut, ohne
+  neuen Worker und ohne neues Review.
 
 ## Erhaltung der Pruefgeschichte
 

@@ -139,6 +139,13 @@ def start(
 def resume(
     run_id: Annotated[str, typer.Argument()],
     answer: Annotated[str | None, typer.Option("--answer")] = None,
+    accept_beads: Annotated[
+        str | None,
+        typer.Option(
+            "--accept-beads",
+            help="Geänderten Beads-Stand übernehmen; resume nennt ihn.",
+        ),
+    ] = None,
     reconcile_result: Annotated[
         Path | None, typer.Option("--reconcile-result")
     ] = None,
@@ -148,7 +155,9 @@ def resume(
 ) -> None:
     """Pausierten Lauf fortsetzen. Ein Lauf aus einem Bead liest ihn
     neu: wer entscheidet, ändert den Auftrag im Bead; ``--answer``
-    erklärt, was nicht in den Bead gehört."""
+    erklärt, was nicht in den Bead gehört. Weicht der Beads-Stand von
+    der Laufbasis ab, startet kein Agent, bis ``--accept-beads`` genau
+    diesen Stand bestätigt."""
     _progress(verbose)
     cwd = Path.cwd()
     _execute(
@@ -157,6 +166,7 @@ def resume(
                 run_id,
                 runs_dir=runs_dir,
                 answer=answer,
+                accept_beads=accept_beads,
                 reconcile_result=reconcile_result,
                 wrap=_live(verbose),
                 overrides=adapter_overrides(adapters or []),

@@ -178,10 +178,13 @@ neu, der geänderte Auftrag ersetzt die Kopie im Lauf. Was nicht in den
 Bead gehört (Umgebung, Vorgehen), gibt `--answer "…"` mit; beides geht
 zusammen. Jede Entscheidung bleibt in den Laufdaten (`decisions`) und
 steht bis zum Ende des Laufs im Prompt von Review und Umsetzer, mit
-alter und neuer Fassung geänderter Kriterien. Änderungen des Menschen an
-Beads sind kein Ergebnis des Laufs: Jede Entscheidung rückt die
-Beads-Grenzen auf den heutigen Stand, auch bei Beads außerhalb des
-Auftrags; der Mensch verantwortet, was er dort ändert. Ohne Änderung
+alter und neuer Fassung geänderter Kriterien. Beads-Änderungen sind kein
+Ergebnis des Laufs, und niemand übernimmt sie ungesehen: Weicht der
+Beads-Stand von der Laufbasis ab, startet `resume` keinen Agenten, zeigt
+das Diff und verlangt `--accept-beads STAND`, auch beim geänderten Auftrag
+und bei Beads außerhalb des Auftrags. Die Bestätigung rückt die
+Beads-Grenzen auf genau diesen Stand und bleibt samt Diff unter
+`handoff/beads-accepted-STAND.json`; der Mensch verantwortet sie. Ohne Änderung
 und ohne Antwort weist `resume` ab, denn dieselbe Frage stünde erneut an.
 
 Vollständig offline vorführen: `scripts/demo-mock-lauf.sh`.
@@ -681,8 +684,8 @@ Ein Git-Worktree isoliert nur Git-Dateistand und Branch, nicht automatisch die
 von `bd` verwendete Dolt-Datenbank. Der kleine Go-live-Schnitt unterstützt
 deshalb ausschließlich `data_mode: "file_proposal"`: Der Agent darf einen
 dateibasierten Änderungsvorschlag erzeugen, aber die Beads-/Dolt-Referenz muss
-von der Laufbasis bis über die Integration unverändert bleiben, außer eine
-Entscheidung des Menschen übernimmt den Stand. Weicht sie beim Einfrieren ab,
+von der Laufbasis bis über die Integration unverändert bleiben, außer der
+Mensch bestätigt den Stand (`--accept-beads`). Weicht sie beim Einfrieren ab,
 hält der Lauf mit `finalization_refused` an. Direkte Beads-Schreibwirkungen
 von Agenten oder `data_mode: "beads_direct"` werden ausdrücklich abgewiesen. Sie dürfen erst unterstützt werden, wenn ein eigener isolierter,
 versionierter DB-Arbeitsstand samt geprüftem Delta und kontrollierter Übernahme

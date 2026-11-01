@@ -184,6 +184,7 @@ def resume_run(
     *,
     runs_dir: Path,
     answer: str | None,
+    accept_beads: str | None = None,
     reconcile_result: Path | None = None,
     wrap: ExecutorWrap = _unwrapped,
     overrides: dict[str, dict[str, object]] | None = None,
@@ -213,11 +214,13 @@ def resume_run(
                 raise RunConfigError(
                     "Lauf hat keine abzugleichende Operation"
                 )
-            return runtime.reconcile(current.operation_id, artifact)
+            return runtime.reconcile(
+                current.operation_id, artifact, accept_beads
+            )
         task = None
         if refresh is not None:
             task = _task({**config, **refresh(config)}, run_id)
-        return runtime.resume(answer, task)
+        return runtime.resume(answer, task, accept_beads)
 
 
 def status_run(run_id: str, *, runs_dir: Path) -> RunResult:

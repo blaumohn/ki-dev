@@ -166,6 +166,9 @@ def test_readme_example_halts_then_merges_after_answer(
         timeout=300,
     )
     assert completed.returncode == 0, completed.stderr[-3000:]
+    # bd update: ohne Bestätigung kein Agent, das Diff ist sichtbar.
+    assert "Beads geändert seit der Laufbasis" in completed.stderr
+    assert "--accept-beads " in completed.stderr
     halted, _, finished = completed.stdout.partition("=== Schritt 6")
     halted = halted.partition("=== Schritt 5")[2]
     finished, _, second = finished.partition("=== Schritt 7")

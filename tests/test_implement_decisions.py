@@ -7,11 +7,12 @@ hält das alte Verhalten fest, AC2 verbietet zunächst, ihn zu ändern.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import pytest
 
-from ki_dev.adapter.contract import WorkReport
+from ki_dev.adapter.contract import BeadsChange, WorkReport
 from ki_dev.flow_ops.implement.decisions import (
     decision_document,
     prompt_text,
@@ -174,9 +175,12 @@ class BeadsCollector(StaticEvidenceCollector):
             "beads": {"medium": "beads", "value": f"b{round_id}"},
         }
 
-    def adopt_beads(self, task, refs):
+    def beads_change(self, task, refs):
         del task
-        return {**refs, "beads": {"medium": "beads", "value": "b2"}}
+        base = refs["beads"]["value"]
+        if base == "b2":
+            return None
+        return BeadsChange(base, "b2", "+ Added: neuer Bead")
 
 
 def _beads_runtime(tmp_path, run_id, reviewer, collector):
@@ -199,7 +203,9 @@ def test_bead_change_moves_beads_boundaries_of_the_run(tmp_path):
         before = RunStore(tmp_path, "b").load_record()["data"]
         assert before["run_base"]["beads"]["value"] == "b1"
 
-        result = runtime.resume(task=_version_task("b", NEW))
+        result = runtime.resume(
+            task=_version_task("b", NEW), accept_beads="b2"
+        )
 
     assert result.status == "passed"
     data = RunStore(tmp_path, "b").load_record()["data"]
@@ -217,12 +223,104 @@ def test_answer_adopts_beads_change_of_the_human(tmp_path):
         runtime.start(_version_task("f"), Limits())
         before = RunStore(tmp_path, "f").load_record()["data"]
 
-        result = runtime.resume("Neuer Bead gehört nicht zum Auftrag")
+        result = runtime.resume(
+            "Neuer Bead gehört nicht zum Auftrag", accept_beads="b2"
+        )
 
     assert result.status == "passed"
     data = RunStore(tmp_path, "f").load_record()["data"]
     assert data["run_base"]["beads"]["value"] == "b2"
     assert data["run_base"]["git"] == before["run_base"]["git"]
+
+
+def test_changed_beads_start_no_agent_without_confirmation(tmp_path):
+    """Ohne Bestätigung startet kein Agent und im Lauf ändert sich
+    nichts: Die Abweisung zeigt das Diff und den Stand. Ein anderer
+    Stand als der heutige gilt nicht als Bestätigung."""
+    worker = FakeWorker()
+    reviewer = FakeReviewer(["decision", "PASS"])
+    with RunRuntime(
+        RunStore(tmp_path, "c"),
+        worker,
+        reviewer,
+        BeadsCollector((_context(1),)),
+        StaticFinalizer(),
+    ) as runtime:
+        runtime.start(_version_task("c"), Limits())
+        store = RunStore(tmp_path, "c")
+        before = store.load_record()
+        calls = worker.calls
+
+        for accepted in (None, "b9"):
+            with pytest.raises(RunResumeError) as refused:
+                runtime.resume("weiter", accept_beads=accepted)
+            assert "+ Added: neuer Bead" in str(refused.value)
+            assert "--accept-beads b2" in str(refused.value)
+
+        assert store.load_record() == before
+        assert worker.calls == calls
+
+        result = runtime.resume("weiter", accept_beads="b2")
+
+    assert result.status == "passed"
+    accepted = json.loads(
+        (store.run_dir / "handoff/beads-accepted-b2.json").read_text()
+    )
+    assert accepted == {
+        "base": "b1",
+        "result": "b2",
+        "summary": "+ Added: neuer Bead",
+    }
+
+
+def test_reconcile_needs_same_confirmation_as_resume(tmp_path):
+    """Auch ein extern abgeglichenes Ergebnis übernimmt einen geänderten
+    Beads-Stand nur mit Bestätigung; ohne sie bleibt der Lauf, wie er
+    ist."""
+
+    class ChangedLater(BeadsCollector):
+        changed = False
+
+        def beads_change(self, task, refs):
+            if not self.changed:
+                return None
+            return super().beads_change(task, refs)
+
+    collector = ChangedLater((_context(1),))
+    worker = FakeWorker(crash=True)
+    reviewer = FakeReviewer(["PASS"])
+    store = RunStore(tmp_path, "r")
+    with (
+        RunRuntime(
+            store, worker, reviewer, collector, StaticFinalizer()
+        ) as runtime,
+        pytest.raises(SystemExit),
+    ):
+        runtime.start(_version_task("r"), Limits())
+
+    worker.crash = False
+    artifact = {"summary": "abgeglichen", "event": "worker_completed"}
+    with RunRuntime(
+        RunStore(tmp_path, "r"),
+        worker,
+        reviewer,
+        collector,
+        StaticFinalizer(),
+    ) as resumed:
+        operation_id = resumed.resume().operation_id
+        collector.changed = True
+        before = store.load_record()
+
+        with pytest.raises(RunResumeError) as refused:
+            resumed.reconcile(operation_id, artifact)
+        assert "--accept-beads b2" in str(refused.value)
+        assert store.load_record() == before
+
+        result = resumed.reconcile(operation_id, artifact, "b2")
+
+    assert result.status == "passed"
+    assert worker.calls == 1
+    assert (store.run_dir / "handoff/beads-accepted-b2.json").is_file()
 
 
 def test_refused_freeze_halts_and_answer_retries_it(tmp_path):
@@ -251,7 +349,7 @@ def test_refused_freeze_halts_and_answer_retries_it(tmp_path):
         assert halted.status == "paused_interactive"
         assert "finalization_refused" in halted.detail
 
-        result = runtime.resume("Stand übernehmen")
+        result = runtime.resume("Stand übernehmen", accept_beads="b2")
 
     assert result.status == "passed"
     assert worker.calls == 1

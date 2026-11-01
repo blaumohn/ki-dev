@@ -88,8 +88,8 @@ class RepositoryFinalizer:
             raise FinalizationFailure(
                 "Beads-/Dolt-Stand weicht von der Laufbasis ab; "
                 "Agenten liefern Beads-Aenderungen als Dateivorschlag, "
-                "eine Antwort des Menschen (resume --answer) "
-                "uebernimmt den Stand"
+                "eine Antwort des Menschen uebernimmt den Stand "
+                "(resume --answer … --accept-beads STAND)"
             )
         _require_equal(
             _capture_beads_value(source),

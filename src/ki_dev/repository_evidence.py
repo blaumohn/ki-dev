@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import cast
 
 from ki_dev.adapter.contract import (
+    BeadsChange,
     RunTask,
     WorkReport,
 )
@@ -17,8 +18,10 @@ from ki_dev.deltas import (
     CheckOutcome,
     ControllerContext,
     MediaRefs,
+    RefBoundary,
     RoundStatus,
     VcsRef,
+    build_beads_delta,
     build_run_delta,
     build_step_delta,
     capture_beads_ref,
@@ -55,14 +58,19 @@ class RepositoryEvidenceCollector:
         _require_clean_worktree(task.workdir)
         return _encode_refs(capture_media_refs(task.workdir))
 
-    def adopt_beads(self, task: RunTask, refs: object) -> object:
-        """Grenze ``refs`` auf den heutigen Beads-Stand setzen; Git
-        bleibt, wie es ist."""
+    def beads_change(
+        self, task: RunTask, refs: object
+    ) -> BeadsChange | None:
+        """Heutiger Beads-Stand gegen die Grenze ``refs``; ``None`` ohne
+        Abweichung."""
+        base = _decode_refs(refs).beads
         now = capture_beads_ref(task.workdir)
-        return {
-            **cast(dict[str, object], refs),
-            "beads": {"medium": now.medium.value, "value": now.value},
-        }
+        if now.value == base.value:
+            return None
+        delta = build_beads_delta(
+            task.workdir, RefBoundary(base, now)
+        )
+        return BeadsChange(base.value, now.value, delta.summary)
 
     def changed(
         self, task: RunTask, round_id: int, base: object

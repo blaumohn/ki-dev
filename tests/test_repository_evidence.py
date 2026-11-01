@@ -4,10 +4,13 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from ki_dev import repository_evidence
 from ki_dev.adapter.contract import (
+    BeadsChange,
     RunTask,
 )
 from ki_dev.deltas import ChangeMedium, MediaRefs, VcsRef
@@ -94,6 +97,41 @@ def test_prepare_rejects_preexisting_foreign_changes(tmp_path: Path):
         RepositoryEvidenceCollector().prepare(task, 1)
 
     assert foreign.read_text() == "must survive\n"
+
+
+def test_beads_change_compares_today_with_boundary(
+    tmp_path: Path, monkeypatch
+):
+    """Gleicher Stand: keine Änderung, kein ``bd diff``. Anderer Stand:
+    Grenze, heutiger Stand und lesbares Diff."""
+    refs = {
+        "git": {"medium": "git", "value": "g"},
+        "beads": {"medium": "beads", "value": "b1"},
+    }
+    task = RunTask(
+        run_id="r",
+        task="t",
+        sources=(),
+        workdir=tmp_path,
+        access_profile="write",
+        acceptance_criteria=("AC",),
+    )
+    collector = RepositoryEvidenceCollector(checks=())
+    today = VcsRef(ChangeMedium.BEADS, "b1")
+    monkeypatch.setattr(
+        repository_evidence, "capture_beads_ref", lambda _repo: today
+    )
+    assert collector.beads_change(task, refs) is None
+
+    today = VcsRef(ChangeMedium.BEADS, "b2")
+    monkeypatch.setattr(
+        repository_evidence,
+        "build_beads_delta",
+        lambda _repo, _boundary: SimpleNamespace(summary="+ Added: x"),
+    )
+    assert collector.beads_change(task, refs) == BeadsChange(
+        "b1", "b2", "+ Added: x"
+    )
 
 
 def test_encode_refs_uses_primitive_medium_values():

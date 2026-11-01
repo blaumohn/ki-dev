@@ -335,7 +335,9 @@ ki-dev -f implement history version-fix  # why the run halts
 bd update "$BEAD" --acceptance "1. is_newer('1.10.0', '1.9.0') is True
 2. the second assert in test_version.py pins the old behaviour;
 it becomes assert is_newer('1.10.0', '1.9.0')"
-ki-dev -f implement resume version-fix  # reads the bead again
+ki-dev -f implement resume version-fix || true  # starts nothing, shows the beads diff
+STAND=$(bd vc status --json | sed -n 's/.*"commit": "\(.*\)".*/\1/p')
+ki-dev -f implement resume version-fix --accept-beads "$STAND"
 ```
 
 <p align="right"><sub>✓ Run with real agents · <a href="tests/readme/test_9_entscheiden.sh">test</a></sub></p>
@@ -351,6 +353,9 @@ Lauf version-fix: waiting_decision nach 1 Runde
   Halt               wartet auf Entscheidung (Bead ändern, resume)
 ```
 
+- If the beads state differs from the run base, `resume` starts no
+  agent, shows the diff and waits for you to confirm exactly this
+  state. The state is also in the output.
 - `resume` reads the bead again and continues where the run halted;
   here the review checks first, with the changed criteria.
 - Anything that does not belong in the bead, such as a note about the

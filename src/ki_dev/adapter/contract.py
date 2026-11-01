@@ -48,6 +48,16 @@ class AgentTurnError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class BeadsChange:
+    """Beads-Stand ``result`` weicht von der Grenze ``base`` ab;
+    ``summary`` ist das lesbare Diff."""
+
+    base: str
+    result: str
+    summary: str
+
+
+@dataclass(frozen=True)
 class RunTask:
     run_id: str
     task: str

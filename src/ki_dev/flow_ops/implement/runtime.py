@@ -28,6 +28,7 @@ from ki_dev.adapter.agent import (
 from ki_dev.adapter.contract import (
     AgentTurnError,
     AnswerPending,
+    BeadsChange,
     Reviewer,
     RunTask,
     Worker,
@@ -186,7 +187,9 @@ class EvidenceCollector(Protocol):
         report: WorkReport,
     ) -> ControllerContext: ...
 
-    def adopt_beads(self, task: RunTask, refs: object) -> object: ...
+    def beads_change(
+        self, task: RunTask, refs: object
+    ) -> BeadsChange | None: ...
 
     def changed(
         self, task: RunTask, round_id: int, base: object
@@ -311,14 +314,19 @@ class RunRuntime:
         return self.result()
 
     def resume(
-        self, answer: str | None = None, task: RunTask | None = None
+        self,
+        answer: str | None = None,
+        task: RunTask | None = None,
+        accept_beads: str | None = None,
     ) -> RunResult:
         """Lauf fortsetzen: ohne Entscheidung (``resume``: nach
         Prozessende, nach abgelegter Antwort des Boten) oder mit
         Entscheidung des Menschen (wartende Entscheidung, Pause). Eine
         Entscheidung ist eine Antwort, ein geänderter Auftrag ``task``
         (Bead neu gelesen) oder beides. Was zum Status nicht passt,
-        weist die Lauf-Maschine ab."""
+        weist die Lauf-Maschine ab. Ein geänderter Beads-Stand ohne
+        Bestätigung ``accept_beads`` weist ab, bevor sich etwas bewegt
+        (siehe :meth:`_confirmed_beads`)."""
         self._load()
         if answer is not None and not answer.strip():
             raise RunResumeError("Antwort darf nicht leer sein")
@@ -331,6 +339,8 @@ class RunRuntime:
         decided = answer is not None or changes_task(document)
         if not decided:
             self._refuse_without_decision()
+        confirmed = self._confirmed_beads(accept_beads)
+        if not decided:
             self._send_resume("resume", "Fortsetzen ohne Antwort")
             self._data["last_error"] = None
         elif answer is None and "answer" not in self._lauf.allowed:
@@ -344,6 +354,8 @@ class RunRuntime:
             self._answer()
         if decided:
             self._decide(document, task)
+        if confirmed is not None:
+            self._adopt_beads(confirmed)
         self._drive()
         return self.result()
 
@@ -394,14 +406,12 @@ class RunRuntime:
     ) -> None:
         """Entscheidung festhalten; ein geänderter Auftrag ersetzt die
         Kopie im Lauf, damit Prompts und Bindung von ``fix`` ihm
-        folgen. Mit der Entscheidung verantwortet der Mensch den
-        Beads-Stand (siehe :meth:`_adopt_beads`)."""
+        folgen."""
         update: dict[str, object] = {
             "decisions": [*self._data["decisions"], document]
         }
         if task is not None and changes_task(document):
             update["task"] = _encode_task(task)
-        update |= self._adopt_beads()
         # Der Mensch hat die Ursache geklärt: Korrekturrunden des
         # Ablaufs beginnen neu, auch nach leeren Versuchen vor dem
         # Halt.
@@ -411,31 +421,68 @@ class RunRuntime:
         )
         self._apply(update)
 
-    def _adopt_beads(self) -> dict[str, object]:
-        """Änderungen des Menschen an Beads gehören nicht zum Ergebnis
-        des Laufs: alle Beads-Grenzen rücken auf den heutigen Stand.
-        Git bleibt unberührt und läuft weiter durch Checks und
-        Review."""
+    def _confirmed_beads(
+        self, accepted: str | None
+    ) -> BeadsChange | None:
+        """Beads-Stand gegen die Laufbasis prüfen. Eine Abweichung
+        übernimmt nur, wer genau diesen Stand gesehen und bestätigt
+        hat; sonst startet kein Agent. Git läuft weiter durch Checks und
+        Review. Ein Lauf ohne offene Fortsetzung bleibt der
+        Lauf-Maschine überlassen."""
         state = self._data
-        task = _task(state)
+        if state["run_base"] is None or not (
+            {"resume", "answer", "reconcile"} & set(self._lauf.allowed)
+        ):
+            return None
         try:
-            return {
-                name: self.evidence_collector.adopt_beads(
-                    task, state[name]
-                )
+            change = self.evidence_collector.beads_change(
+                _task(state), state["run_base"]
+            )
+        except Exception as exc:
+            raise RunResumeError(
+                f"Beads-Stand nicht prüfbar: {exc}"
+            ) from exc
+        if change is None or accepted == change.result:
+            return change
+        raise RunResumeError(
+            f"Beads geändert seit der Laufbasis:\n{change.summary}\n"
+            f"Übernehmen mit: --accept-beads {change.result}"
+        )
+
+    def _adopt_beads(self, change: BeadsChange) -> None:
+        """Alle Beads-Grenzen rücken auf den bestätigten Stand. Die
+        Bestätigung bleibt samt Diff im Lauf, denn die alte Basis ist
+        danach überschrieben."""
+        state = self._data
+        beads = {"medium": "beads", "value": change.result}
+        self.store.write_handoff(
+            f"beads-accepted-{change.result}",
+            {
+                "base": change.base,
+                "result": change.result,
+                "summary": change.summary,
+            },
+        )
+        self._apply(
+            {
+                name: {
+                    **cast(dict[str, object], state[name]),
+                    "beads": beads,
+                }
                 for name in ("run_base", "round_base", "reviewed_refs")
                 if state[name] is not None
             }
-        except Exception as exc:
-            raise RunResumeError(
-                f"Entscheidung nicht übernommen: {exc}"
-            ) from exc
+        )
 
     def reconcile(
-        self, operation_id: str, artifact: object
+        self,
+        operation_id: str,
+        artifact: object,
+        accept_beads: str | None = None,
     ) -> RunResult:
         """Uebernimm ein extern abgeglichenes Ergebnis explizit."""
         self._load()
+        confirmed = self._confirmed_beads(accept_beads)
         try:
             self._lauf.send("reconcile")
         except TransitionNotAllowed:
@@ -456,6 +503,8 @@ class RunRuntime:
                 raise RunResumeError(str(exc)) from exc
         self.store.write_artifact(operation_id, artifact)
         self._data["last_error"] = None
+        if confirmed is not None:
+            self._adopt_beads(confirmed)
         self._drive()
         return self.result()
 
@@ -1434,9 +1483,11 @@ class StaticEvidenceCollector:
     def prepare(self, task: RunTask, round_id: int) -> object:
         return {"run_id": task.run_id, "round_id": round_id}
 
-    def adopt_beads(self, task: RunTask, refs: object) -> object:
-        del task
-        return refs
+    def beads_change(
+        self, task: RunTask, refs: object
+    ) -> BeadsChange | None:
+        del task, refs
+        return None
 
     def changed(
         self, task: RunTask, round_id: int, base: object

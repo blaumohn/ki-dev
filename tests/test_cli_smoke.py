@@ -187,12 +187,18 @@ def test_resume_passes_bound_answer(capsys, monkeypatch, tmp_path):
         *,
         runs_dir,
         answer,
+        accept_beads,
         reconcile_result,
         wrap,
         overrides,
         refresh,
     ):
-        seen.update(run_id=run_id, answer=answer, overrides=overrides)
+        seen.update(
+            run_id=run_id,
+            answer=answer,
+            accept_beads=accept_beads,
+            overrides=overrides,
+        )
         return RunResult(
             run_id, "waiting_decision", 1, Phase.WAITING_DECISION
         )
@@ -201,12 +207,14 @@ def test_resume_passes_bound_answer(capsys, monkeypatch, tmp_path):
     code, _, _ = _main(
         capsys,
         "-f", "implement", "resume", "run-1",
-        "--answer", "ja", "--runs-dir", str(tmp_path),
+        "--answer", "ja", "--accept-beads", "b2",
+        "--runs-dir", str(tmp_path),
         "--adapter", "review=manual",
     )
     assert code == 0
     assert seen == {
         "run_id": "run-1",
         "answer": "ja",
+        "accept_beads": "b2",
         "overrides": {"review": {"executor": "manual"}},
     }
