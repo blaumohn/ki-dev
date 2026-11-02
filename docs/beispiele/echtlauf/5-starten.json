@@ -3,7 +3,7 @@
     "skript": "5-starten.sh",
     "parameter": {},
     "ergebnis": "passed",
-    "datum": "2026-11-02T19:04:11Z",
+    "datum": "2026-11-02T21:21:10Z",
     "auszug": [
       "$ ki-dev -f implement \"$BEAD\" --run-id version-fix",
       "{",

@@ -349,23 +349,23 @@ ki-dev -f implement resume version-fix --accept-beads "$STAND"
 ```text
 $ ki-dev -f implement history version-fix
 Lauf version-fix: waiting_decision nach 1 Runde
-  Runde 1  Umsetzer  Frage: `version.py` now compares numeric version
-                     segments; AC1 passes, and `test_version.py` remains
-                     unchanged. Running `python test_version.py` fails becaus…
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    decision: Widerspruch zwischen Abnahmekriterien und Test.
-                     AC1 verlangt is_newer('1.10.0', '1.9.0') == True.
-                     test_version.py:4 (unveraendert, AC2) verlangt assert no…
-                     fake_only: Nichts gefunden. Der neue Code (version.py:2)
-                       laeuft direkt im Test ohne Fakes oder Mocks.
-                     invalid_input: Nicht geprueft fuer NaN, Nicht-Zahlen und
-                       fehlende Felder, soweit nicht durch Code oder Test
-                       belegt. Laut Code (version.py:2): Nicht-numerische
-                       Segmente wie '1.a.0' oder Vorabversionen wie
-                       '1.0.0-rc1' loesen eine ungeregelte ValueError aus
-                       (keine Ausnahmebehandlung, kein geregelter Halt).
-                       Leerer String '' ergibt ebenfalls ValueError. Ein None-…
+  Runde 1  Review    decision: Widerspruch zwischen AC1, AC2 und
+                     test_version.py. AC1 verlangt is_newer('1.10.0', '1.9.0')
+                     is True; der Fix erfüllt das laut gezielter Prüfung. AC2…
+                     fake_only: Keine Fakes. Die gezielte Prüfung ruft die
+                       echte is_newer-Funktion auf; kein neuer Code läuft nur
+                       mit Fakes.
+                     invalid_input: NaN: nicht anwendbar, Eingaben sind
+                       Strings. None: unbehandelte AttributeError bei .split
+                       (version.py:2). Leerer String oder '1.0-rc1':
+                       unbehandelte ValueError von int() (version.py:2).
+                       Negative Werte wie '-1.0' werden still als -1
+                       akzeptiert. Fehlende Felder: '1.0' > '1' ergibt True
+                       ohne Halt. Es gibt keinen geregelten Halt im Code;
+                       nicht durch Tests geprüft.
+                     open_notes: Keine weiteren Notizen im Auftrag außer…
   Halt               wartet auf Entscheidung (Bead ändern, resume)
 ```
 
@@ -398,23 +398,23 @@ git -C ../app show main:version.py            # corrected file
 ```text
 $ ki-dev -f implement history version-fix
 Lauf version-fix: passed nach 2 Runden
-  Runde 1  Umsetzer  Frage: `version.py` now compares numeric version…
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    decision: Widerspruch zwischen Abnahmekriterien und Test.…
+  Runde 1  Review    decision: Widerspruch zwischen AC1, AC2 und…
   Runde 1  Mensch    AC2 geändert
-  Runde 1  Review    fix (AC2): Die Entscheidung des Menschen nach Runde 1 ha…
+  Runde 1  Review    fix (AC2): Die Entscheidung des Menschen nach Runde 1 ve…
   Runde 2  Umsetzer  geändert: test_version.py
   Runde 2  Tests     test_version bestanden
-  Runde 2  Review    PASS: Alle Abnahmekriterien sind erfuellt. AC1: version.…
+  Runde 2  Review    PASS: Alle Kriterien erfüllt. AC1: version.py vergleicht…
   Abschluss          Fast-forward integriert
-  Offen              2 Beobachtungen; vor `bd close` entscheiden
+  Offen              3 Beobachtungen; vor `bd close` entscheiden
 $ git -C ../app log -1 --stat --format=%s main
 Tests green, review PASS
 
  test_version.py | 2 +-
  version.py      | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
+$ git -C ../app show main:version.py
 …
 ```
 
@@ -469,25 +469,25 @@ git -C ../app log -1 --stat --format=%s main
 
 ```text
 $ ki-dev -f implement history palindrome
-Lauf palindrome: passed nach 3 Runden
-  Runde 1  Umsetzer  Frage: Die Implementierung nach Docstring führt zu…
+Lauf palindrome: passed nach 1 Runde
   Runde 1  Umsetzer  geändert: palindrome.py
   Runde 1  Tests     test_version bestanden
-  Runde 1  Tests     test_palindrome fehlgeschlagen
-  Runde 1  Review    fix (AC1): AC1 ist verletzt: python3 test_palindrome.py…
-  Runde 2  Umsetzer  Frage: AC1 schlägt weiterhin fehl: Die docstring-…
-  Runde 2  Umsetzer  geändert: palindrome.py
-  Runde 2  Tests     test_version bestanden
-  Runde 2  Tests     test_palindrome fehlgeschlagen
-  Runde 2  Review    fix (AC1): AC1 ist weiterhin verletzt: python3 test_pali…
-  Runde 3  Umsetzer  geändert: palindrome.py
-  Runde 3  Tests     test_version bestanden
-  Runde 3  Tests     test_palindrome bestanden
-  Runde 3  Review    PASS: AC1 erfüllt: Der Nachweis zeigt test_palindrome.py…
+  Runde 1  Tests     test_palindrome bestanden
+  Runde 1  Review    PASS: AC1 erfüllt: ki-dev meldet test_palindrome PASS (\…
+                     fake_only: Nichts gefunden: Der neue Code ist eine reine
+                       Funktion ohne Abhängigkeiten; die Tests laufen gegen
+                       die echte Funktion aus palindrome.py.
+                     invalid_input: Leerer String: geregelter Ergebniswert ''
+                       (kein Fehler; die Docstring-Grenze 1 bis 500000 wird
+                       nicht geprüft). Länge über 500000: stille Annahme, kein
+                       Halt. None oder Nicht-String (z. B. int): Ausnahme…
   Abschluss          Fast-forward integriert
   Offen              2 Beobachtungen; vor `bd close` entscheiden
 $ git -C ../app log -1 --stat --format=%s main
-…
+Tests green, review PASS
+
+ palindrome.py | 21 ++++++++++++++++++++-
+ 1 file changed, 20 insertions(+), 1 deletion(-)
 ```
 
 - **Expected:** no halt; green tests and `PASS` bring the result into
