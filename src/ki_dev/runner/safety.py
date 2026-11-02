@@ -120,21 +120,34 @@ class CallLedger:
         provider: str | None = None,
         *,
         attribution: UsageAttribution | None = None,
+        limits: SafetyLimits | None = None,
     ) -> None:
-        limits = self.limits()
+        """Reservierung eines Aufrufs (Wirkung vor ``start``).
+
+        Schreibt nur. Die Entscheidung trifft der Wächter
+        ``within_limits`` der Lauf-Maschine mit ``totals()``.
+        ``limits`` ist nur für den alten Ausführer gesetzt, der
+        dieselbe Prüfung unter dem Sperrschloss selbst vornimmt.
+        """
         _log.info(
             "Aufruf %s startet (%s)", operation, provider or "lokal"
         )
         directory = self.store.run_dir / "calls"
         directory.mkdir(parents=True, exist_ok=True)
         with self.store.usage_lock():
-            self._reserve(
+            if limits is not None:
+                self._admit(operation, limits)
+            self._write(
                 call_id,
-                operation,
-                metered,
-                limits,
-                provider,
-                attribution,
+                "start",
+                {
+                    "operation": operation,
+                    "metered": metered,
+                    "provider": provider,
+                    "attribution": (
+                        asdict(attribution) if attribution else None
+                    ),
+                },
             )
 
     def totals(self) -> dict[str, object]:
@@ -202,15 +215,7 @@ class CallLedger:
             "gaps": list(dict.fromkeys(gaps)),
         }
 
-    def _reserve(
-        self,
-        call_id: str,
-        operation: str,
-        metered: bool,
-        limits: SafetyLimits,
-        provider: str | None,
-        attribution: UsageAttribution | None,
-    ) -> None:
+    def _admit(self, operation: str, limits: SafetyLimits) -> None:
         totals = self.totals()
         reasons = limit_reasons(
             {"role": operation, **totals},
@@ -218,18 +223,6 @@ class CallLedger:
         )
         if reasons:
             raise SafetyStop("; ".join(reasons))
-        self._write(
-            call_id,
-            "start",
-            {
-                "operation": operation,
-                "metered": metered,
-                "provider": provider,
-                "attribution": (
-                    asdict(attribution) if attribution else None
-                ),
-            },
-        )
 
     def finish(
         self,
@@ -237,9 +230,9 @@ class CallLedger:
         result: TurnResult | None,
         error: str | None,
     ) -> None:
-        if result is not None and result.usage is not None:
-            validate_usage(result.usage)
         if result is not None:
+            # Ein ungültiger Beleg wird unverändert gespeichert:
+            # ``totals()`` macht daraus eine Lücke und hält an.
             usage = result.usage or {}
             _log.info(
                 "Aufruf %s: %s, %.0f s, Runden %s, %s USD%s",
@@ -632,7 +625,8 @@ def recorded_usage(store: RunStore) -> tuple[int, float]:
     """Bereits abgeschlossener Verbrauch als Beleg fuer eine Eskalation.
 
     Rein informativ: die verbindliche Freigabepruefung bleibt
-    ``CallLedger._reserve``; hier zaehlt nur bereits abgeschlossener,
+    ``within_limits`` (Ablauf) bzw. ``CallLedger._admit`` (alter
+    Ausfuehrer); hier zaehlt nur bereits abgeschlossener,
     gueltiger Verbrauch, ohne unvollstaendige Aufrufe zu beanstanden.
     """
     report = CallLedger(store).usage_report()

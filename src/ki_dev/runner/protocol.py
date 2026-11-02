@@ -20,6 +20,11 @@ class AwaitingAnswer(Exception):
     erneut aus."""
 
 
+class TurnFailed(Exception):
+    """Der Executor ist gescheitert, der Verbrauch ist verbucht: der
+    Lauf hält in ``stopped`` mit dieser Ursache (kein Traceback)."""
+
+
 class RunModel:
     """Ops der Regionen ``operation`` und ``halt``: die offene
     Operation. Ein Paket erweitert sie um die Wächter und Aktionen
@@ -63,6 +68,9 @@ class RunModel:
     def begin_operation(self, call_id: str | None = None) -> None:
         """Absicht: die Wirkung beginnt (mit Budgetbuchung)."""
         self.pending = {**self.pending, "call_id": call_id}
+
+    def note_failure(self, reason: str) -> None:
+        self.halt_reason = reason
 
     def drop_operation(self) -> None:
         self.pending = None

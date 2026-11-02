@@ -78,6 +78,8 @@ transitions = [
   { event = "answer_pending", target = "prepared" },
   # Wirkung begonnen, Ergebnis fehlt: bleibt begonnen (halt entscheidet)
   { event = "interrupted" },
+  # Ausnahme des Executors, Verbrauch ist verbucht: Halt mit Grund
+  { event = "turn_failed", target = "idle" },
 ]
 
 # --- Region halt ------------------------------------------------------
@@ -92,6 +94,7 @@ transitions = [
   { event = "wait", target = "waiting" },
   { event = "answer_pending", target = "awaiting_input" },
   { event = "interrupted", unless = "repeatable", target = "uncertain" },
+  { event = "turn_failed", target = "stopped", on = "note_failure" },
   { event = "done.state.ablauf", target = "finished" },
 ]
 

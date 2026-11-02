@@ -48,6 +48,7 @@ from ki_dev.runner.protocol import (
     RUN_DOC,
     AwaitingAnswer,
     RunModel,
+    TurnFailed,
     compose,
 )
 
@@ -65,6 +66,10 @@ class Handoff:
     attempt: str
     data: Mapping[str, object]
     path: tuple[Transition, ...] = ()
+    operation: str | None = None
+    """Kennung der offenen Operation (Präfix der Budget-Kennung)."""
+    call_id: str | None = None
+    """Budgetreservierung vor ``start`` (``None``: nicht gebucht)."""
 
 
 TurnRun = Callable[[Handoff], Mapping[str, object]]
@@ -212,6 +217,7 @@ class PackageRunner:
                     "Lauf wartet nicht auf einen Abgleich"
                 )
             pending = self.model.pending
+            self._reconcile_call(pending, artifact)
             self._accept(pending, artifact)
             self.store.write_artifact(
                 pending["id"], {"result": artifact}
@@ -356,12 +362,17 @@ class PackageRunner:
             else:
                 if self._measured_stop(pending):
                     return
-                self._send("start")
+                call_id = self._reserve(pending)
+                self._send("start", call_id=call_id)
                 self._save()
+                pending = dict(self.model.pending)
             try:
                 artifact = self._execute(pending)
             except AwaitingAnswer:
                 self._send("answer_pending")
+                return
+            except TurnFailed as exc:
+                self._send("turn_failed", reason=str(exc))
                 return
             except OperationFailure:
                 if operation.failure is None:
@@ -409,7 +420,31 @@ class PackageRunner:
             str(pending["attempt"]),
             dict(self.data),
             tuple(self.path),
+            operation=str(pending["id"]),
+            call_id=pending.get("call_id"),  # type: ignore[arg-type]
         )
+
+    def _reserve(self, pending: Mapping[str, object]) -> str | None:
+        """Budgetreservierung vor ``start`` (Wirkung, nie in der SM):
+        ``None``, wenn der Executor nicht im Budget gebucht wird."""
+        reserve = getattr(self.turns, "reserve", None)
+        bound = pending["kind"] in self.operations.bindings
+        if bound or reserve is None:
+            return None
+        return reserve(self._handoff(pending))
+
+    def _reconcile_call(
+        self, pending: Mapping[str, object], artifact: object
+    ) -> None:
+        """Eine offene Budgetreservierung gleicht der Nachweis ab
+        (Wirkung); ohne Reservierung nichts zu tun."""
+        call_id = pending.get("call_id")
+        if call_id is None:
+            return
+        reconcile = getattr(self.turns, "reconcile", None)
+        if reconcile is None:
+            raise RunStoreError("Abgleich ohne Verbrauchsbilanz")
+        reconcile(str(call_id), artifact)
 
     def _measured_stop(self, pending: Mapping[str, object]) -> bool:
         """Messung vor ``start`` (Wirkung außerhalb der SM, nur für
@@ -560,6 +595,9 @@ _ANSWER = {
         "event": {"type": "string", "minLength": 1},
         "update": {"type": "object"},
         "adapter": {"type": "string", "minLength": 1},
+        # Verbrauchsnachweis des Abgleichs (nur ``reconcile`` einer
+        # budgetierten Reservierung); ohne ihn bleibt Antwort gültig.
+        "usage": {"type": "object"},
     },
 }
 _ARTIFACT = {
@@ -627,7 +665,12 @@ _RECORD = {
                                 {"type": "string"},
                             ]
                         },
-                        "call_id": {"type": "null"},
+                        "call_id": {
+                            "anyOf": [
+                                {"type": "null"},
+                                {"type": "string", "minLength": 1},
+                            ]
+                        },
                     },
                 },
             ]

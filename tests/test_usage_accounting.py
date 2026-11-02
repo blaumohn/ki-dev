@@ -229,7 +229,13 @@ def test_partial_call_total_keeps_counts_and_blocks_next_reservation(
     }
     assert "measurement_incomplete" in report.calls[0].gaps
     with pytest.raises(SafetyStop, match="measurement_incomplete"):
-        ledger.reserve("call-2", "worker", True, "claude-cli")
+        ledger.reserve(
+            "call-2",
+            "worker",
+            True,
+            "claude-cli",
+            limits=SafetyLimits(),
+        )
 
 
 def test_result_without_start_file_is_visible_gap_not_dropped(tmp_path):
@@ -649,7 +655,13 @@ def test_call_creating_a_session_with_two_ids_still_blocks(tmp_path):
     _record_new_session_call(ledger, "call-1", ["thread-1", "thread-2"])
 
     with pytest.raises(SafetyStop, match="session_mismatch"):
-        ledger.reserve("call-2", "worker", True, "codex-cli")
+        ledger.reserve(
+            "call-2",
+            "worker",
+            True,
+            "codex-cli",
+            limits=SafetyLimits(),
+        )
 
 
 @pytest.mark.parametrize(
@@ -675,7 +687,13 @@ def test_call_without_process_has_no_unknown_effect(
     if blocks:
         assert "external_effect_unknown" in gaps
         with pytest.raises(SafetyStop, match="unbekannt"):
-            ledger.reserve("call-2", "worker", True, "codex-cli")
+            ledger.reserve(
+                "call-2",
+                "worker",
+                True,
+                "codex-cli",
+                limits=SafetyLimits(),
+            )
     else:
         assert gaps <= {"attribution_missing"}
         assert ledger.usage_report().total == 0

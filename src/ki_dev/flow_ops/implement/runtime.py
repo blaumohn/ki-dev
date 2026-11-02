@@ -770,6 +770,7 @@ class RunRuntime:
             True,
             actor.spec.transport,
             attribution=self._usage_attribution(state, pending, actor),
+            limits=self._ledger.limits(),
         )
 
     def _actor(self, pending: dict[str, object]) -> Worker | Reviewer:

@@ -378,7 +378,9 @@ def test_open_reservation_is_a_gap(tmp_path):
         "Verbrauch eines begonnenen Aufrufs ist ungeklaert"
     )
     with pytest.raises(SafetyStop, match="ungeklaert"):
-        ledger.reserve("call-2", "worker", True)
+        ledger.reserve(
+            "call-2", "worker", True, limits=SafetyLimits()
+        )
 
 
 def test_reserve_stops_at_the_summed_tokens(tmp_path):
@@ -395,4 +397,6 @@ def test_reserve_stops_at_the_summed_tokens(tmp_path):
         None,
     )
     with pytest.raises(SafetyStop, match="Token-Grenze erreicht: 60"):
-        ledger.reserve("call-2", "worker", True)
+        ledger.reserve(
+            "call-2", "worker", True, limits=limits
+        )

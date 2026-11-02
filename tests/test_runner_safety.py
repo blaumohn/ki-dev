@@ -85,7 +85,9 @@ def test_negative_ledger_cost_is_a_gap_and_blocks_next_call(tmp_path):
         for gap in totals["gaps"]
     )
     with pytest.raises(SafetyStop, match="Ungueltiger Verbrauch"):
-        ledger.reserve("call-2", "worker", True)
+        ledger.reserve(
+            "call-2", "worker", True, limits=SafetyLimits()
+        )
 
 
 class Executor:
@@ -685,7 +687,9 @@ def test_legacy_run_cannot_silently_start_paid_work(tmp_path):
     store = RunStore(tmp_path, "old")
     store.initialize({"configuration": {}})
     with pytest.raises(SafetyStop, match="Altlauf"):
-        CallLedger(store).reserve("call-1", "worker", True)
+        CallLedger(store).reserve(
+            "call-1", "worker", True, limits=CallLedger(store).limits()
+        )
     assert not (store.run_dir / "calls").exists()
 
 
@@ -696,7 +700,9 @@ def test_started_call_without_result_is_not_free_after_restart(
     store.initialize({"safety_limits": asdict(SafetyLimits())})
     CallLedger(store).reserve("call-1", "worker", True)
     with pytest.raises(SafetyStop, match="ungeklaert"):
-        CallLedger(store).reserve("call-2", "worker", True)
+        CallLedger(store).reserve(
+            "call-2", "worker", True, limits=SafetyLimits()
+        )
 
 
 def test_concurrent_reservations_cannot_bypass_limit(tmp_path):
@@ -705,7 +711,12 @@ def test_concurrent_reservations_cannot_bypass_limit(tmp_path):
 
     def reserve(number):
         try:
-            CallLedger(store).reserve(f"call-{number}", "worker", True)
+            CallLedger(store).reserve(
+                f"call-{number}",
+                "worker",
+                True,
+                limits=SafetyLimits(),
+            )
             return True
         except SafetyStop:
             return False
