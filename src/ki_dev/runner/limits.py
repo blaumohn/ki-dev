@@ -148,20 +148,11 @@ MEASUREMENT_SCHEMA = {
             "type": ["number", "null"],
             "minimum": 0,
             "maximum": 100,
-            "finite": True,
         },
-        "quota_delta": {
-            "type": ["number", "null"],
-            "minimum": 0,
-            "finite": True,
-        },
+        "quota_delta": {"type": ["number", "null"], "minimum": 0},
         "calls": {"type": ["integer", "null"], "minimum": 0},
         "tokens": {"type": ["integer", "null"], "minimum": 0},
-        "cost_usd": {
-            "type": ["number", "null"],
-            "minimum": 0,
-            "finite": True,
-        },
+        "cost_usd": {"type": ["number", "null"], "minimum": 0},
         "gaps": {
             "type": "array",
             "items": {"type": "string", "minLength": 1},
@@ -177,10 +168,6 @@ def limit_reasons(measurement: Mapping, limits: Mapping) -> list[str]:
     """Alle erreichten Grenzen, keine Kurzschlussauswertung; leer,
     wenn die Messung unter allen Grenzen liegt. Rein."""
     run = limits["run"]
-    invalid = _nonfinite_fields(measurement)
-    invalid.extend(_nonfinite_fields(limits, "limits"))
-    if invalid:
-        return [f"Messluecke: ungueltiger Messwert {invalid[0]}"]
     role = measurement["role"]
     # Rolle ohne eigene Grenzen (nicht im Ablauf): Standardwerte
     own = limits["role"].get(role, ROLE_DEFAULTS)
@@ -214,42 +201,16 @@ def limit_reasons(measurement: Mapping, limits: Mapping) -> list[str]:
         reasons.append(f"Token-Grenze erreicht: {tokens}")
     if cost is not None and cost >= run["max_claude_cost_usd"]:
         reasons.append(f"Claude-Kostengrenze erreicht: {cost:g} USD")
+    reasons.extend(
+        f"Messwert {name} ist nicht endlich; kein Aufruf ohne Nachweis"
+        for name in ("quota_left", "quota_delta", "cost_usd")
+        if _nonfinite(measurement.get(name))
+    )
     reasons.extend(measurement.get("gaps") or ())
     return reasons
 
 
-def _nonfinite_fields(
-    value: object, where: str = "measurement"
-) -> list[str]:
-    """Reject non-finite numeric measurements before comparisons.
-
-    JSON Schema implementations commonly accept NaN and infinity for a
-    ``number``; those values must never turn a measurement into a pass.
-    """
-    found: list[str] = []
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            found.extend(_nonfinite_fields(item, f"{where}.{key}"))
-    elif isinstance(value, float) and not math.isfinite(value):
-        found.append(where)
-    return found
-
-
-def _finite_schema(schema: object) -> object:
-    """Add an explicit finite-number annotation throughout a schema."""
-    if isinstance(schema, Mapping):
-        result = {
-            key: _finite_schema(value) for key, value in schema.items()
-        }
-        if result.get("type") == "number" or (
-            isinstance(result.get("type"), list)
-            and "number" in result["type"]
-        ):
-            result["finite"] = True
-        return result
-    if isinstance(schema, list):
-        return [_finite_schema(item) for item in schema]
-    return schema
-
-
-MEASUREMENT_SCHEMA = _finite_schema(MEASUREMENT_SCHEMA)
+def _nonfinite(value: object) -> bool:
+    """JSON Schema lässt inf und nan durch, und ein Vergleich mit nan
+    ist immer falsch: ohne Prüfung bestünde die Messung."""
+    return isinstance(value, float) and not math.isfinite(value)

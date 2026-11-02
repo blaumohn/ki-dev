@@ -19,9 +19,7 @@ from ki_dev.adapter.executors.contract import (
     Measure,
     QuotaStatus,
 )
-from ki_dev.flow.binding import validate
 from ki_dev.run_store import RunStore, RunStoreError
-from ki_dev.runner.limits import MEASUREMENT_SCHEMA
 from ki_dev.runner.safety import CallLedger, QuotaBaseline
 
 
@@ -37,20 +35,18 @@ class Meter:
         self.executors = executors
 
     def measure(self, role: str | None) -> dict[str, object] | None:
-        """Messung für ``role``; ``None``, wenn der Executor keine
-        Messung deklariert (oder fehlt: den Fehler meldet die
-        Übergabe)."""
+        """Messung für ``role``; ``None``, wenn der Zustand keine Rolle
+        hat (keine Agentengrenzen) oder der Executor keine Messung
+        deklariert (oder fehlt: den Fehler meldet die Übergabe)."""
         executor = self.executors.get(role)
-        if executor is None or not executor.spec.measures:
+        if role is None or executor is None:
+            return None
+        if not executor.spec.measures:
             return None
         measures = executor.spec.measures
         session = cast(Measurable, executor)
         origin = _origin(role, executor)
-        result: dict[str, object] = {}
-        if role is not None:
-            result["role"] = role
-        else:
-            return None
+        result: dict[str, object] = {"role": role}
         gaps: list[str] = []
         if Measure.CONTEXT in measures:
             result["context"] = self._context(session, origin, gaps)
@@ -63,17 +59,6 @@ class Meter:
             gaps.extend(cast(list[str], totals.pop("gaps")))
             result.update(totals)
         result["gaps"] = gaps
-        try:
-            validate(result, MEASUREMENT_SCHEMA, "measurement")
-        except (TypeError, ValueError):
-            gaps.append("Messluecke: ungueltiger Messwert")
-            for key, value in tuple(result.items()):
-                nonfinite = (
-                    isinstance(value, float)
-                    and not math.isfinite(value)
-                )
-                if nonfinite:
-                    result.pop(key)
         return result
 
     def _context(

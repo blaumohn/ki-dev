@@ -28,7 +28,7 @@ from ki_dev.flow_ops.review.model import ReviewModel
 from ki_dev.run_store import RunStore
 from ki_dev.runner.bound import BoundOperations
 from ki_dev.runner.dispatch import Dispatch
-from ki_dev.runner.limits import MEASUREMENT_SCHEMA, limit_reasons
+from ki_dev.runner.limits import limit_reasons
 from ki_dev.runner.meter import Meter
 from ki_dev.runner.package import PackageRunner
 from ki_dev.runner.safety import CallLedger, SafetyLimits, SafetyStop
@@ -221,9 +221,19 @@ def test_nonfinite_measurements_are_gaps(value, field):
         },
         "role": {},
     }
-    assert limit_reasons(measurement, limits)
-    schema = MEASUREMENT_SCHEMA["properties"][field]
-    assert schema.get("finite") is True
+    reasons = limit_reasons(measurement, limits)
+    assert any(field in reason for reason in reasons)
+
+
+def test_nonfinite_measurement_keeps_the_other_reasons():
+    measurement = {"role": "worker", "cost_usd": math.nan, "calls": 6}
+    limits = {
+        "run": {"max_agent_calls": 6, "max_claude_cost_usd": 3},
+        "role": {},
+    }
+    reasons = limit_reasons(measurement, limits)
+    assert any("cost_usd" in reason for reason in reasons)
+    assert "Aufrufgrenze erreicht: 6" in reasons
 
 
 def test_meter_without_role_is_not_measured(tmp_path):
@@ -256,8 +266,6 @@ def test_invalid_measured_quota_is_a_gap(tmp_path, used, resets):
 def test_agent_session_measures_through_real_adapter_and_fake_cli(
     tmp_path, monkeypatch
 ):
-    from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
-
     sessions = tmp_path / ".claude" / "projects"
     session_file = sessions / "project" / "session-1.jsonl"
     session_file.parent.mkdir(parents=True)

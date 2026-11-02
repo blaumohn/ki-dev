@@ -20,6 +20,9 @@ ${sources}
 Offene Beanstandung: ${objection}
 Vertragsfehler deiner vorigen Antwort: ${protocol_error}
 Bearbeite den Auftrag und pruefe seine Wirkung.
+Beads aendert nur der Mensch: kein `bd update`, `bd close`, `bd create`,
+auch kein `--claim`; der Lauf bleibt sonst beim Abschluss stehen. Lesen mit
+`bd show` ist erlaubt. Noetige Aenderungen an Beads gehoeren in summary.
 Arbeite innerhalb der Aufrufgrenzen. Bei fehlendem Zugriff oder
 anderem Blocker beende die Arbeit mit einer konkreten Begruendung;
 versuche nicht wiederholt, denselben Blocker zu umgehen.
