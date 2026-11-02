@@ -57,5 +57,8 @@ def test_claude_low_cost_model_is_an_alias_of_the_local_catalog():
         pytest.skip("kein lokaler Claude-Modellkatalog")
     for catalog in catalogs:
         data = json.loads(catalog.read_text(encoding="utf-8"))
+        if "catalog" not in data:
+            # Die CLI legt daneben signierte published-*.json ab.
+            continue
         aliases = data["catalog"]["config"]["provider_alias_targets"]
         assert pins["CLAUDE_LOW_COST_MODEL"] in aliases
