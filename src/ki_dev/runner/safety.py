@@ -189,11 +189,7 @@ class CallLedger:
                 ):
                     gaps.append("Claude-Kostennachweis fehlt")
                 cost += usage.get("cost_usd", 0.0)
-        try:
-            report = self._usage_report()
-        except SafetyStop as exc:
-            gaps.append(str(exc))
-            report = UsageReport(())
+        report = self._usage_report()
         for call in report.calls:
             # attribution_missing/start_missing sind fehlende
             # Provenienz, keine widerspruechliche Bilanz -- sie
@@ -403,8 +399,7 @@ class CallLedger:
                 if result_path.exists()
                 else None
             )
-            if result and result.get("usage") is not None:
-                validate_usage(result["usage"])
+            result = _without_invalid_usage(result)
             binding = start.get("attribution") if start else None
             attribution = (
                 UsageAttribution(
@@ -631,6 +626,20 @@ def recorded_usage(store: RunStore) -> tuple[int, float]:
     """
     report = CallLedger(store).usage_report()
     return report.total, sum(call.cost_usd for call in report.calls)
+
+
+def _without_invalid_usage(result: dict | None) -> dict | None:
+    """Ein gespeicherter ungültiger Beleg zählt nicht als Verbrauch: Der
+    Bericht führt den Aufruf als unbekannt
+    (``external_effect_unknown``), damit Haltnotiz und Status auch dann
+    noch laufen; ``totals`` nennt den Grund als Lücke."""
+    if not result or result.get("usage") is None:
+        return result
+    try:
+        validate_usage(result["usage"])
+    except SafetyStop:
+        return {**result, "usage": None}
+    return result
 
 
 def validate_usage(usage: object) -> None:

@@ -42,6 +42,7 @@ from ki_dev.runner.safety import (
     QuotaBaseline,
     SafetyLimits,
     SafetyStop,
+    recorded_usage,
     stagnation_reason,
 )
 from ki_dev.usage import (
@@ -950,3 +951,36 @@ def test_quota_baseline_keeps_rollover_and_contradiction_beyond_jitter(
         assert baseline.delta_percent(
             "worker", 55.0, resets_at=resets_at
         ) == pytest.approx(expected)
+
+
+def test_stored_invalid_usage_leaves_reports_readable(tmp_path):
+    """Ein Halt wegen ungültigen Verbrauchs darf nicht beim Schreiben
+    seiner Haltnotiz scheitern: sie liest ``recorded_usage``."""
+    store = RunStore(tmp_path, "invalid")
+    store.initialize({"safety_limits": asdict(SafetyLimits())})
+    ledger = CallLedger(store)
+    ledger.reserve("call-1", "worker", True)
+    valid = {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
+    ledger.finish(
+        "call-1",
+        TurnResult(
+            TurnStatus.OK,
+            0,
+            "",
+            "",
+            (),
+            1.0,
+            usage={**valid, "cost_usd": -1},
+        ),
+        None,
+    )
+    assert recorded_usage(store) == (0, 0.0)
+    report = ledger.usage_report()
+    assert "external_effect_unknown" in report.calls[0].gaps
+    assert "Ungueltiger Verbrauch: cost_usd" in ledger.totals()["gaps"]
+

@@ -72,6 +72,9 @@ class Measuring:
 
     def ask(self, request):
         self.asked += 1
+        self.last_result = TurnResult(
+            TurnStatus.OK, 0, "", "", (), 1.0, usage=USAGE
+        )
         return self.answers.pop(0).replace(
             "{attempt}", request.key
         )
@@ -92,6 +95,7 @@ def _runner(tmp_path, executors, *, measure=True):
         read=_read,
         workdir=tmp_path,
         meter=Meter(store, executors) if measure else None,
+        ledger=CallLedger(store),
     )
     return PackageRunner(
         FLOW,
