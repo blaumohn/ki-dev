@@ -44,6 +44,7 @@ from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
 from ki_dev.runner.safety import SafetyLimits
 from tests.executor_specs import BOOKED
+from tests.turn_helpers import REVIEW_FINDINGS
 
 
 def _bd_available() -> bool:
@@ -153,6 +154,7 @@ def _review_json(run_id: str, round_id: int, action: str, **extra):
         "event": action,
         "detail": "",
         "requirement_ref": None,
+        **REVIEW_FINDINGS,
     }
     payload.update(extra)
     return json.dumps(payload)

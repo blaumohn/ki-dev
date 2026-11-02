@@ -283,7 +283,9 @@ oder eine Befundklasse (`fix`, `decision`, `escalate`); das Urteil folgt
 aus `finding_class`:
 
 ```json
-{"run_id":"run-42","round_id":2,"event":"fix","detail":"...","requirement_ref":"AC1"}
+{"run_id":"run-42","round_id":2,"event":"fix","detail":"...","requirement_ref":"AC1",
+ "answers":{"invalid_input":"...","fake_only":"...","open_notes":"..."},
+ "observations":["..."]}
 ```
 
 Ein `fix` ohne bekannte Referenz (fehlend, leer oder unbekannt) wird
@@ -298,6 +300,61 @@ anderen Ereignisse (`PASS`, `decision`, `escalate`) duerfen kein
 braucht einen neuen, gesondert gestarteten Lauf mit erweiterten
 `acceptance_criteria` statt einer stillen Erweiterung des laufenden
 Auftrags.
+
+### Prüffragen und Beobachtungen
+
+Ein Review kann nur ablehnen, was ein Kriterium trägt; was daneben
+auffällt, ginge sonst in einem gekürzten `detail` unter. Deshalb hat die
+Antwort zwei weitere Pflichtfelder:
+
+- `answers` beantwortet jede Prüffrage aus `[review_question.*]` in
+  `implement.toml`. Fehlt eine Antwort, ist das ein Vertragsfehler; die
+  Frage lässt sich nicht still überspringen.
+- `observations` nennt je Eintrag einen Mangel, den weder Kriterien noch
+  Auftragstext tragen (sonst `[]`). Beobachtungen lenken den Ablauf
+  nicht: Ein `PASS` mit Beobachtungen integriert. Die Ausgabe von `start`
+  und `resume` nennt sie als `observations`. Du entscheidest vor
+  `bd close`, nichts schließt den Bead automatisch. Soll eine Beobachtung
+  verbindlich werden, wird sie Kriterium eines neuen Auftrags.
+
+`history` zeigt beide Felder vollständig unter der Review-Antwort: Die
+Probe auf `bed689c` zeigte, dass ein Mangel auch nur in `answers` stehen
+kann. Nach der Integration nennt es die Zahl offener Beobachtungen.
+
+Claude und Codex bekommen das Schema über die CLI
+([cli-adapters.md](cli-adapters.md#antwortschema)), ohne die Regeln
+zwischen den Feldern; die prüft ki-dev danach in jedem Fall. Der
+Worker-Vertrag bleibt ohne erzwungenes Schema.
+
+### Form der Abnahmekriterien
+
+`-f implement` liest den Bead nur mit nummerierten Kriterien, bei Start
+und `resume`, auch bei nur einem:
+
+```text
+1. 85000 / 92 %: stopped, ask läuft 0-mal
+2. [error] cost_usd -1 im Ledger: stopped mit Lücke, keine Ausnahme
+3. [real] AgentSession ruft den echten Adapter
+```
+
+Mindestens ein Kriterium beginnt mit einer Marke aus `criteria_markers`
+(`[error]`); ohne Fehlerfall ausdrücklich: `[error] entfällt: nur Doku`.
+ki-dev prüft die Form, nicht den Inhalt. `[real]` wird nicht erzwungen,
+weil ki-dev nicht erkennt, ob ein Auftrag eine neue Schnittstelle
+einführt. Die Prüfung gehört langfristig in die Beads-Schicht und bleibt
+hier auch danach, weil nicht jeder Bead durch einen Lint gegangen sein
+muss.
+
+### Notizen des Beads
+
+`-f implement` übernimmt `notes` als gekennzeichneten Hinweisblock in den
+Auftrag; Umsetzer und Review sehen ihn. Notizen binden nicht: Eine
+Ablehnung stützt sich nur auf Kriterien, nicht Umgesetztes nennt der
+Review in `answers.open_notes` und `observations`. Der Baubericht liegt
+dem Review hier ohnehin vor; das unterscheidet den Lauf von den
+Übergaben von `step`, die Notizen bewusst nicht übernehmen
+([step.de.md](step.de.md#grenzen)). Eine verbindliche Anforderung gehört
+in die Kriterien, nicht in die Notizen.
 
 ## Statusabfrage ohne Fortschreiben
 
@@ -578,6 +635,9 @@ Fenstergrenzen hinweg. Ein `resets_at`, das gegenueber der Basislinie
 *zurueckgeht*, ist dagegen kein legitimer neuer Fensterstand, sondern
 ein widerspruechlicher Messwert und wird als eigener Pausengrund
 gemeldet, nicht als stiller Reset uebernommen.
+Abweichungen bis 60 Sekunden gelten in beiden Richtungen als dasselbe
+Fenster: Codex meldet dasselbe Fensterende um Sekunden versetzt. Die
+Basislinie folgt ihnen, das Delta zaehlt weiter.
 
 `claude-cli` hat keinen Messweg vor einem Aufruf: Claude Code liefert
 den 5h-Anteil verbrauchsfrei nur mit einer Antwort (`rate_limit_event`

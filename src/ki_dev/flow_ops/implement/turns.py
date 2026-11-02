@@ -64,6 +64,19 @@ def _classes(turn: ImplementTurn) -> str:
     )
 
 
+def _questions(turn: ImplementTurn) -> str:
+    questions = _vocabulary(turn).questions
+    return "\n".join(
+        f"- {name}: {text}" for name, text in questions.items()
+    )
+
+
+def _answers_form(turn: ImplementTurn) -> str:
+    return ",".join(
+        f'"{name}":"..."' for name in _vocabulary(turn).questions
+    )
+
+
 def _evidence(turn: ImplementTurn) -> str:
     if turn.evidence is None:
         raise FlowError("Review-Übergabe braucht die Nachweise")
@@ -88,6 +101,8 @@ FIELDS: dict[str, Callable[[ImplementTurn], object]] = {
     "report": lambda turn: turn.report,
     "evidence": _evidence,
     "classes": _classes,
+    "questions": _questions,
+    "answers_form": _answers_form,
     "events": lambda turn: "|".join(_vocabulary(turn).events),
     "changes": lambda turn: _vocabulary(turn).changes,
     "unbound": lambda turn: _vocabulary(turn).unbound,

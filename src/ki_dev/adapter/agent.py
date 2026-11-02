@@ -76,6 +76,7 @@ class AgentReviewer:
             request.task.workdir,
             request.task.env,
             Access.READ,
+            request.output_schema,
         )
 
 
@@ -116,6 +117,7 @@ def _send(
     workdir: Path,
     env: Mapping[str, str],
     access: Access | None,
+    output_schema: Mapping[str, object] | None = None,
 ) -> str:
     """Ein Aufruf der Sitzung; das Ergebnis bleibt für Messung und
     Verbrauch am Adapter (``last_result``)."""
@@ -130,6 +132,7 @@ def _send(
             env=dict(env),
             budget=agent.budget,
             access=access,
+            output_schema=output_schema,
         )
     )
     agent.last_result = result

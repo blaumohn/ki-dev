@@ -39,8 +39,14 @@ Demo-Verlauf (Platzhalter-Agenten mit vorgegebenen Antworten):
 Lauf demo: passed nach 2 Runden
   Runde 1  Umsetzer  geändert: MOCK.md
   Runde 1  Review    fix (AC1): vorgegebene Antwort
+                     fake_only: nichts gefunden
+                     invalid_input: nichts gefunden
+                     open_notes: nichts gefunden
   Runde 2  Umsetzer  geändert: MOCK.md
   Runde 2  Review    PASS
+                     fake_only: nichts gefunden
+                     invalid_input: nichts gefunden
+                     open_notes: nichts gefunden
   Abschluss          Fast-forward integriert
 Datei auf main: ziel/MOCK.md
   Runde 1

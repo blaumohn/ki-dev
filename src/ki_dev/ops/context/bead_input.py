@@ -8,7 +8,7 @@ bei den Aufrufern.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from functools import cache
 
@@ -18,6 +18,7 @@ from ki_dev.flow.templates import render
 from ki_dev.ops.context.contract import NONEMPTY_TEXT_SCHEMA, TEXTS
 from ki_dev.review_decision import (
     ReviewContractError,
+    criteria_form_problems,
     criterion_refs,
     split_acceptance_criteria,
 )
@@ -152,6 +153,19 @@ def _criterion_problems(issue: BeadInput) -> tuple[str, ...]:
     except ReviewContractError as exc:
         return (str(exc),)
     return ()
+
+
+def criteria_form(
+    issue: BeadInput, markers: Collection[str]
+) -> tuple[str, ...]:
+    """Form der Kriterien für einen Auftrag, der sie verlangt
+    (``Flow.criteria_markers``), als formale Lücken."""
+    try:
+        return criteria_form_problems(
+            str(issue.acceptance_criteria), markers
+        )
+    except ReviewContractError as exc:
+        return (str(exc),)
 
 
 def _issue_payload(issue: BeadInput) -> dict:

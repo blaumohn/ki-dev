@@ -466,6 +466,13 @@ class CallLedger:
         self.store._write_once(path, value)
 
 
+RESETS_AT_JITTER_S = 60
+"""Schwankung von ``resets_at`` innerhalb eines Fensters: Codex meldet
+dasselbe Fensterende um Sekunden versetzt (gemessen in lokalen
+Sitzungen: meist 1 s, selten bis 43 s, in beide Richtungen). Ein
+echter Rollover liegt Stunden später."""
+
+
 class QuotaBaseline:
     """Rollengebundene Basislinie fuer das Aufgaben-Delta-Budget
     (ki-dev-ablauf-dqv).
@@ -500,7 +507,9 @@ class QuotaBaseline:
         eine veraltete, zwischenzeitlich ueberholte lokale Ablage).
         Ein solcher Widerspruch wird gemeldet, nicht als stiller Reset
         uebernommen (Leitlinie 'Fallbacks verdecken keine Fehler',
-        ki-dev-ablauf-dqv-Nachreview)."""
+        ki-dev-ablauf-dqv-Nachreview). Abweichungen bis
+        :data:`RESETS_AT_JITTER_S` sind dasselbe Fenster; die Basislinie
+        folgt ihnen, damit sich Drift nicht aufsummiert."""
         if not role or Path(role).name != role:
             raise ValueError("ungueltige Rollenbezeichnung")
         directory = self.store.run_dir / "quota"
@@ -509,7 +518,12 @@ class QuotaBaseline:
         with (directory / f".{role}.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             baseline = self._read(path)
-            if baseline is None or resets_at > baseline["resets_at"]:
+            drift = (
+                None
+                if baseline is None
+                else resets_at - baseline["resets_at"]
+            )
+            if drift is None or drift > RESETS_AT_JITTER_S:
                 self._replace(
                     path,
                     {
@@ -518,13 +532,17 @@ class QuotaBaseline:
                     },
                 )
                 return 0.0
-            if resets_at == baseline["resets_at"]:
-                return used_percent - baseline["used_percent"]
-            raise RunStoreError(
-                f"widerspruechliche Kontingent-Basislinie fuer "
-                f"Rolle {role!r}: resets_at ging von "
-                f"{baseline['resets_at']} auf {resets_at} zurueck"
-            )
+            if drift < -RESETS_AT_JITTER_S:
+                raise RunStoreError(
+                    f"widerspruechliche Kontingent-Basislinie fuer "
+                    f"Rolle {role!r}: resets_at ging von "
+                    f"{baseline['resets_at']} auf {resets_at} zurueck"
+                )
+            if drift:
+                self._replace(
+                    path, {**baseline, "resets_at": resets_at}
+                )
+            return used_percent - baseline["used_percent"]
 
     def _read(self, path: Path) -> dict[str, object] | None:
         if not path.exists():

@@ -35,6 +35,7 @@ from tests.executor_specs import spec_for
 from tests.executors.usage_fakes import write_usage_cli
 from tests.test_runner_runtime import FakeReviewer, FakeWorker, _task
 from tests.test_runner_safety import runtime
+from tests.turn_helpers import REVIEW_FINDINGS
 
 
 @pytest.mark.parametrize(
@@ -65,6 +66,7 @@ def test_cli_turn_records_usage_once_through_agent_and_ledger(
             "event": "PASS",
             "detail": "",
             "requirement_ref": None,
+            **REVIEW_FINDINGS,
         })
     )
     if provider == "claude":

@@ -45,7 +45,9 @@ work() {  # Bericht des Umsetzers nach dem Worker-Vertrag
 }
 review() {  # $1 Runde, $2 Ereignis, $3 Befund, $4 Kriterium
   answer "{\"run_id\":\"$RUN\",\"round_id\":$1,\"event\":\"$2\",
-\"detail\":\"$3\",\"requirement_ref\":$4}"
+\"detail\":\"$3\",\"requirement_ref\":$4,
+\"answers\":{\"invalid_input\":\"-\",\"fake_only\":\"-\",\"open_notes\":\"-\"},
+\"observations\":[]}"
 }
 step() { ki-dev -f implement resume "$RUN" --adapter inbox >/dev/null; }
 inbox() {
@@ -132,6 +134,15 @@ def _review_rounds(review):
     ]
 
 
+def _events(output: str) -> list[list[str]]:
+    """Zeilen des Verlaufs ohne die Antworten auf die Prüffragen."""
+    return [
+        line.split()
+        for line in output.splitlines()
+        if line and not line.startswith(" " * 6)
+    ]
+
+
 # empty: Versuche des Umsetzers ohne Änderung vor dem ersten Ergebnis;
 # jeder verbraucht eine Korrekturrunde (Profil: zwei). Die Entscheidung
 # des Menschen öffnet neue Runden, sonst hielte der Lauf beim fix
@@ -176,7 +187,7 @@ def test_readme_example_halts_then_merges_after_answer(
     finished, _, second = finished.partition("=== Schritt 7")
 
     assert " ".join(halted.split()).count(halt) == 1, halted
-    final = [line.split() for line in finished.splitlines() if line]
+    final = _events(finished)
     assert final[0][:3] == ["Lauf", "version-fix:", "passed"]
     rounds = (
         _WORKER_ROUNDS if review == "worker" else _review_rounds(review)
@@ -185,7 +196,7 @@ def test_readme_example_halts_then_merges_after_answer(
     assert ["Tests", "green,", "review", "PASS"] in final
 
     # Schritt 7: lösbar, ohne Halt nach main; Test unverändert.
-    rows = [line.split()[:4] for line in second.splitlines() if line]
+    rows = [line[:4] for line in _events(second)]
     assert rows == [
         ["Lauf", "palindrome:", "passed", "nach"],
         ["Runde", "1", "Umsetzer", "geändert:"],

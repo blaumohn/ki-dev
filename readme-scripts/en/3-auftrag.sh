@@ -30,7 +30,8 @@ BEAD="$(bd create "is_newer() compares versions as text" \
   --description "is_newer('1.10.0', '1.9.0') returns False" \
   --design "fix version.py" \
   --acceptance "1. is_newer('1.10.0', '1.9.0') is True
-2. test_version.py stays unchanged" \
+2. test_version.py stays unchanged
+3. [error] not applicable: versions here are always well-formed" \
   --silent)"
 echo "$BEAD"
 # ```
@@ -39,5 +40,7 @@ echo "$BEAD"
 # the numeric comparison; the second line of `test_version.py` still
 # checks the text comparison, and criterion 2 forbids changing it. Only
 # a human can resolve this contradiction; the
-# [example](#minimal-example) is built for that. The solvable second
+# [example](#minimal-example) is built for that. Criteria are numbered,
+# and one names the failure case with `[error]` or, as here, why none
+# applies; otherwise the run does not start. The solvable second
 # task comes in [step 7](#7-second-task-solvable).

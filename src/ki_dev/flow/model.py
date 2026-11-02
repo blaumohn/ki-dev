@@ -186,6 +186,13 @@ class Flow:
     transitions: tuple[Transition, ...]
     finding_classes: Mapping[str, FindingClass]
     priority: tuple[str, ...]
+    review_questions: Mapping[str, str] = field(default_factory=dict)
+    """Prüffragen des Reviews (id → Text): jede Antwort beantwortet
+    alle (Feld ``answers``), dazu ``observations``; ohne Einträge
+    kennt der Vertrag beide Felder nicht."""
+    criteria_markers: tuple[str, ...] = ()
+    """Marken (``[error]``), von denen die Abnahmekriterien eines
+    Auftrags beim Lesen des Beads je mindestens eine tragen müssen."""
     templates: str = ""
     """Vorlagensatz unter ``templates/<SATZ>/`` neben der Ablaufdatei;
     leer = ``name``. Mehrere Abläufe eines Pakets teilen einen Satz."""
@@ -477,6 +484,11 @@ def _flow(
             for name, item in table.get("finding_class", {}).items()
         },
         priority=tuple(table.get("priority", ())),
+        review_questions={
+            name: item["text"]
+            for name, item in table.get("review_question", {}).items()
+        },
+        criteria_markers=tuple(table.get("criteria_markers", ())),
         templates=table.get("templates", table["name"]),
         ops=table.get("ops"),
         root=root,
@@ -625,6 +637,7 @@ _SCHEMA = {
     "dependentRequired": {
         "finding_class": ["priority"],
         "priority": ["finding_class"],
+        "review_question": ["finding_class"],
     },
     "properties": {
         "name": _ID,
@@ -676,6 +689,22 @@ _SCHEMA = {
             },
         },
         "priority": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": True,
+            "items": _ID,
+        },
+        "review_question": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+                "type": "object",
+                "required": ["text"],
+                "additionalProperties": False,
+                "properties": {"text": _TEXT},
+            },
+        },
+        "criteria_markers": {
             "type": "array",
             "minItems": 1,
             "uniqueItems": True,
@@ -877,6 +906,8 @@ _CHART_SCHEMA = {
                 "op",
                 "finding_class",
                 "priority",
+                "review_question",
+                "criteria_markers",
             )
         },
         "vocabulary": {

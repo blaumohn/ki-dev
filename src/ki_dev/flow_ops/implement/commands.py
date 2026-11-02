@@ -46,10 +46,14 @@ from ki_dev.flow_ops.options import ADAPTER_OPTION
 from ki_dev.ops.context.bead_input import (
     BeadInput,
     BeadInputInvalidError,
+    criteria_form,
     criteria_with_refs,
     validate_bead_input,
 )
-from ki_dev.ops.context.beads_reader import BeadsReadError, read_issue
+from ki_dev.ops.context.beads_reader import (
+    BeadsReadError,
+    read_issue_with_notes,
+)
 from ki_dev.run_paths import default_runs_dir
 from ki_dev.run_store import RunStore, RunStoreError
 
@@ -210,15 +214,17 @@ def history(
 
 def _bead_task(bead_id: str, cwd: Path) -> dict[str, object]:
     """Auftrag, Abnahmekriterien und Quellen aus dem Bead."""
-    issue = read_issue(bead_id, cwd)
-    problems = validate_bead_input(issue, _REQUIRE)
+    issue, notes = read_issue_with_notes(bead_id, cwd)
+    problems = validate_bead_input(issue, _REQUIRE) or criteria_form(
+        issue, IMPLEMENT.criteria_markers
+    )
     if problems:
         raise BeadInputInvalidError(problems)
     refs = issue.source_refs
     if not isinstance(refs, list):
         refs = []
     return {
-        "task": _task_text(issue),
+        "task": _task_text(issue, notes),
         "acceptance_criteria": [
             criterion for _, criterion in criteria_with_refs(issue)
         ],
@@ -238,7 +244,7 @@ def _rebead(config: dict[str, object], cwd: Path) -> dict[str, object]:
     return _bead_task(beads[0], cwd)
 
 
-def _task_text(issue: BeadInput) -> str:
+def _task_text(issue: BeadInput, notes: str | None) -> str:
     epics = ""
     if issue.epic_context:
         epics = text("implement", "bead-epics") + "".join(
@@ -252,9 +258,16 @@ def _task_text(issue: BeadInput) -> str:
         title=issue.title,
         description=issue.description,
         design=issue.design,
+        notes=_notes_block(notes),
         epics=epics,
     )
 
+
+
+def _notes_block(notes: str | None) -> str:
+    if not notes:
+        return ""
+    return f"{text('implement', 'bead-notes')}\n{notes}"
 
 
 def _live(verbose: bool) -> ExecutorWrap:

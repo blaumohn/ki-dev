@@ -57,6 +57,7 @@ from tests.test_runner_runtime import (
     _context,
     _task,
 )
+from tests.turn_helpers import REVIEW_FINDINGS
 
 USAGE = {
     "input_tokens": 10,
@@ -249,6 +250,7 @@ def test_successful_review_turn_records_usage_event(tmp_path):
             "event": "PASS",
             "detail": "",
             "requirement_ref": None,
+            **REVIEW_FINDINGS,
         }
     )
     executor = Executor(
@@ -874,3 +876,46 @@ def test_executor_without_measures_is_neither_reserved_nor_booked(
     assert result.status == "passed"
     assert worker.calls == reviewer.calls == 1
     assert not (RunStore(tmp_path, "guard").run_dir / "calls").exists()
+
+
+@pytest.mark.parametrize("drift", [-60, -1, 1, 60])
+def test_quota_baseline_treats_jitter_as_the_same_window(
+    tmp_path, drift
+):
+    """Codex meldet dasselbe Fensterende um Sekunden versetzt; das ist
+    weder Widerspruch noch Rollover, das Delta zählt weiter."""
+    store = RunStore(tmp_path, "run-jitter")
+    baseline = QuotaBaseline(store)
+    baseline.delta_percent("worker", 40.0, resets_at=10_000)
+    assert baseline.delta_percent(
+        "worker", 55.0, resets_at=10_000 + drift
+    ) == pytest.approx(15.0)
+
+
+def test_quota_baseline_follows_drift_without_summing_it(tmp_path):
+    store = RunStore(tmp_path, "run-drift")
+    baseline = QuotaBaseline(store)
+    baseline.delta_percent("worker", 40.0, resets_at=10_000)
+    for step in (1, 2, 3):
+        delta = baseline.delta_percent(
+            "worker", 50.0, resets_at=10_000 + step * 50
+        )
+        assert delta == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize(
+    ("resets_at", "expected"), [(10_061, 0.0), (9_939, None)]
+)
+def test_quota_baseline_keeps_rollover_and_contradiction_beyond_jitter(
+    tmp_path, resets_at, expected
+):
+    store = RunStore(tmp_path, "run-beyond")
+    baseline = QuotaBaseline(store)
+    baseline.delta_percent("worker", 40.0, resets_at=10_000)
+    if expected is None:
+        with pytest.raises(RunStoreError, match="widerspruechliche"):
+            baseline.delta_percent("worker", 55.0, resets_at=resets_at)
+    else:
+        assert baseline.delta_percent(
+            "worker", 55.0, resets_at=resets_at
+        ) == pytest.approx(expected)

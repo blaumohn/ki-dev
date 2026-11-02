@@ -5,7 +5,8 @@ binden."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from ki_dev.adapter.contract import ReviewVocabulary, RunTask
 from ki_dev.flow.model import Verdict
@@ -13,6 +14,7 @@ from ki_dev.flow_ops.implement.machine import IMPLEMENT
 from ki_dev.review_decision import (
     ReviewContractError,
     bind_requirement,
+    cli_schema,
     load_json_object,
     parse_verdict,
 )
@@ -28,9 +30,8 @@ REVIEW_VOCABULARY = ReviewVocabulary(
         name: item.text
         for name, item in IMPLEMENT.finding_classes.items()
     },
+    questions=IMPLEMENT.review_questions,
 )
-
-
 
 @dataclass(frozen=True)
 class ReviewDecision:
@@ -39,6 +40,22 @@ class ReviewDecision:
     event: str
     detail: str = ""
     requirement_ref: str | None = None
+    answers: Mapping[str, str] = field(default_factory=dict)
+    observations: tuple[str, ...] = ()
+
+
+def review_output_schema() -> dict:
+    """Antwortform für die CLI: Laufhülle um den Kern; die Werte der
+    Hülle und die Regeln zwischen den Feldern prüft
+    :func:`parse_review_decision`."""
+    schema = cli_schema(IMPLEMENT)
+    schema["required"] = [*_IDENTITY, *schema["required"]]
+    schema["properties"] = {
+        "run_id": {"type": "string"},
+        "round_id": {"type": "integer"},
+        **schema["properties"],
+    }
+    return schema
 
 
 def parse_review_decision(
@@ -59,6 +76,8 @@ def parse_review_decision(
         verdict.event,
         verdict.detail,
         verdict.requirement_ref,
+        verdict.answers,
+        verdict.observations,
     )
 
 

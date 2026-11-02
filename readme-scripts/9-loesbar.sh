@@ -21,7 +21,8 @@ BEAD2="$(bd create "shortest_palindrome_with_prefix() is missing" \
   --description "palindrome.py raises NotImplementedError" \
   --design "implement palindrome.py as its docstring describes" \
   --acceptance "1. python3 test_palindrome.py passes
-2. test_palindrome.py stays unchanged" \
+2. test_palindrome.py stays unchanged
+3. [error] not applicable: the docstring names no invalid input" \
   --silent)"
 ki-dev -f implement "$BEAD2" --run-id palindrome  # Endzustand wie in Schritt 4
 ki-dev -f implement history palindrome

@@ -38,6 +38,7 @@ from tests.test_runner_runtime import (
     _context,
 )
 from tests.test_runner_safety import USAGE, Executor
+from tests.turn_helpers import REVIEW_FINDINGS
 
 BINDING = {
     "bead_id": "ki-dev-ablauf-wu0.3.8",
@@ -109,6 +110,7 @@ def _agent_reviewer(session_id):
             "event": "PASS",
             "detail": "",
             "requirement_ref": None,
+            **REVIEW_FINDINGS,
         })
         executor = Executor(
             TurnResult(

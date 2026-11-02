@@ -12,7 +12,9 @@ gegen einen möglicherweise fehlerhaften Bead; nicht aus
 notes, comments oder früheren Reviews. Gleiche Rollen,
 Modalität (darf/muss/darf nicht), Geltungsbereich,
 Nicht-Ziele, Schnittstellen, konkrete Prüfaufträge und
-messbare Abnahmekriterien ab. Unterscheide bestätigte
+messbare Abnahmekriterien ab; die Kriterien sind nummeriert
+und mindestens eines beginnt mit `[error]` (Fehlerfall oder
+`[error] entfällt: Grund`). Unterscheide bestätigte
 Entscheidungen von Umsetzungsvorschlägen und offenen
 Produktfragen. Eine fehlende Quelle ist Klasse source;
 formal gefüllte Felder allein rechtfertigen kein PASS.

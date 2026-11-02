@@ -36,6 +36,9 @@ ops = "ki_dev.flow_ops.implement.commands"
 # Review-Antworten des Controllers: PASS oder eine Befundklasse; das
 # Urteil folgt aus der Klasse (ein Vokabular für step und run).
 priority = ["escalate", "decision", "fix"]
+# Form der Abnahmekriterien: `[error]` zwingt dazu, den Fehlerfall zu
+# bedenken; ki-dev prüft die Marke, nicht ihren Inhalt.
+criteria_markers = ["error"]
 
 [finding_class.fix]
 verdict = "CHANGES"
@@ -50,6 +53,19 @@ text = "eine fachliche Entscheidung fehlt, etwa weil Auftrag, Kriterien oder Tes
 [finding_class.escalate]
 verdict = "ESCALATE"
 text = "keine fachliche Frage: Werkzeuge, Umgebung oder Agentenzustand lassen den Lauf nicht zuverlässig automatisch fortsetzen"
+
+# Prüffragen: jede Review-Antwort beantwortet alle (`answers`, Schlüssel
+# wie hier) und nennt Mängel außerhalb der Kriterien in `observations`.
+# Beide stehen im Antwortschema; eine fehlende Antwort ist ein
+# Vertragsfehler, kein still übersprungener Punkt.
+[review_question.invalid_input]
+text = "Was passiert bei ungültiger Eingabe? Gehe je neuer Eingabegrenze NaN, negative Werte und fehlende Felder durch, auch in den aufgerufenen bestehenden Funktionen, und nenne das Verhalten laut Code oder Test: geregelter Halt, stille Annahme oder Ausnahme?"
+
+[review_question.fake_only]
+text = "Welcher neue Code läuft in den Tests nur mit Fakes und nie mit der echten Klasse?"
+
+[review_question.open_notes]
+text = "Was aus den Notizen des Auftrags wurde nicht umgesetzt?"
 
 [vocabulary]
 # machine: ki-dev erzeugt das Ereignis selbst; agent: ein Adapter

@@ -7,7 +7,8 @@
 ki-dev -f implement history version-fix  # why the run halts
 bd update "$BEAD" --acceptance "1. is_newer('1.10.0', '1.9.0') is True
 2. the second assert in test_version.py pins the old behaviour;
-it becomes assert is_newer('1.10.0', '1.9.0')"
+it becomes assert is_newer('1.10.0', '1.9.0')
+3. [error] not applicable: versions here are always well-formed"
 ki-dev -f implement resume version-fix || true  # starts nothing, shows the beads diff
 STAND=$(bd vc status --json | sed -n 's/.*"commit": "\(.*\)".*/\1/p')
 ki-dev -f implement resume version-fix --accept-beads "$STAND"

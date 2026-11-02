@@ -43,17 +43,7 @@ def claude_result(
                 usage = _claude_usage(value)
             except (ValueError, TypeError):
                 usage = None
-            detail = json.dumps(
-                {
-                    "subtype": value.get("subtype"),
-                    "result": text,
-                    "errors": value.get("errors"),
-                    "permission_denials": bool(
-                        value.get("permission_denials")
-                    ),
-                },
-                ensure_ascii=False,
-            )
+            detail = _claude_failure(value, text)
             return replace(
                 result,
                 status=TurnStatus.NONZERO_EXIT,
@@ -67,7 +57,7 @@ def claude_result(
         usage = _claude_usage(value)
         return replace(
             result,
-            stdout=text,
+            stdout=_claude_answer(value, text),
             usage=usage,
             usage_event=_claude_usage_event(
                 usage, session_id, cli_version
@@ -75,6 +65,29 @@ def claude_result(
         )
     except (ValueError, TypeError) as exc:
         return missing_result(result, str(exc))
+
+
+def _claude_failure(value: dict, text: str) -> str:
+    """Grund eines Abbruchs zum Lesen: die Meldung der CLI zuerst, sie
+    steht auch im gekürzten Verlauf."""
+    parts = [text] if text else []
+    if value.get("subtype") != "success":
+        parts.append(f"subtype={value.get('subtype')}")
+    if value.get("errors"):
+        errors = json.dumps(value["errors"], ensure_ascii=False)
+        parts.append(f"errors={errors}")
+    if value.get("permission_denials"):
+        parts.append("Berechtigung verweigert")
+    return "; ".join(parts) or "Claude meldet Fehler ohne Text"
+
+
+def _claude_answer(value: dict, text: str) -> str:
+    """Mit ``--json-schema`` steht die Antwort als Objekt in
+    ``structured_output``; ``result`` ist dort nur Text des Modells."""
+    structured = value.get("structured_output")
+    if structured is None:
+        return text
+    return json.dumps(structured, ensure_ascii=False)
 
 
 def claude_stream(

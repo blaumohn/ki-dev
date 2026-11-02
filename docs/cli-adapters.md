@@ -125,6 +125,30 @@ verbraucht (`started: false` im Aufrufergebnis) und sperrt die Bilanz
 nicht: nach `make setup-agents` (geprueften Stand nach `.venv/bin`)
 setzt `resume --answer "…"` den Lauf fort.
 
+## Antwortschema
+
+`TurnRequest.output_schema` lässt die CLI die Form der Antwort erzwingen;
+`None` lässt sie frei. Claude erhält `--json-schema <JSON>`, Codex
+`--output-schema <Datei>` (Datei nur für diesen Aufruf, außerhalb des
+Worktrees). Beides gilt auch beim Fortsetzen einer Sitzung.
+
+Beobachtet mit Claude Code 2.1.316 und codex 0.166.0 (Fixtures:
+`tests/golden/executors/`):
+
+* Oberstes `allOf`/`anyOf`/`oneOf`/`enum`/`not` lehnen beide mit HTTP 400
+  ab. Codex verlangt zudem jedes Feld in `required`. `cli_schema` entfernt
+  deshalb die `if`/`then`-Regeln; `pattern` und `minLength` nehmen beide an.
+* Claude liefert die Antwort über ein eigenes Werkzeug
+  (`StructuredOutput`) und legt sie in `structured_output` des
+  `result`-Ereignisses ab; `claude_result` bevorzugt dieses Feld. Es läuft
+  auch mit `--tools Read,Grep,Glob`.
+* Codex liefert sie als letzte `agent_message`.
+
+Ein abgelehntes Schema ist ein gewöhnlicher Turn-Fehler, kein leerer
+Erfolg. ki-dev prüft die Antwort immer selbst (zweite Sicherung); genau ein
+umschließender Codeblock bleibt für freie Antworten erlaubt
+(`unwrap_json_fence`: Worker, Mensch als Bote).
+
 ## ClaudeCliAdapter
 
 Verwendete CLI: **Claude Code CLI** (`claude`), nachweisbar per

@@ -13,4 +13,7 @@ git -C ../app show main:version.py            # corrected file
 # passed, `fehlgeschlagen` failed. The `Tests` lines are the result of
 # `test_version.py`, which `implement` runs after each
 # implementation step;
-# `Mensch` is your decision from step 5.
+# `Mensch` is your decision from step 5. `Offen` (open) names the review's
+# observations (`Beobachtungen`): they do not hold up the commit, but need
+# your decision before `bd close`. The excerpt is shortened (`…`); `history`
+# also shows the answers to the review questions.

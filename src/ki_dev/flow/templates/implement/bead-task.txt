@@ -3,4 +3,4 @@ ${title} (${id})
 ${description}
 
 Entwurf:
-${design}${epics}
+${design}${notes}${epics}

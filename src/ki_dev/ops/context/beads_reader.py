@@ -53,6 +53,12 @@ _EPIC_METADATA_SCHEMA = {
 }
 
 
+_NOTES_SCHEMA = {
+    "type": "object",
+    "properties": {"notes": {"type": "string"}},
+}
+
+
 class BeadsReadError(RuntimeError):
     """bd lieferte keinen brauchbaren Bead (Adapterfehler)."""
 
@@ -63,7 +69,22 @@ class InvalidBeadIdError(BeadsReadError):
 
 def read_issue(bead_id: str, workdir: Path) -> BeadInput:
     """Einen Bead lesen und zu normalisierten Rohwerten machen."""
+    return _issue_of(_read_raw(bead_id, workdir), workdir)
+
+
+def read_issue_with_notes(
+    bead_id: str, workdir: Path
+) -> tuple[BeadInput, str | None]:
+    """Bead und seine Notizen aus demselben Stand, für einen Auftrag
+    des Ablaufs ``implement``. ``BeadInput`` bleibt ohne Notizen: Die
+    Übergaben von ``step`` übernehmen sie nicht (docs/step.de.md)."""
     raw = _read_raw(bead_id, workdir)
+    _check_metadata(raw, _NOTES_SCHEMA)
+    notes = raw.get("notes", "").strip()
+    return _issue_of(raw, workdir), notes or None
+
+
+def _issue_of(raw: dict, workdir: Path) -> BeadInput:
     _check_metadata(raw, _METADATA_SCHEMA)
     return replace(
         _normalize(raw),

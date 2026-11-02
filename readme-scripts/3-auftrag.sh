@@ -30,7 +30,8 @@ BEAD="$(bd create "is_newer() compares versions as text" \
   --description "is_newer('1.10.0', '1.9.0') returns False" \
   --design "fix version.py" \
   --acceptance "1. is_newer('1.10.0', '1.9.0') is True
-2. test_version.py stays unchanged" \
+2. test_version.py stays unchanged
+3. [error] not applicable: versions here are always well-formed" \
   --silent)"
 echo "$BEAD"
 # ```
@@ -39,5 +40,7 @@ echo "$BEAD"
 # verlangt den Zahlenvergleich; die zweite Zeile von `test_version.py`
 # prüft noch den Textvergleich, und Kriterium 2 verbietet, sie zu
 # ändern. Diesen Widerspruch löst nur ein Mensch; darauf ist das
-# [Beispiel](#minimalbeispiel) angelegt. Den lösbaren zweiten Auftrag
+# [Beispiel](#minimalbeispiel) angelegt. Kriterien sind nummeriert, und
+# eines nennt mit `[error]` den Fehlerfall oder wie hier, warum keiner
+# anfällt; sonst startet der Lauf nicht. Den lösbaren zweiten Auftrag
 # legt [Schritt 7](#7-zweiter-auftrag-lösbar) an.

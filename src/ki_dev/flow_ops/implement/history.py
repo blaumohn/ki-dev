@@ -8,6 +8,9 @@ Halt. Gelesen werden nur die Artefakte des Laufs (für Umsetzer und
 Tests der letzte Versuch der Runde). Zeilen sind auf ``WIDTH`` Zeichen
 gekürzt; umbrochen werden nur Gründe, über die der Mensch entscheidet:
 der Halt des Umsetzers und ``decision`` oder ``escalate`` des Reviews.
+Antworten auf die Prüffragen und Beobachtungen des Reviews stehen
+vollständig unter seinem Ereignis: Über sie entscheidet der Mensch, und
+ein Mangel steht nicht immer in beiden.
 
     Lauf version-fix: passed nach 2 Runden
       Runde 1  Umsetzer  geändert: version.py
@@ -18,7 +21,10 @@ der Halt des Umsetzers und ``decision`` oder ``escalate`` des Reviews.
       Runde 2  Umsetzer  geändert: test_version.py
       Runde 2  Tests     test_version bestanden
       Runde 2  Review    PASS
+                         invalid_input: totals() wirft bei -1
+                         Beobachtung: limit_reasons lässt NaN durch
       Abschluss          Fast-forward integriert
+      Offen              1 Beobachtung; vor `bd close` entscheiden
 """
 
 from __future__ import annotations
@@ -62,6 +68,7 @@ def run_history(store: RunStore) -> list[str]:
         lines += round_lines
     if integration is not None:
         lines.append(_line("Abschluss", "", integration["detail"]))
+        lines += _open_observations(rounds)
     elif result.status != "passed":
         lines.append(_line("Halt", "", _halt(result, asked)))
     return lines
@@ -135,6 +142,7 @@ def _round_lines(
             lines += _wrapped(label, "Review", answer)
         else:
             lines.append(_line(label, "Review", answer))
+        lines += _findings(label, review["decision"])
     open_halt = halts and not parts.get("evidence") and not reviews
     return lines, seen, halts[-1]["summary"] if open_halt else None
 
@@ -156,6 +164,47 @@ def _answer(decision: dict) -> str:
         answer += f" ({decision['requirement_ref']})"
     detail = decision["detail"].strip()
     return f"{answer}: {detail}" if detail else answer
+
+
+def _findings(label: str, decision: dict) -> list[str]:
+    """Antworten und Beobachtungen vollständig unter dem Ereignis;
+    Reviews vor den Prüffragen haben keine."""
+    indent = " " * len(_head(label, "Review"))
+    entries = [
+        *(
+            f"{name}: {answer}"
+            for name, answer in decision.get("answers", {}).items()
+        ),
+        *(
+            f"Beobachtung: {observation}"
+            for observation in decision.get("observations", [])
+        ),
+    ]
+    lines = []
+    for entry in entries:
+        rows = textwrap.wrap(
+            " ".join(entry.split()),
+            WIDTH - len(indent),
+            subsequent_indent="  ",
+        )
+        lines += [indent + row for row in rows]
+    return lines
+
+
+def _open_observations(
+    rounds: dict[int, dict[str, list[dict]]],
+) -> list[str]:
+    """Nach der Integration schließt nichts den Bead: Beobachtungen des
+    letzten Reviews warten auf den Menschen."""
+    reviews = rounds[max(rounds)].get("review", []) if rounds else []
+    if not reviews:
+        return []
+    count = len(reviews[-1]["decision"].get("observations", []))
+    if not count:
+        return []
+    noun = "Beobachtung" if count == 1 else "Beobachtungen"
+    text = f"{count} {noun}; vor `bd close` entscheiden"
+    return [_line("Offen", "", text)]
 
 
 def _changed(files: list[str]) -> str:

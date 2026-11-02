@@ -64,6 +64,10 @@ class MockReviewer:
                     "" if event == "PASS" else "vorgegebene Antwort"
                 ),
                 "requirement_ref": refs[0] if changes else None,
+                "answers": dict.fromkeys(
+                    request.vocabulary.questions, "nichts gefunden"
+                ),
+                "observations": [],
             }
         )
 

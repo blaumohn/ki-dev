@@ -35,6 +35,7 @@ from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
 from tests.executor_specs import spec_for
 from tests.test_runner_runtime import _context
+from tests.turn_helpers import REVIEW_FINDINGS
 
 
 class ControlledExecutor:
@@ -105,6 +106,7 @@ def _review_json(run_id: str, round_id: int, action: str) -> str:
             "event": action,
             "detail": "" if action == "PASS" else "Begruendung",
             "requirement_ref": None,
+            **REVIEW_FINDINGS,
         }
     )
 

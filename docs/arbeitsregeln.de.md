@@ -64,6 +64,11 @@ Reviewer bilden davor ihr eigenes Urteil. Keine Fortschrittskommentare.
 Vorhandene Kommentare lagert `comments export` ins Beads-Journal aus;
 abgeschlossen wird nur per `comments mark-incorporated`, geprüft mit
 `comments lint` (Kommentar-Journal nur per Befehl ändern).
+Verbindliches gehört in die Abnahmekriterien, nie in `notes`: Eine Notiz ist
+nur ein Hinweis, `ki-dev -f implement` gibt sie als solchen weiter, die
+Übergaben von `step` gar nicht. Kriterien sind nummeriert, und mindestens
+eines beginnt mit `[error]` (Fehlerfall oder `[error] entfällt: Grund`);
+sonst startet `-f implement` nicht.
 Handoff-Aufträge bleiben kurz; Materialisierungsreview benennt Übergröße,
 widersprüchliche Nachträge und nötige Teilung konkret.
 

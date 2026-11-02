@@ -34,6 +34,7 @@ from ki_dev.repository_finalization import StaticFinalizer
 from ki_dev.run_store import RunStore
 from ki_dev.runner.review_output import AgentProtocolError
 from tests.executor_specs import LOCAL
+from tests.turn_helpers import REVIEW_FINDINGS
 
 SPECS = executor_specs()
 
@@ -92,6 +93,7 @@ class FakeReviewer:
                 "requirement_ref": ref
                 if action == "fix"
                 else None,
+                **REVIEW_FINDINGS,
             }
         )
 
@@ -901,7 +903,9 @@ def test_retry_after_protocol_error_names_the_violation(tmp_path):
         ).write_text(
             '{"run_id": "run-relay-retry", "round_id": 1, '
             '"event": "decision", "detail": "Test widerspricht", '
-            '"requirement_ref": "AC1"}'
+            '"requirement_ref": "AC1", '
+            f'"answers": {json.dumps(REVIEW_FINDINGS["answers"])}, '
+            '"observations": []}'
         )
         runtime.resume()
 

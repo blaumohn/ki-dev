@@ -44,6 +44,7 @@ from ki_dev.runner.review_output import (
     AgentProtocolError,
 )
 from tests.executor_specs import LOCAL, spec_for
+from tests.turn_helpers import REVIEW_FINDINGS
 
 
 class FakeWorker:
@@ -80,6 +81,7 @@ class FakeReviewer:
                 "requirement_ref": self.requirement_ref
                 if self.event == "fix"
                 else None,
+                **REVIEW_FINDINGS,
             }
         )
 
@@ -155,8 +157,14 @@ def test_formal_review_output_becomes_typed_decision(action):
     ],
 )
 def test_invalid_or_foreign_review_decisions_are_rejected(payload):
-    with pytest.raises(AgentProtocolError):
+    """Die Pflichtfelder sind vollständig: Jeder Fall scheitert an
+    seinem eigenen Fehler, nicht an den fehlenden Prüffragen."""
+    if payload.startswith("{"):
+        value = json.loads(payload)
+        payload = json.dumps({**REVIEW_FINDINGS, **value})
+    with pytest.raises(AgentProtocolError) as caught:
         parse_review_decision(payload, run_id="run-1", round_id=1)
+    assert "answers" not in str(caught.value)
 
 
 @pytest.mark.parametrize(
@@ -179,6 +187,7 @@ def test_every_review_action_is_typed(action):
             "requirement_ref": "AC1"
             if action == "fix"
             else None,
+            **REVIEW_FINDINGS,
         }
     )
     assert (
@@ -213,6 +222,7 @@ def test_changes_with_known_reference_stays_changes():
                 "detail": "Gueltiger Lauf wird faelschlich als "
                 "fehlend gemeldet",
                 "requirement_ref": "AC1",
+                **REVIEW_FINDINGS,
             }
         ),
         run_id="run-1",
@@ -235,6 +245,7 @@ def test_changes_without_bound_reference_becomes_needs_decision(ref):
                 "event": "fix",
                 "detail": detail,
                 "requirement_ref": ref,
+                **REVIEW_FINDINGS,
             }
         ),
         run_id="run-1",
@@ -256,6 +267,7 @@ def test_non_changes_decisions_pass_through_binding_unchanged():
                 "event": "PASS",
                 "detail": "",
                 "requirement_ref": None,
+                **REVIEW_FINDINGS,
             }
         ),
         run_id="run-1",
@@ -334,13 +346,22 @@ _HAIKU = json.loads(_HAIKU_FILE.read_text(encoding="utf-8"))[
 ]
 
 
+def _with_findings(raw: str) -> str:
+    """Die Aufzeichnung ist älter als ``answers``/``observations``: die
+    Pflichtfelder ergänzen, Codeblock und Fehler bleiben, wie sie
+    sind."""
+    inner = raw.removeprefix("```json\n").removesuffix("\n```")
+    value = {**json.loads(inner), **REVIEW_FINDINGS}
+    return f"```json\n{json.dumps(value)}\n```"
+
+
 def test_replay_of_live_answers_in_code_blocks():
     """Echte Antworten aus make readme-live (Haiku, jedes Mal in
     ```json```): früher alle ``protocol_attempts_exhausted``. Die Hülle
     fällt weg, der Vertrag bleibt streng: ``"null"`` als Text ist
     weiter ein Fehler."""
-    first, *rest = _HAIKU
     assert all(raw.startswith("```json\n") for raw in _HAIKU)
+    first, *rest = map(_with_findings, _HAIKU)
     with pytest.raises(AgentProtocolError, match="requirement_ref"):
         parse_review_decision(first, run_id="version-fix", round_id=1)
     decisions = [

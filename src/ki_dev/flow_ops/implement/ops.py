@@ -28,6 +28,7 @@ from ki_dev.flow_ops.implement.review_output import (
     ReviewDecision,
     bind_review_decision,
     parse_review_decision,
+    review_output_schema,
 )
 from ki_dev.flow_ops.implement.turns import review_prompt, work_prompt
 from ki_dev.review_context import project_review_context
@@ -190,6 +191,7 @@ class ImplementationOperations:
                 ),
                 REVIEW_VOCABULARY,
                 attempt_id,
+                review_output_schema(),
             )
         )
         decision = parse_review_decision(
@@ -258,6 +260,8 @@ def _decision_document(decision: ReviewDecision) -> dict[str, object]:
         "verdict": IMPLEMENT.verdict(decision.event).value,
         "detail": decision.detail,
         "requirement_ref": decision.requirement_ref,
+        "answers": dict(decision.answers),
+        "observations": list(decision.observations),
     }
 
 

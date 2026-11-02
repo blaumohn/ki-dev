@@ -74,12 +74,14 @@ second_task() {
 # dem Abschluss. Erfolg wird an Lauf und Ziel-Repo geprüft, nicht nur an
 # der Ausgabe.
 live_excerpts() {
-  python3 - "$@" <<'PY'
+  PYTHONPATH="$README_REPO_DIR/tests/readme" python3 - "$@" <<'PY'
 import json
 import os
 import re
 import subprocess
 import sys
+
+from history_excerpt import compact, fit, rows
 
 log, work, scripts, start_file, halt_file, result_file = sys.argv[1:]
 app = os.path.join(os.path.dirname(work), "app")
@@ -111,21 +113,7 @@ if len(starts) != 2:
     sys.exit(f"zwei Verläufe von history erwartet, gefunden: {len(starts)}")
 
 
-# Zeilen von history; Folgezeilen eines umbrochenen Grunds beginnen
-# unter dem Text (history.py: _wrapped).
-ROWS = ("  Runde ", "  Halt ", "  Abschluss ", " " * 21)
-
-
-def history(start):
-    block = [lines[start]]
-    for line in lines[start + 1:]:
-        if not line.startswith(ROWS):
-            break
-        block.append(line)
-    return block
-
-
-halt, final = history(starts[0]), history(starts[1])
+halt, final = rows(lines, starts[0]), rows(lines, starts[1])
 if halt[0].startswith("Lauf version-fix: passed"):
     sys.exit(f"kein Halt vor der Entscheidung: {halt[0]}")
 if not final[0].startswith("Lauf version-fix: passed"):
@@ -178,11 +166,15 @@ start = [
 ]
 start[-1:] = ["  …", "}"]
 # 9-entscheiden.sh: Ausgabe des ersten Befehls (history) bis zum Halt.
-halt = [f"$ {commands('9-entscheiden.sh')[0]}", *halt]
+# Grund und erste Antworten; Halt und Kopfzeile bleiben (history_excerpt).
+halt = [
+    f"$ {commands('9-entscheiden.sh')[0]}",
+    *fit(halt, 19, reasons=2),
+]
 # 9-ergebnis.sh: history aus der Sitzung, die übrigen Befehle lesend neu.
 result = []
 for command in commands("9-ergebnis.sh"):
-    output = final if " history " in command else shell(command)
+    output = compact(final) if " history " in command else shell(command)
     result += [f"$ {command}", *output]
 result = shortened(result)
 # Agentenantworten können den Ort des Wegwerf-Repos nennen.
@@ -204,11 +196,13 @@ PY
 # unverändert; die verdeckte Abnahme vergleicht mit einer Suche über
 # alle Eingaben aus A, B, C bis Länge 7, die kein Agent gesehen hat.
 second_excerpt() {
-  python3 - "$@" <<'PY'
+  PYTHONPATH="$README_REPO_DIR/tests/readme" python3 - "$@" <<'PY'
 import os
 import re
 import subprocess
 import sys
+
+from history_excerpt import fit, rows
 
 log, work, scripts, repo, result_file = sys.argv[1:]
 app = os.path.join(os.path.dirname(work), "app")
@@ -217,12 +211,7 @@ starts = [i for i, line in enumerate(lines)
           if line.startswith("Lauf palindrome: ")]
 if len(starts) != 1:
     sys.exit(f"ein Verlauf von history erwartet, gefunden: {len(starts)}")
-ROWS = ("  Runde ", "  Halt ", "  Abschluss ", " " * 21)
-history = [lines[starts[0]]]
-for line in lines[starts[0] + 1:]:
-    if not line.startswith(ROWS):
-        break
-    history.append(line)
+history = rows(lines, starts[0])
 if not history[0].startswith("Lauf palindrome: passed"):
     sys.exit(f"zweiter Auftrag nicht bestanden: {history[0]}")
 if any(line.startswith("  Halt ") for line in history):
@@ -274,10 +263,15 @@ def commands(script):
 
 # history aus der Sitzung, den Abschluss-Commit lesend neu.
 history_command, log_command = commands("9-loesbar.sh")[-2:]
-result = [f"$ {history_command}", *history, f"$ {log_command}"]
-result += subprocess.check_output(
+log_output = subprocess.check_output(
     ["bash", "-c", log_command], cwd=work, text=True
 ).rstrip().splitlines()
+result = [
+    f"$ {history_command}",
+    *fit(history, 18 - len(log_output)),
+    f"$ {log_command}",
+    *log_output,
+]
 if len(result) > 20:
     result = result[:19] + ["…"]
 root = app.rsplit("/", 1)[0] + "/"

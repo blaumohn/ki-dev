@@ -8,6 +8,7 @@ ein synchroner Prozessaufruf; sein Ende ist die Schrittgrenze.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -132,6 +133,10 @@ class TurnRequest:
 
     ``session_id`` ``None`` heisst: der Turn legt eine neue Sitzung
     an; ihre ID steht danach in ``TurnResult.session_id``.
+
+    ``output_schema`` lässt die CLI die Form der Antwort erzwingen
+    (JSON Schema ohne oberste ``allOf``/``anyOf``); ``None``: freie
+    Antwort. Der Aufrufer prüft die Antwort trotzdem selbst.
     """
 
     session_id: str | None
@@ -142,6 +147,7 @@ class TurnRequest:
     env: dict[str, str] = field(default_factory=dict)
     budget: TurnBudget | None = None
     access: Access | None = None
+    output_schema: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         if self.session_id is not None and not self.session_id:
@@ -169,6 +175,10 @@ class TurnRequest:
             self.access, Access
         ):
             raise TypeError("access muss ein Access-Wert sein")
+        if self.output_schema is not None and not isinstance(
+            self.output_schema, Mapping
+        ):
+            raise TypeError("output_schema muss ein Mapping sein")
 
 
 class ContextStatus(StrEnum):

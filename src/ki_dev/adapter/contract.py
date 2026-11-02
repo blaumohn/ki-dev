@@ -235,24 +235,28 @@ class ReviewVocabulary:
 
     ``events`` beginnt mit PASS; ``changes`` verlangt eine
     Kriteriumsbindung, ``unbound`` ersetzt es ohne Bindung; ``texts``
-    erklärt jede Befundklasse."""
+    erklärt jede Befundklasse, ``questions`` jede Prüffrage."""
 
     events: tuple[str, ...]
     changes: str
     unbound: str
     texts: Mapping[str, str]
+    questions: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class ReviewRequest:
     """Auftrag an die Review-Rolle; ``prompt`` wie bei WorkRequest,
-    ``vocabulary`` für Adapter, die selbst antworten (mock)."""
+    ``vocabulary`` für Adapter, die selbst antworten (mock).
+    ``output_schema`` erzwingt die Antwortform über die CLI, wo sie es
+    kann; ``None``: nur der Prompt nennt sie."""
 
     task: RunTask
     round_id: int
     prompt: str
     vocabulary: ReviewVocabulary
     attempt_id: str
+    output_schema: Mapping[str, object] | None = None
 
 
 class Worker(Protocol):

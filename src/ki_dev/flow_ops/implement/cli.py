@@ -251,7 +251,9 @@ def status_document(
 
 
 def result_document(result: RunResult) -> dict[str, object]:
-    return {
+    """Laufergebnis als JSON; ``observations`` nur, wenn das letzte
+    Review welche nennt: Sie warten auf den Menschen."""
+    document: dict[str, object] = {
         "run_id": result.run_id,
         "status": result.status,
         "phase": result.phase.value,
@@ -259,6 +261,9 @@ def result_document(result: RunResult) -> dict[str, object]:
         "detail": result.detail,
         "operation_id": result.operation_id,
     }
+    if result.observations:
+        document["observations"] = list(result.observations)
+    return document
 
 
 def _runtime(

@@ -21,6 +21,7 @@ from ki_dev.runner.review_output import (
     AgentProtocolError,
     parse_planning_answer,
 )
+from tests.turn_helpers import REVIEW_FINDINGS
 
 FLOW = load_review_flow("implement_review").flow
 REFS = ["AC1", "AC2"]
@@ -132,6 +133,7 @@ def test_both_wrappers_check_through_the_same_core_functions(
             "event": "fix",
             "detail": "d",
             "requirement_ref": "AC1",
+            **REVIEW_FINDINGS,
         }
     )
     task = RunTask(

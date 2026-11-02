@@ -92,6 +92,33 @@ def test_zero_exit_is_not_success_on_provider_blocker(changes):
     assert result.error
 
 
+def test_failure_detail_starts_with_the_message_of_the_cli():
+    """Abgelaufene Anmeldung: Claude meldet subtype success mit
+    is_error; der Grund muss im gekürzten Verlauf lesbar bleiben."""
+    text = "Failed to authenticate: OAuth session expired"
+    result = claude_result(_result(_claude(result=text, is_error=True)))
+    assert not result.ok
+    assert result.error == text
+
+
+def test_failure_detail_names_subtype_errors_and_denials():
+    result = claude_result(
+        _result(
+            _claude(
+                result="",
+                subtype="error_max_turns",
+                is_error=True,
+                errors=["zu viele Schritte"],
+                permission_denials=[{"tool_name": "Read"}],
+            )
+        )
+    )
+    assert result.error == (
+        'subtype=error_max_turns; errors=["zu viele Schritte"]; '
+        "Berechtigung verweigert"
+    )
+
+
 @pytest.mark.parametrize(
     "stdout",
     [

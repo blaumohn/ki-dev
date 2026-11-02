@@ -20,6 +20,7 @@ from ki_dev.review_decision import (
     review_schema,
     split_acceptance_criteria,
 )
+from tests.turn_helpers import REVIEW_FINDINGS
 
 MAP = load_flow("map")
 IMPLEMENT = load_flow("implement")
@@ -39,7 +40,7 @@ def test_allowed_events_come_from_the_flow():
 
 def test_map_rejects_escalate_but_implement_accepts_it():
     value = _core("escalate", "Grenze", None)
-    verdict = parse_verdict(value, IMPLEMENT)
+    verdict = parse_verdict({**value, **REVIEW_FINDINGS}, IMPLEMENT)
     assert verdict.event == "escalate"
     assert IMPLEMENT.verdict(verdict.event) == "ESCALATE"
     with pytest.raises(ReviewContractError, match="event: ungültiger"):

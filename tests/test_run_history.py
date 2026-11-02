@@ -14,6 +14,12 @@ from ki_dev.run_store import RunStore
 from tests.test_runner_runtime import _context
 
 
+def _without_findings(lines: list[str]) -> list[str]:
+    """Der Verlauf ohne die Antworten auf die Prüffragen; die prüft
+    ``tests/test_review_findings.py``."""
+    return [line for line in lines if not line.startswith(" " * 6)]
+
+
 def test_history_names_changes_review_answers_and_finalization(
     monkeypatch, tmp_path
 ):
@@ -45,7 +51,7 @@ def test_history_names_changes_review_answers_and_finalization(
     result = runner_cli.start_run(config, run_id="r-1", runs_dir=runs)
     assert result.status == "passed"
 
-    lines = run_history(RunStore(runs, "r-1"))
+    lines = _without_findings(run_history(RunStore(runs, "r-1")))
 
     assert lines[0] == "Lauf r-1: passed nach 2 Runden"
     assert lines[1].split() == ["Runde", "1", "Umsetzer", "geändert:",
@@ -89,7 +95,7 @@ def test_history_shows_halt_then_human_answer_before_next_review(
     runs = tmp_path / "runs"
     halted = runner_cli.start_run(config, run_id="r-1", runs_dir=runs)
     assert halted.status == "waiting_decision"
-    lines = run_history(RunStore(runs, "r-1"))
+    lines = _without_findings(run_history(RunStore(runs, "r-1")))
     review = ["Runde", "1", "Review", "decision:"]
     assert lines[-2].split()[:4] == review
     assert lines[-1].split() == [
@@ -107,7 +113,7 @@ def test_history_shows_halt_then_human_answer_before_next_review(
     )
     assert result.status == "passed"
 
-    lines = run_history(RunStore(runs, "r-1"))
+    lines = _without_findings(run_history(RunStore(runs, "r-1")))
     assert [line.split()[:4] for line in lines[1:5]] == [
         ["Runde", "1", "Umsetzer", "geändert:"],
         ["Runde", "1", "Review", "decision:"],
@@ -160,7 +166,7 @@ def test_history_names_bead_change_read_by_resume(
     )
 
     assert result.status == "passed"
-    lines = run_history(RunStore(runs, "r-1"))
+    lines = _without_findings(run_history(RunStore(runs, "r-1")))
     assert [line.split()[:5] for line in lines[3:5]] == [
         ["Runde", "1", "Mensch", "AC1", "geändert"],
         ["Runde", "1", "Review", "fix", "(AC1):"],

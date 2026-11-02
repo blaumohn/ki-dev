@@ -11,6 +11,7 @@ import json
 import re
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from ki_dev.tool_versions import load_tool_versions
 
@@ -111,7 +112,33 @@ class CodexCliAdapter(CliAdapter):
             session_id=session_id,
         )
 
-    def build_argv(self, request: TurnRequest) -> list[str]:
+    def _run_process(
+        self, request: TurnRequest, timeout_s: float
+    ) -> TurnResult:
+        """Codex liest das Antwortschema aus einer Datei; sie gilt nur
+        für diesen Aufruf und liegt außerhalb des Worktrees."""
+        if request.output_schema is None:
+            return super()._run_process(request, timeout_s)
+        with TemporaryDirectory(prefix="ki-dev-schema-") as folder:
+            schema_file = Path(folder) / "output-schema.json"
+            schema_file.write_text(
+                json.dumps(request.output_schema), encoding="utf-8"
+            )
+            argv = [
+                self.executable,
+                *self.build_argv(request, schema_file),
+            ]
+            return self._runner(
+                argv,
+                stdin=self.message_stdin(request),
+                timeout_s=timeout_s,
+                cwd=request.workdir,
+                env=request.env or None,
+            )
+
+    def build_argv(
+        self, request: TurnRequest, schema_file: Path | None = None
+    ) -> list[str]:
         # ``-`` weist ``codex exec`` an, den Prompt von stdin zu
         # lesen. Effort und Sandbox gehen als Codex-
         # Konfigurationsschluessel mit (``-c``, auch bei ``resume``).
@@ -128,6 +155,8 @@ class CodexCliAdapter(CliAdapter):
             argv += ["-c", f'sandbox_mode="{_SANDBOX[request.access]}"']
         if request.budget:
             argv.append("--json")
+        if schema_file is not None:
+            argv += ["--output-schema", str(schema_file)]
         argv.append("-")
         return argv
 

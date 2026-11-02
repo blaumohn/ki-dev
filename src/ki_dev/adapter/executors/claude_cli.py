@@ -180,6 +180,8 @@ class ClaudeCliAdapter(CliAdapter):
                 "--max-budget-usd",
                 str(request.budget.max_budget_usd),
             ]
+        if request.output_schema is not None:
+            argv += ["--json-schema", json.dumps(request.output_schema)]
         return argv
 
 

@@ -208,7 +208,8 @@ BEAD="$(bd create "is_newer() compares versions as text" \
   --description "is_newer('1.10.0', '1.9.0') returns False" \
   --design "fix version.py" \
   --acceptance "1. is_newer('1.10.0', '1.9.0') is True
-2. test_version.py stays unchanged" \
+2. test_version.py stays unchanged
+3. [error] not applicable: versions here are always well-formed" \
   --silent)"
 echo "$BEAD"
 ```
@@ -219,7 +220,9 @@ echo "$BEAD"
 the numeric comparison; the second line of `test_version.py` still
 checks the text comparison, and criterion 2 forbids changing it. Only
 a human can resolve this contradiction; the
-[example](#minimal-example) is built for that. The solvable second
+[example](#minimal-example) is built for that. Criteria are numbered,
+and one names the failure case with `[error]` or, as here, why none
+applies; otherwise the run does not start. The solvable second
 task comes in [step 7](#7-second-task-solvable).
 <!-- /readme-script -->
 
@@ -334,7 +337,8 @@ rewritten.
 ki-dev -f implement history version-fix  # why the run halts
 bd update "$BEAD" --acceptance "1. is_newer('1.10.0', '1.9.0') is True
 2. the second assert in test_version.py pins the old behaviour;
-it becomes assert is_newer('1.10.0', '1.9.0')"
+it becomes assert is_newer('1.10.0', '1.9.0')
+3. [error] not applicable: versions here are always well-formed"
 ki-dev -f implement resume version-fix || true  # starts nothing, shows the beads diff
 STAND=$(bd vc status --json | sed -n 's/.*"commit": "\(.*\)".*/\1/p')
 ki-dev -f implement resume version-fix --accept-beads "$STAND"
@@ -345,11 +349,23 @@ ki-dev -f implement resume version-fix --accept-beads "$STAND"
 ```text
 $ ki-dev -f implement history version-fix
 Lauf version-fix: waiting_decision nach 1 Runde
+  Runde 1  Umsetzer  Frage: `version.py` now compares numeric version
+                     segments; AC1 passes, and `test_version.py` remains
+                     unchanged. Running `python test_version.py` fails becaus…
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    decision: Widerspruch zwischen Test und Abnahmekriterien.
-                     AC1 verlangt is_newer('1.10.0', '1.9.0') == True; der
-                     geaenderte version.py erfuellt das (Tupelvergleich…
+  Runde 1  Review    decision: Widerspruch zwischen Abnahmekriterien und Test.
+                     AC1 verlangt is_newer('1.10.0', '1.9.0') == True.
+                     test_version.py:4 (unveraendert, AC2) verlangt assert no…
+                     fake_only: Nichts gefunden. Der neue Code (version.py:2)
+                       laeuft direkt im Test ohne Fakes oder Mocks.
+                     invalid_input: Nicht geprueft fuer NaN, Nicht-Zahlen und
+                       fehlende Felder, soweit nicht durch Code oder Test
+                       belegt. Laut Code (version.py:2): Nicht-numerische
+                       Segmente wie '1.a.0' oder Vorabversionen wie
+                       '1.0.0-rc1' loesen eine ungeregelte ValueError aus
+                       (keine Ausnahmebehandlung, kein geregelter Halt).
+                       Leerer String '' ergibt ebenfalls ValueError. Ein None-…
   Halt               wartet auf Entscheidung (Bead ändern, resume)
 ```
 
@@ -382,23 +398,23 @@ git -C ../app show main:version.py            # corrected file
 ```text
 $ ki-dev -f implement history version-fix
 Lauf version-fix: passed nach 2 Runden
+  Runde 1  Umsetzer  Frage: `version.py` now compares numeric version…
   Runde 1  Umsetzer  geändert: version.py
   Runde 1  Tests     test_version fehlgeschlagen
-  Runde 1  Review    decision: Widerspruch zwischen Test und Abnahmekriterien.
-                     AC1 verlangt is_newer('1.10.0', '1.9.0') == True; der
-                     geaenderte version.py erfuellt das (Tupelvergleich…
+  Runde 1  Review    decision: Widerspruch zwischen Abnahmekriterien und Test.…
   Runde 1  Mensch    AC2 geändert
-  Runde 1  Review    fix (AC2): AC2 (neu, nach Entscheidung des Menschen) ver…
+  Runde 1  Review    fix (AC2): Die Entscheidung des Menschen nach Runde 1 ha…
   Runde 2  Umsetzer  geändert: test_version.py
   Runde 2  Tests     test_version bestanden
-  Runde 2  Review    PASS: AC1 ist erfuellt: version.py vergleicht numerische…
+  Runde 2  Review    PASS: Alle Abnahmekriterien sind erfuellt. AC1: version.…
   Abschluss          Fast-forward integriert
+  Offen              2 Beobachtungen; vor `bd close` entscheiden
 $ git -C ../app log -1 --stat --format=%s main
 Tests green, review PASS
 
  test_version.py | 2 +-
- version.py      | 5 ++++-
- 2 files changed, 5 insertions(+), 2 deletions(-)
+ version.py      | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
 …
 ```
 
@@ -407,7 +423,10 @@ the implementer, `Mensch` the human, `geändert` changed, `bestanden`
 passed, `fehlgeschlagen` failed. The `Tests` lines are the result of
 `test_version.py`, which `implement` runs after each
 implementation step;
-`Mensch` is your decision from step 5.
+`Mensch` is your decision from step 5. `Offen` (open) names the review's
+observations (`Beobachtungen`): they do not hold up the commit, but need
+your decision before `bd close`. The excerpt is shortened (`…`); `history`
+also shows the answers to the review questions.
 <!-- /readme-script -->
 
 <p align="right"><a href="#contents">↑ Back to contents</a></p>
@@ -438,7 +457,8 @@ BEAD2="$(bd create "shortest_palindrome_with_prefix() is missing" \
   --description "palindrome.py raises NotImplementedError" \
   --design "implement palindrome.py as its docstring describes" \
   --acceptance "1. python3 test_palindrome.py passes
-2. test_palindrome.py stays unchanged" \
+2. test_palindrome.py stays unchanged
+3. [error] not applicable: the docstring names no invalid input" \
   --silent)"
 ki-dev -f implement "$BEAD2" --run-id palindrome  # final state as in step 4
 ki-dev -f implement history palindrome
@@ -449,17 +469,25 @@ git -C ../app log -1 --stat --format=%s main
 
 ```text
 $ ki-dev -f implement history palindrome
-Lauf palindrome: passed nach 1 Runde
+Lauf palindrome: passed nach 3 Runden
+  Runde 1  Umsetzer  Frage: Die Implementierung nach Docstring führt zu…
   Runde 1  Umsetzer  geändert: palindrome.py
   Runde 1  Tests     test_version bestanden
-  Runde 1  Tests     test_palindrome bestanden
-  Runde 1  Review    PASS: Keine Befunde. Der Diff aendert nur palindrome.py,…
+  Runde 1  Tests     test_palindrome fehlgeschlagen
+  Runde 1  Review    fix (AC1): AC1 ist verletzt: python3 test_palindrome.py…
+  Runde 2  Umsetzer  Frage: AC1 schlägt weiterhin fehl: Die docstring-…
+  Runde 2  Umsetzer  geändert: palindrome.py
+  Runde 2  Tests     test_version bestanden
+  Runde 2  Tests     test_palindrome fehlgeschlagen
+  Runde 2  Review    fix (AC1): AC1 ist weiterhin verletzt: python3 test_pali…
+  Runde 3  Umsetzer  geändert: palindrome.py
+  Runde 3  Tests     test_version bestanden
+  Runde 3  Tests     test_palindrome bestanden
+  Runde 3  Review    PASS: AC1 erfüllt: Der Nachweis zeigt test_palindrome.py…
   Abschluss          Fast-forward integriert
+  Offen              2 Beobachtungen; vor `bd close` entscheiden
 $ git -C ../app log -1 --stat --format=%s main
-Tests green, review PASS
-
- palindrome.py | 17 ++++++++++++++++-
- 1 file changed, 16 insertions(+), 1 deletion(-)
+…
 ```
 
 - **Expected:** no halt; green tests and `PASS` bring the result into

@@ -93,7 +93,9 @@ def _implement(
         ["bd", "create", "add korrigieren",
          "--description", "add() soll addieren",
          "--design", "nur add.py ändern",
-         "--acceptance", "add(2,3)==5 und add(-1,1)==0",
+         "--acceptance",
+         "1. add(2,3)==5 und add(-1,1)==0\n"
+         "2. [error] entfällt: reine Addition",
          "--silent"],
         cwd=work,
     ).stdout.strip()

@@ -18,6 +18,7 @@ from ki_dev.flow.review_flow import (
     load_review_flow,
     review_flow_files,
 )
+from ki_dev.flow_ops.implement.machine import IMPLEMENT
 from ki_dev.ops.checks.preflight import PreflightReport
 from ki_dev.ops.context.bead_input import BeadInput, validate_bead_input
 from ki_dev.ops.context.blocks import TurnInput, state_turn
@@ -28,6 +29,14 @@ from ki_dev.ops.context.guidelines import (
 )
 from ki_dev.step.cli import step_app
 from ki_dev.step.turn import hand_over, require_valid
+
+# Pflichtfelder der Review-Antwort von ``-f implement`` ohne Befund.
+REVIEW_FINDINGS = {
+    "answers": dict.fromkeys(
+        IMPLEMENT.review_questions, "nichts gefunden"
+    ),
+    "observations": [],
+}
 
 WRITE_STATES = ("map", "graph", "materialize", "implement")
 """Schreibübergaben der mitgelieferten Review-Abläufe (Phase)."""

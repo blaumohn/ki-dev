@@ -33,7 +33,8 @@ echo "[demo] Bead erstellen" >&2
 BEAD="$(cd "$DEMO/arbeit" && bd create "MOCK.md je Runde ergänzen" \
   --description "MOCK.md um eine Zeile je Runde ergänzen" \
   --design "Mock-Adapter schreiben die Zeile" \
-  --acceptance "MOCK.md existiert" --silent)"
+  --acceptance "1. MOCK.md existiert
+2. [error] entfällt: der Mock schreibt nur eine Zeile" --silent)"
 
 cat >"$DEMO/profil.toml" <<EOF
 workdir = "$DEMO/arbeit"

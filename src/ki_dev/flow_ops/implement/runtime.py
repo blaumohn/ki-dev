@@ -205,6 +205,8 @@ class RunResult:
     phase: Phase
     detail: str | None = None
     operation_id: str | None = None
+    observations: tuple[str, ...] = ()
+    """Beobachtungen des letzten Reviews, für den Menschen."""
 
 
 @dataclass
@@ -1386,7 +1388,16 @@ def _result(lauf: RunMachine, data: RunData) -> RunResult:
         phase=run.state.phase,
         detail=detail,
         operation_id=cast(str | None, pending.get("id")),
+        observations=_observations(data),
     )
+
+
+def _observations(data: RunData) -> tuple[str, ...]:
+    """Reviews ohne das Feld (vor den Prüffragen) haben keine."""
+    decision = cast("dict[str, object] | None", data.get("decision"))
+    if not decision:
+        return ()
+    return tuple(cast("list[str]", decision.get("observations", [])))
 
 
 def read_run_status(store: RunStore) -> RunResult:

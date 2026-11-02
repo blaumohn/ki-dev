@@ -12,6 +12,11 @@ zwei Regeln zwischen den Feldern (``if``/``then``); das erlaubte
 eine Identitätshülle (run_id, round_id) um denselben Kern; step hat
 keine (kein Laufspeicher) und bindet die Antwort über die
 Abnahmekriterien des Beads (AC1..ACn).
+
+Ein Ablauf mit Prüffragen (``Flow.review_questions``) verlangt zwei
+weitere Felder: ``answers`` beantwortet jede Frage,
+``observations`` nennt Mängel außerhalb der Kriterien. Beide lenken den
+Ablauf nicht; sie gehen an den Menschen.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Protocol, cast
 
 from jsonschema import Draft202012Validator
@@ -42,6 +47,8 @@ class ReviewVerdict:
     event: str
     detail: str
     requirement_ref: str | None
+    answers: Mapping[str, str] = field(default_factory=dict)
+    observations: tuple[str, ...] = ()
 
 
 def load_json_object(raw: str) -> dict:
@@ -76,7 +83,13 @@ def parse_verdict(
     event = cast(str, value["event"])
     detail = cast(str, value["detail"])
     ref = cast("str | None", value["requirement_ref"])
-    return ReviewVerdict(event, detail, ref)
+    return ReviewVerdict(
+        event,
+        detail,
+        ref,
+        cast("dict[str, str]", value.get("answers", {})),
+        tuple(cast("list[str]", value.get("observations", []))),
+    )
 
 
 class _Bindable(Protocol):
@@ -123,6 +136,8 @@ def bind_requirement[D: _Bindable](
 # Abnahmekriterien eines Beads: Zeilen "N. ..." am Zeilenanfang,
 # fortlaufend ab 1. Ohne Nummerierung ist das ganze Feld ein Kriterium.
 _NUMBERED = re.compile(r"^(\d+)\.\s", re.MULTILINE)
+# Marke am Anfang eines Kriteriums: "[error] ...".
+_MARKER = re.compile(r"\A\[([a-z_]+)\]")
 
 
 def split_acceptance_criteria(text: str) -> tuple[str, ...]:
@@ -151,14 +166,35 @@ def criterion_refs(criteria: Collection[str]) -> tuple[str, ...]:
     return tuple(f"AC{index}" for index in range(1, len(criteria) + 1))
 
 
+def criteria_form_problems(
+    text: str, markers: Collection[str]
+) -> tuple[str, ...]:
+    """Form der Abnahmekriterien eines Auftrags (halbformal, bis Beads
+    sie selbst prüft): nummeriert, und jede Marke aus ``markers`` trägt
+    mindestens ein Kriterium. Inhalte prüft das nicht."""
+    if _NUMBERED.search(text) is None:
+        return (
+            "acceptance_criteria: nicht nummeriert; je Kriterium eine "
+            'Zeile "1. ...", auch bei nur einem',
+        )
+    criteria = split_acceptance_criteria(text)
+    found = {
+        match.group(1)
+        for match in map(_MARKER.match, criteria)
+        if match is not None
+    }
+    return tuple(
+        f"acceptance_criteria: kein Kriterium mit [{marker}]; ohne "
+        f'solchen Fall ausdrücklich: "[{marker}] entfällt: Grund"'
+        for marker in markers
+        if marker not in found
+    )
+
+
 # --- Schema und Feldregeln ----------------------------------------
 
-_REF_SCHEMA = {
-    "anyOf": [
-        {"type": "null"},
-        {"type": "string", "minLength": 1, "pattern": r"\S"},
-    ]
-}
+_TEXT_SCHEMA = {"type": "string", "minLength": 1, "pattern": r"\S"}
+_REF_SCHEMA = {"anyOf": [{"type": "null"}, _TEXT_SCHEMA]}
 
 
 def _event_rules(flow: Flow) -> list[dict]:
@@ -201,25 +237,57 @@ _DIAGNOSES = {
     "enum": "ungültiger Wert",
     "type": "falscher Typ",
     "anyOf": "muss null oder nichtleerer Text sein",
+    "minLength": "muss nichtleerer Text sein",
+    "pattern": "muss nichtleerer Text sein",
 }
 
 
 def review_schema(
     flow: Flow, extra: Mapping[str, dict] | None = None
 ) -> dict:
-    """JSON Schema des Kerns; das ``event``-enum kommt aus ``flow``."""
+    """JSON Schema des Kerns; das ``event``-enum und die Prüffragen
+    kommen aus ``flow``."""
+    findings = _finding_fields(flow)
     return {
         "type": "object",
-        "required": list(CORE_FIELDS),
+        "required": [*CORE_FIELDS, *findings],
         "additionalProperties": False,
         "properties": {
             "event": {"enum": list(flow.review_events())},
             "detail": {"type": "string"},
             "requirement_ref": _REF_SCHEMA,
+            **findings,
             **(extra or {}),
         },
         "allOf": _event_rules(flow),
     }
+
+
+def _finding_fields(flow: Flow) -> dict[str, dict]:
+    """``answers`` (jede Prüffrage genau einmal) und ``observations``;
+    ein Ablauf ohne Prüffragen kennt beide Felder nicht."""
+    questions = list(flow.review_questions)
+    if not questions:
+        return {}
+    return {
+        "answers": {
+            "type": "object",
+            "required": questions,
+            "additionalProperties": False,
+            "properties": dict.fromkeys(questions, _TEXT_SCHEMA),
+        },
+        "observations": {"type": "array", "items": _TEXT_SCHEMA},
+    }
+
+
+def cli_schema(flow: Flow) -> dict:
+    """Das Schema in der Form, die Claude und Codex annehmen: beide
+    weisen oberste ``allOf``-Regeln mit HTTP 400 ab (Claude Code
+    2.1.316, codex 0.166.0, docs/cli-adapters.md). Die Regeln zwischen
+    den Feldern prüft weiter :func:`parse_verdict`."""
+    schema = review_schema(flow)
+    del schema["allOf"]
+    return schema
 
 
 def _check_schema(
@@ -239,9 +307,10 @@ def _check_schema(
 def _diagnosis(error) -> str:
     """Bereinigte Meldung mit Feldpfad, ohne Rohwerte."""
     path = ".".join(map(str, error.absolute_path))
+    prefix = f"{path}." if path else ""
     if error.validator == "required":
         missing = [
-            key
+            prefix + key
             for key in error.validator_value
             if key not in error.instance
         ]
@@ -249,7 +318,8 @@ def _diagnosis(error) -> str:
     if error.validator == "additionalProperties":
         known = set(error.schema.get("properties", {}))
         unknown = sorted(set(error.instance) - known)
-        return f"{', '.join(unknown)}: unbekanntes Feld"
+        names = ", ".join(prefix + key for key in unknown)
+        return f"{names}: unbekanntes Feld"
     message = _FIELD_DIAGNOSES.get(
         (path, str(error.validator)),
         _DIAGNOSES.get(str(error.validator), "ist ungültig"),
