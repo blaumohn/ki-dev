@@ -50,6 +50,7 @@ from ki_dev.ops.context.bead_input import (
     validate_bead_input,
 )
 from ki_dev.ops.context.beads_reader import BeadsReadError, read_issue
+from ki_dev.run_paths import default_runs_dir
 from ki_dev.run_store import RunStore, RunStoreError
 
 # Bead-Felder, die ein Umsetzungsauftrag braucht (wie ``require`` am
@@ -66,7 +67,14 @@ _ERRORS = (
 
 console = Console()
 errors = Console(stderr=True)
-RUNS_OPTION = Annotated[Path, typer.Option("--runs-dir")]
+RUNS_OPTION = Annotated[
+    Path | None,
+    typer.Option(
+        "--runs-dir",
+        help="Ordner der Läufe; ohne Angabe "
+        "XDG_STATE_HOME/ki-dev/runs/<repo>.",
+    ),
+]
 VERBOSE_OPTION = Annotated[
     bool,
     typer.Option(
@@ -76,7 +84,6 @@ VERBOSE_OPTION = Annotated[
         "Agentenausgabe mit Token-Zähler live nach stderr.",
     ),
 ]
-RUNS_DIR = Path(".ki-dev/runs")
 
 
 def commands(flow: Flow, path: Path) -> typer.Typer:
@@ -110,7 +117,7 @@ def start(
     ] = DEFAULT_PROFILE,
     adapters: ADAPTER_OPTION = None,
     run_id: Annotated[str | None, typer.Option("--run-id")] = None,
-    runs_dir: RUNS_OPTION = RUNS_DIR,
+    runs_dir: RUNS_OPTION = None,
     verbose: VERBOSE_OPTION = False,
 ) -> None:
     """Neuen Lauf für BEAD starten."""
@@ -128,7 +135,7 @@ def start(
         return start_run(
             config,
             run_id=run_id,
-            runs_dir=runs_dir,
+            runs_dir=runs_dir or default_runs_dir(),
             wrap=_live(verbose),
             profile=loaded,
         )
@@ -150,7 +157,7 @@ def resume(
         Path | None, typer.Option("--reconcile-result")
     ] = None,
     adapters: ADAPTER_OPTION = None,
-    runs_dir: RUNS_OPTION = RUNS_DIR,
+    runs_dir: RUNS_OPTION = None,
     verbose: VERBOSE_OPTION = False,
 ) -> None:
     """Pausierten Lauf fortsetzen. Ein Lauf aus einem Bead liest ihn
@@ -164,7 +171,7 @@ def resume(
         lambda: result_document(
             resume_run(
                 run_id,
-                runs_dir=runs_dir,
+                runs_dir=runs_dir or default_runs_dir(),
                 answer=answer,
                 accept_beads=accept_beads,
                 reconcile_result=reconcile_result,
@@ -178,21 +185,23 @@ def resume(
 
 def status(
     run_id: Annotated[str, typer.Argument()],
-    runs_dir: RUNS_OPTION = RUNS_DIR,
+    runs_dir: RUNS_OPTION = None,
 ) -> None:
     """Status eines Laufs samt Profilnachweis zeigen, ohne ihn
     fortzusetzen."""
-    _execute(lambda: status_document(run_id, runs_dir=runs_dir))
+    root = runs_dir or default_runs_dir()
+    _execute(lambda: status_document(run_id, runs_dir=root))
 
 
 def history(
     run_id: Annotated[str, typer.Argument()],
-    runs_dir: RUNS_OPTION = RUNS_DIR,
+    runs_dir: RUNS_OPTION = None,
 ) -> None:
     """Verlauf eines Laufs lesbar zeigen: je Runde Änderungen, Tests
     und Review, danach der Abschluss."""
     try:
-        lines = run_history(RunStore(runs_dir, run_id))
+        root = runs_dir or default_runs_dir()
+        lines = run_history(RunStore(root, run_id))
     except _ERRORS as exc:
         _abort(str(exc))
     for line in lines:

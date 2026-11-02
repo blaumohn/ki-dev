@@ -17,7 +17,7 @@ from ki_dev.flow.binding import BindingError, validate
 
 RUN_DEFAULTS = {
     "max_agent_calls": 6,
-    "max_total_tokens": 1_000_000,
+    "max_fresh_tokens": 1_000_000,
     "max_claude_cost_usd": 3.0,
     "min_remaining_percent": 10.0,
     "process_retries": 3,
@@ -39,7 +39,7 @@ RUN_SCHEMA = {
     "required": list(RUN_DEFAULTS),
     "properties": {
         "max_agent_calls": COUNT,
-        "max_total_tokens": COUNT,
+        "max_fresh_tokens": COUNT,
         "max_claude_cost_usd": POSITIVE,
         "min_remaining_percent": PERCENT,
         "process_retries": COUNT,
@@ -197,7 +197,7 @@ def limit_reasons(measurement: Mapping, limits: Mapping) -> list[str]:
         )
     if calls is not None and calls >= run["max_agent_calls"]:
         reasons.append(f"Aufrufgrenze erreicht: {calls}")
-    if tokens is not None and tokens >= run["max_total_tokens"]:
+    if tokens is not None and tokens >= run["max_fresh_tokens"]:
         reasons.append(f"Token-Grenze erreicht: {tokens}")
     if cost is not None and cost >= run["max_claude_cost_usd"]:
         reasons.append(f"Claude-Kostengrenze erreicht: {cost:g} USD")

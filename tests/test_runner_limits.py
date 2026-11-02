@@ -27,7 +27,7 @@ from tests.package_fixtures import catalog, raw_flow, text_flow
 DEFAULTS = {
     "run": {
         "max_agent_calls": 6,
-        "max_total_tokens": 1_000_000,
+        "max_fresh_tokens": 1_000_000,
         "max_claude_cost_usd": 3.0,
         "min_remaining_percent": 10.0,
         "process_retries": 3,
@@ -101,8 +101,8 @@ def test_unknown_key_names_its_path(given, path):
             "limits.run.process_retries",
         ),
         (
-            {"run": {"max_total_tokens": True}},
-            "limits.run.max_total_tokens",
+            {"run": {"max_fresh_tokens": True}},
+            "limits.run.max_fresh_tokens",
         ),
         (
             {"run": {"max_claude_cost_usd": 0}},

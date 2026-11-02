@@ -133,6 +133,13 @@ geht jeder Installation vor: dann läuft der Quellbaum statt der
 pipx-Kopie. Die Zeile `Ablauf: …/site-packages/ki_dev/flow/implement.toml`
 auf stderr zeigt, welche greift; sonst `env -u PYTHONPATH ki-dev …`.
 
+## Agenten im Container
+
+`[container]` im Profil startet Agenten und `[[tests]]` über
+`agent-container --workdir`; `launcher` nennt einen anderen Launcher als die
+Kopie aus `make setup-runtime`
+([Eigenentwicklung](self-development.de.md#agenten-und-prüfbefehle-im-container)).
+
 ## Adapter je Rolle
 
 | `executor` | Felder | Halt |
@@ -211,7 +218,7 @@ steht. Vor dem Start stehen beide auf demselben Basiscommit. Damit ist der
 vollständige Lauf ohne Kopieren von Agentennachrichten startbar; Bau und Review
 werden aus der Konfiguration in getrennten Sitzungen fortgesetzt.
 
-Der Lauf liegt unter `.ki-dev/runs/<run-id>/`: `record.json` enthält den
+Der Lauf liegt unter `${XDG_STATE_HOME:-~/.local/state}/ki-dev/runs/<repo>/<run-id>/`: `record.json` enthält den
 Datensatz (Lauf-Maschine, offene Operation, Ablaufzustand, Laufdaten), `manifest.json` den unveränderlichen Auftrag samt
 Konfiguration, und einzelne JSON-Dateien enthalten unveränderliche
 Operations- und Review-Nachweise. Vor jeder externen Wirkung speichert der
@@ -295,7 +302,7 @@ Auftrags.
 ## Statusabfrage ohne Fortschreiben
 
 ```bash
-ki-dev -f implement status run-42 --runs-dir .ki-dev/runs
+ki-dev -f implement status run-42
 ```
 
 Liest Status, Phase und Runden-ID aus dem zuletzt gespeicherten
@@ -308,7 +315,7 @@ Platzhalterstatus. Läufe aus der Zeit mit LangGraph-Checkpoint sind nicht
 fortsetzbar; das Kommando sagt das ausdrücklich.
 
 ```bash
-ki-dev -f implement history run-42 --runs-dir .ki-dev/runs
+ki-dev -f implement history run-42
 ```
 
 Erzählt denselben Lauf für Menschen aus seinen Artefakten: je Runde die
@@ -356,7 +363,7 @@ konfigurierbare Standardgrenzen:
 | Grenze | Standard | Wirkung |
 | --- | ---: | --- |
 | `safety_limits.max_agent_calls` | 6 | Bau und Review zusammen, inkl. fehlgeschlagener Aufrufe |
-| `safety_limits.max_total_tokens` | 1.000.000 | Input, Cache-Schreiben, Cache-Lesen und Output; Pruefung vor dem naechsten Aufruf |
+| `safety_limits.max_fresh_tokens` | 1.000.000 | Input, Cache-Schreiben und Output, ohne Cache-Lesen (das begrenzt die Kostengrenze); Pruefung vor dem naechsten Aufruf |
 | `safety_limits.max_claude_cost_usd` | 3 | Summe der von Claude gemeldeten API-Kostenwerte |
 | `safety_limits.max_failed_corrections` | 2 | Nach zwei abgelehnten Korrekturen seit Start oder letzter Entscheidung des Menschen kein weiterer automatischer Bau |
 | `safety_limits.max_stagnant_changes` | 3 | Bei so vielen CHANGES in Folge an derselben `requirement_ref` (die aktuelle Runde eingeschlossen) kein weiterer automatischer Bau |
@@ -372,7 +379,7 @@ Beispiel fuer eine bewusst kleinere Schranke auf oberster Konfigurationsebene:
 ```json
 "safety_limits": {
   "max_agent_calls": 4,
-  "max_total_tokens": 500000,
+  "max_fresh_tokens": 500000,
   "max_claude_cost_usd": 2,
   "max_failed_corrections": 1,
   "min_remaining_percent": 10
@@ -387,7 +394,7 @@ ist ein vollstaendiger Satz: ein Altlauf, dessen gespeichertes Manifest
 `min_remaining_percent` noch nicht enthaelt, startet nicht automatisch
 neu (siehe `CallLedger.limits`).
 
-`max_agent_calls`, `max_total_tokens`, `max_claude_cost_usd`,
+`max_agent_calls`, `max_fresh_tokens`, `max_claude_cost_usd`,
 `max_failed_corrections` und `max_stagnant_changes` sind konservative
 Betriebsvorgaben, keine aus dem Abo abgeleiteten Werte -- ein CLI-Aufruf
 kann viele interne Modellanfragen enthalten, und diese Zaehler bilden

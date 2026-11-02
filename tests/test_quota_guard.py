@@ -282,7 +282,7 @@ def test_quota_guard_reports_incomplete_legacy_manifest_as_blocker(
             {
                 "safety_limits": {
                     "max_agent_calls": 6,
-                    "max_total_tokens": 1_000_000,
+                    "max_fresh_tokens": 1_000_000,
                     "max_claude_cost_usd": 3.0,
                     "max_failed_corrections": 2,
                     "max_stagnant_changes": 3,

@@ -15,6 +15,18 @@ def project(tmp_path):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/setup-runtime.sh", repo / "scripts")
+    shutil.copy(ROOT / "scripts/agent-container", repo / "scripts")
+    shutil.copytree(ROOT / "scripts/lib", repo / "scripts/lib")
+    for name in (
+        "compose.yaml",
+        "compose.beads.yaml",
+        "compose.fresh.yaml",
+        "compose.workdir.yaml",
+    ):
+        shutil.copy(ROOT / name, repo)
+    shutil.copytree(
+        ROOT / "docker/agent-settings", repo / "docker/agent-settings"
+    )
     shutil.copy(ROOT / "Makefile", repo)
     # Wheel-Backend ohne Downloads oder Build-Abhängigkeiten.
     (repo / "pyproject.toml").write_text(

@@ -41,6 +41,18 @@ class CommandOutput:
         )
 
 
+# Git des Hosts in Worktrees, die ein Agent schreiben konnte: Hooks und
+# fsmonitor wären dessen Code auf dem Host. Checkpoints sind maschinell
+# und werden bei der Finalisierung durch commit-tree ersetzt.
+HOST_GIT = (
+    "git",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "core.fsmonitor=false",
+)
+
+
 def run_command(argv: list[str]) -> CommandOutput:
     """Starte einen Prozess und erfasse den vollstaendigen Ausgang."""
     try:

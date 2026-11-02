@@ -30,7 +30,8 @@ set -euo pipefail
 RUN=version-fix
 answer() {
   local input open=()
-  for input in ".ki-dev/runs/$RUN/inbox/"*.input.md; do
+  for input in "$XDG_STATE_HOME/ki-dev/runs/"*"/$RUN/inbox/"*.input.md
+  do
     [[ -e "${input%.input.md}.answer.md" ]] || open+=("$input")
   done
   if (( ${#open[@]} != 1 )); then
@@ -156,6 +157,7 @@ def test_readme_example_halts_then_merges_after_answer(
     env |= {
         "PATH": f"{ROOT / '.venv' / 'bin'}:{env['PATH']}",
         "TMPDIR": str(tmp_path),
+        "XDG_STATE_HOME": str(tmp_path / "state"),
         "SCRIPTS": str(SCRIPTS),
         "REVIEW": review,
         "EMPTY": str(empty),

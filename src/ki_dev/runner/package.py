@@ -166,7 +166,11 @@ class PackageRunner:
         with self.store.acquire_writer():
             previous = self.store.load_record()
             if previous is not None and not again:
-                raise RunStoreError("Lauf existiert bereits")
+                raise RunStoreError(
+                    f"Lauf {self.store.run_id} existiert bereits unter "
+                    f"{self.store.root}; status und resume zeigen und "
+                    "setzen ihn fort, eine andere Lauf-ID beginnt neu"
+                )
             self.path = []
             self.data = dict(data)
             self.model = self.model_type(data=self.data, limits=limits)

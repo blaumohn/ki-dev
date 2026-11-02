@@ -5,6 +5,7 @@ from __future__ import annotations
 from .base import CliAdapter, ProcessRunner
 from .claude_cli import ClaudeCliAdapter
 from .codex_cli import CodexCliAdapter
+from .container import ContainerProcess, default_launcher
 from .contract import (
     Access,
     Effort,
@@ -24,6 +25,8 @@ __all__ = [
     "CliAdapter",
     "ClaudeCliAdapter",
     "CodexCliAdapter",
+    "ContainerProcess",
+    "default_launcher",
     "Effort",
     "Executor",
     "ExecutorSpec",

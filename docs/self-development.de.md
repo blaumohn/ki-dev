@@ -25,11 +25,43 @@ fehlgeschlagenen Update vor dem nächsten Lauf die Installation reparieren.
 Ein vorbereitetes lokales Profil wird direkt an ki-dev übergeben:
 
 ```bash
-RUNS="${XDG_STATE_HOME:-$HOME/.local/state}/ki-dev/runs"
-ki-dev -f implement BEAD_ID --profile ./probe.toml --runs-dir "$RUNS"
-ki-dev -f implement status RUN_ID --runs-dir "$RUNS"
-ki-dev -f implement resume RUN_ID --runs-dir "$RUNS"
+ki-dev -f implement BEAD_ID --profile ./probe.toml
+ki-dev -f implement status RUN_ID
+ki-dev -f implement resume RUN_ID
 ```
+
+Die Laufdaten liegen unter `${XDG_STATE_HOME:-~/.local/state}/ki-dev/runs/`,
+je Repo ein Ordner; `--runs-dir` wählt einen anderen.
+
+## Agenten und Prüfbefehle im Container
+
+ki-dev läuft auf dem Host aus `~/.local`, Agenten und `[[tests]]` laufen im
+Agent-Container. So ändert der entwickelte Code den laufenden Runner nicht,
+und der Agent erreicht weder Runner noch Laufdaten. Einschalten im Profil:
+
+```toml
+workdir = "/pfad/zu/ki-dev/.local/var/lauf/bau"
+
+[container]              # launcher: Standard ist die Kopie aus make setup-runtime
+```
+
+```bash
+./scripts/agent-container build      # Image; wiederholen, wenn es sich ändert
+make setup-runtime                   # ki-dev und Launcher nach ~/.local
+git worktree add --detach .local/var/lauf/bau main
+~/.local/bin/ki-dev -f implement BEAD_ID --profile ./probe.toml
+```
+
+Den Worktree **auf dem Host** anlegen: `bau/.git` enthält einen absoluten
+Pfad, und der Container bindet ihn unter demselben Pfad ein. Er muss in einem
+für Docker freigegebenen Ordner liegen, sonst bricht der Start mit Exit 125 ab.
+`[[tests]]` laufen mit den Programmen des Images; `/workspace/.venv` enthält
+die Abhängigkeiten des Images, `/workspace` selbst ist leer. ki-dev nicht in
+`bau` starten: Es sucht Ablaufpakete und Profile im Startordner, und den Inhalt
+von `bau` kann der Agent ändern.
+
+Was der Container sieht und was nicht, steht in
+[docker/agent/README.md](../docker/agent/README.md#worktree-modus---workdir).
 
 Für den Umsetzungsablauf im Profil getrennte Bau- und Ergebnis-Worktrees
 konfigurieren, wie in [Ausführer und Laufzeit](ausfuehrer.de.md) beschrieben.

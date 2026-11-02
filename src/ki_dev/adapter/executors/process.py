@@ -10,6 +10,7 @@ Ausgang wird als expliziter :class:`TurnStatus` zurueckgegeben.
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def run_cli_turn(
             retcode=None,
             timeout=timeout_s,
             cwd=cwd,
-            env=env,
+            env={**os.environ, **env} if env else None,
         )
     except ProcessTimedOut:
         return _outcome(

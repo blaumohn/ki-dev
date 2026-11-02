@@ -123,7 +123,7 @@ def _fake_start(monkeypatch, seen):
 
 
 def test_bead_starts_run_with_profile_and_adapter_override(
-    capsys, monkeypatch, tmp_path
+    capsys, monkeypatch, tmp_path, state_home
 ):
     profile = tmp_path / ".ki-dev" / "profiles" / "default.toml"
     profile.parent.mkdir(parents=True)
@@ -141,7 +141,7 @@ def test_bead_starts_run_with_profile_and_adapter_override(
     assert seen["config"]["worker"]["executor"] == "claude"
     assert seen["config"]["review"] == {"executor": "manual"}
     assert seen["config"]["task"] == "Auftrag p-1"
-    assert seen["runs_dir"] == Path(".ki-dev/runs")
+    assert seen["runs_dir"].parent == state_home / "ki-dev/runs"
     assert seen["profile"]["path"] == str(profile)
     assert len(seen["profile"]["sha256"]) == 64
 

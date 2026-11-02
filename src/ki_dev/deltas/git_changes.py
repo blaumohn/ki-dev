@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .command import run_command
+from .command import HOST_GIT, run_command
 from .contract import (
     ChangeMedium,
     GitDelta,
@@ -71,5 +71,5 @@ def _has_staged_changes(repo: Path) -> bool:
 
 
 def _git(repo: Path, *args: str) -> str:
-    argv = ["git", "-C", str(repo), *args]
+    argv = [*HOST_GIT, "-C", str(repo), *args]
     return run_command(argv).require_success()

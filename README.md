@@ -199,7 +199,7 @@ assert is_newer("2.0.0", "1.9.9")
 assert not is_newer("1.10.0", "1.9.0")
 EOF
 printf '%s\n' .ki-dev/ .beads.gate.lock __pycache__/ \
-  >>.git/info/exclude  # Laufdaten, Python-Cache
+  >>.git/info/exclude  # Profile, Python-Cache
 git add . && git commit -q -m "is_newer()"
 git worktree add -q -b work ../app-work  # Arbeits-Worktree der Agenten
 cd ../app-work

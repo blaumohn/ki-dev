@@ -30,11 +30,13 @@ from ki_dev.adapter.contract import (
     RunTask,
 )
 from ki_dev.adapter.executors import (
+    ContainerProcess,
     Effort,
     Executor,
     ExecutorSpec,
     build_executor,
     cli_transports,
+    default_launcher,
 )
 from ki_dev.adapter.executors.contract import TurnBudget
 from ki_dev.adapter.registry import executor_specs
@@ -54,7 +56,11 @@ from ki_dev.repository_evidence import (
     CheckCommand,
     RepositoryEvidenceCollector,
 )
-from ki_dev.repository_finalization import RepositoryFinalizer
+from ki_dev.repository_finalization import (
+    FinalizationFailure,
+    RepositoryFinalizer,
+    git_identity,
+)
 from ki_dev.review_context import ProjectionLimits
 from ki_dev.run_store import RunStore
 from ki_dev.runner.safety import SafetyLimits
@@ -158,6 +164,7 @@ def start_run(
     usage_task = _usage_task(config)
     limits = _limits(config.get("limits", {}))
     projection = _projection(config.get("projection_limits", {}))
+    _require_target_identity(config)
     with _runtime(
         config, RunStore(runs_dir, actual_run_id), projection, wrap
     ) as runtime:
@@ -272,13 +279,15 @@ def _runtime(
     checks = tuple(_check(item) for item in _list(config, "tests"))
     limits = _limits(config.get("limits", {}))
     finalizer = _finalizer(_required_object(config, "finalization"))
+    process = _container_process(config)
     return RunRuntime(
         store=store,
-        worker=_adapter(build, "worker", store, wrap),
-        reviewer=_adapter(review, "review", store, wrap),
+        worker=_adapter(build, "worker", store, wrap, process),
+        reviewer=_adapter(review, "review", store, wrap, process),
         evidence_collector=RepositoryEvidenceCollector(
             checks=checks,
             round_limit=limits.changes_rounds + 1,
+            process=process,
         ),
         finalizer=finalizer,
         limits=projection,
@@ -397,11 +406,33 @@ def sessionless_executors() -> tuple[str, ...]:
     )
 
 
+def _container_process(
+    config: dict[str, object],
+) -> ContainerProcess | None:
+    """``[container]`` im Profil: Agenten und Prüfbefehle laufen im
+    Agent-Container; ohne die Tabelle bleibt der Prozess lokal."""
+    if "container" not in config:
+        return None
+    table = _required_object(config, "container")
+    launcher = (
+        Path(_text(table, "launcher")).expanduser()
+        if "launcher" in table
+        else default_launcher()
+    )
+    if not launcher.is_file():
+        raise RunConfigError(
+            f"container.launcher: {launcher} fehlt; make setup-runtime "
+            "installiert ihn"
+        )
+    return ContainerProcess(launcher)
+
+
 def _adapter(
     value: dict[str, object],
     role: str,
     store: RunStore,
     wrap: ExecutorWrap,
+    process: ContainerProcess | None = None,
 ) -> object:
     """Adapter einer Rolle aus ihrer Konfiguration bauen."""
     spec = _spec(value)
@@ -410,7 +441,7 @@ def _adapter(
         return manual.ManualRelay(transport, role, spec)
     if spec.transport == mock.NAME:
         return _mock(value, role, spec)
-    agent = _role(value, spec)
+    agent = _role(value, spec, process)
     agent["executor"] = wrap(cast(Executor, agent["executor"]), role)
     if agent["session_id"] is None:
         # Ohne Sitzung im Profil legt der erste Aufruf sie an; der Lauf
@@ -455,9 +486,13 @@ def _mock(
 
 
 def _role(
-    value: dict[str, object], spec: ExecutorSpec
+    value: dict[str, object],
+    spec: ExecutorSpec,
+    process: ContainerProcess | None = None,
 ) -> dict[str, object]:
     kwargs: dict[str, object] = {}
+    if process is not None:
+        kwargs["runner"] = process
     if "executable" in value:
         kwargs["executable"] = _text(value, "executable")
     if "timeout_s" in value:
@@ -525,6 +560,19 @@ def _finalizer(value: dict[str, object]) -> RepositoryFinalizer:
         )
     except ValueError as exc:
         raise RunConfigError(str(exc)) from exc
+
+
+def _require_target_identity(config: dict[str, object]) -> None:
+    """Fehlt die Identität, meldet das der Start, nicht erst der
+    Abschluss nach bezahlten Agentenaufrufen."""
+    finalization = _required_object(config, "finalization")
+    target = Path(_text(finalization, "target_workdir")).resolve()
+    try:
+        git_identity(target)
+    except FinalizationFailure as exc:
+        raise RunConfigError(
+            f"finalization.target_workdir: {exc}"
+        ) from exc
 
 
 def _limits(value: object) -> Limits:

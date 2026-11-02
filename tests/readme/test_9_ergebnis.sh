@@ -35,12 +35,17 @@ main() {
   # bestandener Prüfung. Ein gescheiterter Lauf schreibt failed und
   # entfernt den älteren Beleg (readme_write_entry).
   mkdir -p "$README_RESULTS_DIR"
-  cp "$work/.ki-dev/runs/version-fix/events.jsonl" \
+  cp "$(run_dir version-fix)/events.jsonl" \
     "$README_RESULTS_DIR/9-ergebnis.events.jsonl"
   readme_write_entry 5-starten.sh passed "$start" "" ""
   readme_write_entry 9-entscheiden.sh passed "$halt" "" ""
   readme_result passed "$excerpt"
   second_task "$work" "$clone"
+}
+
+# Jeder Live-Lauf hat ein neues Wegwerf-Repo: der jüngste Lauf gilt.
+run_dir() {
+  ls -dt "${XDG_STATE_HOME:-$HOME/.local/state}"/ki-dev/runs/*/"$1" | head -1
 }
 
 # Schritt 7 in einer zweiten Sitzung, im Arbeits-Worktree nach Schritt
@@ -55,7 +60,7 @@ second_task() {
   excerpt="$README_LOG.auszug"
   second_excerpt "$README_LOG" "$work" "$README_SCRIPTS_DIR" \
     "$README_REPO_DIR" "$excerpt"
-  cp "$work/.ki-dev/runs/palindrome/events.jsonl" \
+  cp "$(run_dir palindrome)/events.jsonl" \
     "$README_RESULTS_DIR/9-loesbar.events.jsonl"
   readme_write_entry 9-loesbar.sh passed "$excerpt" "" ""
 }

@@ -279,8 +279,13 @@ class RunRuntime:
                 )
             manifest.update(manifest_extra)
         if self.store.load_record() is not None:
+            runs = self.store.root
             raise RunResumeError(
-                f"Lauf {task.run_id} existiert bereits"
+                f"Lauf {task.run_id} existiert bereits. Stand: "
+                f"ki-dev -f implement status {task.run_id} "
+                f"--runs-dir {runs}; fortsetzen: ki-dev -f implement "
+                f"resume {task.run_id} --runs-dir {runs}; neu "
+                "beginnen: anderes --run-id"
             )
         self.store.initialize(manifest)
         self._lauf = RunMachine()

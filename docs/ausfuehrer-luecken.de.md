@@ -70,7 +70,7 @@ Alt: `flow_ops/implement/runtime.py` (~1300 Z.), `machine/`,
 | --- | --- |
 | Kontextgrenze `max_context_tokens=80_000` | Messung Adapter, Ereignis + Wächter run.toml, Wert Profil |
 | Kontingentreserve `min_remaining_percent=10.0`, Delta `20.0` Pp. | wie oben |
-| Budget `max_agent_calls=6`, `max_total_tokens=1e6`, `max_claude_cost_usd=3.0`; Reservierung `call_id` vor `start`, Buchung danach | Wirkung (Ledger) + `pending.call_id` (SM-Op `begin_operation`) |
+| Budget `max_agent_calls=6`, `max_fresh_tokens=1e6`, `max_claude_cost_usd=3.0`; Reservierung `call_id` vor `start`, Buchung danach | Wirkung (Ledger) + `pending.call_id` (SM-Op `begin_operation`) |
 | Schutzhalt, Fortsetzung am Zustand | run.toml (`failed` → `stopped`, `resume`) |
 | Prozessfehler `process_retries=3`, Protokollfehler `protocol_attempts=3` | run.toml (ablaufneutral) |
 | Halt-Notiz (`handoffs/r0003-rev000042`) | Gerüst, bei jedem Halt |

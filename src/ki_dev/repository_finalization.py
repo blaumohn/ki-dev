@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ki_dev.deltas import capture_beads_ref
+from ki_dev.deltas import HOST_GIT, capture_beads_ref
 
 
 class FinalizationFailure(RuntimeError):
@@ -113,8 +113,11 @@ class RepositoryFinalizer:
             source, "rev-parse", f"{reviewed_git}^{{tree}}"
         )
         _require_same_repository(source, self.target_workdir)
+        author_name, author_email = git_identity(self.target_workdir)
         return {
             "run_id": run_id,
+            "author_name": author_name,
+            "author_email": author_email,
             "source_workdir": str(source.resolve()),
             "target_workdir": str(self.target_workdir.resolve()),
             "target_ref": self.target_ref,
@@ -134,10 +137,10 @@ class RepositoryFinalizer:
         timestamp = _git(source, "show", "-s", "--format=%ct", reviewed)
         env = {
             **os.environ,
-            "GIT_AUTHOR_NAME": "ki-dev",
-            "GIT_AUTHOR_EMAIL": "ki-dev@example.invalid",
-            "GIT_COMMITTER_NAME": "ki-dev",
-            "GIT_COMMITTER_EMAIL": "ki-dev@example.invalid",
+            "GIT_AUTHOR_NAME": _text(frozen, "author_name"),
+            "GIT_AUTHOR_EMAIL": _text(frozen, "author_email"),
+            "GIT_COMMITTER_NAME": _text(frozen, "author_name"),
+            "GIT_COMMITTER_EMAIL": _text(frozen, "author_email"),
             "GIT_AUTHOR_DATE": f"{timestamp} +0000",
             "GIT_COMMITTER_DATE": f"{timestamp} +0000",
         }
@@ -149,6 +152,8 @@ class RepositoryFinalizer:
             _text(frozen, "base_commit"),
             "-m",
             self.commit_message,
+            "-m",
+            f"Generated-by: ki-dev ({_text(frozen, 'run_id')})",
             env=env,
         )
         return {"final_commit": final_commit}
@@ -262,6 +267,28 @@ class StaticFinalizer:
         }
 
 
+def git_identity(repo: Path) -> tuple[str, str]:
+    """Identität, mit der Git im Ziel committen würde (Konfiguration
+    oder ``GIT_AUTHOR_*``), ohne geratenen Rechnernamen. Der Stand wird
+    beim Einfrieren festgehalten: ``finalize_history`` bleibt so bei
+    einer Wiederaufnahme idempotent."""
+    try:
+        ident = _git(
+            repo,
+            "-c",
+            "user.useConfigOnly=true",
+            "var",
+            "GIT_AUTHOR_IDENT",
+        )
+    except FinalizationFailure as exc:
+        raise FinalizationFailure(
+            f"{repo}: git config user.name und user.email fehlen; "
+            "der integrierte Commit trägt diese Identität"
+        ) from exc
+    name, _, rest = ident.partition(" <")
+    return name, rest.split(">", 1)[0]
+
+
 def _ref_value(refs: dict[str, object], medium: str) -> str:
     item = refs.get(medium)
     if not isinstance(item, dict):
@@ -317,7 +344,7 @@ def _git(
     repo: Path, *args: str, env: dict[str, str] | None = None
 ) -> str:
     completed = subprocess.run(
-        ["git", "-C", str(repo), *args],
+        [*HOST_GIT, "-C", str(repo), *args],
         text=True,
         capture_output=True,
         check=False,

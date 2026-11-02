@@ -82,7 +82,7 @@ class CliAdapter(ABC):
             stdin=self.message_stdin(request),
             timeout_s=timeout_s,
             cwd=request.workdir,
-            env=self._merged_env(request),
+            env=request.env or None,
         )
 
     def send_metered_turn(
@@ -166,11 +166,6 @@ class CliAdapter(ABC):
             else self.timeout_s
         )
 
-    def _merged_env(
-        self, request: TurnRequest
-    ) -> dict[str, str] | None:
-        return {**os.environ, **request.env} if request.env else None
-
     @property
     @abstractmethod
     def default_executable(self) -> str:
@@ -208,7 +203,7 @@ class CliAdapter(ABC):
             stdin="",
             timeout_s=timeout_s,
             cwd=request.workdir,
-            env=self._merged_env(request),
+            env=request.env or None,
         )
         if probe.status is not TurnStatus.OK:
             return None

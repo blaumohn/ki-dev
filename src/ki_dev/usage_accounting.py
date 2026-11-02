@@ -201,6 +201,12 @@ class CallUsage:
     def total(self) -> int:
         return sum(self.counts.values())
 
+    @property
+    def fresh(self) -> int:
+        """Ohne Cache-Lesen: das wächst je Turn mit dem Kontext und ist
+        billig; seine Kosten begrenzt ``max_claude_cost_usd``."""
+        return self.total - self.counts.get("cache_read", 0)
+
 
 @dataclass(frozen=True)
 class UsageReport:
@@ -209,6 +215,10 @@ class UsageReport:
     @property
     def total(self) -> int:
         return sum(call.total for call in self.calls)
+
+    @property
+    def fresh(self) -> int:
+        return sum(call.fresh for call in self.calls)
 
     @property
     def complete(self) -> bool:

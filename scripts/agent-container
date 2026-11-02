@@ -3,6 +3,11 @@
 # docker/agent/README.md.
 set -euo pipefail
 
+# shellcheck source=lib/agent-container-mounts.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/agent-container-mounts.sh"
+# shellcheck source=lib/agent-container-workdir.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/agent-container-workdir.sh"
+
 main() {
   refuse_inside_container
   repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,6 +18,10 @@ main() {
   compose_files=(-f "$repo_dir/compose.yaml")
   mount_files=()
   ro_sources=()
+  env_names=()
+  run_args=()
+  workdir=""
+  container_name=""
   mode=dev
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -42,6 +51,21 @@ main() {
         mode="test"
         shift
         ;;
+      --workdir)
+        if [[ $# -lt 2 ]]; then usage_error "$1 benötigt DIR"; fi
+        set_workdir "$2"
+        shift 2
+        ;;
+      --name)
+        if [[ $# -lt 2 ]]; then usage_error "$1 benötigt NAME"; fi
+        container_name="$2"
+        shift 2
+        ;;
+      --env)
+        if [[ $# -lt 2 ]]; then usage_error "$1 benötigt NAME"; fi
+        env_names+=("$2")
+        shift 2
+        ;;
       -*) usage_error "unknown option '$1'" ;;
       *) break ;;
     esac
@@ -52,10 +76,17 @@ main() {
   if [[ $mode == test && "${1:-shell}" != shell && "$1" != run ]]; then
     usage_error "--fresh applies only to shell and run"
   fi
+  if [[ -n "$workdir$container_name${env_names[*]:-}" && "${1:-shell}" != shell && "$1" != run ]]; then
+    usage_error "--workdir, --name und --env gelten nur für shell und run"
+  fi
   case "${1:-shell}" in
     build) build_image ;;
     mounts) list_mounts ;;
     reset) reset_volumes ;;
+    stop)
+      shift
+      stop_container "$@"
+      ;;
     shell)
       shift "$(( $# > 0 ? 1 : 0 ))"
       run_agent bash "$@"
@@ -74,11 +105,11 @@ print_help() {
 Usage: scripts/agent-container [OPTION]... [shell [ARGS...]]
        scripts/agent-container [OPTION]... run COMMAND [ARGS...]
        scripts/agent-container [OPTION]... reset
-       scripts/agent-container build | mounts
+       scripts/agent-container build | mounts | stop NAME
 
 Build the agent image or start the agent sandbox from the host.
 Without a command, shell starts bash in the sandbox; mounts lists the
-names usable with --mount. reset removes the home and venv volumes of
+names usable with --mount; stop removes a named container. reset removes the home and venv volumes of
 this checkout and the dependency volumes of the repos chosen with --mount.
 
 Options:
@@ -88,6 +119,11 @@ Options:
                               /references/<Ordnername> einbinden; wiederholbar
       --fresh                 test mode: temporary home, venv, dependency
                               directories and Go build cache
+      --workdir DIR           nur diesen Git-Worktree unter gleichem Pfad
+                              einbinden, Hauptcheckout nicht
+      --name NAME             Containername, für stop NAME
+      --env NAME              Variable NAME der aufrufenden Umgebung
+                              weitergeben; wiederholbar
   -h, --help                  show this help and exit
 
 Download caches: \${XDG_CACHE_HOME:-~/.cache}/agent-container
@@ -105,86 +141,6 @@ usage_error() {
   echo "agent-container: $1" >&2
   echo "Try 'scripts/agent-container --help' for more information." >&2
   exit 2
-}
-
-# Referenzordner benötigen weder Repo-Vertrag noch Abhängigkeits-Volumes.
-add_ro_mount() {
-  local source="$1" name existing
-  if [[ ! -d "$source" ]]; then usage_error "kein Verzeichnis: '$source'"; fi
-  source="$(cd -- "$source" && pwd -P)"
-  if [[ "$source" == / || "$source" == *:* ]]; then
-    usage_error "nicht unterstützter Pfad für --mount-ro: '$source'"
-  fi
-  name="${source##*/}"
-  # Bash 3.2 behandelt leere Arrays bei nounset als ungebunden.
-  for existing in ${ro_sources[@]+"${ro_sources[@]}"}; do
-    if [[ "$existing" == "$source" ]]; then return; fi
-    if [[ "${existing##*/}" == "$name" ]]; then
-      usage_error "gleicher Ordnername bei --mount-ro: '$name'"
-    fi
-  done
-  ro_sources+=("$source")
-}
-
-# Optional sibling checkouts, chosen per call from $mount_dir/NAME.yaml.
-add_mounts() {
-  local list="$1" names name mount_file
-  if [[ ! "$list" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]]; then
-    usage_error "invalid mount list '$list'; expected NAME[,NAME...]"
-  fi
-  IFS=, read -r -a names <<< "$list"
-  for name in "${names[@]}"; do
-    mount_file="$(resolve_mount "$name")"
-    if [[ " ${compose_files[*]} " != *" $mount_file "* ]]; then
-      compose_files+=(-f "$mount_file")
-      mount_files+=("$mount_file")
-    fi
-  done
-}
-
-# Exact name first, otherwise a unique prefix (like getopt_long options).
-resolve_mount() {
-  local name="$1" mount_file
-  local matches=()
-  if [[ -f "$mount_dir/$name.yaml" ]]; then
-    echo "$mount_dir/$name.yaml"
-    return
-  fi
-  for mount_file in "$mount_dir/$name"*.yaml; do
-    if [[ -f "$mount_file" ]]; then matches+=("$mount_file"); fi
-  done
-  case "${#matches[@]}" in
-    1) echo "${matches[0]}" ;;
-    0) usage_error "unknown mount '$name' in $mount_dir; see: scripts/agent-container mounts" ;;
-    *)
-      matches=("${matches[@]##*/}")
-      usage_error "ambiguous mount '$name': ${matches[*]%.yaml}"
-      ;;
-  esac
-}
-
-# Name, host source and container target of each mount file, read from its
-# first source: and target:.
-list_mounts() {
-  local mount_file name source target
-  local found=0
-  echo "Mount files in $mount_dir:"
-  if [[ ! -d "$mount_dir" ]]; then
-    echo "  (directory missing; template: docker/agent/mount.example.yaml)"
-    return
-  fi
-  for mount_file in "$mount_dir"/*.yaml; do
-    if [[ ! -f "$mount_file" ]]; then continue; fi
-    found=1
-    name="${mount_file##*/}"
-    source="$(awk '$1 == "source:" { print $2; exit }' "$mount_file")"
-    target="$(awk '$1 == "target:" { print $2; exit }' "$mount_file")"
-    printf '  %-26s %-26s <- %s\n' "${name%.yaml}" \
-      "${target:-(no target)}" "${source:-(no source)}"
-  done
-  if [[ $found == 0 ]]; then
-    echo "  (no mount files; template: docker/agent/mount.example.yaml)"
-  fi
 }
 
 refuse_inside_container() {
@@ -248,6 +204,9 @@ copy_build_sources() {
   cp "$repo_dir/pyproject.toml" "$build_context/project/"
   cp -R "$repo_dir/src" "$build_context/project/"
   cp -R "$repo_dir/docker/agent" "$build_context/docker/"
+  # COPY keeps modes; a checkout with private files (0600) would give an image
+  # whose entrypoint the agent user cannot read.
+  chmod -R u+rwX,go+rX-w "$build_context"
 }
 
 run_agent() {
@@ -261,13 +220,24 @@ run_agent() {
     compose_files+=(-f "$repo_dir/compose.fresh.yaml")
   fi
   add_beads_mount
-  local run_args=(run --rm --no-deps)
-  local source
+  local guard=() progress=()
+  if [[ -n "$workdir" ]]; then
+    add_workdir_args
+    # Check output is evidence for the review; Compose noise is not.
+    progress=(--progress quiet)
+    guard=(sh -c "$WORKDIR_GUARD" agent-container)
+  fi
+  local source name
   for source in ${ro_sources[@]+"${ro_sources[@]}"}; do
     run_args+=(-v "$source:/references/${source##*/}:ro")
   done
+  for name in ${env_names[@]+"${env_names[@]}"}; do
+    run_args+=(-e "$name")
+  done
+  if [[ -n "$container_name" ]]; then run_args+=(--name "$container_name"); fi
   if [[ ! -t 0 || ! -t 1 ]]; then run_args+=(-T); fi
-  exec docker compose "${compose_files[@]}" -p "ki-dev-agent-$volume_key" "${run_args[@]}" agent "$@"
+  exec docker compose ${progress[@]+"${progress[@]}"} "${compose_files[@]}" -p "ki-dev-agent-$volume_key" \
+    run --rm --no-deps ${run_args[@]+"${run_args[@]}"} agent ${guard[@]+"${guard[@]}"} "$@"
 }
 
 # x-ki-dev of the chosen mount files becomes a Compose file for the
@@ -330,21 +300,26 @@ prepare_caches() {
 # Optional beads checkout for Go development and local bd builds, mounted at
 # /beads whenever ../beads exists or KI_DEV_AGENT_BEADS_REPO is set.
 add_beads_mount() {
-  if [[ -z "${KI_DEV_AGENT_BEADS_REPO:-}" && -d "$repo_dir/../beads" ]]; then
-    KI_DEV_AGENT_BEADS_REPO="$(cd -- "$repo_dir/../beads" && pwd)"
+  local beads_home="${target_repo:-$repo_dir}"
+  if [[ -z "${KI_DEV_AGENT_BEADS_REPO:-}" && -d "$beads_home/../beads" ]]; then
+    KI_DEV_AGENT_BEADS_REPO="$(cd -- "$beads_home/../beads" && pwd)"
   fi
   if [[ -n "${KI_DEV_AGENT_BEADS_REPO:-}" ]]; then
     export KI_DEV_AGENT_BEADS_REPO
     exclude_beads_build "$KI_DEV_AGENT_BEADS_REPO"
     compose_files+=(-f "$repo_dir/compose.beads.yaml")
+    # The host's bd may live in that checkout; agents must not replace it.
+    if [[ -n "$workdir" ]]; then
+      run_args+=(-v "$KI_DEV_AGENT_BEADS_REPO:/beads:ro")
+    fi
   fi
-  require_local_bd
+  require_local_bd "$beads_home"
 }
 
 # lint.max-chars exists only in the local bd build (ki-dev-ablauf-qdg); the
 # image's bd would ignore it silently. Drop this check once BD_VERSION has it.
 require_local_bd() {
-  local config="$repo_dir/.beads/config.yaml"
+  local config="$1/.beads/config.yaml"
   if ! grep -Eq '^[^#]*max-chars' "$config" 2>/dev/null; then return; fi
   local bd="${KI_DEV_AGENT_BEADS_REPO:-../beads}/.build/linux/bd"
   if [[ -z "${KI_DEV_AGENT_BEADS_REPO:-}" || ! -x "$bd" ]]; then
@@ -394,4 +369,6 @@ reset_volumes() {
   fi
 }
 
-main "$@"
+# exit: bash reads scripts while running; an edit during a long build must not
+# make it continue somewhere else in the file.
+main "$@"; exit

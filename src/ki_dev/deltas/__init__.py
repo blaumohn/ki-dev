@@ -24,7 +24,12 @@ from .beads_changes import (
     installed_bd_version,
     verify_bd_version,
 )
-from .command import CommandOutput, DeltaCommandError, run_command
+from .command import (
+    HOST_GIT,
+    CommandOutput,
+    DeltaCommandError,
+    run_command,
+)
 from .contract import (
     BeadsDelta,
     BeadsIssueChange,
@@ -86,6 +91,7 @@ __all__ = [
     "checkpoint_git_step",
     "checkpoint_step_result",
     "installed_bd_version",
+    "HOST_GIT",
     "run_command",
     "verify_bd_version",
 ]

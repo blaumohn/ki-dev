@@ -38,14 +38,16 @@ def test_send_turn_binds_child_process_to_task_workdir():
     assert runner.last_kwargs["cwd"] == Path("/worktree/x")
 
 
-def test_send_turn_overlays_bound_env_on_inherited_environment():
+def test_send_turn_passes_only_bound_env():
     runner = FakeRunner()
     ClaudeCliAdapter(runner=runner).send_turn(
         _request(env={"PYTHONPATH": "/worktree/x/src"})
     )
-    env = runner.last_kwargs["env"]
-    assert env["PYTHONPATH"] == "/worktree/x/src"
-    assert "PATH" in env  # geerbte Umgebung bleibt sonst erhalten
+    # Geerbtes legt erst der Prozessstart darunter; in den Container
+    # gehört es nicht (test_process_runner, test_container_process).
+    assert runner.last_kwargs["env"] == {
+        "PYTHONPATH": "/worktree/x/src"
+    }
 
 
 def test_send_turn_passes_no_env_override_without_bound_values():

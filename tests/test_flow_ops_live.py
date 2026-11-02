@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import threading
 import time
 
 from rich.console import Console
@@ -98,3 +99,41 @@ def test_unreadable_transcript_is_named_in_status(monkeypatch):
     watch = live._Watch(FakeExecutor([]), "s-1", "worker", console)
     watch._show_new(None)
     assert "Zeile 3 unvollständig" in watch._status().plain
+
+
+class _NewSession:
+    session_id = None
+
+
+def test_new_session_runs_without_id_and_names_the_reason(monkeypatch):
+    monkeypatch.setattr(live, "INTERVAL_S", 0.01)
+    errors = []
+    monkeypatch.setattr(
+        threading, "excepthook", lambda args: errors.append(args)
+    )
+    console, _ = _console()
+    executor = live.LiveExecutor(FakeExecutor([]), "worker", console)
+
+    assert executor.send_turn(_NewSession()) is TurnStatus.OK
+
+    assert errors == []
+    watch = live._Watch(FakeExecutor([]), None, "worker", console)
+    watch._show_new(None)
+    status = watch._status().plain
+    assert "Kontext unavailable" in status
+    assert "neue Sitzung ohne bekannte ID" in status
+
+
+def test_cli_adapter_name_reads_the_agents_transcript(monkeypatch):
+    agents = []
+
+    def read(agent, _session_id):
+        agents.append(agent)
+        return _transcript([])
+
+    monkeypatch.setattr(live, "read_session_transcript", read)
+    inner = FakeExecutor([])
+    inner.name = "claude-cli"
+    console, _ = _console()
+    live._Watch(inner, "s-1", "worker", console)._show_new(None)
+    assert agents == ["claude"]

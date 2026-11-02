@@ -81,8 +81,8 @@ def test_status_reads_persisted_state_without_advancing(tmp_path):
 
 
 def test_status_works_with_relative_runs_dir(tmp_path, monkeypatch):
-    """0we: der CLI-Standard ``--runs-dir .ki-dev/runs`` ist relativ;
-    ``as_uri()`` braucht aber einen absoluten Pfad."""
+    """0we: ``--runs-dir`` darf relativ sein; ``as_uri()`` braucht aber
+    einen absoluten Pfad."""
     worker = FakeWorker()
     reviewer = FakeReviewer(["decision"])
     monkeypatch.chdir(tmp_path)
@@ -445,3 +445,23 @@ def test_unknown_mock_answer_is_rejected():
             },
             "Profil",
         )
+
+
+def test_existing_run_names_status_resume_and_new_id(tmp_path):
+    def runtime():
+        return RunRuntime(
+            RunStore(tmp_path, "run-1"),
+            FakeWorker(),
+            FakeReviewer(["decision"]),
+            StaticEvidenceCollector((_context(1),)),
+            StaticFinalizer(),
+        )
+
+    with runtime() as run:
+        run.start(_task("run-1"), Limits())
+    with runtime() as run, pytest.raises(RunResumeError) as raised:
+        run.start(_task("run-1"), Limits())
+    message = str(raised.value)
+    assert f"status run-1 --runs-dir {tmp_path}" in message
+    assert f"resume run-1 --runs-dir {tmp_path}" in message
+    assert "anderes --run-id" in message

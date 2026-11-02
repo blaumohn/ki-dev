@@ -10,6 +10,7 @@ from ki_dev.deltas import ChangeMedium, VcsRef
 from ki_dev.repository_finalization import (
     FinalizationFailure,
     RepositoryFinalizer,
+    git_identity,
 )
 
 
@@ -94,6 +95,50 @@ def test_exact_reviewed_tree_is_fast_forwarded(finalization_repo):
         == frozen["reviewed_tree"]
     )
     assert (target / "result.txt").read_text() == "reviewed\n"
+
+
+def test_commit_has_target_identity_and_names_ki_dev(finalization_repo):
+    target, source, base, reviewed, finalizer = finalization_repo
+    frozen = _freeze(source, base, reviewed, finalizer)
+    final = finalizer.finalize_history(frozen)["final_commit"]
+    assert (
+        _git(target, "show", "-s", "--format=%an <%ae>|%cn", final)
+        == "test <test@example.invalid>|test"
+    )
+    assert "Generated-by: ki-dev (" in _git(
+        target, "show", "-s", "--format=%B", final
+    )
+
+
+def test_finalize_history_stays_idempotent_after_config_change(
+    finalization_repo,
+):
+    target, source, base, reviewed, finalizer = finalization_repo
+    frozen = _freeze(source, base, reviewed, finalizer)
+    first = finalizer.finalize_history(frozen)
+    _git(target, "config", "user.name", "anders")
+    assert finalizer.finalize_history(frozen) == first
+
+
+def test_missing_identity_is_named(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    repo = tmp_path / "ohne"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    with pytest.raises(FinalizationFailure, match="user.name"):
+        git_identity(repo)
+
+
+def test_identity_from_environment_counts(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "demo")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "demo@example.invalid")
+    repo = tmp_path / "mit-env"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    assert git_identity(repo) == ("demo", "demo@example.invalid")
 
 
 def test_integration_is_idempotent_after_success(finalization_repo):

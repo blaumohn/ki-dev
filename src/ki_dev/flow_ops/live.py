@@ -62,7 +62,7 @@ class LiveExecutor:
 @dataclass
 class _Watch:
     executor: Executor
-    session_id: str
+    session_id: str | None
     role: str
     console: Console
     _stop: threading.Event = field(default_factory=threading.Event)
@@ -124,13 +124,19 @@ class _Watch:
             return 0
 
     def _read(self):
+        if self.session_id is None:
+            # Die ID einer neuen Sitzung vergibt erst der Adapter.
+            raise TranscriptError(("neue Sitzung ohne bekannte ID",))
         return read_session_transcript(self._agent(), self.session_id)
 
     def _agent(self) -> str:
-        return self.executor.name
+        # Adapter heißen "claude-cli", ihre Transkripte "claude".
+        return self.executor.name.removesuffix("-cli")
 
 
-def _tokens(executor: Executor, session_id: str) -> str:
+def _tokens(executor: Executor, session_id: str | None) -> str:
+    if session_id is None:
+        return f"Kontext {ContextStatus.UNAVAILABLE.value}"
     measurement = executor.measure_context(session_id)
     if measurement.status is ContextStatus.MEASURED:
         return f"Kontext {measurement.tokens / 1000:.1f}k Tokens"

@@ -13,7 +13,9 @@ from ki_dev.adapter.contract import (
     RunTask,
     WorkReport,
 )
+from ki_dev.adapter.executors import ProcessRunner, TurnStatus
 from ki_dev.deltas import (
+    HOST_GIT,
     ChangeMedium,
     CheckOutcome,
     ControllerContext,
@@ -52,11 +54,19 @@ class RepositoryEvidenceCollector:
 
     checks: tuple[CheckCommand, ...] = ()
     round_limit: int = 6
+    process: ProcessRunner | None = None
 
     def prepare(self, task: RunTask, round_id: int) -> object:
         del round_id
         _require_clean_worktree(task.workdir)
         return _encode_refs(capture_media_refs(task.workdir))
+
+    def _check(
+        self, task: RunTask, check: CheckCommand
+    ) -> CheckOutcome:
+        if self.process is None:
+            return _run_check(task, check)
+        return _run_check_in_process(self.process, task, check)
 
     def beads_change(
         self, task: RunTask, refs: object
@@ -105,7 +115,7 @@ class RepositoryEvidenceCollector:
             ),
             round_status=RoundStatus(round_id, self.round_limit),
             checks=tuple(
-                _run_check(task, check) for check in self.checks
+                self._check(task, check) for check in self.checks
             ),
             run_delta=build_run_delta(task.workdir, first_base, result),
         )
@@ -116,6 +126,24 @@ def _checkpoint_message(task: RunTask, round_id: int) -> str:
     wie es der ``commit-msg``-Hook der Beads-Integration verlangt."""
     refs = "".join(f" ({bead})" for bead in task.bead_ids())
     return f"ki-dev {task.run_id} Runde {round_id}{refs}"
+
+
+def _run_check_in_process(
+    process: ProcessRunner, task: RunTask, check: CheckCommand
+) -> CheckOutcome:
+    """Pruefauftrag ueber den Prozesslauf der Adapter, im Container
+    also dort: der Befehl fuehrt vom Worker geschriebenen Code aus."""
+    result = process(
+        list(check.argv),
+        stdin="",
+        timeout_s=check.timeout_s,
+        cwd=task.workdir,
+        env=dict(task.env),
+    )
+    detail = (result.stdout + result.stderr).strip()
+    if result.status is TurnStatus.OK:
+        return CheckOutcome(check.name, True, detail)
+    return CheckOutcome(check.name, False, detail or str(result.error))
 
 
 def _run_check(task: RunTask, check: CheckCommand) -> CheckOutcome:
@@ -154,7 +182,7 @@ def _worktree_status(repo: Path) -> str:
     """``git status --porcelain`` samt unversionierter Dateien."""
     completed = subprocess.run(
         [
-            "git",
+            *HOST_GIT,
             "-C",
             str(repo),
             "status",

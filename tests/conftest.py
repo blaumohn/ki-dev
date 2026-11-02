@@ -20,6 +20,26 @@ def claude_quota_dir(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def git_identity(tmp_path_factory, monkeypatch):
+    """Eigene globale Git-Konfiguration: der Start verlangt eine
+    Identität, und auf dem Host gälte sonst die des Nutzers."""
+    config = tmp_path_factory.mktemp("git") / "config"
+    config.write_text(
+        "[user]\n\tname = test\n\temail = test@example.invalid\n"
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    return config
+
+
+@pytest.fixture(autouse=True)
+def state_home(tmp_path_factory, monkeypatch):
+    """Laufdaten ohne ``--runs-dir`` nie im echten Zustandsordner."""
+    root = tmp_path_factory.mktemp("state")
+    monkeypatch.setenv("XDG_STATE_HOME", str(root))
+    return root
+
+
+@pytest.fixture(autouse=True)
 def scaffold_flows_only(monkeypatch):
     """Abläufe und Vorlagen aus dem Gerüst, nie aus einem externen
     Paket der Umgebung (``KI_DEV_FLOW_PATH``); Tests, die es

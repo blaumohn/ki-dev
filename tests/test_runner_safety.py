@@ -612,7 +612,7 @@ def test_call_limit_survives_restart_and_answer(tmp_path):
 @pytest.mark.parametrize(
     "limits,usage,match",
     [
-        (SafetyLimits(max_total_tokens=100), USAGE, "Token-Grenze"),
+        (SafetyLimits(max_fresh_tokens=60), USAGE, "Token-Grenze"),
         (SafetyLimits(max_claude_cost_usd=0.1), USAGE, "Kostengrenze"),
         (SafetyLimits(), None, "unbekannt"),
     ],
@@ -635,6 +635,28 @@ def test_budget_blocks_next_paid_call(tmp_path, limits, usage, match):
     assert match in result.detail
     assert executor.calls == 1
     assert reviewer.calls == 0
+
+
+def test_cache_reads_do_not_count_against_the_token_limit(tmp_path):
+    """USAGE: 60 neue und 100 aus dem Cache gelesene Tokens."""
+    executor = Executor(
+        TurnResult(TurnStatus.OK, 0, "Bau", "", (), 1.0, usage=USAGE)
+    )
+    worker = AgentWorker(
+        executor, "worker", "model", Effort.LOW,
+        spec=spec_for(executor),
+    )
+    reviewer = FakeReviewer(["PASS"])
+    reviewer.spec = BOOKED
+    with runtime(
+        tmp_path,
+        worker,
+        reviewer,
+        safety_limits=SafetyLimits(max_fresh_tokens=61),
+    ) as run:
+        result = run.start(_task("guard"), Limits())
+    assert "Token-Grenze" not in (result.detail or "")
+    assert reviewer.calls == 1
 
 
 def test_legacy_run_cannot_silently_start_paid_work(tmp_path):

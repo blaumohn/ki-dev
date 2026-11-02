@@ -50,7 +50,7 @@ Ueberschreibung im Manifest persistieren wuerde):
 ```json
 {
   "max_agent_calls": 6,
-  "max_total_tokens": 1000000,
+  "max_fresh_tokens": 1000000,
   "max_claude_cost_usd": 3.0,
   "max_failed_corrections": 2,
   "max_stagnant_changes": 3

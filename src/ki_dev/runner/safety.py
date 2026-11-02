@@ -43,7 +43,7 @@ class SafetyLimits:
     """
 
     max_agent_calls: int = 6
-    max_total_tokens: int = 1_000_000
+    max_fresh_tokens: int = 1_000_000
     max_claude_cost_usd: float = 3.0
     max_failed_corrections: int = 2
     max_stagnant_changes: int = 3
@@ -52,7 +52,7 @@ class SafetyLimits:
     def __post_init__(self) -> None:
         for name in (
             "max_agent_calls",
-            "max_total_tokens",
+            "max_fresh_tokens",
             "max_failed_corrections",
             "max_stagnant_changes",
         ):
@@ -150,7 +150,6 @@ class CallLedger:
         )
         if len(starts) >= limits.max_agent_calls:
             raise SafetyStop(f"Aufrufgrenze erreicht: {len(starts)}")
-        tokens = 0
         cost = 0.0
         for path in starts:
             start = self.store._load_json(path)
@@ -175,15 +174,6 @@ class CallLedger:
                     and "cost_usd" not in usage
                 ):
                     raise SafetyStop("Claude-Kostennachweis fehlt")
-                tokens += sum(
-                    usage.get(key, 0)
-                    for key in (
-                        "input_tokens",
-                        "output_tokens",
-                        "cache_read_input_tokens",
-                        "cache_creation_input_tokens",
-                    )
-                )
                 cost += usage.get("cost_usd", 0.0)
         report = self._usage_report()
         for call in report.calls:
@@ -200,8 +190,8 @@ class CallLedger:
                     "Verbrauchsabgleich unvollstaendig: "
                     + ", ".join(sorted(blocking))
                 )
-        tokens = report.total
-        if tokens >= limits.max_total_tokens:
+        tokens = report.fresh
+        if tokens >= limits.max_fresh_tokens:
             raise SafetyStop(f"Token-Grenze erreicht: {tokens}")
         if cost >= limits.max_claude_cost_usd:
             raise SafetyStop(

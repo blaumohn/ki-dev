@@ -7,13 +7,17 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 from plumbum import local
 
-from tests.test_agent_container_docker import docker_requested
+from tests.test_agent_container_docker import (
+    docker_ready,
+    docker_requested,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -109,6 +113,7 @@ def sandbox(tmp_path):
     repo = tmp_path / "work" / "repo"
     (repo / "scripts").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/agent-container", repo / "scripts")
+    shutil.copytree(ROOT / "scripts/lib", repo / "scripts/lib")
     (repo / "docker/agent").mkdir(parents=True)
     (repo / "docker/agent/Dockerfile").write_text("FROM scratch\n")
     (repo / "src/ki_dev").mkdir(parents=True)
@@ -421,6 +426,25 @@ def test_refuses_inside_container(sandbox):
 
 def fake_python(sandbox, path, value):
     sandbox.add_executable(path, f"printf '%s\\n' --build-arg {value}")
+
+
+def test_build_context_is_readable_for_the_agent_user(sandbox):
+    """COPY übernimmt Modi; 0600 machte das Image unstartbar."""
+    fake_python(sandbox, sandbox.repo / ".venv/bin/python", "FROM=venv")
+    private = sandbox.repo / "docker/agent/entrypoint.sh"
+    private.write_text("#!/bin/sh\n")
+    private.chmod(0o600)
+    docker = sandbox.bin / "docker"
+    docker.write_text(
+        docker.read_text().replace(
+            '  for context; do :; done\n',
+            '  for context; do :; done\n'
+            '  ls -l "$context/docker/agent/entrypoint.sh" '
+            '> "$FAKE_LOG/modes"\n',
+        )
+    )
+    sandbox.run("build")
+    assert sandbox.logged("modes")[0].startswith("-rw-r--r--")
 
 
 def test_build_prefers_project_venv(sandbox):
@@ -771,3 +795,122 @@ class _MarkConfig:
 )
 def test_docker_fails_only_when_requested(markexpr, requested):
     assert docker_requested(_MarkConfig(markexpr)) is requested
+
+
+def _worktree(tmp_path):
+    main = tmp_path / "ziel"
+    main.mkdir()
+    git = local["git"]["-C", str(main)]
+    git("init", "-q", "-b", "main")
+    git("-c", "user.name=t", "-c", "user.email=t@e",
+        "commit", "-q", "--allow-empty", "-m", "start")
+    (main / ".git/hooks").mkdir(exist_ok=True)
+    (main / ".beads/hooks").mkdir(parents=True)
+    (main / ".beads/config.yaml").write_text("")
+    bau = tmp_path / "bau"
+    git("worktree", "add", "-q", "--detach", str(bau), "main")
+    return main.resolve(), bau.resolve()
+
+
+def test_workdir_binds_only_the_worktree_and_guards_git(
+    sandbox, tmp_path
+):
+    main, bau = _worktree(tmp_path)
+    sandbox.run(
+        "--workdir", str(bau), "--name", "lauf-1", "--env", "FOO",
+        "run", "claude", "-p",
+    )
+    args = sandbox.logged("args")
+    assert str(sandbox.repo / "compose.workdir.yaml") in compose_files(
+        args
+    )
+    assert args[args.index("-w") + 1] == str(bau)
+    mounts = {
+        args[i + 1] for i, arg in enumerate(args) if arg == "-v"
+    }
+    git_dir = main / ".git/worktrees/bau"
+    assert {
+        f"{bau}:{bau}",
+        f"{main}/.git:{main}/.git",
+        f"{bau}/.git:{bau}/.git:ro",
+        f"{main}/.git/config:{main}/.git/config:ro",
+        f"{main}/.git/hooks:{main}/.git/hooks:ro",
+        f"{git_dir}/commondir:{git_dir}/commondir:ro",
+        f"{git_dir}/gitdir:{git_dir}/gitdir:ro",
+        f"{main}/.beads:{main}/.beads",
+        f"{main}/.beads/hooks:{main}/.beads/hooks:ro",
+        f"{main}/.beads/config.yaml:{main}/.beads/config.yaml:ro",
+    } <= mounts
+    assert not any(item.startswith(f"{main}:") for item in mounts)
+    assert args[args.index("-e") + 1] == "FOO"
+    assert args[args.index("--name") + 1] == "lauf-1"
+    assert args[-2:] == ["claude", "-p"]
+
+
+def test_workdir_keeps_a_neighbouring_beads_checkout_read_only(
+    sandbox, tmp_path
+):
+    _, bau = _worktree(tmp_path)
+    beads = tmp_path / "beads"
+    beads.mkdir()
+    sandbox.run(
+        "--workdir", str(bau), "run", "true",
+        env={"KI_DEV_AGENT_BEADS_REPO": str(beads)},
+    )
+    assert f"{beads}:/beads:ro" in sandbox.logged("args")
+
+
+def test_workdir_refuses_a_directory_outside_git(sandbox, tmp_path):
+    plain = tmp_path / "ohne-git"
+    plain.mkdir()
+    _, _, stderr = sandbox.run(
+        "--workdir", str(plain), "run", "true", retcode=2
+    )
+    assert "kein Git-Worktree" in stderr
+
+
+def test_workdir_applies_only_to_shell_and_run(sandbox, tmp_path):
+    _, bau = _worktree(tmp_path)
+    _, _, stderr = sandbox.run(
+        "--workdir", str(bau), "mounts", retcode=2
+    )
+    assert "gelten nur für shell und run" in stderr
+
+
+def test_stop_removes_the_named_container(sandbox):
+    sandbox.run("stop", "lauf-1")
+    assert sandbox.logged("args") == ["rm", "-f", "lauf-1"]
+
+
+@pytest.mark.docker
+def test_workdir_container_cannot_write_guarded_paths(request):
+    if not docker_ready():
+        reason = "Docker, Image oder CLI-Anmeldung fehlt"
+        if docker_requested(request.config):
+            pytest.fail(reason)
+        pytest.skip(reason)
+    base = ROOT / ".local/var"
+    base.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=base) as tmp:
+        main, bau = _worktree(Path(tmp))
+        probe = (
+            "git status -s >/dev/null || exit 3;"
+            ": > neu || exit 4;"
+            f"for p in .git {main}/.git/config {main}/.git/hooks/x"
+            f" {main}/.git/worktrees/bau/commondir"
+            f" {main}/.beads/hooks/x {main}/.beads/config.yaml;"
+            ' do if (: >>"$p") 2>/dev/null; then echo "offen $p"; fi;'
+            " done;"
+            "ls -A /workspace | grep -qx src && echo repo-sichtbar;"
+            "true"
+        )
+        launcher = local[str(ROOT / "scripts/agent-container")]
+        code, out, err = launcher.run(
+            ["--workdir", str(bau), "run", "sh", "-c", probe],
+            retcode=None,
+            timeout=120,
+        )
+        assert code == 0, err
+        assert out.strip() == ""
+        assert (bau / "neu").exists()
+        assert not (main / "neu").exists()

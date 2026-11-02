@@ -9,6 +9,22 @@ python=${KI_DEV_SETUP_PYTHON:-python3}
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
+# Eigene Kopie: Arbeitsbaum und Merges ändern den Launcher laufender Läufe
+# nicht. Der Austausch per Umbenennen trifft kein gerade laufendes Skript.
+install_launcher() {
+  local target="${XDG_DATA_HOME:-$HOME/.local/share}/ki-dev/agent-container"
+  local staging="$target.neu"
+  rm -rf -- "$staging"
+  mkdir -p "$staging/scripts" "$staging/docker"
+  cp "$repo"/compose.yaml "$repo"/compose.beads.yaml "$repo"/compose.fresh.yaml \
+    "$repo"/compose.workdir.yaml "$staging/"
+  cp "$repo/scripts/agent-container" "$staging/scripts/"
+  cp -R "$repo/scripts/lib" "$staging/scripts/"
+  cp -R "$repo/docker/agent-settings" "$staging/docker/"
+  rm -rf -- "$target"
+  mv -- "$staging" "$target"
+}
+
 [[ "$runtime" == /* ]] || fail 'XDG_DATA_HOME muss ein absoluter Pfad sein.'
 if [[ -e "$link" || -L "$link" ]]; then
   [[ -L "$link" && $(readlink "$link") == "$runtime/bin/ki-dev" ]] ||
@@ -52,6 +68,7 @@ entry.write_text(
 )
 entry.chmod(0o755)
 PY
+install_launcher
 mkdir -p "$HOME/.local/bin"
 if [[ ! -L "$link" ]]; then
   ln -s "$runtime/bin/ki-dev" "$link"

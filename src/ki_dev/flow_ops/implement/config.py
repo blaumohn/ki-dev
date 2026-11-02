@@ -43,6 +43,11 @@ ROLES = ("worker", "review")
 
 _TEXT = {"type": "string", "pattern": r"\S"}
 _TEXTS = {"type": "array", "items": _TEXT}
+_CONTAINER = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"launcher": _TEXT},
+}
 
 
 class RunConfigError(ValueError):
@@ -114,6 +119,7 @@ def run_config_schema(
             "safety_limits": _numbers(SafetyLimits),
             "finalization": _FINALIZATION,
             "usage_task": _USAGE_TASK,
+            "container": _CONTAINER,
         },
     }
 

@@ -235,3 +235,14 @@ def test_pattern_override_must_name_existing_local_state():
     raw["phase"][0]["operation"]["typo"] = "transform"
     with pytest.raises(FlowError, match="operation.typo"):
         parse_flow(raw)
+
+
+def test_existing_run_message_names_id_and_way_on(tmp_path):
+    run = runner(tmp_path)
+    run.start({"source": "   "})
+    with pytest.raises(RunStoreError) as raised:
+        runner(tmp_path).start({"source": "   "})
+    message = str(raised.value)
+    assert "Lauf normalize existiert bereits" in message
+    assert str(tmp_path) in message
+    assert "resume" in message

@@ -1,0 +1,20 @@
+# Worktree mode (scripts/agent-container --workdir): /workspace holds no
+# repository, so the main checkout, the runner and its run data stay out of
+# reach. The script binds the worktree itself under its host path.
+services:
+  agent:
+    environment:
+      # Bind mounts may report another owner; the container only sees this
+      # worktree, so the check protects nothing here.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: "*"
+    volumes:
+      - type: tmpfs
+        target: /workspace
+      - type: bind
+        source: ./docker/agent-settings/model
+        target: /opt/agent-settings/model
+        read_only: true
+        bind:
+          create_host_path: false

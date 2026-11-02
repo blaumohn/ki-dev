@@ -131,6 +131,37 @@ installiert und keine Builds gestartet. Die Option gilt für `shell` und
 `run` und lässt sich mit `--mount` und `--fresh` kombinieren. Ein bereits
 vorhandenes Agent-Image genügt, ein Image-Neubau ist dafür nicht nötig.
 
+## Worktree-Modus (`--workdir`)
+
+`ki-dev` startet Agenten und Prüfbefehle über das Profilfeld `[container]` so:
+
+```bash
+scripts/agent-container --workdir /pfad/bau --name NAME --env VAR run claude ARGS
+scripts/agent-container stop NAME    # entfernt den Container, auch wenn er fehlt
+```
+
+Host und Container teilen den Pfad des Worktrees. `bau/.git`, Sitzungsordner
+unter `~/.claude/projects` und Profilpfade brauchen deshalb keine Übersetzung,
+und der Host misst Kontext und Kontingent wie sonst.
+
+| Pfad | Im Container |
+| --- | --- |
+| Worktree, `.git` des Repos, `.beads` | schreibbar |
+| `.git/config`, `.git/hooks`, `bau/.git`, `commondir`, `gitdir` | schreibgeschützt |
+| `.beads/hooks`, `.beads/config.yaml`, `/beads`, `/opt/agent-settings/model` | schreibgeschützt |
+| Hauptcheckout, Runner, Laufdaten | nicht eingebunden |
+| `/workspace` | tmpfs, darin nur `.venv` und die Richtlinie |
+
+Der Schreibschutz richtet sich gegen Code, den der Host später ausführen
+würde: Git-Konfiguration und Hooks gelten auch für Git auf dem Host, und
+`~/.local/bin/bd` kann auf den beads-Checkout zeigen. Zusätzlich startet ki-dev
+Git auf dem Host ohne Hooks und fsmonitor (`HOST_GIT`). Timeout und Strg-C
+entfernen den benannten Container.
+
+**Bekannte Grenze:** `~/.claude`, `~/.codex` und `~/.gemini` bleiben schreibbar.
+Ein Agent kann dort etwa Hooks für die CLI auf dem Host eintragen
+(ki-dev-ablauf-aux3).
+
 ## Ablaufpakete (`KI_DEV_FLOW_PATH`)
 
 Ablaufpakete außerhalb des Gerüsts (Ablauf, Ops, Vorlagen, Profile)
