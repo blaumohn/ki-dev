@@ -354,6 +354,8 @@ class PackageRunner:
                 if self.status != "running":
                     return
             else:
+                if self._measured_stop(pending):
+                    return
                 self._send("start")
                 self._save()
             try:
@@ -399,13 +401,29 @@ class PackageRunner:
         if kind in self.operations.bindings:
             return self.operations.execute(kind, self.data)
         assert self.turns is not None
-        handoff = Handoff(
+        return dict(self.turns(self._handoff(pending)))
+
+    def _handoff(self, pending: Mapping[str, object]) -> Handoff:
+        return Handoff(
             self.state,
             str(pending["attempt"]),
             dict(self.data),
             tuple(self.path),
         )
-        return dict(self.turns(handoff))
+
+    def _measured_stop(self, pending: Mapping[str, object]) -> bool:
+        """Messung vor ``start`` (Wirkung außerhalb der SM, nur für
+        Übergaben); ``True``, wenn der Lauf danach hält."""
+        measure = getattr(self.turns, "measure", None)
+        if pending["kind"] in self.operations.bindings:
+            return False
+        if measure is None:
+            return False
+        measurement = measure(self._handoff(pending))
+        if measurement is None:
+            return False
+        self._send("measured", measurement=measurement)
+        return self.status != "running"
 
     def _accept(
         self, pending: Mapping[str, object], artifact: object

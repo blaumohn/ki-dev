@@ -26,7 +26,12 @@ from ki_dev.adapter.executors import (
     ExecutorSpec,
     TurnRequest,
 )
-from ki_dev.adapter.executors.contract import TurnBudget, TurnResult
+from ki_dev.adapter.executors.contract import (
+    ContextMeasurement,
+    QuotaMeasurement,
+    TurnBudget,
+    TurnResult,
+)
 
 
 @dataclass
@@ -93,6 +98,16 @@ class AgentSession:
         return _send(
             self, request.prompt, request.workdir, request.env, None
         )
+
+    def measure_context(self) -> ContextMeasurement | None:
+        """Kontext der Sitzung; vor dem ersten Aufruf (keine
+        Sitzung) gibt es keinen."""
+        if self.session_id is None:
+            return None
+        return self.executor.measure_context(self.session_id)
+
+    def measure_quota(self) -> QuotaMeasurement:
+        return self.executor.measure_quota(self.session_id)
 
 
 def _send(

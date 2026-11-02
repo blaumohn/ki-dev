@@ -118,6 +118,7 @@ from ki_dev.runner.events import (
     event_record,
     run_event_record,
 )
+from ki_dev.runner.meter import quota_missing_reason
 from ki_dev.runner.review_output import (
     AgentProtocolError,
 )
@@ -894,7 +895,7 @@ class RunRuntime:
         if measurement.status is QuotaStatus.PENDING:
             return None
         if measurement.status is not QuotaStatus.MEASURED:
-            return _quota_missing_reason(origin, measurement)
+            return quota_missing_reason(origin, measurement)
         reasons = [
             reason
             for reason in (
@@ -1419,15 +1420,6 @@ def _read_record(store: RunStore) -> tuple[RunMachine, RunData]:
         raise RunResumeError(
             f"Lauf {store.run_id} ist unvollstaendig: {exc}"
         ) from exc
-
-
-def _quota_missing_reason(origin: str, measurement: object) -> str:
-    detail = f": {measurement.detail}" if measurement.detail else ""
-    return (
-        f"Fuenfstundenkontingent-Messwert fuer {origin} fehlt "
-        f"({measurement.status.value}){detail}; kein Aufruf ohne "
-        "Nachweis"
-    )
 
 
 def _quota_reserve_reason(

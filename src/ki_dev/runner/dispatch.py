@@ -22,6 +22,7 @@ from ki_dev.adapter.contract import (
 )
 from ki_dev.flow.model import Flow
 from ki_dev.run_store import RunStoreError
+from ki_dev.runner.meter import Meter
 from ki_dev.runner.package import Handoff
 from ki_dev.runner.protocol import AwaitingAnswer
 
@@ -44,6 +45,14 @@ class Dispatch:
     read: Read
     workdir: Path
     env: Mapping[str, str] = field(default_factory=dict)
+    meter: Meter | None = None
+
+    def measure(self, handoff: Handoff) -> dict | None:
+        """Messung vor dem Start der Übergabe (Wirkung, keine
+        Entscheidung); ``None``: nichts zu messen."""
+        if self.meter is None:
+            return None
+        return self.meter.measure(role_of(self.flow, handoff.state))
 
     def __call__(self, handoff: Handoff) -> dict[str, object]:
         role = role_of(self.flow, handoff.state)

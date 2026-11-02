@@ -14,6 +14,7 @@ from pathlib import Path
 from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
 from ki_dev.flow.model import Verdict
 from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.limits import limit_reasons
 from ki_dev.usage import CounterScope, UsageEvent
 from ki_dev.usage_accounting import (
     UsageAttribution,
@@ -136,20 +137,15 @@ class CallLedger:
                 attribution,
             )
 
-    def _reserve(
-        self,
-        call_id: str,
-        operation: str,
-        metered: bool,
-        limits: SafetyLimits,
-        provider: str | None,
-        attribution: UsageAttribution | None,
-    ) -> None:
+    def totals(self) -> dict[str, object]:
+        """Summen des Laufs: ``calls``, ``tokens``, ``cost_usd`` und
+        ``gaps`` (ungeklärte Reservierung, unbekannter oder
+        unvollständiger Verbrauch). Misst nur, vergleicht nichts
+        (Regel 4); die Grenzen prüft der Wächter des Laufs."""
         starts = sorted(
             (self.store.run_dir / "calls").glob("*-start.json")
         )
-        if len(starts) >= limits.max_agent_calls:
-            raise SafetyStop(f"Aufrufgrenze erreicht: {len(starts)}")
+        gaps: list[str] = []
         cost = 0.0
         for path in starts:
             start = self.store._load_json(path)
@@ -157,13 +153,14 @@ class CallLedger:
                 path.name.replace("-start.json", "-result.json")
             )
             if not result_path.exists():
-                raise SafetyStop(
+                gaps.append(
                     "Verbrauch eines begonnenen Aufrufs ist ungeklaert"
                 )
+                continue
             result = self.store._load_json(result_path)
             usage = result.get("usage")
             if start["metered"] and usage is None and started(result):
-                raise SafetyStop(
+                gaps.append(
                     "Verbrauch eines Agentenaufrufs unbekannt; "
                     "kein weiterer Aufruf ohne Abgleich"
                 )
@@ -173,7 +170,7 @@ class CallLedger:
                     start.get("provider") == "claude-cli"
                     and "cost_usd" not in usage
                 ):
-                    raise SafetyStop("Claude-Kostennachweis fehlt")
+                    gaps.append("Claude-Kostennachweis fehlt")
                 cost += usage.get("cost_usd", 0.0)
         report = self._usage_report()
         for call in report.calls:
@@ -186,17 +183,33 @@ class CallLedger:
                 "start_missing",
             }
             if blocking:
-                raise SafetyStop(
+                gaps.append(
                     "Verbrauchsabgleich unvollstaendig: "
                     + ", ".join(sorted(blocking))
                 )
-        tokens = report.fresh
-        if tokens >= limits.max_fresh_tokens:
-            raise SafetyStop(f"Token-Grenze erreicht: {tokens}")
-        if cost >= limits.max_claude_cost_usd:
-            raise SafetyStop(
-                f"Claude-Kostengrenze erreicht: {cost:g} USD"
-            )
+        return {
+            "calls": len(starts),
+            "tokens": report.fresh,
+            "cost_usd": cost,
+            "gaps": list(dict.fromkeys(gaps)),
+        }
+
+    def _reserve(
+        self,
+        call_id: str,
+        operation: str,
+        metered: bool,
+        limits: SafetyLimits,
+        provider: str | None,
+        attribution: UsageAttribution | None,
+    ) -> None:
+        totals = self.totals()
+        reasons = limit_reasons(
+            {"role": operation, **totals},
+            {"run": asdict(limits), "role": {}},
+        )
+        if reasons:
+            raise SafetyStop("; ".join(reasons))
         self._write(
             call_id,
             "start",

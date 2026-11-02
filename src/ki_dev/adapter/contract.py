@@ -15,7 +15,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-from ki_dev.adapter.executors.contract import ExecutorSpec, TurnResult
+from ki_dev.adapter.executors.contract import (
+    ContextMeasurement,
+    ExecutorSpec,
+    QuotaMeasurement,
+    TurnResult,
+)
 from ki_dev.json_reply import unwrap_json_fence
 
 
@@ -274,6 +279,20 @@ class TurnPrompt:
     prompt: str
     workdir: Path
     env: Mapping[str, str] = field(default_factory=dict)
+
+
+class Measurable(Protocol):
+    """Sitzung, die ihren Kontext und das Kontingent misst (nur
+    Messwerte, keine Entscheidung). Ein Executor, dessen ``spec``
+    Messungen deklariert, implementiert es; manual und mock
+    deklarieren keine."""
+
+    def measure_context(self) -> ContextMeasurement | None:
+        """``None``: die Sitzung ist noch nicht angelegt, es gibt
+        keinen Kontext zu messen."""
+        ...
+
+    def measure_quota(self) -> QuotaMeasurement: ...
 
 
 class TurnExecutor(Protocol):
