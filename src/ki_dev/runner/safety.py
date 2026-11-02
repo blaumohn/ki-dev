@@ -165,14 +165,22 @@ class CallLedger:
                     "kein weiterer Aufruf ohne Abgleich"
                 )
             if usage:
-                validate_usage(usage)
+                try:
+                    validate_usage(usage)
+                except SafetyStop as exc:
+                    gaps.append(str(exc))
+                    continue
                 if (
                     start.get("provider") == "claude-cli"
                     and "cost_usd" not in usage
                 ):
                     gaps.append("Claude-Kostennachweis fehlt")
                 cost += usage.get("cost_usd", 0.0)
-        report = self._usage_report()
+        try:
+            report = self._usage_report()
+        except SafetyStop as exc:
+            gaps.append(str(exc))
+            report = UsageReport(())
         for call in report.calls:
             # attribution_missing/start_missing sind fehlende
             # Provenienz, keine widerspruechliche Bilanz -- sie

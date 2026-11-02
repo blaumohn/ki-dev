@@ -3,13 +3,19 @@ die SM hält (Regel 4)."""
 
 from __future__ import annotations
 
+import json
+import math
 from dataclasses import asdict
 
 import pytest
 
+from ki_dev.adapter.agent import AgentSession
+from ki_dev.adapter.contract import TurnPrompt
+from ki_dev.adapter.executors.claude_cli import ClaudeCliAdapter
 from ki_dev.adapter.executors.contract import (
     ContextMeasurement,
     ContextStatus,
+    Effort,
     ExecutorSpec,
     Measure,
     QuotaMeasurement,
@@ -22,6 +28,7 @@ from ki_dev.flow_ops.review.model import ReviewModel
 from ki_dev.run_store import RunStore
 from ki_dev.runner.bound import BoundOperations
 from ki_dev.runner.dispatch import Dispatch
+from ki_dev.runner.limits import MEASUREMENT_SCHEMA, limit_reasons
 from ki_dev.runner.meter import Meter
 from ki_dev.runner.package import PackageRunner
 from ki_dev.runner.safety import CallLedger, SafetyLimits, SafetyStop
@@ -197,6 +204,110 @@ def test_pending_quota_is_not_measured(tmp_path):
     ).measure("review")
     assert measured["quota_left"] is measured["quota_delta"] is None
     assert measured["gaps"] == []
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+@pytest.mark.parametrize(
+    "field", ["cost_usd", "quota_left", "quota_delta"]
+)
+def test_nonfinite_measurements_are_gaps(value, field):
+    measurement = {"role": "worker", field: value}
+    limits = {
+        "run": {
+            "min_remaining_percent": 10,
+            "max_claude_cost_usd": 3,
+            "max_agent_calls": 6,
+            "max_fresh_tokens": 100,
+        },
+        "role": {},
+    }
+    assert limit_reasons(measurement, limits)
+    schema = MEASUREMENT_SCHEMA["properties"][field]
+    assert schema.get("finite") is True
+
+
+def test_meter_without_role_is_not_measured(tmp_path):
+    worker = _fake()
+    meter = Meter(RunStore(tmp_path, "m"), {None: worker})
+    assert meter.measure(None) is None
+
+
+@pytest.mark.parametrize(
+    ("used", "resets"),
+    [(None, FAR), (math.nan, FAR), (50.0, None)],
+)
+def test_invalid_measured_quota_is_a_gap(tmp_path, used, resets):
+    worker = _fake()
+
+    class RawQuota:
+        status = QuotaStatus.MEASURED
+        used_percent = used
+        resets_at = resets
+        detail = ""
+
+    worker.measure_quota = lambda: RawQuota()
+    measured = Meter(
+        RunStore(tmp_path, "m"), {"review": worker}
+    ).measure("review")
+    assert measured["gaps"]
+    assert measured.get("quota_left") is None
+
+
+def test_agent_session_measures_through_real_adapter_and_fake_cli(
+    tmp_path, monkeypatch
+):
+    from ki_dev.adapter.executors.contract import TurnResult, TurnStatus
+
+    sessions = tmp_path / ".claude" / "projects"
+    session_file = sessions / "project" / "session-1.jsonl"
+    session_file.parent.mkdir(parents=True)
+    session_file.write_text(
+        json.dumps({
+            "type": "assistant",
+            "message": {
+                "model": "claude-test",
+                "usage": {
+                    "input_tokens": 100,
+                    "cache_read_input_tokens": 20,
+                    "cache_creation_input_tokens": 3,
+                },
+            },
+        }) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    adapter = ClaudeCliAdapter(
+        executable="fake-claude",
+        quota_dir=tmp_path / "quota",
+        runner=lambda _argv, **_kwargs: TurnResult(
+            TurnStatus.OK, 0,
+                '{"type":"rate_limit_event","rate_limit_info":'
+                '{"unifiedWindows":{"five_hour":{"utilization":'
+                '0.25,"resetsAt":4000000000}}}}\n'
+                '{"type":"result","subtype":"success",'
+                '"is_error":false,"result":"ok","num_turns":1,'
+                '"session_id":"session-1",'
+            '"total_cost_usd":0.01,"usage":{"input_tokens":10,'
+            '"output_tokens":2,"cache_read_input_tokens":0,'
+                    '"cache_creation_input_tokens":0}}',
+            "", (), 0.01,
+        ),
+    )
+    adapter.probe_executed_version = (
+        lambda *_args: adapter.cli_version_pin
+    )
+    spec = ExecutorSpec("claude", "claude-cli", frozenset(
+        {Measure.CONTEXT, Measure.QUOTA}
+    ))
+    session = AgentSession(
+        adapter, "session-1", "model", Effort.LOW,
+        spec=spec,
+    )
+    assert session.measure_context().tokens == 123
+    prompt = TurnPrompt("try-1", "prompt", tmp_path, {})
+    assert session.ask(prompt) == "ok"
+    assert session.measure_quota().used_percent == 25.0
 
 
 def test_unsupported_quota_is_a_gap(tmp_path):

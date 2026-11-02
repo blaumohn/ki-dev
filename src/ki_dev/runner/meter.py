@@ -9,6 +9,7 @@ nur; Grenzwerte vergleicht der Wächter ``within_limits`` der SM.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import cast
 
@@ -18,7 +19,9 @@ from ki_dev.adapter.executors.contract import (
     Measure,
     QuotaStatus,
 )
+from ki_dev.flow.binding import validate
 from ki_dev.run_store import RunStore, RunStoreError
+from ki_dev.runner.limits import MEASUREMENT_SCHEMA
 from ki_dev.runner.safety import CallLedger, QuotaBaseline
 
 
@@ -43,7 +46,11 @@ class Meter:
         measures = executor.spec.measures
         session = cast(Measurable, executor)
         origin = _origin(role, executor)
-        result: dict[str, object] = {"role": role}
+        result: dict[str, object] = {}
+        if role is not None:
+            result["role"] = role
+        else:
+            return None
         gaps: list[str] = []
         if Measure.CONTEXT in measures:
             result["context"] = self._context(session, origin, gaps)
@@ -56,6 +63,17 @@ class Meter:
             gaps.extend(cast(list[str], totals.pop("gaps")))
             result.update(totals)
         result["gaps"] = gaps
+        try:
+            validate(result, MEASUREMENT_SCHEMA, "measurement")
+        except (TypeError, ValueError):
+            gaps.append("Messluecke: ungueltiger Messwert")
+            for key, value in tuple(result.items()):
+                nonfinite = (
+                    isinstance(value, float)
+                    and not math.isfinite(value)
+                )
+                if nonfinite:
+                    result.pop(key)
         return result
 
     def _context(
@@ -69,6 +87,12 @@ class Meter:
             gaps.append(
                 f"Kontextmessung für {origin} fehlt: {detail}; "
                 "kein Aufruf ohne Nachweis"
+            )
+            return None
+        if measurement.tokens is None:
+            gaps.append(
+                f"Kontextmessung für {origin} fehlt: unvollständiger "
+                "Messwert; kein Aufruf ohne Nachweis"
             )
             return None
         return measurement.tokens
@@ -86,7 +110,22 @@ class Meter:
         if measurement.status is not QuotaStatus.MEASURED:
             gaps.append(quota_missing_reason(origin, measurement))
             return None, None
-        used = cast(float, measurement.used_percent)
+        if (
+            measurement.used_percent is None
+            or measurement.resets_at is None
+        ):
+            gaps.append(quota_missing_reason(origin, measurement))
+            return None, None
+        used = measurement.used_percent
+        if (
+            type(used) not in (int, float)
+            or not math.isfinite(used)
+            or used < 0
+            or used > 100
+            or type(measurement.resets_at) is not int
+        ):
+            gaps.append(quota_missing_reason(origin, measurement))
+            return None, None
         left = min(100.0, max(0.0, 100.0 - used))
         try:
             delta = QuotaBaseline(self.store).delta_percent(

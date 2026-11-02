@@ -68,6 +68,26 @@ USAGE = {
 }
 
 
+def test_negative_ledger_cost_is_a_gap_and_blocks_next_call(tmp_path):
+    store = RunStore(tmp_path, "guard")
+    store.initialize({"safety_limits": asdict(SafetyLimits())})
+    ledger = CallLedger(store)
+    ledger.reserve("call-1", "worker", True)
+    malformed = {**USAGE, "cost_usd": -1}
+    ledger.store._write_once(
+        store.run_dir / "calls" / "call-1-result.json",
+        {"status": "ok", "started": True, "duration_s": 1.0,
+         "usage": malformed, "error": None},
+    )
+    totals = ledger.totals()
+    assert any(
+        "Ungueltiger Verbrauch: cost_usd" in gap
+        for gap in totals["gaps"]
+    )
+    with pytest.raises(SafetyStop, match="Ungueltiger Verbrauch"):
+        ledger.reserve("call-2", "worker", True)
+
+
 class Executor:
     name = "fake"
 
