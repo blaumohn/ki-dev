@@ -3,18 +3,19 @@
     "skript": "9-ergebnis.sh",
     "parameter": {},
     "ergebnis": "passed",
-    "datum": "2026-11-02T21:21:09Z",
+    "datum": "2026-11-02T21:46:54Z",
     "auszug": [
       "$ ki-dev -f implement history version-fix",
       "Lauf version-fix: passed nach 2 Runden",
       "  Runde 1  Umsetzer  geändert: version.py",
       "  Runde 1  Tests     test_version fehlgeschlagen",
-      "  Runde 1  Review    decision: Widerspruch zwischen AC1, AC2 und…",
+      "  Runde 1  Review    decision: Entscheidung nötig. AC1 ist erfüllt: Der Diff…",
       "  Runde 1  Mensch    AC2 geändert",
-      "  Runde 1  Review    fix (AC2): Die Entscheidung des Menschen nach Runde 1 ve…",
+      "  Runde 1  Review    fix (AC2): Die Entscheidung nach Runde 1 verlangt, dass…",
+      "  Runde 2  Umsetzer  Eskalation: Die zweite Assertion in `test_version.py`…",
       "  Runde 2  Umsetzer  geändert: test_version.py",
       "  Runde 2  Tests     test_version bestanden",
-      "  Runde 2  Review    PASS: Alle Kriterien erfüllt. AC1: version.py vergleicht…",
+      "  Runde 2  Review    PASS: Alle Kriterien sind erfüllt. AC1: version.py vergl…",
       "  Abschluss          Fast-forward integriert",
       "  Offen              3 Beobachtungen; vor `bd close` entscheiden",
       "$ git -C ../app log -1 --stat --format=%s main",
@@ -23,7 +24,6 @@
       " test_version.py | 2 +-",
       " version.py      | 2 +-",
       " 2 files changed, 2 insertions(+), 2 deletions(-)",
-      "$ git -C ../app show main:version.py",
       "…"
     ]
   }
