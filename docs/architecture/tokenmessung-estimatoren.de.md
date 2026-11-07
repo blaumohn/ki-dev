@@ -2,7 +2,7 @@
 
 Stand: 2026-09-19. Materialisierung des Nutzerauftrags zur Verbrauchsmessung
 und Mehrmodell-Einschätzung. Dieser Systementwurf ergänzt den normativen
-[Orchestrator-Vertrag](../pending/design-notes.de.md#orchestrator).
+Orchestrator-Vertrag (Quellen-Bead **ki-dev-ablauf-mrz8**, Abschnitt „Orchestrator“).
 Die Umsetzung wird in Beads unter **ki-dev-ablauf-wu0** geführt. Dieses
 Dokument beschreibt das Zielbild; es behauptet keine implementierten
 Estimatoren, bestandenen manuellen Tests oder nachgewiesene Einsparung.
