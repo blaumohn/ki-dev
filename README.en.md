@@ -622,15 +622,15 @@ Questions, ideas, collaboration: open an issue or contact
     tests or hard-coding special cases; with the option to hand over to
     a human, in 9 %. `is_newer` is built on this principle; the solvable
     task is the benchmark's task `lcbhard_91`
-    ([origin](docs/beispiele/impossiblebench/README.md)). The example
+    ([origin](https://github.com/blaumohn/ki-dev/blob/main/docs/beispiele/impossiblebench/README.md)). The example
     only checks whether `implement` halts on one and lets the other through;
-    measuring effectiveness is [planned](docs/wirksamkeitsmessung.de.md)
+    measuring effectiveness is [planned](https://github.com/blaumohn/ki-dev/blob/main/docs/wirksamkeitsmessung.de.md)
     (German).
 
 [^versions]: ki-dev reads a call's usage from the CLI's output format,
     which differs between versions. It therefore starts calls with usage
     limits only with the verified versions
-    ([usage protection](docs/ausfuehrer.de.md#verbrauchsschutz), German).
+    ([usage protection](https://github.com/blaumohn/ki-dev/blob/main/docs/ausfuehrer.de.md#verbrauchsschutz), German).
 
 [^bd]: It builds bd 1.3.0 with length limits for bead fields, which this
     repo uses for its own tasks

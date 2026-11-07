@@ -616,16 +616,16 @@ Fragen, Ideen, Zusammenarbeit: ein Issue öffnen oder
     Teständerungen oder hart codierte Sonderfälle; mit der Möglichkeit,
     an einen Menschen abzugeben, in 9 %. `is_newer` ist nach diesem
     Prinzip gebaut, der lösbare Auftrag ist die Aufgabe `lcbhard_91` des
-    Benchmarks ([Herkunft](docs/beispiele/impossiblebench/README.md)).
+    Benchmarks ([Herkunft](https://github.com/blaumohn/ki-dev/blob/main/docs/beispiele/impossiblebench/README.md)).
     Das Beispiel prüft nur, ob `implement` beim einen anhält und den anderen
     durchlässt; die Wirksamkeit zu messen ist
-    [geplant](docs/wirksamkeitsmessung.de.md).
+    [geplant](https://github.com/blaumohn/ki-dev/blob/main/docs/wirksamkeitsmessung.de.md).
 
 [^versionen]: Den Verbrauch eines Aufrufs liest ki-dev aus dem
     Ausgabeformat der CLI, und das unterscheidet sich zwischen Versionen.
     Aufrufe mit Verbrauchsgrenzen startet ki-dev deshalb nur mit den
     geprüften Versionen
-    ([Verbrauchsschutz](docs/ausfuehrer.de.md#verbrauchsschutz)).
+    ([Verbrauchsschutz](https://github.com/blaumohn/ki-dev/blob/main/docs/ausfuehrer.de.md#verbrauchsschutz)).
 
 [^bd]: Gebaut wird bd 1.3.0 mit Längengrenzen für Bead-Felder, die dieses
     Repo für seine eigenen Aufträge nutzt

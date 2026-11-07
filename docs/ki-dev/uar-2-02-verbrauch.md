@@ -75,7 +75,7 @@ sichtbare serverseitige Zusatzarbeit wird nicht geschaetzt.
 
 ## Korrektur und Reichweite
 
-Die [Laufdokumentation](../loop-runtime.de.md#verbrauchsschutz) beschreibt
+Die [Laufdokumentation](../ausfuehrer.de.md#verbrauchsschutz) beschreibt
 die jetzt implementierten Schranken. Die Grenzen sind konservative,
 konfigurierbare Betriebsvorgaben, keine aus dem Abo abgeleiteten Werte.
 
